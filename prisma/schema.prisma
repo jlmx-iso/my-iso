@@ -124,11 +124,11 @@ model Review {
 }
 
 model MessageThread {
-  id           String    @id @default(cuid())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  participants User[]
-  messages     Message[]
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  participants  User[]
+  messages      Message[]
 }
 
 model Message {
@@ -140,6 +140,8 @@ model Message {
   sender    User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
   senderId  String
   content   String
+  isRead    Boolean       @default(false)
+  isDeleted Boolean       @default(false)
 }
 
 model User {
@@ -163,9 +165,10 @@ model User {
   updatedAt      DateTime        @updatedAt
   favorites      Favorite[]
   reviews        Review[]
-  messageThreads MessageThread[]
   messages       Message[]
+  messageThreads MessageThread[]
   comments       Comment[]
+  stripeId       String?         @unique
 }
 
 model Event {
