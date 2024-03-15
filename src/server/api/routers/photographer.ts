@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure, publicProcedure, } from "~/server/api/trpc";
+import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
   getById: protectedProcedure
@@ -7,6 +7,14 @@ export const photographerRouter = createTRPCRouter({
     .query(({ ctx, input }) => {
       return ctx.db.photographer.findFirst({
         where: { id: input.id },
+      });
+    }),
+  
+  getByUsername: publicProcedure
+    .input(z.object({ username: z.string().min(1) }))
+    .query(({ ctx, input }) => {
+      return ctx.db.photographer.findFirst({
+        where: { name: input.username },
       });
     }),
   
