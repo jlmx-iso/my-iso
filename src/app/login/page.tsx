@@ -3,6 +3,7 @@ import { TextInput, PasswordInput, Button, Box, Group } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
+import { logger } from "~/_utils";
 
 export default function Page() {
   const form = useForm({
@@ -16,15 +17,19 @@ export default function Page() {
   });
 
   const handleSignIn = async () => {
-    await signIn("credentials", {
+    logger.info("logging in user", form.values);
+    const result = await signIn("credentials", {
       username: form.values.username,
       password: form.values.password,
       redirect: false
     });
+    console.log(result);
+    return result;
   }
 
   return (
     <Box p="xl">
+      <button onClick={() => signIn()}>Instant Login</button>
       <form onSubmit={handleSignIn}>
         <TextInput
           label="Email"

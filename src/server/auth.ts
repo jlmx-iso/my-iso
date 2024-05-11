@@ -1,15 +1,17 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import {
+  type DefaultSession,
   getServerSession,
   type NextAuthOptions,
 } from "next-auth";
 import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
-import CredentialsProvider from "next-auth/providers/credentials"
+import EmailProvider from "next-auth/providers/email"
 
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { authorizeUser } from "~/server/api/auth/auth";
+import { checkIfUserExists } from "~/server/api/auth/auth";
+import { logger } from "~/_utils";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -17,21 +19,16 @@ import { authorizeUser } from "~/server/api/auth/auth";
  *
  * @see https://next-auth.js.org/getting-started/typescript#module-augmentation
  */
-// declare module "next-auth" {
-//   interface Session {
-//     user: {
-//       id: string;
-//       firstName: string;
-//       lastName: string;
-//       email: string;
-//     } & DefaultSession["user"];
-//   }
-
-//   // interface User {
-//   //   firstName: string;
-//   //   lastName: string;
-//   // }
-// }
+declare module "next-auth" {
+  interface DefaultUser {
+    firstName: string
+    lastName: string
+    profilePic?: string
+  }
+  interface Session {
+    user: DefaultUser & DefaultSession["user"]
+  }
+}
 
 /**
  * Options for NextAuth.js used to configure adapters, providers, callbacks, etc.
@@ -40,28 +37,23 @@ import { authorizeUser } from "~/server/api/auth/auth";
  */
 export const authOptions: NextAuthOptions = {
   callbacks: {
-    session: ({ session, user }) => {
-      console.log({ session, user });
-      return {
-        ...session,
-        user: {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          profilePic: user.profilePic,
-        },
-      };
+    session: async (props) => {
+      console.log("session", props);
+      return props.session;
     },
-    jwt: async ({ token, user, account }) => {
-      console.log(user);
-      if (account) {
-        token.id = account.id;
+    jwt: async ({user, token}) => {
+      if (user) {
+        token.name = user.firstName;
+        token.picture = user.profilePic;
       }
       return token;
     },
-    signIn: async () => {
-      return true;
+    signIn: async ({ user }) => {
+      if (!user.email) {
+        logger.info("No email provided");
+        return false;
+      }
+      return await checkIfUserExists(user.email);
     }
   },
   adapter: PrismaAdapter(db),
@@ -78,26 +70,39 @@ export const authOptions: NextAuthOptions = {
         };
       },
     }),
-    CredentialsProvider({
-      name: 'Credentials',
-      id: 'credentials',
-      credentials: {
-        username: { label: "Username", type: "text" },
-        password: {  label: "Password", type: "password" }
+    EmailProvider({
+      server: {
+        host: env.EMAIL_SERVER_HOST,
+        port: env.EMAIL_SERVER_PORT,
+        auth: {
+          user: env.EMAIL_SERVER_USER,
+          pass: env.EMAIL_SERVER_PASSWORD,
+        },
+        from: env.EMAIL_FROM,
       },
-      async authorize(credentials) {
-        console.log(credentials);
-        if(!credentials){
-          return null;
-        }
-        const user = await authorizeUser(credentials);
-        if (user) {
-          return user;
-        } else {
-          return null;
-        }
-      },
+      from: env.EMAIL_FROM,
     }),
+    // CredentialsProvider({
+    //   name: 'Credentials',
+    //   id: 'credentials',
+    //   credentials: {
+    //     username: { label: "Username", type: "text" },
+    //     password: {  label: "Password", type: "password" }
+    //   },
+    //   async authorize(credentials) {
+    //     if(!credentials){
+    //       return null;
+    //     }
+    //     const user = await authorizeUser(credentials);
+    //     if (user) {
+    //       logger.info("User authorized", user)
+    //       return user;
+    //     } else {
+    //       logger.info("User not authorized")
+    //       return null;
+    //     }
+    //   },
+    // }),
 
     /**
      * ...add more providers here.
@@ -115,6 +120,7 @@ export const authOptions: NextAuthOptions = {
     secret: env.NEXTAUTH_SECRET,
     maxAge: 24 * 60 * 60 * 30, // 30 days
   },
+  debug: env.NODE_ENV === "development",
 };
 
 /**

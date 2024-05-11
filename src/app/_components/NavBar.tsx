@@ -11,6 +11,8 @@ import Link from "next/link";
 import { Avatar, Container, Group }  from "@mantine/core";
 import { getServerAuthSession } from "~/server/auth";
 import Image from "next/image";
+import logo from "../../../public/img/logo.webp"
+import { signIn } from "next-auth/react";
 
 export default async function Navbar() {
   const session = await getServerAuthSession();
@@ -29,7 +31,8 @@ export default async function Navbar() {
       <Group>
         <Link href="/">
           <Image
-            src="/img/camera2.png"
+            priority={true} 
+            src={logo}
             alt="ISO logo"
             style={{ height: "3rem", width: "auto" }}                                 
             width={100}

@@ -14,7 +14,8 @@ export const authRouter = createTRPCRouter({
     //   const user = await registerUser(input);
     //   return user;
   // }),
-  .mutation(async ({ctx, input}) => {
+    .mutation(async ({ ctx, input }) => {
+      console.log("let's get it!!");
     return await ctx.db.user.create({
       data: {
         email: input.email,

@@ -58,7 +58,7 @@ export default function Page() {
     if (validation.hasErrors) {
       return;
     } else {
-      submitRegistration.mutate({
+      return submitRegistration.mutate({
         email: form.values.email,
         firstName: form.values.firstName,
         lastName: form.values.lastName,

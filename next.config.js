@@ -18,6 +18,23 @@ const config = {
       }
     ],
   },
+  headers: async () => (
+    [
+      {
+        source: "/login",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "same-origin",
+          }
+        ],
+      }
+    ]
+  )
 };
 
 export default config;

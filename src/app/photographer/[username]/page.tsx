@@ -20,14 +20,14 @@ export default async function Page({ params }: { params: { username: string; }; 
     );
   };
 
-  const heroImage = myImage?.secure_url ? <Image src={myImage.secure_url} alt="" fill={true} style={{"object-fit": "contain"}} /> : null;
+  const heroImage = myImage?.secure_url ? <Image src={myImage.secure_url} alt="" fill={true} className="object-contain"  /> : null;
   return (
     // hero image
     // bookmark icon
     // photographer name
     // photographer location
     // photographer bio
-    
+
     // Details
     // photographer website
     // photographer social media
@@ -37,9 +37,9 @@ export default async function Page({ params }: { params: { username: string; }; 
 
     // Call to action
 
-    <Stack>
+    <Stack className="w-full">
       {/* Hero Image */}
-      <Container fluid h={360}>
+      <Container fluid h={360} pos="relative" className="w-full" >
         {heroImage}
       </Container>
 
