@@ -6,7 +6,7 @@ type ProfilePhotoProps = {
   size?: "sm" | "md" | "lg";
 };
 
-export default function ProfilePhoto({
+export default function Page({
   photoUrl,
   userFullName,
   size = "md",
