@@ -10,8 +10,9 @@ import EmailProvider from "next-auth/providers/email"
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { checkIfUserExists } from "~/server/api/auth/auth";
+import { checkIfUserExists } from "~/server/api/_utils/";
 import { logger } from "~/_utils";
+import { type DefaultJWT } from "next-auth/jwt";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -25,8 +26,15 @@ declare module "next-auth" {
     lastName: string
     profilePic?: string
   }
-  interface Session {
+  interface Session extends DefaultSession {
     user: DefaultUser & DefaultSession["user"]
+    id: string;
+    accessToken: string;
+  }
+
+  interface JWT extends Record<string, unknown>, DefaultJWT {
+    id: string;
+    accessToken: string;
   }
 }
 
@@ -37,14 +45,19 @@ declare module "next-auth" {
  */
 export const authOptions: NextAuthOptions = {
   callbacks: {
-    session: async (props) => {
-      console.log("session", props);
-      return props.session;
+    session: async ({ session, token }) => {
+      session.accessToken = token.accessToken as string;
+      session.user.id = token.id as string;
+      return session;
     },
-    jwt: async ({user, token}) => {
+    jwt: async ({ account, user, token }) => {
+      if (account) {
+        token.accessToken = account.access_token;
+      }
       if (user) {
         token.name = user.firstName;
         token.picture = user.profilePic;
+        token.id = user.id;
       }
       return token;
     },
@@ -71,6 +84,11 @@ export const authOptions: NextAuthOptions = {
       },
     }),
     EmailProvider({
+      sendVerificationRequest: async ({ identifier: email, url, token, provider }) => {
+        if (env.NODE_ENV === "development") {
+          console.log("sendVerificationRequest", { email, url, token, provider });
+        }
+      },
       server: {
         host: env.EMAIL_SERVER_HOST,
         port: env.EMAIL_SERVER_PORT,
@@ -116,7 +134,7 @@ export const authOptions: NextAuthOptions = {
   ],
   secret: env.NEXTAUTH_SECRET,
   session: { strategy: "jwt", maxAge: 24 * 60 * 60 }, // 24 hours
-  jwt: { 
+  jwt: {
     secret: env.NEXTAUTH_SECRET,
     maxAge: 24 * 60 * 60 * 30, // 30 days
   },

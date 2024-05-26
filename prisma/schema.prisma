@@ -125,11 +125,11 @@ model Review {
 }
 
 model MessageThread {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  participants  User[]
-  messages      Message[]
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  participants User[]
+  messages     Message[]
 }
 
 model Message {
@@ -149,6 +149,7 @@ model User {
   id             String          @id @default(cuid())
   firstName      String
   lastName       String
+  handle         String?         @unique
   email          String          @unique
   emailVerified  DateTime?
   profilePic     String?
@@ -161,7 +162,7 @@ model User {
   accounts       Account[]
   sessions       Session[]
   subscription   Subscription?
-  Photographer   Photographer?
+  photographer   Photographer?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   favorites      Favorite[]

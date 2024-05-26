@@ -1,12 +1,12 @@
 import "~/styles/globals.css";
 import '@mantine/core/styles.css';
 
-import { MantineProvider, ColorSchemeScript } from '@mantine/core';
+import { MantineProvider, ColorSchemeScript, Center } from '@mantine/core';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
 import { TRPCReactProvider } from "~/trpc/react";
-import Navbar from "./_components/NavBar";
+import { Navbar } from "~/app/_server_components";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -35,7 +35,9 @@ export default function RootLayout({
             <header>
               <Navbar />
             </header>
-            {children}
+            <Center>
+              {children}
+            </Center>
           </TRPCReactProvider>
         </MantineProvider>
       </body>

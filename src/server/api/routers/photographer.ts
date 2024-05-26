@@ -10,11 +10,22 @@ export const photographerRouter = createTRPCRouter({
       });
     }),
   
+  getByUserId: protectedProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .query(({ ctx, input }) => {
+      return ctx.db.photographer.findFirst({
+        where: { userId: input.userId },
+      });
+    }),
+  
   getByUsername: publicProcedure
     .input(z.object({ username: z.string().min(1) }))
     .query(({ ctx, input }) => {
       return ctx.db.photographer.findFirst({
-        where: { name: input.username },
+        where: {
+          user: {
+            handle: input.username,
+        } },
       });
     }),
   
