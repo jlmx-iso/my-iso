@@ -67,6 +67,9 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
       return await checkIfUserExists(user.email);
+    },
+    redirect: async ({ baseUrl }) => {
+      return baseUrl;
     }
   },
   adapter: PrismaAdapter(db),
