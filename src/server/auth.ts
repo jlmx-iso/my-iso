@@ -10,8 +10,10 @@ import EmailProvider from "next-auth/providers/email"
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { checkIfUserExists } from "~/server/api/auth/auth";
+import { checkIfUserExists } from "~/server/api/_utils/";
 import { logger } from "~/_utils";
+import { type DefaultJWT } from "next-auth/jwt";
+import { sendEmail } from "./api/_lib/postmark";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -25,8 +27,15 @@ declare module "next-auth" {
     lastName: string
     profilePic?: string
   }
-  interface Session {
+  interface Session extends DefaultSession {
     user: DefaultUser & DefaultSession["user"]
+    id: string;
+    accessToken: string;
+  }
+
+  interface JWT extends Record<string, unknown>, DefaultJWT {
+    id: string;
+    accessToken: string;
   }
 }
 
@@ -37,14 +46,19 @@ declare module "next-auth" {
  */
 export const authOptions: NextAuthOptions = {
   callbacks: {
-    session: async (props) => {
-      console.log("session", props);
-      return props.session;
+    session: async ({ session, token }) => {
+      session.accessToken = token.accessToken as string;
+      session.user.id = token.id as string;
+      return session;
     },
-    jwt: async ({user, token}) => {
+    jwt: async ({ account, user, token }) => {
+      if (account) {
+        token.accessToken = account.access_token;
+      }
       if (user) {
         token.name = user.firstName;
         token.picture = user.profilePic;
+        token.id = user.id;
       }
       return token;
     },
@@ -54,6 +68,9 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
       return await checkIfUserExists(user.email);
+    },
+    redirect: async ({ baseUrl }) => {
+      return baseUrl;
     }
   },
   adapter: PrismaAdapter(db),
@@ -71,38 +88,19 @@ export const authOptions: NextAuthOptions = {
       },
     }),
     EmailProvider({
-      server: {
-        host: env.EMAIL_SERVER_HOST,
-        port: env.EMAIL_SERVER_PORT,
-        auth: {
-          user: env.EMAIL_SERVER_USER,
-          pass: env.EMAIL_SERVER_PASSWORD,
-        },
-        from: env.EMAIL_FROM,
+      sendVerificationRequest: async ({ identifier: email, url, token, provider }) => {
+        if (env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
+          console.log("sendVerificationRequest", { email, url, token, provider });
+        } else {
+          await sendEmail({
+            email,
+            subject: "Sign in",
+            html: `<p>Here is your sign in link: <a href="${url}">${url}</a></p>`,
+          });
+        }
       },
-      from: env.EMAIL_FROM,
     }),
-    // CredentialsProvider({
-    //   name: 'Credentials',
-    //   id: 'credentials',
-    //   credentials: {
-    //     username: { label: "Username", type: "text" },
-    //     password: {  label: "Password", type: "password" }
-    //   },
-    //   async authorize(credentials) {
-    //     if(!credentials){
-    //       return null;
-    //     }
-    //     const user = await authorizeUser(credentials);
-    //     if (user) {
-    //       logger.info("User authorized", user)
-    //       return user;
-    //     } else {
-    //       logger.info("User not authorized")
-    //       return null;
-    //     }
-    //   },
-    // }),
 
     /**
      * ...add more providers here.
@@ -116,7 +114,7 @@ export const authOptions: NextAuthOptions = {
   ],
   secret: env.NEXTAUTH_SECRET,
   session: { strategy: "jwt", maxAge: 24 * 60 * 60 }, // 24 hours
-  jwt: { 
+  jwt: {
     secret: env.NEXTAUTH_SECRET,
     maxAge: 24 * 60 * 60 * 30, // 30 days
   },

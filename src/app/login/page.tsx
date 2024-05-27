@@ -23,7 +23,6 @@ export default function Page() {
       password: form.values.password,
       redirect: false
     });
-    console.log(result);
     return result;
   }
 
@@ -42,7 +41,7 @@ export default function Page() {
           placeholder="Your password"
           {...form.getInputProps("password")}
         />
-        <Group justify="flex-end" mt="md">  
+        <Group justify="flex-end" mt="md">
           <Button type="submit" variant="outline">Login</Button>
           <Link href="/register">Register</Link>
         </Group>
