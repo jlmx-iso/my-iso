@@ -13,6 +13,7 @@ import { db } from "~/server/db";
 import { checkIfUserExists } from "~/server/api/_utils/";
 import { logger } from "~/_utils";
 import { type DefaultJWT } from "next-auth/jwt";
+import { sendEmail } from "./api/_lib/postmark";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -89,41 +90,17 @@ export const authOptions: NextAuthOptions = {
     EmailProvider({
       sendVerificationRequest: async ({ identifier: email, url, token, provider }) => {
         if (env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
           console.log("sendVerificationRequest", { email, url, token, provider });
+        } else {
+          await sendEmail({
+            email,
+            subject: "Sign in",
+            html: `<p>Here is your sign in link: <a href="${url}">${url}</a></p>`,
+          });
         }
       },
-      server: {
-        host: env.EMAIL_SERVER_HOST,
-        port: env.EMAIL_SERVER_PORT,
-        auth: {
-          user: env.EMAIL_SERVER_USER,
-          pass: env.EMAIL_SERVER_PASSWORD,
-        },
-        from: env.EMAIL_FROM,
-      },
-      from: env.EMAIL_FROM,
     }),
-    // CredentialsProvider({
-    //   name: 'Credentials',
-    //   id: 'credentials',
-    //   credentials: {
-    //     username: { label: "Username", type: "text" },
-    //     password: {  label: "Password", type: "password" }
-    //   },
-    //   async authorize(credentials) {
-    //     if(!credentials){
-    //       return null;
-    //     }
-    //     const user = await authorizeUser(credentials);
-    //     if (user) {
-    //       logger.info("User authorized", user)
-    //       return user;
-    //     } else {
-    //       logger.info("User not authorized")
-    //       return null;
-    //     }
-    //   },
-    // }),
 
     /**
      * ...add more providers here.

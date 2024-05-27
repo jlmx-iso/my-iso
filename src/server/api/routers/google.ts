@@ -14,7 +14,6 @@ export const googleRouter = createTRPCRouter({
                     types: PlaceAutocompleteType.cities,
                 },
             });
-            console.log(data.data);
             return data.data.predictions.map((prediction) => prediction.description);
         }),
 });

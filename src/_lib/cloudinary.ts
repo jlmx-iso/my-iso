@@ -48,10 +48,9 @@ export const getAssetInfo = async (publicId: string) => {
   try {
     // Get details about the asset
     const result = await v2.api.resource(publicId, options) as { secure_url: string };
-    console.log(result);
     return result;
   } catch (error) {
-    console.error(error);
+    logger.error("An error occurred while fetching asset info.", { publicId, error });
   }
 };
 

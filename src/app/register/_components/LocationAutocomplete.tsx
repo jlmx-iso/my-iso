@@ -27,6 +27,8 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
         }
 
         if (isError) {
+            // add error handling here
+            // eslint-disable-next-line no-console
             console.log("Error fetching data");
         }
 

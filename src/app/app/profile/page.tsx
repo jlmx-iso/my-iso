@@ -4,7 +4,6 @@ import { authOptions } from "~/server/auth";
 
 export default async function Page() {
   const session = await getServerSession(authOptions);
-  console.log("client session", { session });
   if (!session || !session.user) {
     return null;
   };

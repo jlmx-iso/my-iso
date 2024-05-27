@@ -94,10 +94,8 @@ export default function Page() {
   });
 
   const handleSubmit = () => {
-    console.log("Submitting form", form.values)
     const validation = form.validate();
     if (validation.hasErrors) {
-      console.log("Validation errors", validation.errors);
       return;
     } else {
       submitRegistration({
