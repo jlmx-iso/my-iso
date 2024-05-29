@@ -1,10 +1,10 @@
 import React from "react";
 import Link from "next/link";
-import { Avatar, Container, Group } from "@mantine/core";
+import { Container, Group } from "@mantine/core";
 import { getServerAuthSession } from "~/server/auth";
 import Image from "next/image";
 import logo from "../../../public/img/logo.webp"
-import { LoginButton, LogoutButton } from "../_components";
+import { UserProfileButton } from "../_components/buttons/UserProfileButton";
 
 export async function Navbar() {
   const session = await getServerAuthSession();
@@ -36,20 +36,7 @@ export async function Navbar() {
         <Link href="/about">About</Link>
         <Link href="/contact">Contact</Link>
       </Group>
-      {!session?.user ? (
-        <LoginButton />
-      ) : (
-        <Group>
-          <Link href="/app/profile">
-            <Avatar
-              src={session.user.profilePic}
-              alt={session.user.firstName + " " + session.user.lastName}
-              radius="xl"
-            />
-          </Link>
-          <LogoutButton />
-        </Group>
-      )}
+      <UserProfileButton session={session} />
     </Container>
   );
 }

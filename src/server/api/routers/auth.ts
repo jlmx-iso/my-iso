@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { logger } from "~/_utils";
-import { createUser, createVerificationToken, verifyUserEmail } from "~/server/api/_db";
+import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
 import { createTRPCRouter, publicProcedure, } from "~/server/api/trpc";
-import { sendEmail } from "../_lib/postmark";
+import { sendEmail } from "../../_lib/postmark";
 import { env } from "~/env";
 import { UserVerificationErrors } from "~/_types/errors";
 
