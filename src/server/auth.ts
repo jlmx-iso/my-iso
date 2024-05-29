@@ -10,10 +10,10 @@ import EmailProvider from "next-auth/providers/email"
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { checkIfUserExists } from "~/server/api/_utils/";
+import { checkIfUserExists } from "~/server/_utils";
 import { logger } from "~/_utils";
 import { type DefaultJWT } from "next-auth/jwt";
-import { sendEmail } from "./api/_lib/postmark";
+import { sendEmail } from "./_lib/postmark";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
