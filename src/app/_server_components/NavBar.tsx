@@ -1,10 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Avatar, Container, Group } from "@mantine/core";
+import { Container, Group } from "@mantine/core";
 import { getServerAuthSession } from "~/server/auth";
 import Image from "next/image";
 import logo from "../../../public/img/logo.webp"
-import { LoginButton, LogoutButton } from "../_components";
 import { UserProfileButton } from "../_components/buttons/UserProfileButton";
 
 export async function Navbar() {
