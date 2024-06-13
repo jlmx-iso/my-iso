@@ -3,7 +3,7 @@ import { Cloudinary } from "@cloudinary/url-gen";
 import { env } from "~/env";
 import { logger, Result } from "../_utils";
 
-type Resource = {
+export type Resource = {
   public_id: string;
   format: string;
   version: number;

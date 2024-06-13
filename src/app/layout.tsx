@@ -1,5 +1,6 @@
 import "~/styles/globals.css";
 import '@mantine/core/styles.css';
+import '@mantine/carousel/styles.css';
 
 import { MantineProvider, ColorSchemeScript, Center } from '@mantine/core';
 import { Inter } from "next/font/google";
@@ -10,6 +11,7 @@ import { Analytics } from "@vercel/analytics/react"
 import { TRPCReactProvider } from "~/trpc/react";
 import { Navbar } from "~/app/_server_components";
 import { CSPostHogProvider } from './providers';
+import theme from "./theme";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -34,7 +36,7 @@ export default function RootLayout({
       </head>
       <body className={`font-sans ${inter.variable}`}>
         <CSPostHogProvider>
-          <MantineProvider>
+          <MantineProvider theme={theme}>
             <TRPCReactProvider cookies={cookies().toString()}>
               <header>
                 <Navbar />

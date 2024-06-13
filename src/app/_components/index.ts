@@ -1,5 +1,6 @@
 export * from "./buttons";
 export * from "./icons";
+export * from "./profiles";
 export * from "./Alerts";
 export * from "./FeatureTable";
 export * from "./Loader";

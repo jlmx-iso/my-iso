@@ -8,14 +8,19 @@ import { authOptions } from "~/server/auth";
 import { api } from "~/trpc/server";
 import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../_components/icons/SocialLink";
 import { FavoriteButton } from "../_components/profiles/FavoriteButton";
+import { Heading } from "./Heading";
+import { Avatar } from "./Avatar";
+import { EditIcon } from "../_components/icons/Edit";
+import EditProfile from "../_components/profiles/EditProfile";
 
 // ProfilePageProps should have either userId or photographer
 type ProfilePageProps = {
   userId: string;
   photographer?: Photographer;
+  isEditing?: boolean;
 };
 
-export const ProfilePage = async ({ userId, photographer }: ProfilePageProps) => {
+export const ProfilePage = async ({ userId, photographer, isEditing }: ProfilePageProps) => {
   const session = await getServerSession(authOptions);
   if (!photographer) {
     photographer = await api.photographer.getByUserId.query({ userId }) ?? undefined;
@@ -28,23 +33,10 @@ export const ProfilePage = async ({ userId, photographer }: ProfilePageProps) =>
   const favorites = await api.user.getFavorites.query({ userId: currentUserId });
   const isFavorite = favorites.some(favorite => favorite.targetId === photographer.id);
   const isSelf = currentUserId === userId;
+  const isEditingModeEnabled = (isEditing && isSelf);
   const resources = await getPortfolioImages(photographer.userId);
+
   return (
-    // hero image
-    // bookmark icon
-    // photographer name
-    // photographer location
-    // photographer bio
-
-    // Details
-    // photographer website
-    // photographer social media
-    // photographer profile image
-
-    // Gear
-
-    // Call to action
-
     <Stack className="w-full">
       {/* Hero Image */}
       <Container fluid h={360} pos="relative" className="w-full" >
@@ -57,28 +49,37 @@ export const ProfilePage = async ({ userId, photographer }: ProfilePageProps) =>
         }) : null}
       </Container>
 
-      <Group>
-        <h1>{photographer.name}</h1>
-        {!isSelf && <FavoriteButton isFavorite={isFavorite} targetUserId={photographer.id} currentUserId={currentUserId} />
-        }
-      </Group>
-      <h2>{photographer.companyName}</h2>
-      <h3>{photographer.location}</h3>
+      {isEditingModeEnabled ? <EditProfile photographer={photographer} /> : (
+        <>
+          <Group>
+            <Avatar src={photographer.avatar} alt={photographer.name} />
+            <Stack gap={0}>
+              <Group>
+                <Heading>{photographer.name}</Heading>
+                {!isSelf && <FavoriteButton isFavorite={isFavorite} targetUserId={photographer.id} currentUserId={currentUserId} />
+                }
+              </Group>
+              <Heading order={3}>{photographer.companyName}</Heading>
+              <Heading order={4}>{photographer.location}</Heading>
+            </Stack>
+            {isSelf && <EditIcon href={`/app/profile/${userId}/edit`} />}
+          </Group>
 
-      <h2>Bio</h2>
-      <p>{photographer.bio}</p>
+          <Heading>Bio</Heading>
+          <p>{photographer.bio}</p>
 
-      <h2>Socials</h2>
-      <Group>
-        {photographer.website && <SocialIconWebsite href={photographer.website} />}
-        {photographer.facebook && <SocialIconFacebook href={photographer.facebook} />}
-        {photographer.instagram && <SocialIconInstagram href={photographer.instagram} />}
-        {photographer.twitter && <SocialIconTwitter href={photographer.twitter} />}
-        {photographer.youtube && <SocialIconYoutube href={photographer.youtube} />}
-        {photographer.tiktok && <SocialIconTiktok href={photographer.tiktok} />}
-        {photographer.vimeo && <SocialIconVimeo href={photographer.vimeo} />}
-      </Group>
-
+          <Heading>Socials</Heading>
+          <Group>
+            {photographer.website && <SocialIconWebsite href={photographer.website} />}
+            {photographer.facebook && <SocialIconFacebook href={photographer.facebook} />}
+            {photographer.instagram && <SocialIconInstagram href={photographer.instagram} />}
+            {photographer.twitter && <SocialIconTwitter href={photographer.twitter} />}
+            {photographer.youtube && <SocialIconYoutube href={photographer.youtube} />}
+            {photographer.tiktok && <SocialIconTiktok href={photographer.tiktok} />}
+            {photographer.vimeo && <SocialIconVimeo href={photographer.vimeo} />}
+          </Group>
+        </>
+      )}
     </Stack>
   );
 };
