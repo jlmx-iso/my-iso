@@ -4,6 +4,8 @@ import '@mantine/core/styles.css';
 import { MantineProvider, ColorSchemeScript, Center } from '@mantine/core';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
+import { SpeedInsights } from "@vercel/speed-insights/next"
+import { Analytics } from "@vercel/analytics/react"
 
 import { TRPCReactProvider } from "~/trpc/react";
 import { Navbar } from "~/app/_server_components";
@@ -43,6 +45,8 @@ export default function RootLayout({
             </TRPCReactProvider>
           </MantineProvider>
         </CSPostHogProvider>
+        <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
