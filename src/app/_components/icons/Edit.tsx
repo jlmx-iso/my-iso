@@ -1,6 +1,6 @@
 import { ActionIcon } from "@mantine/core";
 import { IconPencil } from "@tabler/icons-react";
-import Link from "next/link";
+import Link, { type LinkProps } from "next/link";
 
 type BaseEditIconProps = {
     size?: "xs" | "sm" | "md" | "lg" | "xl" | number;
@@ -10,9 +10,7 @@ type EditIconButtonProps = BaseEditIconProps & {
     onClick?: () => void;
 };
 
-type EditIconLinkProps = BaseEditIconProps & {
-    href: string;
-};
+type EditIconLinkProps = BaseEditIconProps & LinkProps;
 
 type EditIconProps = EditIconButtonProps | EditIconLinkProps;
 

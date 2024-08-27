@@ -1,4 +1,3 @@
-import React from "react";
 import Link from "next/link";
 import { Container, Group } from "@mantine/core";
 import { getServerAuthSession } from "~/server/auth";

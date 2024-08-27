@@ -1,4 +1,3 @@
-import React from "react";
 import { Container, type CSSProperties } from "@mantine/core";
 import Image from "next/image";
 import { type Resource } from "../../_lib";

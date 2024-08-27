@@ -9,7 +9,7 @@ export const photographerRouter = createTRPCRouter({
         where: { id: input.id },
       });
     }),
-  
+
   getByUserId: protectedProcedure
     .input(z.object({ userId: z.string().min(1) }))
     .query(({ ctx, input }) => {
@@ -17,7 +17,7 @@ export const photographerRouter = createTRPCRouter({
         where: { userId: input.userId },
       });
     }),
-  
+
   getByUsername: publicProcedure
     .input(z.object({ username: z.string().min(1) }))
     .query(({ ctx, input }) => {
@@ -25,10 +25,11 @@ export const photographerRouter = createTRPCRouter({
         where: {
           user: {
             handle: input.username,
-        } },
+          }
+        },
       });
     }),
-  
+
   create: protectedProcedure
     .input(z.object({
       userId: z.string().min(1),
@@ -37,13 +38,13 @@ export const photographerRouter = createTRPCRouter({
       location: z.string().min(1),
       avatar: z.string().min(1).optional(),
       bio: z.string().min(1),
-      website: z.string().min(1).optional(),
-      instagram: z.string().min(1).optional(),
-      facebook: z.string().min(1).optional(),
-      twitter: z.string().min(1).optional(),
-      youtube: z.string().min(1).optional(),
-      tiktok: z.string().min(1).optional(),
-      vimeo: z.string().min(1).optional(),
+      website: z.string().min(1).nullable(),
+      instagram: z.string().min(1).nullable(),
+      facebook: z.string().min(1).nullable(),
+      twitter: z.string().min(1).nullable(),
+      youtube: z.string().min(1).nullable(),
+      tiktok: z.string().min(1).nullable(),
+      vimeo: z.string().min(1).nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
 
@@ -51,7 +52,7 @@ export const photographerRouter = createTRPCRouter({
         data: input,
       });
     }),
-  
+
   search: publicProcedure
     .input(z.object({ query: z.string().min(1) }))
     .query(({ ctx, input }) => {
@@ -63,6 +64,31 @@ export const photographerRouter = createTRPCRouter({
             { location: { contains: input.query, mode: "insensitive" } },
           ],
         },
+      });
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      companyName: z.string().min(1),
+      location: z.string().min(1),
+      avatar: z.string().min(1).optional(),
+      bio: z.string().min(1).max(1000).nullable(),
+      website: z.string().min(1).nullable(),
+      instagram: z.string().min(1).nullable(),
+      facebook: z.string().min(1).nullable(),
+      twitter: z.string().min(1).nullable(),
+      youtube: z.string().min(1).nullable(),
+      tiktok: z.string().min(1).nullable(),
+      vimeo: z.string().min(1).nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.photographer.update({
+        where: { id: input.id, userId: ctx.session?.user.id },
+        data: input,
+      }).catch((error) => {
+        throw new Error("Failed to update profile");
       });
     }),
 });

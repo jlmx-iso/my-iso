@@ -12,15 +12,17 @@ import { Heading } from "./Heading";
 import { Avatar } from "./Avatar";
 import { EditIcon } from "../_components/icons/Edit";
 import EditProfile from "../_components/profiles/EditProfile";
+import { Notification } from "../_components/Notification";
 
 // ProfilePageProps should have either userId or photographer
 type ProfilePageProps = {
   userId: string;
   photographer?: Photographer;
   isEditing?: boolean;
+  isSuccess?: boolean;
 };
 
-export const ProfilePage = async ({ userId, photographer, isEditing }: ProfilePageProps) => {
+export const ProfilePage = async ({ userId, photographer, isEditing, isSuccess }: ProfilePageProps) => {
   const session = await getServerSession(authOptions);
   if (!photographer) {
     photographer = await api.photographer.getByUserId.query({ userId }) ?? undefined;
@@ -62,7 +64,7 @@ export const ProfilePage = async ({ userId, photographer, isEditing }: ProfilePa
               <Heading order={3}>{photographer.companyName}</Heading>
               <Heading order={4}>{photographer.location}</Heading>
             </Stack>
-            {isSelf && <EditIcon href={`/app/profile/${userId}/edit`} />}
+            {isSelf && <EditIcon href={{ query: { edit: true } }} />}
           </Group>
 
           <Heading>Bio</Heading>
@@ -78,6 +80,12 @@ export const ProfilePage = async ({ userId, photographer, isEditing }: ProfilePa
             {photographer.tiktok && <SocialIconTiktok href={photographer.tiktok} />}
             {photographer.vimeo && <SocialIconVimeo href={photographer.vimeo} />}
           </Group>
+          {
+            isSuccess && (
+              <Notification type="success">
+                Your profile has been updated successfully!
+              </Notification>
+            )}
         </>
       )}
     </Stack>

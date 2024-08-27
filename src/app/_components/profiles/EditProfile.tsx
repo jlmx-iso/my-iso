@@ -1,52 +1,69 @@
 "use client";
 
 import { useForm } from "@mantine/form";
+import { Button, Group, Space, Textarea, TextInput } from "@mantine/core";
+import { type Photographer } from "@prisma/client";
+
+import Link from "next/link";
+import { redirect } from 'next/navigation';
+
 import { zodResolver } from 'mantine-form-zod-resolver';
 import { z } from "zod";
+
 import { Loader } from "..";
-import { Textarea, TextInput } from "@mantine/core";
-import { type Photographer } from "@prisma/client";
+import { api } from "~/trpc/react";
 
 type EditProfileProps = {
     photographer: Photographer;
 }
 
 const schema = z.object({
-    bio: z.string().max(1000, "Bio must be between 0 and 1000 characters"),
+    bio: z.string().min(1).max(1000, "Bio must be between 0 and 1000 characters"),
     companyName: z.string().max(100, "Company name must be between 0 and 100 characters"),
     website: z.string().url("Website must be a valid URL"),
     location: z.string().max(100),
-    facebook: z.string().url().includes("facebook.com", { message: "Not a valid Facebook URL" }).optional(),
-    instagram: z.string().url().includes("instagram.com", { message: "Not a valid Instagram URL" }).optional(),
-    twitter: z.string().url().includes("x.com", { message: "Not a valid X URL" }).or(z.string().url().includes("twitter.com", { message: "Not a valid X URL" })).optional(),
-    youtube: z.string().url().includes("youtube.com", { message: "Not a valid YouTube URL" }).optional(),
-    vimeo: z.string().url().includes("vimeo.com", { message: "Not a valid Vimeo URL" }).optional(),
-    tiktok: z.string().url().includes("tiktok.com", { message: "Not a valid TikTok URL" }).optional(),
+    facebook: z.string().url().includes("facebook.com", { message: "Not a valid Facebook URL" }).nullable(),
+    instagram: z.string().url().includes("instagram.com", { message: "Not a valid Instagram URL" }).nullable(),
+    twitter: z.string().url().includes("x.com", { message: "Not a valid X URL" }).or(z.string().url().includes("twitter.com", { message: "Not a valid X URL" })).nullable(),
+    youtube: z.string().url().includes("youtube.com", { message: "Not a valid YouTube URL" }).nullable(),
+    vimeo: z.string().url().includes("vimeo.com", { message: "Not a valid Vimeo URL" }).nullable(),
+    tiktok: z.string().url().includes("tiktok.com", { message: "Not a valid TikTok URL" }).nullable(),
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
+    const { isError, error, isLoading, mutate, isSuccess } = api.photographer.update.useMutation();
     const form = useForm({
         mode: "uncontrolled",
         initialValues: {
-            name: photographer?.name,
-            companyName: photographer?.companyName,
-            bio: photographer?.bio,
-            location: photographer?.location,
-            website: photographer?.website,
-            facebook: photographer?.facebook,
-            instagram: photographer?.instagram,
-            twitter: photographer?.twitter,
-            youtube: photographer?.youtube,
-            vimeo: photographer?.vimeo,
-            tiktok: photographer?.tiktok,
+            name: photographer.name,
+            companyName: photographer.companyName,
+            bio: photographer.bio,
+            location: photographer.location,
+            website: photographer.website,
+            facebook: photographer.facebook,
+            instagram: photographer.instagram,
+            twitter: photographer.twitter,
+            youtube: photographer.youtube,
+            vimeo: photographer.vimeo,
+            tiktok: photographer.tiktok,
         },
         validate: zodResolver(schema),
     });
 
     const submitForm = (values: typeof form.values) => {
-        // eslint-disable-next-line no-console
-        console.log(values);
+        mutate({ ...values, id: photographer.id });
     }
+
+    if (isLoading) return <Loader />;
+
+    if (isError) {
+        return <div>Failed to update profile <br />{error.message}</div>
+    }
+
+    if (isSuccess) {
+        return redirect("/app/profile?success=true");
+    }
+
 
     return (
         <form onSubmit={form.onSubmit(submitForm)}>
@@ -121,7 +138,11 @@ export default function EditProfile({ photographer }: EditProfileProps) {
                 key={form.key("tiktok")}
                 {...form.getInputProps("tiktok")}
             />
-            <button type="submit">Submit</button>
+            <Space h="md" />
+            <Group>
+                <Button type="submit">Submit</Button>
+                <Button variant="outline" component={Link} href="/app/profile" replace>Cancel</Button>
+            </Group>
         </form>
     )
 }
