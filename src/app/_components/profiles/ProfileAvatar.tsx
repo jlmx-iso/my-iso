@@ -46,6 +46,8 @@ export default function ProfileAvatar({ isSelf, avatar, name }: AvatarProps) {
                         image: base64File,
                     });
                 } catch (error) {
+                    // TODO: Figure out how to handle error
+                    // eslint-disable-next-line no-console
                     console.error('Error uploading image:', error);
                 } finally {
                     setFiles(null);

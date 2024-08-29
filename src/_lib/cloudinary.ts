@@ -1,5 +1,4 @@
-import { UploadApiErrorResponse, UploadApiResponse, UploadStream, v2 } from "cloudinary";
-import { Cloudinary } from "@cloudinary/url-gen";
+import { type UploadApiErrorResponse, type UploadApiResponse, v2 } from "cloudinary";
 import { env } from "~/env";
 import { logger, Result } from "../_utils";
 
@@ -88,7 +87,7 @@ export const cloudinaryClient = {
     logger.info("Uploading asset to Cloudinary.", { folder });
     try {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      const uploadResult = await new Promise((resolve, reject) => {
+      const uploadResult = await new Promise((resolve) => {
         v2.uploader.upload_stream(
           { folder, resource_type: "image" },
           (error, result) => {

@@ -1,4 +1,4 @@
-import { Container, Stack, Group, ActionIcon } from "@mantine/core";
+import { Container, Stack, Group } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import Image from "next/image";
@@ -9,7 +9,6 @@ import { api } from "~/trpc/server";
 import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../../_components/icons/SocialLink";
 import { FavoriteButton } from "../../_components/profiles/FavoriteButton";
 import { Heading } from "../Heading";
-import { Avatar } from "../Avatar";
 import { EditIcon } from "../../_components/icons/Edit";
 import EditProfile from "../../_components/profiles/EditProfile";
 import { Notification } from "../../_components/Notification";
