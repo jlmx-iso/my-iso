@@ -1,3 +1,6 @@
 export * from "./CreatePost";
+export * from "./Heading";
+export * from "./HeroImage";
 export * from "./NavBar";
-export * from "./ProfilePage";
+export * from "./PageTitle";
+export * from "./profiles/ProfilePage";
