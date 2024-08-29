@@ -1,9 +1,9 @@
 import { api } from "~/trpc/server";
 import { ProfilePage } from "~/app/_server_components";
 
-export default async function Page({ params }: { params: { username: string; }; }) {
-  const { username } = params;
-  const photographer = await api.photographer.getByUsername.query({ username });
+export default async function Page({ params }: { params: { userId: string; }; }) {
+  const { userId } = params;
+  const photographer = await api.photographer.getByUserId.query({ userId });
 
   if (!photographer) {
     return (

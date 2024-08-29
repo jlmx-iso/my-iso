@@ -1,18 +1,19 @@
-import { Container, Stack, Group } from "@mantine/core";
+import { Container, Stack, Group, ActionIcon } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import Image from "next/image";
-import { type CSSProperties } from "react";
+import React, { type CSSProperties } from "react";
 import { getPortfolioImages } from "~/app/_server_utils/";
 import { authOptions } from "~/server/auth";
 import { api } from "~/trpc/server";
-import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../_components/icons/SocialLink";
-import { FavoriteButton } from "../_components/profiles/FavoriteButton";
-import { Heading } from "./Heading";
-import { Avatar } from "./Avatar";
-import { EditIcon } from "../_components/icons/Edit";
-import EditProfile from "../_components/profiles/EditProfile";
-import { Notification } from "../_components/Notification";
+import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../../_components/icons/SocialLink";
+import { FavoriteButton } from "../../_components/profiles/FavoriteButton";
+import { Heading } from "../Heading";
+import { Avatar } from "../Avatar";
+import { EditIcon } from "../../_components/icons/Edit";
+import EditProfile from "../../_components/profiles/EditProfile";
+import { Notification } from "../../_components/Notification";
+import ProfileAvatar from "../../_components/profiles/ProfileAvatar";
 
 // ProfilePageProps should have either userId or photographer
 type ProfilePageProps = {
@@ -38,6 +39,7 @@ export const ProfilePage = async ({ userId, photographer, isEditing, isSuccess }
   const isEditingModeEnabled = (isEditing && isSelf);
   const resources = await getPortfolioImages(photographer.userId);
 
+
   return (
     <Stack className="w-full">
       {/* Hero Image */}
@@ -54,7 +56,7 @@ export const ProfilePage = async ({ userId, photographer, isEditing, isSuccess }
       {isEditingModeEnabled ? <EditProfile photographer={photographer} /> : (
         <>
           <Group>
-            <Avatar src={photographer.avatar} alt={photographer.name} />
+            <ProfileAvatar avatar={photographer.avatar} name={photographer.name} isSelf={isSelf} />
             <Stack gap={0}>
               <Group>
                 <Heading>{photographer.name}</Heading>

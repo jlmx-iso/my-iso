@@ -1,11 +1,14 @@
-import { Avatar as MantineAvatar } from "@mantine/core";
+import { Avatar as MantineAvatar, type AvatarProps as MantineAvatarProps } from "@mantine/core";
 
-type AvatarProps = {
-    alt: string;
+type AvatarProps = MantineAvatarProps & {
+    name?: string;
     src?: string | null;
     size?: "xs" | "sm" | "md" | "lg" | "xl" | number;
 };
 
-export const Avatar = ({ src, alt, size = 120 }: AvatarProps) => {
-    return <MantineAvatar src={src ?? undefined} alt={alt} size={size} />;
+export const Avatar = ({ src, name, size = 120, ...props }: AvatarProps) => {
+    if (!src) {
+        return <MantineAvatar key={name} name={name} alt={name} size={size} color="initials" {...props} />;
+    }
+    return <MantineAvatar key={name} src={src} alt={name} size={size} {...props} />;
 }

@@ -15,8 +15,9 @@ if (typeof window !== 'undefined') {
 
     posthog.init(env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY, {
         api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
-        debug: true,
-        bootstrap: bootstrapData
+        debug: false, // set to true to see debug logs
+        bootstrap: bootstrapData,
+
     })
 }
 

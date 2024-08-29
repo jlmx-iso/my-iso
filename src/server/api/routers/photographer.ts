@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "~/_utils";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
@@ -88,7 +89,50 @@ export const photographerRouter = createTRPCRouter({
         where: { id: input.id, userId: ctx.session?.user.id },
         data: input,
       }).catch((error) => {
+        logger.error("Failed to update profile", { error: error as Error });
         throw new Error("Failed to update profile");
       });
     }),
-});
+
+  uploadProfileImage: protectedProcedure
+    .input(z.object({
+      image: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const buffer = Buffer.from(input.image, "base64");
+
+      const result = await ctx.cloudinaryClient.uploadStream(buffer, ctx.session.user.id).catch(
+        (error) => {
+          logger.error("Failed to upload profile image", { error: error as Error });
+          throw new Error("Failed to upload profile image");
+        }
+      );
+
+      if (result.isErr) {
+        logger.error("Failed to upload profile image", { error: result.error });
+        throw new Error("Failed to upload profile image");
+      }
+
+      logger.info("Uploaded profile image", { url: result.value?.secure_url });
+
+      await ctx.db.photographer.update({
+        where: { userId: ctx.session.user.id },
+        data: {
+          avatar: result.value?.secure_url,
+        },
+      }).catch((error) => {
+        logger.error("Failed to update photographer profile", { error: error as Error });
+        throw new Error("Failed to update profile");
+      });
+
+      return ctx.db.user.update({
+        where: { id: ctx.session.user.id },
+        data: {
+          profilePic: result.value?.secure_url,
+        },
+      }).catch((error) => {
+        logger.error("Failed to update user profile pic", { error: error as Error });
+        throw new Error("Failed to update user profile pic");
+      });
+    }),
+})

@@ -14,6 +14,7 @@ import { ZodError } from "zod";
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
 import { googleMapsClient } from "../_lib";
+import { cloudinaryClient } from "~/_lib";
 
 /**
  * 1. CONTEXT
@@ -34,6 +35,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
     db,
     session,
     googleMapsClient,
+    cloudinaryClient,
     ...opts,
   };
 };

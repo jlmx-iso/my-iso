@@ -6,3 +6,5 @@ export * from "./FeatureTable";
 export * from "./Loader";
 export * from "./PageHeading";
 export * from "./PriceCard";
+export * from "./input";
+export * from "./Modal";
