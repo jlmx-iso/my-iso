@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { Loader } from "..";
 import { api } from "~/trpc/react";
+import { LocationAutocomplete } from "~/app/register/_components";
 
 type EditProfileProps = {
     photographer: Photographer;
@@ -88,7 +89,8 @@ export default function EditProfile({ photographer }: EditProfileProps) {
                 key={form.key("bio")}
                 {...form.getInputProps("bio")}
             />
-            <TextInput
+            <LocationAutocomplete
+                isRequired
                 label="Location"
                 placeholder="Location"
                 required

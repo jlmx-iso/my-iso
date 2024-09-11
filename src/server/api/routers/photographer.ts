@@ -101,7 +101,7 @@ export const photographerRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const buffer = Buffer.from(input.image, "base64");
 
-      const result = await ctx.cloudinaryClient.uploadStream(buffer, ctx.session.user.id).catch(
+      const result = await ctx.cloudinaryClient.uploadStream(buffer, `${ctx.session.user.id}/profile`).catch(
         (error) => {
           logger.error("Failed to upload profile image", { error: error as Error });
           throw new Error("Failed to upload profile image");
