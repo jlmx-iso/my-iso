@@ -171,6 +171,8 @@ model User {
   messageThreads MessageThread[]
   comments       Comment[]
   stripeId       String?         @unique
+  commentLikes   CommentLike[]
+  eventLike      EventLike[]
 }
 
 model Event {
@@ -183,12 +185,15 @@ model Event {
   description    String?
   location       String
   date           DateTime
+  duration       Int          @default(1) // In hours
+  image          String?
   isFulfilled    Boolean      @default(false)
   isDeleted      Boolean      @default(false)
   comments       Comment[]
+  eventLikes     EventLike[]
 }
 
-model Comment {
+model EventLike {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -196,7 +201,30 @@ model Comment {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content   String
+  isDeleted Boolean  @default(false)
+}
+
+model Comment {
+  id           String        @id @default(cuid())
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  eventId      String
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content      String
+  isDeleted    Boolean       @default(false)
+  commentLikes CommentLike[]
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isDeleted Boolean  @default(false)
 }
 
