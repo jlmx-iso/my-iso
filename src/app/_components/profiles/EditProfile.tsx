@@ -1,18 +1,18 @@
 "use client";
 
+import { Button, Group, Space, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { Button, Group, Space, Textarea, TextInput } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
-
+import { zodResolver } from 'mantine-form-zod-resolver';
 import Link from "next/link";
 import { redirect } from 'next/navigation';
-
-import { zodResolver } from 'mantine-form-zod-resolver';
 import { z } from "zod";
 
-import { Loader } from "..";
-import { api } from "~/trpc/react";
+import { Loader } from "../Loader";
+
 import { LocationAutocomplete } from "~/app/register/_components";
+import { api } from "~/trpc/react";
+
 
 type EditProfileProps = {
     photographer: Photographer;
@@ -21,33 +21,33 @@ type EditProfileProps = {
 const schema = z.object({
     bio: z.string().min(1).max(1000, "Bio must be between 0 and 1000 characters"),
     companyName: z.string().max(100, "Company name must be between 0 and 100 characters"),
-    website: z.string().url("Website must be a valid URL"),
-    location: z.string().max(100),
     facebook: z.string().url().includes("facebook.com", { message: "Not a valid Facebook URL" }).nullable(),
     instagram: z.string().url().includes("instagram.com", { message: "Not a valid Instagram URL" }).nullable(),
-    twitter: z.string().url().includes("x.com", { message: "Not a valid X URL" }).or(z.string().url().includes("twitter.com", { message: "Not a valid X URL" })).nullable(),
-    youtube: z.string().url().includes("youtube.com", { message: "Not a valid YouTube URL" }).nullable(),
-    vimeo: z.string().url().includes("vimeo.com", { message: "Not a valid Vimeo URL" }).nullable(),
+    location: z.string().max(100),
     tiktok: z.string().url().includes("tiktok.com", { message: "Not a valid TikTok URL" }).nullable(),
+    twitter: z.string().url().includes("x.com", { message: "Not a valid X URL" }).or(z.string().url().includes("twitter.com", { message: "Not a valid X URL" })).nullable(),
+    vimeo: z.string().url().includes("vimeo.com", { message: "Not a valid Vimeo URL" }).nullable(),
+    website: z.string().url("Website must be a valid URL"),
+    youtube: z.string().url().includes("youtube.com", { message: "Not a valid YouTube URL" }).nullable(),
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
     const { isError, error, isLoading, mutate, isSuccess } = api.photographer.update.useMutation();
     const form = useForm({
-        mode: "uncontrolled",
         initialValues: {
-            name: photographer.name,
-            companyName: photographer.companyName,
             bio: photographer.bio,
-            location: photographer.location,
-            website: photographer.website,
+            companyName: photographer.companyName,
             facebook: photographer.facebook,
             instagram: photographer.instagram,
-            twitter: photographer.twitter,
-            youtube: photographer.youtube,
-            vimeo: photographer.vimeo,
+            location: photographer.location,
+            name: photographer.name,
             tiktok: photographer.tiktok,
+            twitter: photographer.twitter,
+            vimeo: photographer.vimeo,
+            website: photographer.website,
+            youtube: photographer.youtube,
         },
+        mode: "uncontrolled",
         validate: zodResolver(schema),
     });
 

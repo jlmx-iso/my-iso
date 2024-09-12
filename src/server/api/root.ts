@@ -1,11 +1,13 @@
-import { createTRPCRouter } from "~/server/api/trpc";
-import { photographerRouter } from "./routers/photographer";
+
+import { authRouter } from "./routers/auth";
 import { eventRouter } from "./routers/event";
 import { favoriteRouter } from "./routers/favorite";
-import { messageRouter } from "./routers/message";
-import { authRouter } from "./routers/auth";
-import { userRouter } from "./routers/user";
 import { googleRouter } from "./routers/google";
+import { messageRouter } from "./routers/message";
+import { photographerRouter } from "./routers/photographer";
+import { userRouter } from "./routers/user";
+
+import { createTRPCRouter } from "~/server/api/trpc";
 
 /**
  * This is the primary router for your server.

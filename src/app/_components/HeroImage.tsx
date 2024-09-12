@@ -1,5 +1,6 @@
-import { Container, type CSSProperties } from "@mantine/core";
+import { type CSSProperties, Container } from "@mantine/core";
 import Image from "next/image";
+
 import { type Resource } from "../../_lib";
 
 export const HeroImage = ({ imageResources }: { imageResources: Resource[] }) => {

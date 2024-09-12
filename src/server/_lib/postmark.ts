@@ -1,4 +1,5 @@
 import { Client } from "postmark";
+
 import { Result } from "~/_utils";
 import { env } from "~/env";
 
@@ -16,9 +17,9 @@ export const sendEmail = async ({ email, subject, html }: SendEmail): Promise<Re
     try {
         const response = await client.sendEmail({
             From: env.EMAIL_FROM,
-            To: email,
-            Subject: subject,
             HtmlBody: html,
+            Subject: subject,
+            To: email,
         });
         if (response.ErrorCode) {
             const error = new Error(response.Message) as SendEmailError;

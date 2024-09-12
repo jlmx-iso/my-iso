@@ -1,4 +1,4 @@
-import {type DefaultSession} from "next-auth"
+import { type DefaultSession } from "next-auth"
 
 
 /**

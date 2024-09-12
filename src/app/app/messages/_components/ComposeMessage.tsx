@@ -2,6 +2,7 @@
 
 import { TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
+
 import { api } from "~/trpc/react";
 
 export default function ComposeMessage({ userId, threadId }: { userId: string, threadId: string; }) {
@@ -21,7 +22,7 @@ export default function ComposeMessage({ userId, threadId }: { userId: string, t
 
   return (
   <form onSubmit={form.onSubmit((values) => {
-    createMessageMutation.mutate({ threadId, content: values.text, userId });
+    createMessageMutation.mutate({ content: values.text, threadId, userId });
     values.text = "";
   })}>
     <TextInput aria-label="Create a new message" placeholder="Create a new message..." {...form.getInputProps("text")} disabled={createMessageMutation.isLoading} />

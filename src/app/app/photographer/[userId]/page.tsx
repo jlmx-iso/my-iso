@@ -1,5 +1,5 @@
+import { ProfilePage } from "~/app/_components/profiles/ProfilePage";
 import { api } from "~/trpc/server";
-import { ProfilePage } from "~/app/_server_components";
 
 export default async function Page({ params }: { params: { userId: string; }; }) {
   const { userId } = params;

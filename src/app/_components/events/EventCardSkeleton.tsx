@@ -1,4 +1,5 @@
 import { Skeleton } from "@mantine/core";
+
 import UserBadgeSkeleton from "../UserBadgeSkeleton";
 
 export default function EventCardSkeleton() {

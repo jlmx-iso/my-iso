@@ -2,6 +2,7 @@
 import { ActionIcon } from "@mantine/core";
 import { IconBookmark, IconBookmarkFilled } from "@tabler/icons-react";
 import { useState } from "react";
+
 import { api } from "~/trpc/react";
 
 
@@ -17,14 +18,14 @@ export const FavoriteButton = ({ isFavorite, currentUserId, targetUserId }: Favo
   const addFavorite = api.user.addFavorite.useMutation();
   const handleClick = async () => {
     if (isExistingFavorite) {
-      removeFavorite.mutate({ userId: currentUserId, photographerId: targetUserId });
+      removeFavorite.mutate({ photographerId: targetUserId, userId: currentUserId });
       if (removeFavorite.error) {
         return;
       }
       setIsExistingFavorite(false);
       return;
     }
-    addFavorite.mutate({ userId: currentUserId, photographerId: targetUserId });
+    addFavorite.mutate({ photographerId: targetUserId, userId: currentUserId });
     if (addFavorite.error) {
       return;
     }

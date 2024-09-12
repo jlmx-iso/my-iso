@@ -1,7 +1,8 @@
 import { Container, Group, Space, Title } from "@mantine/core";
-import PriceCard from "../_components/PriceCard";
-import PageHeading from "../_components/PageHeading";
+
 import FeatureTable from "../_components/FeatureTable";
+import PageHeading from "../_components/PageHeading";
+import PriceCard from "../_components/PriceCard";
 
 export default function Page() {
   return (
@@ -14,7 +15,7 @@ export default function Page() {
         align="center"
         gap="lg"
         justify="center"
-        style={{ marginTop: "2rem", marginBottom: "2rem" }}
+        style={{ marginBottom: "2rem", marginTop: "2rem" }}
         w="100%"
       >
         <PriceCard
@@ -40,12 +41,12 @@ export default function Page() {
         <FeatureTable
           features={[
             {
-              title: "Basic",
               items: ["1 user", "1 project", "1000 requests"],
+              title: "Basic",
             },
             {
-              title: "Pro",
               items: ["5 users", "10 projects", "5000 requests"],
+              title: "Pro",
             },
           ]}
         />

@@ -1,7 +1,7 @@
 "use client";
 
+import { ActionIcon, type ActionIconProps, Button, type ButtonProps, Modal as MantineModal, type ModalProps as MantineModalProps } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { ActionIcon, type ActionIconProps, Button, Modal as MantineModal, type ModalProps as MantineModalProps, type ButtonProps } from '@mantine/core';
 
 type ModalProps = Partial<MantineModalProps> & {
     title: string;

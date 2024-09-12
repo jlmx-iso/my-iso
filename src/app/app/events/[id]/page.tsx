@@ -1,6 +1,7 @@
 "use client";
+import { Loader, Stack } from "@mantine/core";
 import { useState } from 'react';
-import { Stack, Loader } from "@mantine/core";
+
 import EventCard from "~/app/_components/events/EventCard";
 import EventComment from "~/app/_components/events/EventComment";
 import CommentsRefetchContext from "~/context/CommentsRefetchContext";
@@ -35,7 +36,7 @@ export default function Page({ params }: { params: { id: string; }; }) {
     }
 
     return (
-        <CommentsRefetchContext.Provider value={{ refetchComments: handleRefetchComments, refetchCommentCount: handleRefetchCommentCount }}>
+        <CommentsRefetchContext.Provider value={{ refetchCommentCount: handleRefetchCommentCount, refetchComments: handleRefetchComments }}>
             <Stack gap="sm">
                 <EventCard eventId={params.id} isEventPage={true} initialCommentCount={commentCount} />
                 {comments?.map((comment) => (

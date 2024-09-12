@@ -4,15 +4,16 @@ import { Box, Button, Image, SimpleGrid } from '@mantine/core';
 import { type FileWithPath } from '@mantine/dropzone';
 import { useHover } from '@mantine/hooks';
 import { IconUpload } from '@tabler/icons-react';
-
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { Modal, Dropzone } from '~/app/_components';
+import { Avatar } from '../Avatar';
+
+import { Dropzone } from '~/app/_components/input/Dropzone';
+import { Modal } from '~/app/_components/Modal';
 import colors from '~/app/theme/colors';
 import { api } from '~/trpc/react';
 
-import { Avatar } from '../../_server_components/Avatar';
 
 type AvatarProps = {
     isSelf: boolean;
@@ -73,19 +74,19 @@ export default function ProfileAvatar({ isSelf, avatar, name }: AvatarProps) {
                     isIconModal={true}
                     actionIconProps={{
                         color: colors.gray![0],
-                        size: "xl",
-                        variant: "subtle",
+                        h: 120,
+                        left: "50%",
                         opacity: hovered ? 1 : 0,
                         pos: "absolute",
-                        top: "50%",
-                        left: "50%",
-                        w: 120,
-                        h: 120,
                         radius: "50%",
+                        size: "xl",
                         style: {
                             transform: "translate(-50%, -50%)",
                             zIndex: 9999,
                         },
+                        top: "50%",
+                        variant: "subtle",
+                        w: 120,
                     }}
                     icon={<IconUpload />}>
                     <Dropzone multiple={false} loading={uploading} handleFileChange={handleFileChange} />

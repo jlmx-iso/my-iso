@@ -14,12 +14,12 @@ export const Notification = ({ children, type, autoDismiss = 5000 }: Notificatio
     const [opacity, setOpacity] = useState(1);
 
     const notificationStyle: MantineStyleProp = {
-        position: "fixed",
         bottom: "1rem",
         left,
-        zIndex: 1000,
-        transition: "left 5s, opacity 1s",
         opacity,
+        position: "fixed",
+        transition: "left 5s, opacity 1s",
+        zIndex: 1000,
     };
 
     const handleClose = () => {

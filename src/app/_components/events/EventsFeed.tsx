@@ -1,7 +1,10 @@
-import { api } from "~/trpc/server";
-import EventCard from "./EventCard";
-import { getServerAuthSession } from "~/server/auth";
 import { redirect } from 'next/navigation'
+
+import EventCard from "./EventCard";
+
+import { getServerAuthSession } from "~/server/auth";
+import { api } from "~/trpc/server";
+
 
 const EVENTS_LIMIT = 10;
 
@@ -21,8 +24,8 @@ export default async function EventsFeed() {
         return [photographer.location];
     });
     const events = await api.event.getRecentByLocation.query({
-        locations,
         limit: EVENTS_LIMIT,
+        locations,
         startAt: 0
     });
 

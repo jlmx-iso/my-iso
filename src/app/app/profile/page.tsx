@@ -1,6 +1,9 @@
 import { getServerSession } from "next-auth";
-import { ProfilePage } from "../../_server_components";
+
+import { ProfilePage } from "../../_components/profiles/ProfilePage";
+
 import { authOptions } from "~/server/auth";
+
 
 
 export default async function Page({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {

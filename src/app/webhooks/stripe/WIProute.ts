@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import Stripe from "stripe";
+
 import { logger } from "~/_utils";
 import { env } from "~/env";
 import { db } from "~/server/db";
@@ -27,12 +28,12 @@ const handler = async (req: NextRequest) => {
   let customerInDb;
   try {
     customerInDb = await db.user.update({
+      data: {
+        stripeId: customer.id,
+      },
       where: {
         email: customerEmail,
 
-      },
-      data: {
-        stripeId: customer.id,
       },
     });
   } catch (err: unknown) {

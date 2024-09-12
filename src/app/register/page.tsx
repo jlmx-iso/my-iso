@@ -1,12 +1,16 @@
 "use client";
-import { type MouseEventHandler, useState } from "react";
-import { TextInput, Button, Box, Group, Stepper, Grid, Stack, Space } from "@mantine/core";
+import { Box, Button, Grid, Group, Space, Stack, Stepper, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { IconBrandFacebook, IconBrandGoogle } from "@tabler/icons-react";
 import Link from "next/link";
-import { api } from "~/trpc/react";
+import { type MouseEventHandler, useState } from "react";
+
+
 import { LocationAutocomplete } from "./_components";
-import { ErrorAlert, Loader } from "../_components";
+import { ErrorAlert } from "../_components/Alerts";
+import { Loader } from "../_components/Loader";
+
+import { api } from "~/trpc/react";
 
 export default function Page() {
   const [active, setActive] = useState(0);
@@ -31,60 +35,60 @@ export default function Page() {
   };
   const form = useForm({
     initialValues: {
-      firstName: "",
-      lastName: "",
+      companyName: "",
       email: "",
+      facebook: "",
+      firstName: "",
+      instagram: "",
+      lastName: "",
+      location: "",
       phoneNumber: "",
       provider: "email",
-      companyName: "",
-      website: "",
-      twitter: "",
-      instagram: "",
-      facebook: "",
-      youtube: "",
       tiktok: "",
+      twitter: "",
       vimeo: "",
-      location: "",
+      website: "",
+      youtube: "",
     },
 
     validate: {
-      firstName: (value) => value.length > 0 ? null : "First name is required",
-      lastName: (value) => value.length > 0 ? null : "Last name is required",
+      companyName: (value) => value.length > 0 ? null : "Business name is required",
       email: (value) => {
         if (value.length === 0) return "Email is required";
         // regex to confirm valid email
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Invalid email";
         return null;
       },
-      phoneNumber: (value) => {
-        // regex to confirm valid phone number
-        if (!/^\d{10}$/.test(value)) return "Invalid phone number";
+      facebook: (value) => {
+        // regex to confirm valid facebook includes "facebook.com"
+        if (value.length && !/^(http|https):\/\/(www.)?facebook.com\/[^ "]+$/.test(value)) return "Invalid Facebook URL";
       },
-      location: (value) => value.length > 0 ? null : "Location is required",
-      companyName: (value) => value.length > 0 ? null : "Business name is required",
-      website: (value) => {
-        // regex to confirm valid website
-        if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value)) return "Invalid website";
-      },
-      twitter: (value) => {
-        // regex to confirm valid twitter includes "twitter.com" or "x.com"
-        if (value.length && (!/^(http|https):\/\/(www.)?twitter.com\/[^ "]+$/.test(value) || !/^(http|https):\/\/(www.)?x.com\/[^ "]+$/.test(value))) return "Invalid Twitter URL";
-      },
+      firstName: (value) => value.length > 0 ? null : "First name is required",
       instagram: (value) => {
         // regex to confirm valid instagram includes "instagram.com" or "x.com"
         if (value.length && !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)) return "Invalid Instagram URL";
       },
-      facebook: (value) => {
-        // regex to confirm valid facebook includes "facebook.com"
-        if (value.length && !/^(http|https):\/\/(www.)?facebook.com\/[^ "]+$/.test(value)) return "Invalid Facebook URL";
+      lastName: (value) => value.length > 0 ? null : "Last name is required",
+      location: (value) => value.length > 0 ? null : "Location is required",
+      phoneNumber: (value) => {
+        // regex to confirm valid phone number
+        if (!/^\d{10}$/.test(value)) return "Invalid phone number";
       },
       tiktok: (value) => {
         // regex to confirm valid tiktok includes "tiktok.com"
         if (value.length && !/^(http|https):\/\/(www.)?tiktok.com\/[^ "]+$/.test(value)) return "Invalid TikTok URL";
       },
+      twitter: (value) => {
+        // regex to confirm valid twitter includes "twitter.com" or "x.com"
+        if (value.length && (!/^(http|https):\/\/(www.)?twitter.com\/[^ "]+$/.test(value) || !/^(http|https):\/\/(www.)?x.com\/[^ "]+$/.test(value))) return "Invalid Twitter URL";
+      },
       vimeo: (value) => {
         // regex to confirm valid vimeo includes "vimeo.com"
         if (value.length && !/^(http|https):\/\/(www.)?vimeo.com\/[^ "]+$/.test(value)) return "Invalid Vimeo URL";
+      },
+      website: (value) => {
+        // regex to confirm valid website
+        if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value)) return "Invalid website";
       },
       youtube: (value) => {
         // regex to confirm valid youtube includes "youtube.com"
@@ -99,20 +103,20 @@ export default function Page() {
       return;
     } else {
       submitRegistration({
+        companyName: form.values.companyName,
         email: form.values.email,
+        facebook: form.values.facebook,
         firstName: form.values.firstName,
+        instagram: form.values.instagram,
         lastName: form.values.lastName,
+        location: form.values.location,
         phone: form.values.phoneNumber,
         provider: form.values.provider as "email" | "google" | "facebook",
-        companyName: form.values.companyName,
-        location: form.values.location,
-        website: form.values.website,
-        twitter: form.values.twitter,
-        instagram: form.values.instagram,
-        facebook: form.values.facebook,
-        youtube: form.values.youtube,
         tiktok: form.values.tiktok,
+        twitter: form.values.twitter,
         vimeo: form.values.vimeo,
+        website: form.values.website,
+        youtube: form.values.youtube,
       });
     }
   };

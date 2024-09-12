@@ -1,8 +1,9 @@
 // app/providers.js
 'use client'
+import cookie from 'cookie-light'
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
-import cookie from 'cookie-light'
+
 import { env } from '~/env'
 
 if (typeof window !== 'undefined') {
@@ -15,8 +16,9 @@ if (typeof window !== 'undefined') {
 
     posthog.init(env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY, {
         api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
-        debug: false, // set to true to see debug logs
-        bootstrap: bootstrapData,
+        // set to true to see debug logs
+bootstrap: bootstrapData, 
+        debug: false,
 
     })
 }

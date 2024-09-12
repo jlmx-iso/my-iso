@@ -2,10 +2,11 @@
 
 import { Stack, Textarea } from "@mantine/core";
 import { useForm, zodResolver } from "@mantine/form";
+import { getHotkeyHandler } from "@mantine/hooks";
 import { z } from "zod";
+
 import { Modal } from "../Modal";
 import CreateEventForm from "./CreateEventForm";
-import { getHotkeyHandler } from "@mantine/hooks";
 
 const MAX_TITLE_LENGTH = 140;
 
@@ -27,7 +28,7 @@ export default function CreateEventFormSimple() {
             <Textarea onKeyDown={getHotkeyHandler([
                 ["mod+Enter", () => { return }],
             ])} aria-label="Create an Event" placeholder="Create an event..." autosize minRows={4} maxRows={4} maxLength={MAX_TITLE_LENGTH + 1} required key={form.key("title")} {...form.getInputProps("title")} />
-            <Modal onClose={form.reset} title="Create Event" buttonLabel="Create" isIconModal={false} buttonProps={{ disabled: !form.values.title.length, pos: "absolute", right: "0.5em", bottom: "0.5em" }}>
+            <Modal onClose={form.reset} title="Create Event" buttonLabel="Create" isIconModal={false} buttonProps={{ bottom: "0.5em", disabled: !form.values.title.length, pos: "absolute", right: "0.5em" }}>
                 <CreateEventForm title={form.values.title} />
             </Modal>
         </Stack >

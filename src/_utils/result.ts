@@ -7,11 +7,11 @@ export type Result<TOk = unknown, TErr = Error> = OkResult<TOk> | ErrResult<TErr
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Result {
   export function ok<T>(value: T): OkResult<T> {
-    return { value, isOk: true, isErr: false };
+    return { isErr: false, isOk: true, value };
   }
 
   export function err<T>(error: T): ErrResult<T> {
-    return { error, isOk: false, isErr: true };
+    return { error, isErr: true, isOk: false };
   }
 }
 

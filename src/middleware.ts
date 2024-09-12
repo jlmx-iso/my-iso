@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { withAuth } from "next-auth/middleware";
+
 import { DISTINCT_ID_COOKIE_NAME, FeatureFlags, type FlagsMatcher, getFeatureFlagVariant } from "~/app/_lib";
 
 const flagsByPath: FlagsMatcher = {

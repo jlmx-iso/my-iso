@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
 import { Autocomplete, type AutocompleteProps, useCombobox } from '@mantine/core';
-import { api } from '~/trpc/react';
+import { useEffect, useMemo, useState } from 'react';
+
 import { debounce } from '~/_utils';
+import { api } from '~/trpc/react';
 
 type LocationAutocompleteProps = AutocompleteProps & {
     label: string;
