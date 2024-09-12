@@ -10,10 +10,11 @@ import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
+import AppShell from "./_components/AppShell";
+import { MobileNav, Navbar } from "./_components/NavBar";
 import { CSPostHogProvider } from './providers';
 import theme from "./theme";
 
-import { Navbar } from "~/app/_components/NavBar";
 import { TRPCReactProvider } from "~/trpc/react";
 
 
@@ -42,12 +43,11 @@ export default function RootLayout({
         <CSPostHogProvider>
           <MantineProvider theme={theme}>
             <TRPCReactProvider cookies={cookies().toString()}>
-              <header>
-                <Navbar />
-              </header>
-              <Center>
-                {children}
-              </Center>
+              <AppShell navbar={<Navbar />} mobileNav={<MobileNav />}>
+                <Center py={60}>
+                  {children}
+                </Center>
+              </AppShell>
             </TRPCReactProvider>
           </MantineProvider>
         </CSPostHogProvider>
