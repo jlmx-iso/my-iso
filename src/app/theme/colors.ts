@@ -24,7 +24,8 @@ const colors: Partial<MantineThemeColors> = {
         "#c43d1f",
         "#af351a",
         "#9a2a13"
-    ], // default is 3
+    ],
+    // default is 3
     purple: [
         "#f2f1f8",
         "#e0dfeb",
@@ -36,7 +37,8 @@ const colors: Partial<MantineThemeColors> = {
         "#514b93",
         "#474384",
         "#3c3975"
-    ], // default is 9
+    ],
+    // default is 9
     tan: [
         "#fff5e4",
         "#f1dbb9",
@@ -48,7 +50,8 @@ const colors: Partial<MantineThemeColors> = {
         "#c3821e",
         "#ae7317",
         "#986209"
-    ], // default is 3
+    ],
+    // default is 3
     teal: [
         "#e6fcf9",
         "#d9f1ef",
@@ -60,6 +63,18 @@ const colors: Partial<MantineThemeColors> = {
         "#449c93",
         "#368b83",
         "#1f7972"
+    ],
+    white: [
+        "#ffffff",
+        "#f9f9f9",
+        "#f2f2f2",
+        "#ebebeb",
+        "#e4e4e4",
+        "#dcdcdc",
+        "#d5d5d5",
+        "#cecece",
+        "#c7c7c7",
+        "#c0c0c0"
     ], // default is 3
 }
 

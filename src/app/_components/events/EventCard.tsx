@@ -81,7 +81,7 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
                                 e.preventDefault();
                                 handleCommentButtonClick()
                             }}
-                            style={{ zIndex: 9999 }}
+                            style={{ zIndex: 9 }}
                         >
                             <IconMessageCircle size="2em" />{numComments > 0 && ` ${numComments}`}
                         </ActionIcon>
