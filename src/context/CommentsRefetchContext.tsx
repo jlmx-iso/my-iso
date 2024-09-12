@@ -6,8 +6,8 @@ type CommentsRefetchContextType = {
 };
 
 const CommentsRefetchContext = createContext<CommentsRefetchContextType>({
-    refetchComments: () => { return; },
     refetchCommentCount: () => { return; },
+    refetchComments: () => { return; },
 });
 
 export const useCommentsRefetch = () => useContext(CommentsRefetchContext);

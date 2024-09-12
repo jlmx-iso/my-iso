@@ -1,7 +1,8 @@
 import { type User } from "@prisma/client";
-import { db } from "~/server/db";
-import { logger, Result } from "~/_utils";
+
 import { UserVerificationErrors } from "~/_types/errors";
+import { Result, logger } from "~/_utils";
+import { db } from "~/server/db";
 
 
 type CreateUserInput = {
@@ -42,31 +43,31 @@ export const createUser = async (input: CreateUserInput): Promise<Result<User>> 
     }
     const user = await db.user.create({
         data: {
+            accounts: {
+                create: [
+                    {
+                        provider: input.provider,
+                        providerAccountId: input.email,
+                        type: "email",
+                    }
+                ],
+            },
             email: input.email,
             firstName: input.firstName,
             lastName: input.lastName,
             phone: input.phone,
-            accounts: {
-                create: [
-                    {
-                        type: "email",
-                        provider: input.provider,
-                        providerAccountId: input.email,
-                    }
-                ],
-            },
             photographer: {
                 create: {
-                    name: input.firstName + " " + input.lastName,
                     companyName: input.companyName,
-                    location: input.location,
-                    website: input.website,
-                    twitter: input.twitter,
-                    instagram: input.instagram,
                     facebook: input.facebook,
-                    youtube: input.youtube,
+                    instagram: input.instagram,
+                    location: input.location,
+                    name: input.firstName + " " + input.lastName,
                     tiktok: input.tiktok,
+                    twitter: input.twitter,
                     vimeo: input.vimeo,
+                    website: input.website,
+                    youtube: input.youtube,
                 }
             },
         },
@@ -114,11 +115,11 @@ export const verifyUserEmail = async (token: string): Promise<Result<User["id"]>
             return Result.err(new Error(UserVerificationErrors.USER_ALREADY_VERIFIED));
         }
         user = await db.user.update({
-            where: {
-                id: user.id,
-            },
             data: {
                 emailVerified: new Date(),
+            },
+            where: {
+                id: user.id,
             },
         });
         return Result.ok(user.id);

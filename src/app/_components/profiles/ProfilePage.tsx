@@ -1,18 +1,21 @@
-import { Container, Stack, Group } from "@mantine/core";
+import { Container, Group, Stack } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
-import { getServerSession } from "next-auth";
 import Image from "next/image";
+import { getServerSession } from "next-auth";
 import React, { type CSSProperties } from "react";
+
+
+import { FavoriteButton } from "./FavoriteButton";
+import { Heading } from "../Heading";
+import EditProfile from "./EditProfile";
+import { EditIcon } from "../icons/Edit";
+import { Notification } from "../Notification";
+import ProfileAvatar from "./ProfileAvatar";
+import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../icons/SocialLink";
+
 import { getPortfolioImages } from "~/app/_server_utils/";
 import { authOptions } from "~/server/auth";
 import { api } from "~/trpc/server";
-import { SocialIconFacebook, SocialIconInstagram, SocialIconTiktok, SocialIconTwitter, SocialIconVimeo, SocialIconWebsite, SocialIconYoutube } from "../../_components/icons/SocialLink";
-import { FavoriteButton } from "../../_components/profiles/FavoriteButton";
-import { Heading } from "../Heading";
-import { EditIcon } from "../../_components/icons/Edit";
-import EditProfile from "../../_components/profiles/EditProfile";
-import { Notification } from "../../_components/Notification";
-import ProfileAvatar from "../../_components/profiles/ProfileAvatar";
 
 // ProfilePageProps should have either userId or photographer
 type ProfilePageProps = {

@@ -1,6 +1,9 @@
 import { type UploadApiErrorResponse, type UploadApiResponse, v2 } from "cloudinary";
+
+import { Result, logger } from "../_utils";
+
 import { env } from "~/env";
-import { logger, Result } from "../_utils";
+
 
 export type Resource = {
   public_id: string;
@@ -25,30 +28,14 @@ export type Resource = {
 };
 
 v2.config({
-  secure: true,
-  cloud_name: env.CLOUDINARY_CLOUD_NAME,
   api_key: env.CLOUDINARY_API_KEY,
   api_secret: env.CLOUDINARY_API_SECRET,
+  cloud_name: env.CLOUDINARY_CLOUD_NAME,
+  secure: true,
 });
 
 
 export const cloudinaryClient = {
-  getAssetInfo: async (publicId: string) => {
-
-    // Return colors in the response
-    const options = {
-      colors: true,
-    };
-
-    try {
-      // Get details about the asset
-      const result = await v2.api.resource(publicId, options) as { secure_url: string };
-      return result;
-    } catch (error) {
-      logger.error("An error occurred while fetching asset info.", { publicId, error });
-    }
-  },
-
   createImageTag: (publicId: string) => {
 
     // Create an image tag with transformations applied to the src URL
@@ -64,18 +51,34 @@ export const cloudinaryClient = {
     return imageTag;
   },
 
+  getAssetInfo: async (publicId: string) => {
+
+    // Return colors in the response
+    const options = {
+      colors: true,
+    };
+
+    try {
+      // Get details about the asset
+      const result = await v2.api.resource(publicId, options) as { secure_url: string };
+      return result;
+    } catch (error) {
+      logger.error("An error occurred while fetching asset info.", { error, publicId });
+    }
+  },
+
   getAssetsByPrefix: async (prefix: string): Promise<Result<{ resources: Resource[]; }>> => {
     try {
       // Get details about the asset
       const result = await v2.api.resources({
-        type: "upload",
-        prefix: prefix,
         max_results: 5,
+        prefix: prefix,
+        type: "upload",
       }) as { resources: Resource[] };
       logger.info("Fetched assets from Cloudinary.", { prefix });
       return Result.ok(result);
     } catch (error) {
-      logger.warn("An error occurred while fetching assets.", { prefix, error });
+      logger.warn("An error occurred while fetching assets.", { error, prefix });
       if (error instanceof Error) {
         return Result.err(error);
       }
@@ -97,7 +100,7 @@ export const cloudinaryClient = {
       }) as UploadApiResponse | undefined;
       return Result.ok(uploadResult);
     } catch (error) {
-      logger.error("An error occurred while uploading asset to Cloudinary.", { folder, error });
+      logger.error("An error occurred while uploading asset to Cloudinary.", { error, folder });
       return Result.err(error as UploadApiErrorResponse);
     }
   }

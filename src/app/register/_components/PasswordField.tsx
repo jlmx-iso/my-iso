@@ -1,19 +1,19 @@
+import { Box, PasswordInput, type PasswordInputProps, Popover, Progress, Text, rem } from '@mantine/core';
+import { IconCheck, IconX } from '@tabler/icons-react';
 import { useState } from 'react';
-import { IconX, IconCheck } from '@tabler/icons-react';
-import { PasswordInput, Progress, Text, Popover, Box, rem, type PasswordInputProps } from '@mantine/core';
 
 function PasswordRequirement({ meets, label }: { meets: boolean; label: string }) {
   return (
     <Text
       c={meets ? 'teal' : 'red'}
-      style={{ display: 'flex', alignItems: 'center' }}
+      style={{ alignItems: 'center', display: 'flex' }}
       mt={7}
       size="sm"
     >
       {meets ? (
-        <IconCheck style={{ width: rem(14), height: rem(14) }} />
+        <IconCheck style={{ height: rem(14), width: rem(14) }} />
       ) : (
-        <IconX style={{ width: rem(14), height: rem(14) }} />
+        <IconX style={{ height: rem(14), width: rem(14) }} />
       )}{' '}
       <Box ml={10}>{label}</Box>
     </Text>
@@ -21,10 +21,10 @@ function PasswordRequirement({ meets, label }: { meets: boolean; label: string }
 }
 
 const requirements = [
-  { re: /[0-9]/, label: 'Includes number' },
-  { re: /[a-z]/, label: 'Includes lowercase letter' },
-  { re: /[A-Z]/, label: 'Includes uppercase letter' },
-  { re: /[$&+,:;=?@#|'<>.^*()%!-]/, label: 'Includes special symbol' },
+  { label: 'Includes number', re: /[0-9]/ },
+  { label: 'Includes lowercase letter', re: /[a-z]/ },
+  { label: 'Includes uppercase letter', re: /[A-Z]/ },
+  { label: 'Includes special symbol', re: /[$&+,:;=?@#|'<>.^*()%!-]/ },
 ];
 
 function getStrength(password: string) {

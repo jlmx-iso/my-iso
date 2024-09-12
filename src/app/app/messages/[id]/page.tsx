@@ -1,9 +1,11 @@
-import PageHeading from "~/app/_components/PageHeading";
-import { api } from "~/trpc/server";
-import { getServerAuthSession } from "~/server/auth";
 import ComposeMessage from "../_components/ComposeMessage";
 import MessageListener from "../_components/MessageListener";
 import MessageTile from "../_components/MessageTile";
+
+import PageHeading from "~/app/_components/PageHeading";
+import { getServerAuthSession } from "~/server/auth";
+import { api } from "~/trpc/server";
+
 
 export default async function Page({ params }: { params: { id: string; }; }) {
   const session = await getServerAuthSession();

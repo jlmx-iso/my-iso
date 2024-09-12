@@ -1,13 +1,16 @@
 "use client";
 
-import { Button, FileInput, NumberInput, Textarea, TextInput } from "@mantine/core";
-import { useForm, zodResolver } from "@mantine/form";
+import { Button, FileInput, NumberInput, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
-import { z } from "zod";
-import { LocationAutocomplete } from "~/app/register/_components";
+import { useForm, zodResolver } from "@mantine/form";
 import { IconUpload } from "@tabler/icons-react";
-import { api } from "~/trpc/react";
+import { z } from "zod";
+
 import { Loader } from "../Loader";
+
+import { LocationAutocomplete } from "~/app/register/_components";
+import { api } from "~/trpc/react";
+
 
 type CreateEventProps = {
     title?: string;
@@ -16,25 +19,27 @@ type CreateEventProps = {
 const MAX_DESCRIPTION_LENGTH = 1000;
 
 const schema = z.object({
-    title: z.string().max(140, "Title is required an must be less than 140 characters"),
-    description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
     date: z.date().min(new Date(), "Date must be in the future"),
+    description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
     duration: z.number().min(1, "Duration must be at least 1 hour"),
-    location: z.string().min(1, "Location is required"),
     // image: z.union([z.instanceof(File), z.string()]).optional(),
-    image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
+image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
+    
+location: z.string().min(1, "Location is required"),
+    
+    title: z.string().max(140, "Title is required an must be less than 140 characters"),
 });
 
 export default function CreateEventForm({ title }: CreateEventProps) {
     const { mutateAsync, mutate, isLoading, isError, isSuccess } = api.event.create.useMutation();
     const form = useForm({
         initialValues: {
-            title: title ?? "",
-            description: "",
             date: new Date(),
+            description: "",
             duration: 1,
-            location: "",
             image: undefined,
+            location: "",
+            title: title ?? "",
         },
         validate: zodResolver(schema)
     });

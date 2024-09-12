@@ -1,6 +1,8 @@
-import { logger, Result } from "~/_utils";
-import { db } from "~/server/db";
 import { generateVerificationCode } from "../_utils";
+
+import { Result, logger } from "~/_utils";
+import { db } from "~/server/db";
+
 
 export const createVerificationToken = async ({ identifier, token }: { identifier: string; token?: string; }): Promise<Result<string>> => {
     if (!token) {
@@ -9,9 +11,9 @@ export const createVerificationToken = async ({ identifier, token }: { identifie
     try {
         const result = await db.verificationToken.create({
             data: {
-                token,
+                expires: new Date(Date.now() + 1000 * 60 * 60 * 24),
                 identifier,
-                expires: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24 hours
+                token, // 24 hours
             },
         });
         return Result.ok(result.token);

@@ -1,29 +1,32 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
+import { sendEmail } from "../../_lib/postmark";
+
+import { UserVerificationErrors } from "~/_types/errors";
 import { logger } from "~/_utils";
+import { env } from "~/env";
 import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
 import { createTRPCRouter, publicProcedure, } from "~/server/api/trpc";
-import { sendEmail } from "../../_lib/postmark";
-import { env } from "~/env";
-import { UserVerificationErrors } from "~/_types/errors";
+
 
 export const authRouter = createTRPCRouter({
   register: publicProcedure
     .input(z.object({
-      provider: z.enum(["email", "google", "facebook"]),
-      firstName: z.string().min(1),
-      lastName: z.string().min(1),
-      email: z.string().min(1),
-      phone: z.string().min(1),
       companyName: z.string().min(1),
-      location: z.string().min(1),
-      website: z.string().trim().url().optional().or(z.literal("")),
-      twitter: z.string().trim().url().optional().or(z.literal("")),
-      instagram: z.string().trim().url().optional().or(z.literal("")),
+      email: z.string().min(1),
       facebook: z.string().trim().url().optional().or(z.literal("")),
-      youtube: z.string().trim().url().optional().or(z.literal("")),
+      firstName: z.string().min(1),
+      instagram: z.string().trim().url().optional().or(z.literal("")),
+      lastName: z.string().min(1),
+      location: z.string().min(1),
+      phone: z.string().min(1),
+      provider: z.enum(["email", "google", "facebook"]),
       tiktok: z.string().trim().url().optional().or(z.literal("")),
+      twitter: z.string().trim().url().optional().or(z.literal("")),
       vimeo: z.string().trim().url().optional().or(z.literal("")),
+      website: z.string().trim().url().optional().or(z.literal("")),
+      youtube: z.string().trim().url().optional().or(z.literal("")),
     }))
     .mutation(async ({ input }) => {
       const result = await createUser(input);
@@ -46,11 +49,11 @@ export const authRouter = createTRPCRouter({
       const verificationUrl = new URL(`/verify/${verificationTokenResult.value}`, env.BASE_URL).toString();
       const emailResponse = await sendEmail({
         email: input.email,
-        subject: "Almost done setting up your ISO account!",
         html: `
           <p>Thanks for registering!</p>
           <p>Please <a href=${verificationUrl}>verify your email address</a> to get started!</p>
           `,
+        subject: "Almost done setting up your ISO account!",
 
       })
       if (emailResponse.isErr) {

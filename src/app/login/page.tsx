@@ -1,15 +1,16 @@
 "use client";
-import { TextInput, PasswordInput, Button, Box, Group } from "@mantine/core";
+import { Box, Button, Group, PasswordInput, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { signIn } from "next-auth/react";
 import Link from "next/link";
+import { signIn } from "next-auth/react";
+
 import { logger } from "~/_utils";
 
 export default function Page() {
   const form = useForm({
     initialValues: {
-      username: "",
       password: "",
+      username: "",
     },
     validate: {
       username: (value) => value.length > 0 ? null : "Email is required",
@@ -19,9 +20,9 @@ export default function Page() {
   const handleSignIn = async () => {
     logger.info("logging in user", form.values);
     const result = await signIn("credentials", {
-      username: form.values.username,
       password: form.values.password,
-      redirect: false
+      redirect: false,
+      username: form.values.username
     });
     return result;
   }

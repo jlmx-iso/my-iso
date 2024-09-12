@@ -1,9 +1,12 @@
-import Link from "next/link";
 import { Container, Group } from "@mantine/core";
-import { getServerAuthSession } from "~/server/auth";
 import Image from "next/image";
+import Link from "next/link";
+
+
+import { UserProfileButton } from "./buttons/UserProfileButton";
 import logo from "../../../public/img/logo.webp"
-import { UserProfileButton } from "../_components/buttons/UserProfileButton";
+
+import { getServerAuthSession } from "~/server/auth";
 
 export async function Navbar() {
   const session = await getServerAuthSession();
@@ -12,11 +15,11 @@ export async function Navbar() {
     <Container
       size="lg"
       style={{
+        alignItems: "center",
         display: "flex",
         justifyContent: "space-between",
-        alignItems: "center",
-        paddingTop: "1rem",
         paddingBottom: "1rem",
+        paddingTop: "1rem",
       }}
     >
       <Group>
@@ -30,10 +33,12 @@ export async function Navbar() {
             height={100}
           />
         </Link>
-        <Link href="/">Home</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link href="/about">About</Link>
-        <Link href="/contact">Contact</Link>
+        {session?.user && (
+          <>
+            <Link href="/app/events">Events</Link>
+            <Link href="/app/messages">Messages</Link>
+          </>
+        )}
       </Group>
       <UserProfileButton session={session} />
     </Container>

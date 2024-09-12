@@ -7,14 +7,16 @@
  * need to use are documented accordingly near the end.
  */
 
-import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError, initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
+import { googleMapsClient } from "../_lib";
+
+import { cloudinaryClient } from "~/_lib";
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
-import { googleMapsClient } from "../_lib";
-import { cloudinaryClient } from "~/_lib";
+
 
 /**
  * 1. CONTEXT
@@ -32,10 +34,10 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await getServerAuthSession();
 
   return {
-    db,
-    session,
-    googleMapsClient,
     cloudinaryClient,
+    db,
+    googleMapsClient,
+    session,
     ...opts,
   };
 };
@@ -48,7 +50,6 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
  * errors on the backend.
  */
 const t = initTRPC.context<typeof createTRPCContext>().create({
-  transformer: superjson,
   errorFormatter({ shape, error }) {
     return {
       ...shape,
@@ -59,6 +60,7 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
       },
     };
   },
+  transformer: superjson,
 });
 
 /**

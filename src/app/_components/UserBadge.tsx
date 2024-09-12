@@ -1,7 +1,8 @@
 "use client";
 
 import { Anchor, Group, HoverCard, Title } from "@mantine/core";
-import { Avatar } from "../_server_components/Avatar";
+
+import { Avatar } from "./Avatar";
 
 type UserBadgeProps = {
     user: {

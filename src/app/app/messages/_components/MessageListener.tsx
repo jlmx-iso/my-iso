@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
-import { messageSub } from "../_utils";
 import { type Message } from "@prisma/client";
+import { useState } from "react";
+
+import { messageSub } from "../_utils";
 import MessageTile from "./MessageTile";
 
 export default function MessageListener({ threadId, userId }: { threadId: string; userId: string; }) {
@@ -10,7 +11,7 @@ export default function MessageListener({ threadId, userId }: { threadId: string
     setMessages((messages) => [...messages, (payload as {new: Message}).new]);
   };
 
-  messageSub({ threadId, cb: messageReceived });
+  messageSub({ cb: messageReceived, threadId });
 
   return (
     <div className="flex flex-col items-center justify-center gap-2">

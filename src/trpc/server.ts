@@ -1,9 +1,9 @@
 import "server-only";
 
 import {
+  TRPCClientError,
   createTRPCProxyClient,
   loggerLink,
-  TRPCClientError,
 } from "@trpc/client";
 import { callProcedure } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
@@ -11,9 +11,11 @@ import { type TRPCErrorResponse } from "@trpc/server/rpc";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
+import { transformer } from "./shared";
+
 import { appRouter } from "~/server/api/root";
 import { createTRPCContext } from "~/server/api/trpc";
-import { transformer } from "./shared";
+
 
 /**
  * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
@@ -29,7 +31,6 @@ const createContext = cache(() => {
 });
 
 export const api = createTRPCProxyClient<typeof appRouter>({
-  transformer,
   links: [
     loggerLink({
       enabled: (op) =>
@@ -46,10 +47,10 @@ export const api = createTRPCProxyClient<typeof appRouter>({
           createContext()
             .then((ctx) => {
               return callProcedure({
-                procedures: appRouter._def.procedures,
-                path: op.path,
-                rawInput: op.input,
                 ctx,
+                path: op.path,
+                procedures: appRouter._def.procedures,
+                rawInput: op.input,
                 type: op.type,
               });
             })
@@ -62,4 +63,5 @@ export const api = createTRPCProxyClient<typeof appRouter>({
             });
         }),
   ],
+  transformer,
 });

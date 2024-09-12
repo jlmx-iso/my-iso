@@ -3,10 +3,13 @@ import { Group } from "@mantine/core";
 import Link from "next/link";
 import { type Session } from "next-auth";
 import { useFeatureFlagEnabled } from "posthog-js/react";
-import { FeatureFlags } from "~/app/_lib";
+
 import { LoginButton } from "./LoginButton";
 import { LogoutButton } from "./LogoutButton";
-import { Avatar } from "~/app/_server_components/Avatar";
+
+import { Avatar } from "~/app/_components/Avatar";
+import { FeatureFlags } from "~/app/_lib";
+
 
 type UserProfileButtonProps = {
     session: Session | null;

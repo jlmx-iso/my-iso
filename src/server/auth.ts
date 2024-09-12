@@ -1,19 +1,21 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import {
   type DefaultSession,
-  getServerSession,
   type NextAuthOptions,
+  getServerSession,
 } from "next-auth";
-import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
-import EmailProvider from "next-auth/providers/email"
-
-
-import { env } from "~/env";
-import { db } from "~/server/db";
-import { checkIfUserExists } from "~/server/_utils";
-import { logger } from "~/_utils";
 import { type DefaultJWT } from "next-auth/jwt";
+import EmailProvider from "next-auth/providers/email"
+import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
+
+
 import { sendEmail } from "./_lib/postmark";
+
+import { logger } from "~/_utils";
+import { env } from "~/env";
+import { checkIfUserExists } from "~/server/_utils";
+import { db } from "~/server/db";
+
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -45,12 +47,8 @@ declare module "next-auth" {
  * @see https://next-auth.js.org/configuration/options
  */
 export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(db),
   callbacks: {
-    session: async ({ session, token }) => {
-      session.accessToken = token.accessToken as string;
-      session.user.id = token.id as string;
-      return session;
-    },
     jwt: async ({ account, user, token }) => {
       if (account) {
         token.accessToken = account.access_token;
@@ -62,28 +60,41 @@ export const authOptions: NextAuthOptions = {
       }
       return token;
     },
+    redirect: async ({ baseUrl }) => {
+      return baseUrl;
+    },
+    session: async ({ session, token }) => {
+      session.accessToken = token.accessToken as string;
+      session.user.id = token.id as string;
+      return session;
+    },
     signIn: async ({ user }) => {
       if (!user.email) {
         logger.info("No email provided");
         return false;
       }
       return await checkIfUserExists(user.email);
-    },
-    redirect: async ({ baseUrl }) => {
-      return baseUrl;
     }
   },
-  adapter: PrismaAdapter(db),
-  providers: [
+  
+debug: env.NODE_ENV === "development",
+  
+// 24 hours
+jwt: {
+    maxAge: 24 * 60 * 60 * 30,
+    secret: env.NEXTAUTH_SECRET, // 30 days
+  },
+  
+providers: [
     GoogleProvider({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       profile: (profile: GoogleProfile) => {
         return {
-          id: profile.sub,
-          firstName: profile.given_name,
-          lastName: profile.family_name,
           email: profile.email,
+          firstName: profile.given_name,
+          id: profile.sub,
+          lastName: profile.family_name,
         };
       },
     }),
@@ -91,12 +102,12 @@ export const authOptions: NextAuthOptions = {
       sendVerificationRequest: async ({ identifier: email, url, token, provider }) => {
         if (env.NODE_ENV === "development") {
           // eslint-disable-next-line no-console
-          console.log("sendVerificationRequest", { email, url, token, provider });
+          console.log("sendVerificationRequest", { email, provider, token, url });
         } else {
           await sendEmail({
             email,
-            subject: "Sign in",
             html: `<p>Here is your sign in link: <a href="${url}">${url}</a></p>`,
+            subject: "Sign in",
           });
         }
       },
@@ -111,14 +122,9 @@ export const authOptions: NextAuthOptions = {
      *
      * @see https://next-auth.js.org/providers/github
      */
-  ],
+  ], 
   secret: env.NEXTAUTH_SECRET,
-  session: { strategy: "jwt", maxAge: 24 * 60 * 60 }, // 24 hours
-  jwt: {
-    secret: env.NEXTAUTH_SECRET,
-    maxAge: 24 * 60 * 60 * 30, // 30 days
-  },
-  debug: env.NODE_ENV === "development",
+  session: { maxAge: 24 * 60 * 60, strategy: "jwt" },
 };
 
 /**

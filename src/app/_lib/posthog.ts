@@ -30,11 +30,11 @@ export async function getFeatureFlagVariant(
     }
 
     const res = await fetch(`${env.NEXT_PUBLIC_POSTHOG_HOST}/decide?v=3`, {
-        method: 'POST',
         body: JSON.stringify({
             api_key: env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY,
             distinct_id: distinctUserId,
         }),
+        method: 'POST',
     })
 
     if (!res.ok) {

@@ -3,11 +3,15 @@
 import { Button, Container, Textarea } from "@mantine/core";
 import { useForm, zodResolver } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
-import { api } from "~/trpc/react";
-import { Loader } from "./Loader";
 import { z } from "zod";
+
+import { Loader } from "./Loader";
 import { Notification } from "./Notification";
+
 import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
+import { api } from "~/trpc/react";
+
+
 
 type AddCommentFormProps = {
     eventId: string;
@@ -29,8 +33,8 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
 
     const handleSumbit = (form.onSubmit((values) => {
         mutate({
-            eventId,
             content: values.comment,
+            eventId,
         }, {
             onSuccess: () => {
                 commentRefetcher.refetchComments()
@@ -49,7 +53,7 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
         <>
             {error && <Notification type="error" autoDismiss={5000} >Error adding comment</Notification>}
             <Container w="100%" py="lg">
-                <form onSubmit={handleSumbit} style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "flex-end" }}>
+                <form onSubmit={handleSumbit} style={{ alignItems: "flex-end", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                     <Textarea
                         {...form.getInputProps("comment")}
                         w="100%"

@@ -1,5 +1,5 @@
-import { db } from "~/server/db";
 import { logger } from "~/_utils";
+import { db } from "~/server/db";
 
 export const checkIfUserExists = async (email: string) => {
   const user = await db.user.findFirst({
