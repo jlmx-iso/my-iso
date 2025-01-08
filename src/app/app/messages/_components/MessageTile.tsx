@@ -3,7 +3,6 @@ import { type Message } from "@prisma/client";
 import dayjs from "dayjs";
 
 import Timemarker from "~/app/_components/Timemarker";
-import colors from "~/app/theme/colors";
 
 type TrimmedMessage = Pick<Message, "id" | "content" | "senderId" | "createdAt"> & {
   isAuthor: boolean;

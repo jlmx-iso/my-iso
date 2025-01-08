@@ -3,7 +3,7 @@
 import { Flex, VisuallyHidden, Container } from "@mantine/core";
 import { useScrollIntoView } from "@mantine/hooks";
 import { useSession } from "next-auth/react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import ComposeMessage from "./ComposeMessage";
 import MessageListener from "./MessageListener";
