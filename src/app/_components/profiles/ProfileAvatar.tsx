@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Image, SimpleGrid } from '@mantine/core';
+import { Box, Button, Image, type MantineSize, SimpleGrid } from '@mantine/core';
 import { type FileWithPath } from '@mantine/dropzone';
 import { useHover } from '@mantine/hooks';
 import { IconUpload } from '@tabler/icons-react';
@@ -16,12 +16,13 @@ import { api } from '~/trpc/react';
 
 
 type AvatarProps = {
-    isSelf: boolean;
     avatar: string | null;
+    isSelf: boolean;
     name: string;
+    size?: MantineSize;
 };
 
-export default function ProfileAvatar({ isSelf, avatar, name }: AvatarProps) {
+export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProps) {
     const { hovered, ref } = useHover();
     const [uploading, setUploading] = useState(false);
     const [files, setFiles] = useState<FileWithPath[] | null>(null);
@@ -97,11 +98,11 @@ export default function ProfileAvatar({ isSelf, avatar, name }: AvatarProps) {
                         Upload
                     </Button>
                 </Modal>
-                <Avatar src={avatar} name={name} />
+                <Avatar src={avatar} name={name} size={size} />
             </Box>
         )
     }
     return (
-        <Avatar src={avatar} name={name} />
+        <Avatar src={avatar} name={name} size={size} />
     )
 }

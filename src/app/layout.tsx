@@ -34,6 +34,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+
   return (
     <html lang="en">
       <head>
@@ -44,7 +45,7 @@ export default function RootLayout({
           <MantineProvider theme={theme}>
             <TRPCReactProvider cookies={cookies().toString()}>
               <AppShell navbar={<Navbar />} mobileNav={<MobileNav />}>
-                <Center py={60}>
+                <Center py={96} w="100%">
                   {children}
                 </Center>
               </AppShell>

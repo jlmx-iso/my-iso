@@ -76,16 +76,16 @@ export const authOptions: NextAuthOptions = {
       return await checkIfUserExists(user.email);
     }
   },
-  
-debug: env.NODE_ENV === "development",
-  
-// 24 hours
-jwt: {
+
+  debug: env.NODE_ENV === "development",
+
+  // 24 hours
+  jwt: {
     maxAge: 24 * 60 * 60 * 30,
     secret: env.NEXTAUTH_SECRET, // 30 days
   },
-  
-providers: [
+
+  providers: [
     GoogleProvider({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
@@ -99,10 +99,10 @@ providers: [
       },
     }),
     EmailProvider({
-      sendVerificationRequest: async ({ identifier: email, url, token, provider }) => {
+      sendVerificationRequest: async ({ identifier: email, url, provider }) => {
         if (env.NODE_ENV === "development") {
           // eslint-disable-next-line no-console
-          console.log("sendVerificationRequest", { email, provider, token, url });
+          console.log("sendVerificationRequest", { email, provider, url });
         } else {
           await sendEmail({
             email,
@@ -122,7 +122,7 @@ providers: [
      *
      * @see https://next-auth.js.org/providers/github
      */
-  ], 
+  ],
   secret: env.NEXTAUTH_SECRET,
   session: { maxAge: 24 * 60 * 60, strategy: "jwt" },
 };
