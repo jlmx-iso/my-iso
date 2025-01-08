@@ -13,7 +13,7 @@ const MessageNotFound = () => (
   </Center>
 );
 
-export default async function Page({ threadId }: { threadId?: string }) {
+export default async function Page({ params: { threadId } }: { params: { threadId?: string } }) {
   const session = await getServerAuthSession();
   if (!session?.user) return null;
 
