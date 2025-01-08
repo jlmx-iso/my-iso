@@ -46,8 +46,6 @@ export default function NewMessageModal() {
 
     useEffect(() => {
         if (isSuccess) {
-            // eslint-disable-next-line no-console
-            console.log("success fetching recipients", potentialRecipientData);
             setPotentialRecipients(potentialRecipientData)
         }
 
@@ -59,8 +57,6 @@ export default function NewMessageModal() {
 
     useEffect(() => {
         if (messageThreadSuccess && messageThread) {
-            // eslint-disable-next-line no-console
-            console.log("success finding message", messageThread);
             router.push(`/app/messages/${messageThread?.id}`);
             close();
             setRecipient(undefined);
@@ -70,10 +66,6 @@ export default function NewMessageModal() {
             console.error("Error finding message", messageThreadError);
         }
     }, [messageThreadSuccess, messageThread]);
-
-    // const debouncedSetValue = useMemo(() => debounce<Recipient[]>((recipients: Recipient[]) => {
-    //     setPotentialRecipients(recipients);
-    // }, 300), []);
 
     return (
         <Modal isIconModal={false} opened={opened} buttonLabel={<span style={{ display: "flex", flexWrap: "nowrap", lineHeight: "1.75em" }}><IconMessagePlus style={{ margin: "0 4px" }} />New Message</span>} buttonProps={{ style: { margin: "8px 0" } }} title="New Message">
@@ -88,7 +80,6 @@ export default function NewMessageModal() {
                         rightSection={isLoading ? "Loading..." : null}
                         onChange={(event) => {
                             setRecipientQuery(event);
-                            // debouncedSetValue(potentialRecipients);
                             combobox.resetSelectedOption();
                             if (!combobox.dropdownOpened) {
                                 combobox.openDropdown();

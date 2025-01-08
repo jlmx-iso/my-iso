@@ -42,8 +42,6 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     };
 
     const onNewMessage = () => {
-        // eslint-disable-next-line
-        console.log("New message received");
         showScrollButton();
     };
 

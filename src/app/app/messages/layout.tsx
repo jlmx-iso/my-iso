@@ -47,7 +47,6 @@ export default async function Layout({ children, params }: LayoutProps) {
                         })}
                     </Container>
                 </GridCol>
-                {/* <Divider orientation="vertical" /> */}
                 <GridCol span={7}>
                     <Center style={{ height: "100%" }}>
                         {children}

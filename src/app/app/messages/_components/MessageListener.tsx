@@ -14,7 +14,6 @@ type MessageListenerProps = {
 export default function MessageListener({ threadId, userId, newMessageCb }: MessageListenerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const messageReceived = (payload: { new: Message }) => {
-    // eslint-disable-next-line
     setMessages((messages) => [...messages, (payload as { new: Message }).new]);
     if (newMessageCb) {
       newMessageCb();
@@ -25,9 +24,13 @@ export default function MessageListener({ threadId, userId, newMessageCb }: Mess
 
   return (
     <div>
-      {// eslint-disable-next-line 
-        messages.map((message) => <MessageTile key={message.id} message={{ ...message, isAuthor: userId === message.senderId }} />
-        )}
+      {
+        messages.map((message) => (
+          <MessageTile
+            key={message.id}
+            message={{ ...message, isAuthor: userId === message.senderId }}
+          />
+        ))}
     </div>
   )
 
