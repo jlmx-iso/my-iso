@@ -16,7 +16,7 @@ type ActionIconModalProps = ModalProps & {
 
 type ButtonModalProps = ModalProps & {
     buttonProps: ButtonProps;
-    buttonLabel: string;
+    buttonLabel: string | React.ReactNode;
     isIconModal: false;
 };
 

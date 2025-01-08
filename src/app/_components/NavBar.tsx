@@ -2,6 +2,7 @@ import { Container, Divider, Group, NavLink, Stack } from "@mantine/core";
 import { IconLogout, IconSettings, IconUser } from "@tabler/icons-react";
 import Image from "next/image";
 import Link from "next/link";
+import { Fragment } from "react";
 
 import { UserProfileButton } from "./buttons/UserProfileButton";
 import logo from "../../../public/img/logo.webp"
@@ -37,10 +38,10 @@ export async function Navbar() {
           />
         </Link>
         {session?.user && (
-          <>
+          <Fragment>
             <Link href="/app/events">Events</Link>
             <Link href="/app/messages">Messages</Link>
-          </>
+          </Fragment>
         )}
       </Group>
       <UserProfileButton session={session} />
@@ -54,18 +55,18 @@ export async function MobileNav() {
   return (
     <Container
       size="lg"
+      w="100%"
       style={{
         alignItems: "center",
         display: "flex",
         justifyContent: "space-between",
         position: "fixed",
       }}
-      w="100vw"
     >
-      <Stack>
+      <Stack style={{ width: "100%" }}>
         <NavLink href="/" label="Home" />
         {session?.user && (
-          <>
+          <Fragment>
             <NavLink href="/app/events" label="Events" />
             <NavLink href="/app/messages" label="Messages" />
             <Divider />
@@ -85,7 +86,7 @@ export async function MobileNav() {
               leftSection={<IconLogout color={colors.orange![4]} />}
               href="/api/auth/signout"
             />
-          </>
+          </Fragment>
         )}
       </Stack>
     </Container>

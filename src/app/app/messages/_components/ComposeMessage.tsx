@@ -1,11 +1,22 @@
 "use client";
 
-import { TextInput } from "@mantine/core";
+import { ActionIcon, Flex, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { getHotkeyHandler } from "@mantine/hooks";
+import { IconSend } from "@tabler/icons-react";
+
+import { type Recipient } from "./NewMessageModal";
 
 import { api } from "~/trpc/react";
 
-export default function ComposeMessage({ userId, threadId }: { userId: string, threadId: string; }) {
+type ComposeMessageProps = {
+  recipient: Recipient;
+} | {
+  threadId: string;
+};
+
+export default function ComposeMessage(props: ComposeMessageProps) {
+  const createMessageThreadMutation = api.message.createThread.useMutation();
   const createMessageMutation = api.message.create.useMutation();
   const form = useForm({
     initialValues: {
@@ -20,13 +31,31 @@ export default function ComposeMessage({ userId, threadId }: { userId: string, t
     }
   });
 
+  const handleSubmit = () => {
+    if ("threadId" in props) {
+      createMessageMutation.mutate({ content: form.values.text, threadId: props.threadId });
+    }
+    if ("recipient" in props) {
+      createMessageThreadMutation.mutate({ initialMessage: form.values.text, participants: [props.recipient.id] });
+    }
+    form.reset();
+  }
+
   return (
-  <form onSubmit={form.onSubmit((values) => {
-    createMessageMutation.mutate({ content: values.text, threadId, userId });
-    values.text = "";
-  })}>
-    <TextInput aria-label="Create a new message" placeholder="Create a new message..." {...form.getInputProps("text")} disabled={createMessageMutation.isLoading} />
-    <button type="submit">Send</button>
+    <form onSubmit={form.onSubmit(handleSubmit)}>
+      <Flex h="100%" w="100%" pos="relative" wrap="nowrap" style={{ border: "1px solid #ccc", borderRadius: "4px", verticalAlign: "middle" }}>
+        <Textarea
+          {...form.getInputProps("text")}
+          w="100%"
+          aria-label="Create a new message"
+          onKeyDown={getHotkeyHandler([
+            ["mod+Enter", handleSubmit],
+          ])}
+          placeholder="Create a new message..."
+          variant="unstyled"
+        />
+        <ActionIcon onClick={handleSubmit} pos="absolute" variant="subtle" right={12} top={12}><IconSend /></ActionIcon>
+      </Flex>
     </form>
   );
 };
