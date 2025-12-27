@@ -31,11 +31,11 @@ export default async function Layout({ children, params }: LayoutProps) {
                         <NewMessageModal />
                     </Group>
                     <Container p="xl">
-                        {data?.map((message: anyThread) => {
+                        {data?.map((messageThread: any) => {
                             const participants = messageThread.participants.filter((participant: any) => participant.id !== session.user.id);
                             return (
                                 <Link key={messageThread.id} href={`/app/messages/${messageThread.id}`}>
-                                    {participants.map(p => (
+                                    {participants.map((p: any) => (
                                         <ConversationTile
                                             isCurrentConversation={resolvedParams?.id === messageThread.id}
                                             key={p.id}
