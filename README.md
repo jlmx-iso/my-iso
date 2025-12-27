@@ -1,28 +1,83 @@
-# Create T3 App
+# my-iso
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+A modern photographer marketplace and social platform where photographers can showcase their portfolios, connect with clients, and manage bookings.
 
-## What's next? How do I make an app with this?
+## Features
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+- **Photographer Portfolios**: Showcase work with Cloudinary-powered image galleries
+- **User Authentication**: Secure login and registration with NextAuth.js
+- **Messaging System**: Real-time communication between photographers and clients
+- **Event Management**: Create, browse, and manage photography events
+- **Search & Discovery**: Find photographers by location, style, and availability
+- **Subscription Plans**: Tiered pricing with Stripe integration
+- **Social Features**: Favorites, profiles, and user interactions
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+## Tech Stack
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+This project is built with the [T3 Stack](https://create.t3.gg/):
 
-## Learn More
+- [Next.js](https://nextjs.org) - React framework with App Router
+- [NextAuth.js](https://next-auth.js.org) - Authentication
+- [Prisma](https://prisma.io) - Type-safe ORM
+- [Tailwind CSS](https://tailwindcss.com) - Utility-first CSS
+- [tRPC](https://trpc.io) - End-to-end type safety
+- [Mantine](https://mantine.dev) - React component library
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+Additional integrations:
+- PostgreSQL database
+- Cloudinary for image management
+- Supabase for storage
+- Stripe for payments
+- Postmark for transactional emails
+- PostHog for analytics
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+## Getting Started
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+### Prerequisites
 
-## How do I deploy this?
+- Node.js 18+
+- PostgreSQL database
+- Yarn package manager
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   yarn install
+   ```
+
+3. Set up environment variables (copy `.env.example` to `.env`)
+
+4. Initialize the database:
+   ```bash
+   yarn db:push
+   ```
+
+5. Run the development server:
+   ```bash
+   yarn dev
+   ```
+
+6. Open [http://localhost:3000](http://localhost:3000)
+
+## Development
+
+- `yarn dev` - Start development server
+- `yarn build` - Build for production
+- `yarn start` - Start production server
+- `yarn lint` - Run ESLint
+- `yarn db:studio` - Open Prisma Studio
+- `yarn db:push` - Push schema changes to database
+
+## Project Structure
+
+See [Claude.md](./Claude.md) for detailed documentation on:
+- Project architecture
+- Coding patterns and conventions
+- API design guidelines
+- Component organization
+
+## License
+
+Private - All rights reserved
