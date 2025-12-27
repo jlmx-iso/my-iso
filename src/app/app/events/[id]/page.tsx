@@ -41,7 +41,7 @@ export default function Page({ params }: { params: { id: string; }; }) {
         <CommentsRefetchContext.Provider value={{ refetchCommentCount: handleRefetchCommentCount, refetchComments: handleRefetchComments }}>
             <Stack gap="sm">
                 <EventCard eventId={params.id} isEventPage={true} initialCommentCount={commentCount} />
-                {comments?.map((comment) => (
+                {comments?.map((comment: any) => (
                     <EventComment key={comment.id} comment={comment} />
                 ))}
             </Stack>

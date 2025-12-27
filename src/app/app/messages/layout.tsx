@@ -31,8 +31,8 @@ export default async function Layout({ children, params }: LayoutProps) {
                         <NewMessageModal />
                     </Group>
                     <Container p="xl">
-                        {data?.map((messageThread) => {
-                            const participants = messageThread.participants.filter((participant) => participant.id !== session.user.id);
+                        {data?.map((message: anyThread) => {
+                            const participants = messageThread.participants.filter((participant: any) => participant.id !== session.user.id);
                             return (
                                 <Link key={messageThread.id} href={`/app/messages/${messageThread.id}`}>
                                     {participants.map(p => (

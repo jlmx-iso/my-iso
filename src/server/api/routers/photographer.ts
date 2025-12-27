@@ -89,7 +89,7 @@ export const photographerRouter = createTRPCRouter({
       return ctx.db.photographer.update({
         data: input,
         where: { id: input.id, userId: ctx.session?.user.id },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Failed to update profile", { error: error as Error });
         throw new Error("Failed to update profile");
       });
@@ -121,7 +121,7 @@ export const photographerRouter = createTRPCRouter({
           avatar: result.value?.secure_url,
         },
         where: { userId: ctx.session.user.id },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Failed to update photographer profile", { error: error as Error });
         throw new Error("Failed to update profile");
       });
@@ -131,7 +131,7 @@ export const photographerRouter = createTRPCRouter({
           profilePic: result.value?.secure_url,
         },
         where: { id: ctx.session.user.id },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Failed to update user profile pic", { error: error as Error });
         throw new Error("Failed to update user profile pic");
       });

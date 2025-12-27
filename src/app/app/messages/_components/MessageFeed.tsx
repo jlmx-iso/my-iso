@@ -64,7 +64,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
             >
                 <VisuallyHidden ref={targetRef}>End of thread</VisuallyHidden>
                 <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} />
-                {messages.map((message) => (
+                {messages.map((message: any) => (
                     <MessageTile
                         key={message.id}
                         message={{

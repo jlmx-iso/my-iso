@@ -25,7 +25,7 @@ export const db =
   }).$extends({
     query: {
       message: {
-        async findMany({ model, operation, args, query }) {
+        async findMany({ model, operation, args, query }: any) {
           args.where = { ...args, isDeleted: false };
           return query(args);
         }

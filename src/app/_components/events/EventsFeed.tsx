@@ -34,7 +34,7 @@ export default async function EventsFeed() {
     }
 
     return (
-        events.map((event) => (
+        events.map((event: any) => (
             <EventCard key={event.id} eventId={event.id} />
         ))
     )
