@@ -3,7 +3,7 @@
 import { Button, Group, Space, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
-import { zodResolver } from 'mantine-form-zod-resolver';
+import { zod4Resolver } from 'mantine-form-zod-resolver';
 import Link from "next/link";
 import { redirect } from 'next/navigation';
 import { z } from "zod";
@@ -48,7 +48,7 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             youtube: photographer.youtube,
         },
         mode: "uncontrolled",
-        validate: zodResolver(schema),
+        validate: zod4Resolver(schema),
     });
 
     const submitForm = (values: typeof form.values) => {
