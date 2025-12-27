@@ -5,6 +5,7 @@ import { favoriteRouter } from "./routers/favorite";
 import { googleRouter } from "./routers/google";
 import { messageRouter } from "./routers/message";
 import { photographerRouter } from "./routers/photographer";
+import { subscriptionRouter } from "./routers/subscription";
 import { userRouter } from "./routers/user";
 
 import { createTRPCRouter } from "~/server/api/trpc";
@@ -21,6 +22,7 @@ export const appRouter = createTRPCRouter({
   google: googleRouter,
   message: messageRouter,
   photographer: photographerRouter,
+  subscription: subscriptionRouter,
   user: userRouter,
 });
 
