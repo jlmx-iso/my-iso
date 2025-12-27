@@ -75,9 +75,9 @@ export default function Page() {
     const priceId = env.NEXT_PUBLIC_STRIPE_PRICE_ID_PRO;
 
     createCheckout.mutate({
-      cancelUrl: `${window.location.origin}/pricing`,
+      cancelUrl: `${env.NEXT_PUBLIC_BASE_URL}/pricing`,
       priceId,
-      successUrl: `${window.location.origin}/app/subscription/success`,
+      successUrl: `${env.NEXT_PUBLIC_BASE_URL}/app/subscription/success`,
     });
   };
 

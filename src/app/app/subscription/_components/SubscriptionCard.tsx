@@ -40,10 +40,43 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
 
   const handleManage = () => {
     setLoading(true);
+    // Strip query parameters from return URL to avoid exposing sensitive data to Stripe
+    const returnUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
     createPortal.mutate({
-      returnUrl: window.location.href,
+      returnUrl,
     });
   };
+
+  // Show pending subscription with special handling
+  if (subscription?.isPending && !subscription.isActive) {
+    return (
+      <Card shadow="sm" padding="lg" radius="md" withBorder>
+        <Stack gap="md">
+          <Group justify="space-between">
+            <Text size="lg" fw={700}>
+              {subscription.planName || 'Pro'} Subscription
+            </Text>
+            <Badge color="orange">Payment Processing</Badge>
+          </Group>
+          <Text size="sm" c="orange">
+            Your payment is being processed. This usually takes a few minutes.
+            Once complete, your subscription will be activated automatically.
+          </Text>
+          <Text size="sm" c="dimmed">
+            If you're experiencing issues, please check your email for payment instructions
+            or contact support.
+          </Text>
+          <Button
+            onClick={handleManage}
+            loading={loading}
+            variant="light"
+          >
+            Update Payment Method
+          </Button>
+        </Stack>
+      </Card>
+    );
+  }
 
   if (!subscription || (!subscription.isActive && !subscription.isTrial)) {
     return (

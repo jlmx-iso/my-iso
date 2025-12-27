@@ -51,14 +51,32 @@ export async function POST(req: NextRequest) {
     return new Response("Webhook signature verification failed", { status: 400 });
   }
 
-  // Check for idempotency - has this event been processed already?
-  const existingEvent = await db.webhookEvent.findUnique({
-    where: { eventId: event.id },
-  });
-
-  if (existingEvent) {
-    logger.info("Webhook event already processed", { eventId: event.id, eventType: event.type });
-    return new Response("OK - already processed", { status: 200 });
+  // Check for idempotency with race condition handling
+  try {
+    // Try to create the event record atomically
+    await db.webhookEvent.create({
+      data: {
+        error: null,
+        eventId: event.id,
+        eventType: event.type,
+        status: 'processing',
+      },
+    });
+  } catch (error: any) {
+    // If unique constraint violation, event is already being processed
+    if (error.code === 'P2002') {
+      logger.info("Webhook event already being processed", {
+        eventId: event.id,
+        eventType: event.type
+      });
+      return new Response("OK - already processing", { status: 200 });
+    }
+    // For other database errors, log and return 500 so Stripe retries
+    logger.error("Failed to create webhook event record", {
+      error,
+      eventId: event.id
+    });
+    return new Response("Database error - will retry", { status: 500 });
   }
 
   // Track this event as being processed
@@ -105,30 +123,52 @@ export async function POST(req: NextRequest) {
     }
 
     // Mark event as successfully processed
-    await db.webhookEvent.create({
-      data: {
-        error: null,
-        eventId: event.id,
-        eventType: event.type,
-        status: 'processed',
-      },
-    });
+    try {
+      await db.webhookEvent.update({
+        data: {
+          error: null,
+          status: 'processed',
+        },
+        where: { eventId: event.id },
+      });
+    } catch (updateError) {
+      logger.error("Failed to mark webhook event as processed", {
+        error: updateError,
+        eventId: event.id
+      });
+      // Don't fail the webhook - processing succeeded even if we couldn't update status
+    }
 
-    logger.info("Webhook event processed successfully", { eventId: event.id, eventType: event.type });
+    logger.info("Webhook event processed successfully", {
+      eventId: event.id,
+      eventType: event.type
+    });
     return new Response("OK", { status: 200 });
   } catch (err) {
     processingError = err as Error;
-    logger.error("Webhook handler error", { error: err, eventId: event.id, type: event.type });
+    logger.error("Webhook handler error", {
+      error: err,
+      eventId: event.id,
+      type: event.type
+    });
 
     // Mark event as failed
-    await db.webhookEvent.create({
-      data: {
-        error: processingError.message,
+    try {
+      await db.webhookEvent.update({
+        data: {
+          error: processingError.message,
+          status: 'failed',
+        },
+        where: { eventId: event.id },
+      });
+    } catch (updateError) {
+      logger.error("Failed to mark webhook event as failed", {
+        error: updateError,
         eventId: event.id,
-        eventType: event.type,
-        status: 'failed',
-      },
-    });
+        originalError: processingError,
+      });
+      // Continue - we still want to return 500 to trigger retry
+    }
 
     // Return 500 so Stripe retries
     return new Response("Webhook handler failed - will retry", { status: 500 });
@@ -143,7 +183,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   });
 
   if (!session.customer || !session.subscription) {
-    logger.warn("Checkout completed without customer or subscription", { sessionId: session.id });
+    logger.warn("Checkout completed without customer or subscription", {
+      sessionId: session.id
+    });
     return;
   }
 
@@ -157,17 +199,24 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     where: { stripeId: customerId },
   });
 
-  if (user) {
-    // Create or update subscription
-    await handleSubscriptionUpdate(subscription);
-  } else {
-    logger.error("User not found for checkout session", { customerId, sessionId: session.id });
+  if (!user) {
+    logger.error("User not found for checkout session", {
+      customerId,
+      sessionId: session.id
+    });
+    // Throw error to trigger Stripe retry - customer paid but we can't give them access
+    throw new Error(`User not found for Stripe customer ${customerId}`);
   }
+
+  // Create or update subscription
+  await handleSubscriptionUpdate(subscription);
 }
 
 async function handleCustomerUpdate(customer: Stripe.Customer) {
   if (!customer.email && !customer.metadata?.userId) {
-    logger.warn("Customer update without email or userId metadata", { customerId: customer.id });
+    logger.warn("Customer update without email or userId metadata", {
+      customerId: customer.id
+    });
     return;
   }
 
@@ -226,7 +275,11 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   let planName = subscription.metadata?.planName;
   if (!planName && subscription.items.data[0]) {
     const price = subscription.items.data[0].price;
-    planName = price.nickname || price.product.toString();
+    // Handle both string and expanded product object
+    const productId = typeof price.product === 'string'
+      ? price.product
+      : price.product.id;
+    planName = price.nickname || productId;
   }
 
   try {
@@ -240,7 +293,8 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
       },
       update: {
         ...flags,
-        planName: planName || undefined,
+        // Only update planName if we have a value
+        ...(planName && { planName }),
         subscriptionId: subscription.id,
       },
       where: { userId: user.id },
@@ -332,7 +386,14 @@ async function handleTrialWillEnd(subscription: Stripe.Subscription) {
 }
 
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
-  const customerId = getCustomerId(invoice.customer!);
+  if (!invoice.customer) {
+    logger.warn("Payment succeeded for invoice without customer", {
+      invoiceId: invoice.id
+    });
+    return;
+  }
+
+  const customerId = getCustomerId(invoice.customer);
 
   logger.info("Payment succeeded", {
     amount: invoice.amount_paid,
@@ -344,7 +405,14 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
-  const customerId = getCustomerId(invoice.customer!);
+  if (!invoice.customer) {
+    logger.warn("Payment failed for invoice without customer", {
+      invoiceId: invoice.id
+    });
+    return;
+  }
+
+  const customerId = getCustomerId(invoice.customer);
 
   logger.error("Payment failed", {
     attemptCount: invoice.attempt_count,
@@ -366,7 +434,14 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 }
 
 async function handleInvoiceUpcoming(invoice: Stripe.Invoice) {
-  const customerId = getCustomerId(invoice.customer!);
+  if (!invoice.customer) {
+    logger.warn("Upcoming invoice without customer", {
+      invoiceId: invoice.id
+    });
+    return;
+  }
+
+  const customerId = getCustomerId(invoice.customer);
 
   logger.info("Invoice upcoming", {
     amount: invoice.amount_due,

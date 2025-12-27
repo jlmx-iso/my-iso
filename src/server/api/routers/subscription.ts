@@ -18,7 +18,11 @@ const urlValidator = z.string().url().refine(
 const ALLOWED_PRICE_IDS = [
   env.NEXT_PUBLIC_STRIPE_PRICE_ID_PRO,
   // Add more price IDs here as you create more plans
-];
+].filter(Boolean);
+
+if (ALLOWED_PRICE_IDS.length === 0) {
+  throw new Error("No valid Stripe price IDs configured. Please check environment variables.");
+}
 
 const priceIdValidator = z.string().refine(
   (priceId) => ALLOWED_PRICE_IDS.includes(priceId),
@@ -77,22 +81,48 @@ export const subscriptionRouter = createTRPCRouter({
             // Create new Stripe customer
             const customer = await stripe.customers.create({
               email: user.email,
-              metadata: { userId: user.id },
+              metadata: {
+                userId: user.id,
+                email: user.email, // Include for easier debugging in Stripe dashboard
+              },
               name: `${user.firstName} ${user.lastName}`,
-            });
-
-            // Update database with new customer ID
-            const updatedUser = await ctx.db.user.update({
-              data: { stripeId: customer.id },
-              where: { id: user.id },
             });
 
             stripeCustomerId = customer.id;
 
-            logger.info("Created new Stripe customer", {
-              stripeCustomerId,
-              userId: user.id,
-            });
+            // Update database with new customer ID
+            try {
+              await ctx.db.user.update({
+                data: { stripeId: customer.id },
+                where: { id: user.id },
+              });
+
+              logger.info("Created new Stripe customer", {
+                stripeCustomerId,
+                userId: user.id,
+              });
+            } catch (dbError) {
+              // Database update failed - clean up orphaned Stripe customer
+              logger.error("Failed to save Stripe customer to database, cleaning up", {
+                error: dbError,
+                stripeCustomerId: customer.id,
+                userId: user.id,
+              });
+
+              try {
+                await stripe.customers.del(customer.id);
+                logger.info("Deleted orphaned Stripe customer", {
+                  customerId: customer.id,
+                });
+              } catch (deleteError) {
+                logger.error("Failed to delete orphaned Stripe customer", {
+                  customerId: customer.id,
+                  deleteError,
+                });
+              }
+
+              throw dbError; // Re-throw to hit outer catch
+            }
           }
         } catch (error) {
           logger.error("Failed to create or update Stripe customer", {
