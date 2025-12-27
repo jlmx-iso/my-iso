@@ -29,11 +29,12 @@ export const metadata = {
   title: "ISO",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = await cookies();
 
   return (
     <html lang="en">
@@ -43,7 +44,7 @@ export default function RootLayout({
       <body className={`font-sans ${inter.variable}`}>
         <CSPostHogProvider>
           <MantineProvider theme={theme}>
-            <TRPCReactProvider cookies={cookies().toString()}>
+            <TRPCReactProvider cookies={cookieStore.toString()}>
               <AppShell navbar={<Navbar />} mobileNav={<MobileNav />}>
                 <Center py={96} w="100%">
                   {children}
