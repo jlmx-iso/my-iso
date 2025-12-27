@@ -55,7 +55,20 @@ model Subscription {
   isLifetime     Boolean
   subscriptionId String?
   expiresAt      DateTime?
+  planName       String?   // Track which plan the user subscribed to
   user           User      @relation(fields: userId, references: id, onDelete: Cascade)
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique // Stripe event ID for idempotency
+  eventType   String
+  processedAt DateTime @default(now())
+  status      String   // 'processed' or 'failed'
+  error       String?  // Error message if failed
+
+  @@index([eventId])
+  @@index([processedAt])
 }
 
 model Session {

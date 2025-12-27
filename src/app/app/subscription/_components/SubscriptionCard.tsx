@@ -27,6 +27,13 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
     onSuccess: (data) => {
       if (data.url) {
         window.location.href = data.url;
+      } else {
+        notifications.show({
+          color: 'red',
+          message: 'Failed to get portal URL. Please try again.',
+          title: 'Error',
+        });
+        setLoading(false);
       }
     },
   });
@@ -56,12 +63,18 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
     );
   }
 
+  /**
+   * Badge priority logic (checked in order):
+   * 1. Expired - highest priority (subscription completely ended)
+   * 2. Canceled - subscription is ending but still has access
+   * 3. Paused - subscription is paused
+   * 4. Pending - payment incomplete
+   * 5. Trial - in trial period
+   * 6. Active - normal active state
+   */
   const getStatusBadge = () => {
-    if (subscription.isTrial) {
-      return <Badge color="blue">Trial</Badge>;
-    }
-    if (subscription.isActive && !subscription.isCanceled) {
-      return <Badge color="green">Active</Badge>;
+    if (subscription.isExpired) {
+      return <Badge color="red">Expired</Badge>;
     }
     if (subscription.isCanceled) {
       return <Badge color="yellow">Canceled</Badge>;
@@ -69,25 +82,34 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
     if (subscription.isPaused) {
       return <Badge color="gray">Paused</Badge>;
     }
-    if (subscription.isExpired) {
-      return <Badge color="red">Expired</Badge>;
+    if (subscription.isPending) {
+      return <Badge color="orange">Pending Payment</Badge>;
+    }
+    if (subscription.isTrial) {
+      return <Badge color="blue">Trial</Badge>;
+    }
+    if (subscription.isActive) {
+      return <Badge color="green">Active</Badge>;
     }
     return <Badge>Unknown</Badge>;
   };
+
+  // Disable manage button for expired subscriptions
+  const isManageable = !subscription.isExpired;
 
   return (
     <Card shadow="sm" padding="lg" radius="md" withBorder>
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="lg" fw={700}>
-            Pro Subscription
+            {subscription.planName || 'Pro'} Subscription
           </Text>
           {getStatusBadge()}
         </Group>
 
-        {subscription.isTrial && (
+        {subscription.isTrial && !subscription.isCanceled && (
           <Text size="sm" c="blue">
-            You are currently in your trial period.
+            You are currently in your trial period. Enjoy full access!
           </Text>
         )}
 
@@ -97,32 +119,56 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
             {subscription.expiresAt
               ? new Date(subscription.expiresAt).toLocaleDateString()
               : 'N/A'}
-            .
+            . You still have access until then.
+          </Text>
+        )}
+
+        {subscription.isExpired && (
+          <Text size="sm" c="red">
+            Your subscription has expired. Please subscribe again to regain access.
           </Text>
         )}
 
         {subscription.expiresAt && subscription.isActive && !subscription.isCanceled && (
           <Text size="sm" c="dimmed">
-            Next billing date:{' '}
+            {subscription.isTrial ? 'Trial ends' : 'Next billing date'}:{' '}
             {new Date(subscription.expiresAt).toLocaleDateString()}
           </Text>
         )}
 
         {subscription.isPaused && (
           <Text size="sm" c="gray">
-            Your subscription is currently paused.
+            Your subscription is currently paused. Billing will resume when you unpause.
           </Text>
         )}
 
-        <Button onClick={handleManage} loading={loading}>
-          Manage Subscription
-        </Button>
+        {subscription.isPending && (
+          <Text size="sm" c="orange">
+            Your payment is incomplete. Please complete the payment to activate your subscription.
+          </Text>
+        )}
 
-        <Text size="xs" c="dimmed">
-          Clicking "Manage Subscription" will take you to Stripe's secure portal
-          where you can update your payment method, cancel, or resume your
-          subscription.
-        </Text>
+        {subscription.isExpired ? (
+          <Link href="/pricing">
+            <Button fullWidth>Subscribe Again</Button>
+          </Link>
+        ) : (
+          <Button
+            onClick={handleManage}
+            loading={loading}
+            disabled={!isManageable}
+          >
+            Manage Subscription
+          </Button>
+        )}
+
+        {isManageable && (
+          <Text size="xs" c="dimmed">
+            Clicking "Manage Subscription" will take you to Stripe's secure portal
+            where you can update your payment method, cancel, or resume your
+            subscription.
+          </Text>
+        )}
       </Stack>
     </Card>
   );

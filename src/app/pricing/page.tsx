@@ -2,17 +2,27 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, Group, Space, Title } from "@mantine/core";
+import { Container, Group, Space, Title, Button, Text, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
 
 import FeatureTable from "../_components/FeatureTable";
 import PageHeading from "../_components/PageHeading";
 import PriceCard from "../_components/PriceCard";
 import { api } from "~/trpc/react";
+import { env } from "~/env";
 
 export default function Page() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
+
+  // Check if user has existing subscription
+  const { data: subscription } = api.subscription.getCurrentSubscription.useQuery(
+    undefined,
+    { enabled: !!session }
+  );
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
     onError: (error) => {
@@ -26,24 +36,43 @@ export default function Page() {
     onSuccess: (data) => {
       if (data.url) {
         window.location.href = data.url;
+      } else {
+        notifications.show({
+          color: 'red',
+          message: 'Failed to get checkout URL. Please try again.',
+          title: 'Checkout Failed',
+        });
+        setLoading(false);
       }
     },
   });
 
   const handleUpgradeToPro = () => {
-    setLoading(true);
-
-    const priceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_PRO || '';
-
-    if (!priceId) {
+    // Check if user is authenticated
+    if (status === 'unauthenticated') {
       notifications.show({
-        color: 'red',
-        message: 'Stripe configuration missing. Please contact support.',
-        title: 'Configuration Error',
+        color: 'blue',
+        message: 'Please log in to upgrade to Pro.',
+        title: 'Login Required',
       });
-      setLoading(false);
+      router.push('/login');
       return;
     }
+
+    // Check if user already has active subscription
+    if (subscription?.isActive) {
+      notifications.show({
+        color: 'blue',
+        message: 'You already have an active subscription. Manage it from your subscription page.',
+        title: 'Already Subscribed',
+      });
+      router.push('/app/subscription');
+      return;
+    }
+
+    setLoading(true);
+
+    const priceId = env.NEXT_PUBLIC_STRIPE_PRICE_ID_PRO;
 
     createCheckout.mutate({
       cancelUrl: `${window.location.origin}/pricing`,
@@ -53,8 +82,31 @@ export default function Page() {
   };
 
   const handleBasicSignup = () => {
-    router.push('/register');
+    if (status === 'authenticated') {
+      router.push('/app/events');
+    } else {
+      router.push('/register');
+    }
   };
+
+  // Show different UI based on authentication status
+  const getProButtonContent = () => {
+    if (status === 'loading') {
+      return { buttonText: "Loading...", disabled: true };
+    }
+
+    if (status === 'unauthenticated') {
+      return { buttonText: "Login to Upgrade", disabled: false };
+    }
+
+    if (subscription?.isActive) {
+      return { buttonText: "Already Subscribed", disabled: true };
+    }
+
+    return { buttonText: "Upgrade to Pro", disabled: false };
+  };
+
+  const proButton = getProButtonContent();
 
   return (
     <Container fluid={true}>
@@ -62,6 +114,18 @@ export default function Page() {
       <Title order={4} fw={300} fs="italic" className="text-center">
         Choose a plan that works for you
       </Title>
+
+      {subscription?.isActive && (
+        <Stack align="center" gap="sm" my="md">
+          <Text size="sm" c="green" fw={500}>
+            You're currently on the {subscription.planName || 'Pro'} plan
+          </Text>
+          <Link href="/app/subscription">
+            <Button variant="light" size="sm">Manage Subscription</Button>
+          </Link>
+        </Stack>
+      )}
+
       <Group
         align="center"
         gap="lg"
@@ -70,17 +134,18 @@ export default function Page() {
         w="100%"
       >
         <PriceCard
-          buttonText="Sign up"
+          buttonText={status === 'authenticated' ? "Current Plan" : "Sign up"}
           buttonVariant="contained"
-          features={["1 user", "1 project", "1000 requests"]}
+          features={["Basic features", "Community support", "1 photographer profile"]}
+          loading={false}
           onClick={handleBasicSignup}
           price={0}
           title="Basic"
         />
         <PriceCard
-          buttonText="Sign up"
+          buttonText={proButton.buttonText}
           buttonVariant="outlined"
-          features={["5 users", "10 projects", "5000 requests"]}
+          features={["All basic features", "Priority support", "Unlimited events", "Advanced analytics"]}
           loading={loading}
           onClick={handleUpgradeToPro}
           price={10}
@@ -95,11 +160,11 @@ export default function Page() {
         <FeatureTable
           features={[
             {
-              items: ["1 user", "1 project", "1000 requests"],
+              items: ["Basic features", "Community support", "1 photographer profile"],
               title: "Basic",
             },
             {
-              items: ["5 users", "10 projects", "5000 requests"],
+              items: ["All basic features", "Priority support", "Unlimited events", "Advanced analytics"],
               title: "Pro",
             },
           ]}
