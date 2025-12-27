@@ -52,45 +52,45 @@ export default function Page() {
     },
 
     validate: {
-      companyName: (value) => value.length > 0 ? null : "Business name is required",
-      email: (value) => {
+      companyName: (value: string) => value.length > 0 ? null : "Business name is required",
+      email: (value: string) => {
         if (value.length === 0) return "Email is required";
         // regex to confirm valid email
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Invalid email";
         return null;
       },
-      facebook: (value) => {
+      facebook: (value: string) => {
         // regex to confirm valid facebook includes "facebook.com"
         if (value.length && !/^(http|https):\/\/(www.)?facebook.com\/[^ "]+$/.test(value)) return "Invalid Facebook URL";
       },
-      firstName: (value) => value.length > 0 ? null : "First name is required",
-      instagram: (value) => {
+      firstName: (value: string) => value.length > 0 ? null : "First name is required",
+      instagram: (value: string) => {
         // regex to confirm valid instagram includes "instagram.com" or "x.com"
         if (value.length && !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)) return "Invalid Instagram URL";
       },
-      lastName: (value) => value.length > 0 ? null : "Last name is required",
-      location: (value) => value.length > 0 ? null : "Location is required",
-      phoneNumber: (value) => {
+      lastName: (value: string) => value.length > 0 ? null : "Last name is required",
+      location: (value: string) => value.length > 0 ? null : "Location is required",
+      phoneNumber: (value: string) => {
         // regex to confirm valid phone number
         if (!/^\d{10}$/.test(value)) return "Invalid phone number";
       },
-      tiktok: (value) => {
+      tiktok: (value: string) => {
         // regex to confirm valid tiktok includes "tiktok.com"
         if (value.length && !/^(http|https):\/\/(www.)?tiktok.com\/[^ "]+$/.test(value)) return "Invalid TikTok URL";
       },
-      twitter: (value) => {
+      twitter: (value: string) => {
         // regex to confirm valid twitter includes "twitter.com" or "x.com"
         if (value.length && (!/^(http|https):\/\/(www.)?twitter.com\/[^ "]+$/.test(value) || !/^(http|https):\/\/(www.)?x.com\/[^ "]+$/.test(value))) return "Invalid Twitter URL";
       },
-      vimeo: (value) => {
+      vimeo: (value: string) => {
         // regex to confirm valid vimeo includes "vimeo.com"
         if (value.length && !/^(http|https):\/\/(www.)?vimeo.com\/[^ "]+$/.test(value)) return "Invalid Vimeo URL";
       },
-      website: (value) => {
+      website: (value: string) => {
         // regex to confirm valid website
         if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value)) return "Invalid website";
       },
-      youtube: (value) => {
+      youtube: (value: string) => {
         // regex to confirm valid youtube includes "youtube.com"
         if (value.length && !/^(http|https):\/\/(www.)?youtube.com\/[^ "]+$/.test(value)) return "Invalid YouTube URL";
       }

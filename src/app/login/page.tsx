@@ -13,7 +13,7 @@ export default function Page() {
       username: "",
     },
     validate: {
-      username: (value) => value.length > 0 ? null : "Email is required",
+      username: (value: string) => value.length > 0 ? null : "Email is required",
     }
   });
 
