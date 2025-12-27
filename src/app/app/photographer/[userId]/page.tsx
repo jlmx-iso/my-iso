@@ -3,7 +3,7 @@ import { api } from "~/trpc/server";
 
 export default async function Page({ params }: { params: Promise<{ userId: string; }>; }) {
   const { userId } = await params;
-  const photographer = await api.photographer.getByUserId.query({ userId });
+  const photographer = await (await api()).photographer.getByUserId.query({ userId });
 
   if (!photographer) {
     return (

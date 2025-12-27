@@ -75,9 +75,8 @@ export default withSentryConfig(
     sourcemaps: {
       deleteSourcemapsAfterUpload: true,
     },
-  },
-  {
-    // Webpack-specific Sentry options (third parameter)
+
+    // Webpack-specific Sentry options (merged from third parameter in Sentry v8+)
     // Automatically tree-shake Sentry logger statements to reduce bundle size
     treeshake: {
       removeDebugLogging: true,
