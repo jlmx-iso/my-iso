@@ -33,10 +33,10 @@ export function TRPCReactProvider(props: {
               "x-trpc-source": "react",
             };
           },
+          transformer,
           url: getUrl(),
         }),
       ],
-      transformer,
     })
   );
 
