@@ -13,10 +13,12 @@ const MessageNotFound = () => (
   </Center>
 );
 
-export default async function Page({ params: { threadId } }: { params: { threadId?: string } }) {
+export default async function Page({ params }: { params: Promise<{ threadId?: string }> }) {
+  const { threadId: initialThreadId } = await params;
   const session = await getServerAuthSession();
   if (!session?.user) return null;
 
+  let threadId = initialThreadId;
   if (!threadId) {
     const latestThreadData = await api.message.getLatestThreadByUserId.query();
     threadId = latestThreadData?.id;
