@@ -34,7 +34,7 @@ export const FavoriteButton = ({ isFavorite, currentUserId, targetUserId }: Favo
   return (
     <ActionIcon
       color="blue"
-      loading={addFavorite.isLoading || removeFavorite.isLoading}
+      loading={addFavorite.isPending || removeFavorite.isPending}
       loaderProps={{ type: "dots" }}
       onClick={handleClick}
       variant="subtle"
@@ -43,7 +43,7 @@ export const FavoriteButton = ({ isFavorite, currentUserId, targetUserId }: Favo
       className="relative top-0 right-0"
       >
       {
-        isExistingFavorite ? 
+        isExistingFavorite ?
         <IconBookmarkFilled size={24} aria-label="Bookmark" /> :
         <IconBookmark size={24} aria-label="Bookmark" />
       }

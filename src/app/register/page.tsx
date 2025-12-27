@@ -14,7 +14,7 @@ import { api } from "~/trpc/react";
 
 export default function Page() {
   const [active, setActive] = useState(0);
-  const { mutate: submitRegistration, error: submitError, isError, isLoading, isSuccess } = api.auth.register.useMutation();
+  const { mutate: submitRegistration, error: submitError, isError, isPending, isSuccess } = api.auth.register.useMutation();
   const nextStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
     const stepOneFields = ["firstName", "lastName", "email", "phoneNumber", "location"];
@@ -121,7 +121,7 @@ export default function Page() {
     }
   };
 
-  if (isLoading) {
+  if (isPending) {
     return <Loader />
   }
   if (isSuccess) {

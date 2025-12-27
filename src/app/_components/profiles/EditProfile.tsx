@@ -32,7 +32,7 @@ const schema = z.object({
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
-    const { isError, error, isLoading, mutate, isSuccess } = api.photographer.update.useMutation();
+    const { isError, error, isPending, mutate, isSuccess } = api.photographer.update.useMutation();
     const form = useForm({
         initialValues: {
             bio: photographer.bio,
@@ -55,7 +55,7 @@ export default function EditProfile({ photographer }: EditProfileProps) {
         mutate({ ...values, id: photographer.id });
     }
 
-    if (isLoading) return <Loader />;
+    if (isPending) return <Loader />;
 
     if (isError) {
         return <div>Failed to update profile <br />{error.message}</div>

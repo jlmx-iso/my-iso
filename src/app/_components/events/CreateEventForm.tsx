@@ -4,6 +4,7 @@ import { Button, FileInput, NumberInput, TextInput, Textarea } from "@mantine/co
 import { DateTimePicker } from "@mantine/dates";
 import { useForm, zodResolver } from "@mantine/form";
 import { IconUpload } from "@tabler/icons-react";
+import dayjs from "dayjs";
 import { z } from "zod";
 
 import { Loader } from "../Loader";
@@ -19,22 +20,25 @@ type CreateEventProps = {
 const MAX_DESCRIPTION_LENGTH = 1000;
 
 const schema = z.object({
-    date: z.date().min(new Date(), "Date must be in the future"),
+    date: z.string().refine((val) => {
+        const date = dayjs(val);
+        return date.isValid() && date.isAfter(dayjs());
+    }, "Date must be in the future"),
     description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
     duration: z.number().min(1, "Duration must be at least 1 hour"),
     // image: z.union([z.instanceof(File), z.string()]).optional(),
 image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
-    
+
 location: z.string().min(1, "Location is required"),
-    
+
     title: z.string().max(140, "Title is required an must be less than 140 characters"),
 });
 
 export default function CreateEventForm({ title }: CreateEventProps) {
-    const { mutateAsync, mutate, isLoading, isError, isSuccess } = api.event.create.useMutation();
+    const { mutateAsync, mutate, isPending, isError, isSuccess } = api.event.create.useMutation();
     const form = useForm({
         initialValues: {
-            date: new Date(),
+            date: dayjs().format('YYYY-MM-DD HH:mm:ss'),
             description: "",
             duration: 1,
             image: undefined,
@@ -46,7 +50,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
 
     const handleSubmit = (values: typeof form.values) => {
         const image = values.image as File | undefined
-        const date = values.date.toISOString();
+        const date = dayjs(values.date).toISOString();
         const reader = new FileReader();
         if (image) {
             reader.onloadend = async () => {
@@ -69,7 +73,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         mutate({ ...values, date, image: undefined });
     }
 
-    if (isLoading) {
+    if (isPending) {
         return <Loader />;
     }
 
@@ -85,7 +89,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         <form onSubmit={form.onSubmit(handleSubmit)}>
             <TextInput label="Title" required {...form.getInputProps("title")} />
             <Textarea label="Description" required maxLength={MAX_DESCRIPTION_LENGTH + 1} autosize minRows={2} maxRows={4} {...form.getInputProps("description")} />
-            <DateTimePicker label="Date" valueFormat="DD MMM YYYY hh mm A" required withSeconds={false} minDate={new Date()} firstDayOfWeek={0} {...form.getInputProps("date")} />
+            <DateTimePicker label="Date" valueFormat="DD MMM YYYY hh:mm A" required withSeconds={false} minDate={dayjs().format('YYYY-MM-DD HH:mm:ss')} firstDayOfWeek={0} {...form.getInputProps("date")} />
             <NumberInput label="Hours" required min={1} max={24} {...form.getInputProps("duration")} />
             <LocationAutocomplete label="City, State" isRequired placeholder="Austin, TX" {...form.getInputProps("location")} />
             <FileInput label="Image" leftSection={<IconUpload />} placeholder="Upload Image" accept="image/*" {...form.getInputProps("image")} />
