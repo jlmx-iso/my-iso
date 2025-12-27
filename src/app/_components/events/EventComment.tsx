@@ -28,7 +28,7 @@ type EventCommentProps = {
 export default function EventComment({ comment: initialComment }: EventCommentProps) {
     const [comment, setComment] = useState(initialComment);
     const { refetch } = api.event.getCommentById.useQuery({ id: initialComment.id })
-    const { mutate, isLoading } = api.event.addOrRemoveEventCommentLike.useMutation({
+    const { mutate, isPending } = api.event.addOrRemoveEventCommentLike.useMutation({
         onSuccess: async () => {
             const updatedComment = await refetch();
             if (updatedComment.data) {
@@ -49,7 +49,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
                 }} />
             </Group>
             <Text>{comment.content}</Text>
-            <LikeButton isLiked={comment.isLiked} mutate={mutate} targetType="comment" targetId={comment.id} isLoading={isLoading} numberOfLikes={comment.commentLikes} />
+            <LikeButton isLiked={comment.isLiked} mutate={mutate} targetType="comment" targetId={comment.id} isPending={isPending} numberOfLikes={comment.commentLikes} />
         </Card>
     );
 

@@ -5,12 +5,12 @@ import { UserVerificationErrors } from "~/_types/errors";
 import { api } from "~/trpc/react";
 
 export default function Page({ params }: { params: { token: string } }) {
-    const { error, isError, isLoading, isSuccess, mutate: verifyAccount } = api.auth.verifyAccount.useMutation();
+    const { error, isError, isPending, isSuccess, mutate: verifyAccount } = api.auth.verifyAccount.useMutation();
     useEffect(() => {
         verifyAccount({ token: params.token });
     }, [params.token]);
 
-    if (isLoading) {
+    if (isPending) {
         return <p>Verifying...</p>;
     }
 

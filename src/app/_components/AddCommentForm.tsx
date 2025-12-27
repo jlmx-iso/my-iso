@@ -29,22 +29,22 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
         },
         validate: zodResolver(schema),
     });
-    const { mutate, isLoading, error } = api.event.addCommentToEvent.useMutation();
+    const { mutate, isPending, error } = api.event.addCommentToEvent.useMutation({
+        onSuccess: () => {
+            commentRefetcher.refetchComments()
+            commentRefetcher.refetchCommentCount()
+        }
+    });
 
     const handleSumbit = (form.onSubmit((values) => {
         mutate({
             content: values.comment,
             eventId,
-        }, {
-            onSuccess: () => {
-                commentRefetcher.refetchComments()
-                commentRefetcher.refetchCommentCount()
-            }
         });
         form.reset();
     }));
 
-    if (isLoading) {
+    if (isPending) {
         return <Loader />
     }
 

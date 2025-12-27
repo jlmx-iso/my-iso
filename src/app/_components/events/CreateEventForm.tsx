@@ -31,7 +31,7 @@ location: z.string().min(1, "Location is required"),
 });
 
 export default function CreateEventForm({ title }: CreateEventProps) {
-    const { mutateAsync, mutate, isLoading, isError, isSuccess } = api.event.create.useMutation();
+    const { mutateAsync, mutate, isPending, isError, isSuccess } = api.event.create.useMutation();
     const form = useForm({
         initialValues: {
             date: new Date(),
@@ -69,7 +69,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         mutate({ ...values, date, image: undefined });
     }
 
-    if (isLoading) {
+    if (isPending) {
         return <Loader />;
     }
 
