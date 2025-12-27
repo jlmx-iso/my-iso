@@ -77,11 +77,13 @@ export default withSentryConfig(
     },
 
     // Webpack-specific Sentry options (merged from third parameter in Sentry v8+)
-    // Automatically tree-shake Sentry logger statements to reduce bundle size
-    treeshake: {
-      removeDebugLogging: true,
+    webpack: {
+      // Automatically tree-shake Sentry logger statements to reduce bundle size
+      treeshake: {
+        removeDebugLogging: true,
+      },
+      // Enables automatic instrumentation of Vercel Cron Monitors
+      automaticVercelMonitors: true,
     },
-    // Enables automatic instrumentation of Vercel Cron Monitors
-    automaticVercelMonitors: true,
   }
 );

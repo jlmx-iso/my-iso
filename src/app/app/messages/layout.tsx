@@ -19,7 +19,7 @@ export default async function Layout({ children, params }: LayoutProps) {
     const session = await getServerAuthSession();
     if (!session?.user) return null;
 
-    const data = await (await api()).message.getThreadsByUserId.query();
+    const data = await (await api()).message.getThreadsByUserId();
 
     logger.info("params", { params: resolvedParams });
     return (

@@ -20,7 +20,7 @@ export default async function Page({ params }: { params: Promise<{ threadId?: st
 
   let threadId = initialThreadId;
   if (!threadId) {
-    const latestThreadData = await (await api()).message.getLatestThreadByUserId.query();
+    const latestThreadData = await (await api()).message.getLatestThreadByUserId();
     threadId = latestThreadData?.id;
     if (!threadId) return <MessageNotFound />;
   }

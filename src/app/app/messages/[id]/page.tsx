@@ -11,7 +11,7 @@ export default async function Page({ params }: { params: Promise<{ id: string; }
 
   if (!session?.user) return null;
 
-  const data = await (await api()).message.getThreadById.query({ threadId: id });
+  const data = await (await api()).message.getThreadById({ threadId: id });
   logger.info("retrieved messages", { data });
   const recipient = data?.participants.find(p => p.id !== session.user.id);
 

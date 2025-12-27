@@ -28,14 +28,14 @@ type ProfilePageProps = {
 export const ProfilePage = async ({ userId, photographer, isEditing, isSuccess }: ProfilePageProps) => {
   const session = await getServerSession(authOptions);
   if (!photographer) {
-    photographer = await (await api()).photographer.getByUserId.query({ userId }) ?? undefined;
+    photographer = await (await api()).photographer.getByUserId({ userId }) ?? undefined;
   }
   if (!photographer || !session) {
     return null;
   };
 
   const currentUserId = session.user.id;
-  const favorites = await (await api()).user.getFavorites.query({ userId: currentUserId });
+  const favorites = await (await api()).user.getFavorites({ userId: currentUserId });
   const isFavorite = favorites.some(favorite => favorite.targetId === photographer.id);
   const isSelf = currentUserId === userId;
   const isEditingModeEnabled = (isEditing && isSelf);
