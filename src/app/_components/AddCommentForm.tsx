@@ -1,8 +1,9 @@
 "use client";
 
 import { Button, Container, Textarea } from "@mantine/core";
-import { useForm, zodResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
 import { Loader } from "./Loader";
@@ -27,24 +28,24 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
         initialValues: {
             comment: "",
         },
-        validate: zodResolver(schema),
+        validate: zod4Resolver(schema),
     });
-    const { mutate, isLoading, error } = api.event.addCommentToEvent.useMutation();
+    const { mutate, isPending, error } = api.event.addCommentToEvent.useMutation({
+        onSuccess: () => {
+            commentRefetcher.refetchComments()
+            commentRefetcher.refetchCommentCount()
+        }
+    });
 
     const handleSumbit = (form.onSubmit((values) => {
         mutate({
             content: values.comment,
             eventId,
-        }, {
-            onSuccess: () => {
-                commentRefetcher.refetchComments()
-                commentRefetcher.refetchCommentCount()
-            }
         });
         form.reset();
     }));
 
-    if (isLoading) {
+    if (isPending) {
         return <Loader />
     }
 

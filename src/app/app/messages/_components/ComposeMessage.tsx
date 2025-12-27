@@ -23,7 +23,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
       text: "",
     },
     validate: {
-      text: (value) => {
+      text: (value: string) => {
         if (value.trim().length < 1) {
           return "Message must be at least 1 character long";
         }

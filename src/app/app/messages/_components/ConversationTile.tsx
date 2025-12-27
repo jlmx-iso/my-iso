@@ -14,7 +14,7 @@ type ConversationTileProps = {
 };
 
 export default async function ConversationTile({ threadId, recipient, isCurrentConversation }: ConversationTileProps) {
-    const lastMessage = await api.message.getLatestThreadMessage.query({ threadId });
+    const lastMessage = await (await api()).message.getLatestThreadMessage({ threadId });
     return (
         <Group wrap="nowrap" bg={isCurrentConversation ? "blue" : "transparent"}>
             <ProfileAvatar size="md" avatar={recipient.profilePic} name={`${recipient.firstName} ${recipient.lastName}`} isSelf={false} />

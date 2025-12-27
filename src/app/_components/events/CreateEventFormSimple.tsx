@@ -1,8 +1,9 @@
 "use client";
 
 import { Stack, Textarea } from "@mantine/core";
-import { useForm, zodResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from "@mantine/hooks";
+import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
 import { Modal } from "../Modal";
@@ -19,7 +20,7 @@ export default function CreateEventFormSimple() {
         initialValues: {
             title: "",
         },
-        validate: zodResolver(schema),
+        validate: zod4Resolver(schema),
         validateInputOnChange: true,
     });
 

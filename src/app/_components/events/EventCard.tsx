@@ -4,7 +4,7 @@ import { ActionIcon, Badge, Card, Group, Image, Text, Title } from "@mantine/cor
 import { useHover } from '@mantine/hooks';
 import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 
 import UserBadge from "../UserBadge";
@@ -24,19 +24,21 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
     const [isCommentFormOpen, setIsCommentFormOpen] = useState(isEventPage);
     const [numComments, setNumComments] = useState(initialCommentCount);
     const { hovered, ref } = useHover();
-    const { data, isLoading, isError } = api.event.getById.useQuery({
+    const { data, isPending, isError } = api.event.getById.useQuery({
         id: eventId
-    }, {
-        onSuccess: (data) => {
+    });
+
+    useEffect(() => {
+        if (data?.commentCount !== undefined) {
             setNumComments(data.commentCount);
         }
-    });
+    }, [data?.commentCount]);
 
     const handleCommentButtonClick = () => {
         if (!isEventPage) setIsCommentFormOpen((prev) => !prev);
     }
 
-    if (isLoading) {
+    if (isPending) {
         return (
             <Card>
                 <EventCardSkeleton />

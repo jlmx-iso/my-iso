@@ -1,10 +1,11 @@
 import { Alert } from '@mantine/core';
 import { IconInfoCircle } from '@tabler/icons-react';
+import { type ReactElement } from 'react';
 
 type ErrorAlertProps = {
     message: string;
     title: string;
-    icon?: JSX.Element;
+    icon?: ReactElement;
 };
 
 export const ErrorAlert = ({ message, title, icon = <IconInfoCircle /> }: ErrorAlertProps) => {

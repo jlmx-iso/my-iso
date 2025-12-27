@@ -11,16 +11,17 @@ import { api } from "~/trpc/server";
 
 interface LayoutProps {
     children: React.ReactNode;
-    params?: Record<string, string>;
+    params?: Promise<Record<string, string>>;
 }
 
 export default async function Layout({ children, params }: LayoutProps) {
+    const resolvedParams = params ? await params : undefined;
     const session = await getServerAuthSession();
     if (!session?.user) return null;
 
-    const data = await api.message.getThreadsByUserId.query();
+    const data = await (await api()).message.getThreadsByUserId();
 
-    logger.info("params", { params });
+    logger.info("params", { params: resolvedParams });
     return (
         <Container h="calc(100vh - 14rem)" pos="relative">
             <Grid w="100%" mih="100%" pos="relative" display="flex" align="stretch">
@@ -30,13 +31,13 @@ export default async function Layout({ children, params }: LayoutProps) {
                         <NewMessageModal />
                     </Group>
                     <Container p="xl">
-                        {data?.map((messageThread) => {
-                            const participants = messageThread.participants.filter((participant) => participant.id !== session.user.id);
+                        {data?.map((messageThread: any) => {
+                            const participants = messageThread.participants.filter((participant: any) => participant.id !== session.user.id);
                             return (
                                 <Link key={messageThread.id} href={`/app/messages/${messageThread.id}`}>
-                                    {participants.map(p => (
+                                    {participants.map((p: any) => (
                                         <ConversationTile
-                                            isCurrentConversation={params?.id === messageThread.id}
+                                            isCurrentConversation={resolvedParams?.id === messageThread.id}
                                             key={p.id}
                                             threadId={messageThread.id}
                                             recipient={p}

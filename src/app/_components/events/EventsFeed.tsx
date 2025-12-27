@@ -15,7 +15,7 @@ export default async function EventsFeed() {
         return redirect('/api/auth/signin');
     }
 
-    const locations = await api.photographer.getByUserId.query({
+    const locations = await (await api()).photographer.getByUserId({
         userId: session.user.id,
     }).then((photographer) => {
         if (!photographer) {
@@ -23,7 +23,7 @@ export default async function EventsFeed() {
         }
         return [photographer.location];
     });
-    const events = await api.event.getRecentByLocation.query({
+    const events = await (await api()).event.getRecentByLocation({
         limit: EVENTS_LIMIT,
         locations,
         startAt: 0
@@ -34,7 +34,7 @@ export default async function EventsFeed() {
     }
 
     return (
-        events.map((event) => (
+        events.map((event: any) => (
             <EventCard key={event.id} eventId={event.id} />
         ))
     )

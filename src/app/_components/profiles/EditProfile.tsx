@@ -3,7 +3,7 @@
 import { Button, Group, Space, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
-import { zodResolver } from 'mantine-form-zod-resolver';
+import { zod4Resolver } from 'mantine-form-zod-resolver';
 import Link from "next/link";
 import { redirect } from 'next/navigation';
 import { z } from "zod";
@@ -32,7 +32,7 @@ const schema = z.object({
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
-    const { isError, error, isLoading, mutate, isSuccess } = api.photographer.update.useMutation();
+    const { isError, error, isPending, mutate, isSuccess } = api.photographer.update.useMutation();
     const form = useForm({
         initialValues: {
             bio: photographer.bio,
@@ -48,14 +48,14 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             youtube: photographer.youtube,
         },
         mode: "uncontrolled",
-        validate: zodResolver(schema),
+        validate: zod4Resolver(schema),
     });
 
     const submitForm = (values: typeof form.values) => {
         mutate({ ...values, id: photographer.id });
     }
 
-    if (isLoading) return <Loader />;
+    if (isPending) return <Loader />;
 
     if (isError) {
         return <div>Failed to update profile <br />{error.message}</div>

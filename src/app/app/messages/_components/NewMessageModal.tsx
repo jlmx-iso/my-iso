@@ -34,7 +34,7 @@ export default function NewMessageModal() {
     const [opened, { open, close }] = useDisclosure(false);
     const nextStep = () => setActive((current) => (current < 2 ? current + 1 : current));
 
-    const { data: potentialRecipientData = [], isSuccess, isError, isLoading } = api.message.getPotentialRecipients.useQuery({ query: recipientQuery }, {
+    const { data: potentialRecipientData = [], isSuccess, isError, isPending } = api.message.getPotentialRecipients.useQuery({ query: recipientQuery }, {
         enabled: recipientQuery.length > 1,
         initialData: [],
         refetchInterval: 500,
@@ -77,7 +77,7 @@ export default function NewMessageModal() {
                         label="Recipient"
                         placeholder="Search for a recipient"
                         data={potentialRecipients.map((recipient) => `${recipient.firstName} ${recipient.lastName}`)}
-                        rightSection={isLoading ? "Loading..." : null}
+                        rightSection={isPending ? "Loading..." : null}
                         onChange={(event) => {
                             setRecipientQuery(event);
                             combobox.resetSelectedOption();

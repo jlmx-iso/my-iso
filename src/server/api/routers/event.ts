@@ -53,7 +53,7 @@ export const eventRouter = createTRPCRouter({
           commentId: input.targetId,
           userId,
         }
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Error checking for existing comment like", { error: error as Error });
         throw new Error("Error checking for existing comment like");
       });
@@ -68,7 +68,7 @@ export const eventRouter = createTRPCRouter({
             }
           },
           where: { id: input.targetId }
-        }).catch((error) => {
+        }).catch((error: unknown) => {
           logger.error("Error creating comment like", { error: error as Error });
           throw new Error("Error creating comment like");
         });
@@ -79,7 +79,7 @@ export const eventRouter = createTRPCRouter({
           isDeleted: !commentLike.isDeleted,
         },
         where: { id: commentLike.id }
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Error adding comment like", { error: error as Error });
         throw new Error("Error adding comment like");
       });
@@ -112,7 +112,7 @@ export const eventRouter = createTRPCRouter({
         const buffer = Buffer.from(input.image, "base64");
 
         const result = await ctx.cloudinaryClient.uploadStream(buffer, `/app/${photographerId}/events`)
-          .catch((error) => {
+          .catch((error: unknown) => {
             logger.error("Error uploading image", { error: error as Error });
             throw new Error("Error uploading image");
           });
@@ -129,7 +129,7 @@ export const eventRouter = createTRPCRouter({
 
       return ctx.db.event.create({
         data: { ...input, photographerId },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Error creating event", { error: error as Error });
         if (error instanceof Error) {
           throw error;
@@ -172,7 +172,7 @@ export const eventRouter = createTRPCRouter({
           }
         },
         where: { id: input.id },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Error getting event", { error: error as Error });
         throw new Error("Error getting event");
       });
@@ -229,8 +229,8 @@ export const eventRouter = createTRPCRouter({
           throw new Error("Comment not found");
         }
 
-        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like) => like.userId === ctx.session.user.id) };
-      }).catch((error) => {
+        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like: any) => like.userId === ctx.session.user.id) };
+      }).catch((error: unknown) => {
         logger.error("Error getting comment", { error: error as Error });
         throw new Error("Error getting comment");
       });
@@ -274,13 +274,13 @@ export const eventRouter = createTRPCRouter({
           },
         },
         where: { eventId: input.eventId },
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Error getting comments", { error: error as Error });
         throw new Error("Error getting comments");
       });
 
       return comments.map((comment) => {
-        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like) => like.userId === ctx.session.user.id) };
+        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like: any) => like.userId === ctx.session.user.id) };
       });
     }),
 
