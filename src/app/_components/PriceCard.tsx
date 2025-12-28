@@ -1,15 +1,17 @@
 import { Button, Card, Stack, Text } from "@mantine/core";
 
 type CardDetails = {
-  title: string;
-  price: number;
-  features: string[];
   buttonText: string;
   buttonVariant: "contained" | "outlined" | "text";
+  features: string[];
+  loading?: boolean;
+  onClick?: () => void;
+  price: number;
+  title: string;
 };
 
 export default function PriceCard(cardDetails: CardDetails) {
-  const { title, price, features, buttonText, buttonVariant } = cardDetails;
+  const { title, price, features, buttonText, buttonVariant, onClick, loading } = cardDetails;
 
   return (
     <Card shadow="sm" padding="lg" radius="lg" w="100%" maw="240">
@@ -38,7 +40,9 @@ export default function PriceCard(cardDetails: CardDetails) {
         ))}
       </div>
       <div style={{ marginTop: "1rem" }}>
-        <Button variant={buttonVariant}>{buttonText}</Button>
+        <Button variant={buttonVariant} onClick={onClick} loading={loading}>
+          {buttonText}
+        </Button>
       </div>
     </Card>
   );
