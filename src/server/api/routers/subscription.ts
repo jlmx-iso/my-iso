@@ -9,8 +9,9 @@ import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
 // Validate that URLs are for this application only
+// Use NEXT_PUBLIC_BASE_URL since client components send these URLs
 const urlValidator = z.string().url().refine(
-  (url) => url.startsWith(env.BASE_URL),
+  (url) => url.startsWith(env.NEXT_PUBLIC_BASE_URL),
   "URL must be for this application"
 );
 

@@ -12,6 +12,11 @@ function getCustomerId(customer: string | Stripe.Customer | Stripe.DeletedCustom
   return typeof customer === 'string' ? customer : customer.id;
 }
 
+// Helper to safely get subscription ID from Stripe object
+function getSubscriptionId(subscription: string | Stripe.Subscription): string {
+  return typeof subscription === 'string' ? subscription : subscription.id;
+}
+
 // Helper to check all subscription statuses
 function getSubscriptionFlags(subscription: Stripe.Subscription) {
   const status = subscription.status;
@@ -59,7 +64,7 @@ export async function POST(req: NextRequest) {
         error: null,
         eventId: event.id,
         eventType: event.type,
-        status: 'processing',
+        status: 'PROCESSING',
       },
     });
   } catch (error: any) {
@@ -127,7 +132,7 @@ export async function POST(req: NextRequest) {
       await db.webhookEvent.update({
         data: {
           error: null,
-          status: 'processed',
+          status: 'PROCESSED',
         },
         where: { eventId: event.id },
       });
@@ -157,7 +162,7 @@ export async function POST(req: NextRequest) {
       await db.webhookEvent.update({
         data: {
           error: processingError.message,
-          status: 'failed',
+          status: 'FAILED',
         },
         where: { eventId: event.id },
       });
@@ -192,7 +197,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const customerId = getCustomerId(session.customer);
 
   // Fetch the full subscription to get all details
-  const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+  const subscription = await stripe.subscriptions.retrieve(
+    getSubscriptionId(session.subscription)
+  );
 
   // Update user with Stripe customer ID if not already set
   const user = await db.user.findUnique({
@@ -273,7 +280,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
 
   // Get plan name from subscription metadata or price
   let planName = subscription.metadata?.planName;
-  if (!planName && subscription.items.data[0]) {
+  if (!planName && subscription.items.data.length > 0) {
     const price = subscription.items.data[0].price;
     // Handle both string and expanded product object
     const productId = typeof price.product === 'string'

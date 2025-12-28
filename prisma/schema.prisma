@@ -59,13 +59,19 @@ model Subscription {
   user           User      @relation(fields: userId, references: id, onDelete: Cascade)
 }
 
+enum WebhookEventStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 model WebhookEvent {
-  id          String   @id @default(cuid())
-  eventId     String   @unique // Stripe event ID for idempotency
+  id          String             @id @default(cuid())
+  eventId     String             @unique // Stripe event ID for idempotency
   eventType   String
-  processedAt DateTime @default(now())
-  status      String   // 'processed' or 'failed'
-  error       String?  // Error message if failed
+  processedAt DateTime           @default(now())
+  status      WebhookEventStatus
+  error       String?            // Error message if failed
 
   @@index([eventId])
   @@index([processedAt])

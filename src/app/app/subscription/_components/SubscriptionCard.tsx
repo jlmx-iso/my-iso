@@ -175,12 +175,6 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
           </Text>
         )}
 
-        {subscription.isPending && (
-          <Text size="sm" c="orange">
-            Your payment is incomplete. Please complete the payment to activate your subscription.
-          </Text>
-        )}
-
         {subscription.isExpired ? (
           <Link href="/pricing">
             <Button fullWidth>Subscribe Again</Button>
