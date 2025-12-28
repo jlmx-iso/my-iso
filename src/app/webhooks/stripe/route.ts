@@ -159,9 +159,14 @@ export async function POST(req: NextRequest) {
 
     // Mark event as failed
     try {
+      // Truncate error message to prevent database bloat (max 5000 chars)
+      const errorMessage = processingError.message.length > 5000
+        ? processingError.message.substring(0, 5000) + '... [truncated]'
+        : processingError.message;
+
       await db.webhookEvent.update({
         data: {
-          error: processingError.message,
+          error: errorMessage,
           status: 'FAILED',
         },
         where: { eventId: event.id },
@@ -276,6 +281,24 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
     throw new Error(`User not found for Stripe customer ${customerId}`);
   }
 
+  // Get event timestamp from Stripe subscription object
+  const eventTime = new Date(subscription.created * 1000);
+
+  // Check if this event is older than the last processed event
+  const existingSubscription = await db.subscription.findUnique({
+    where: { userId: user.id },
+  });
+
+  if (existingSubscription?.lastWebhookEventTime && eventTime < existingSubscription.lastWebhookEventTime) {
+    logger.warn("Ignoring out-of-order webhook event", {
+      eventTime,
+      lastProcessedTime: existingSubscription.lastWebhookEventTime,
+      subscriptionId: subscription.id,
+      userId: user.id,
+    });
+    return; // Skip this outdated event
+  }
+
   const flags = getSubscriptionFlags(subscription);
 
   // Get plan name from subscription metadata or price
@@ -294,12 +317,14 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
       create: {
         ...flags,
         isLifetime: false,
+        lastWebhookEventTime: eventTime,
         planName: planName || 'Pro',
         subscriptionId: subscription.id,
         userId: user.id,
       },
       update: {
         ...flags,
+        lastWebhookEventTime: eventTime,
         // Only update planName if we have a value
         ...(planName && { planName }),
         subscriptionId: subscription.id,
@@ -309,6 +334,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
 
     logger.info("Subscription updated", {
       ...flags,
+      eventTime,
       planName,
       status: subscription.status,
       subscriptionId: subscription.id,
@@ -339,17 +365,25 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     return;
   }
 
+  // Get event timestamp
+  const eventTime = new Date(subscription.created * 1000);
+
   try {
     await db.subscription.update({
       data: {
         isActive: false,
         isCanceled: true,
         isExpired: true,
+        isPaused: false,
+        isPending: false,
+        isTrial: false,
+        lastWebhookEventTime: eventTime,
       },
       where: { userId: user.id },
     });
 
     logger.info("Subscription deleted", {
+      eventTime,
       subscriptionId: subscription.id,
       userId: user.id,
     });

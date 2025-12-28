@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Container, Group, Space, Title, Button, Text, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -17,6 +17,15 @@ export default function Page() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
+  const isMountedRef = useRef(true);
+
+  // Track component mount state to prevent setState on unmounted component
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Check if user has existing subscription
   const { data: subscription } = api.subscription.getCurrentSubscription.useQuery(
@@ -31,7 +40,9 @@ export default function Page() {
         message: error.message || 'Failed to start checkout. Please try again.',
         title: 'Checkout Failed',
       });
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     },
     onSuccess: (data) => {
       if (data.url) {
@@ -42,7 +53,9 @@ export default function Page() {
           message: 'Failed to get checkout URL. Please try again.',
           title: 'Checkout Failed',
         });
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     },
   });
@@ -91,7 +104,8 @@ export default function Page() {
 
   // Show different UI based on authentication status
   const getProButtonContent = () => {
-    if (status === 'loading') {
+    // Wait for both session and subscription data to load
+    if (status === 'loading' || (status === 'authenticated' && subscription === undefined)) {
       return { buttonText: "Loading...", disabled: true };
     }
 

@@ -218,6 +218,17 @@ export const subscriptionRouter = createTRPCRouter({
           return_url: input.returnUrl,
         });
 
+        if (!session.url) {
+          logger.error("Portal session created without URL", {
+            sessionId: session.id,
+            userId: user.id,
+          });
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: "Failed to get portal URL. Please try again.",
+          });
+        }
+
         logger.info("Portal session created", {
           portalUrl: session.url,
           userId: user.id,

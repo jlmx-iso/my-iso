@@ -42,21 +42,22 @@ model Account {
 }
 
 model Subscription {
-  id             String    @id @default(cuid())
-  userId         String    @unique
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  isTrial        Boolean
-  isActive       Boolean
-  isCanceled     Boolean
-  isPaused       Boolean
-  isPending      Boolean
-  isExpired      Boolean
-  isLifetime     Boolean
-  subscriptionId String?
-  expiresAt      DateTime?
-  planName       String?   // Track which plan the user subscribed to
-  user           User      @relation(fields: userId, references: id, onDelete: Cascade)
+  id                       String    @id @default(cuid())
+  userId                   String    @unique
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  isTrial                  Boolean
+  isActive                 Boolean
+  isCanceled               Boolean
+  isPaused                 Boolean
+  isPending                Boolean
+  isExpired                Boolean
+  isLifetime               Boolean
+  subscriptionId           String?
+  expiresAt                DateTime?
+  planName                 String?   // Track which plan the user subscribed to
+  lastWebhookEventTime     DateTime? // Timestamp of last processed webhook to prevent out-of-order updates
+  user                     User      @relation(fields: userId, references: id, onDelete: Cascade)
 }
 
 enum WebhookEventStatus {
@@ -75,6 +76,7 @@ model WebhookEvent {
 
   @@index([eventId])
   @@index([processedAt])
+  @@index([status, processedAt]) // Composite index for querying failed/processed events by time
 }
 
 model Session {
