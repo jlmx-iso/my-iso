@@ -17,84 +17,88 @@ export const searchRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { query, location, filters, limit, offset } = input;
 
-      // Parallel queries - always run both, let the client filter if needed
+      // Build where clause for photographers
+      const photographerWhere = {
+        AND: [
+          {
+            OR: [
+              { name: { contains: query, mode: 'insensitive' } },
+              { bio: { contains: query, mode: 'insensitive' } },
+              { companyName: { contains: query, mode: 'insensitive' } },
+            ],
+          },
+          ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+        ],
+      };
+
+      // Build where clause for events
+      const eventWhere = {
+        AND: [
+          { isDeleted: false },
+          {
+            OR: [
+              { title: { contains: query, mode: 'insensitive' } },
+              { description: { contains: query, mode: 'insensitive' } },
+            ],
+          },
+          ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+          ...(filters?.dateFrom && filters?.dateTo
+            ? [{
+                date: {
+                  gte: filters.dateFrom,
+                  lte: filters.dateTo,
+                },
+              }]
+            : []),
+        ],
+      };
+
+      // Determine if we should search each type
+      const shouldSearchPhotographers = !filters?.type || filters.type === 'all' || filters.type === 'photographers';
+      const shouldSearchEvents = !filters?.type || filters.type === 'all' || filters.type === 'events';
+
+      // Run queries in parallel (use take: 0 to skip query without changing return type)
       const [photographers, events] = await Promise.all([
-        // Search photographers
-        (!filters?.type || filters.type === 'all' || filters.type === 'photographers')
-          ? ctx.db.photographer.findMany({
-              where: {
-                AND: [
-                  {
-                    OR: [
-                      { name: { contains: query, mode: 'insensitive' } },
-                      { bio: { contains: query, mode: 'insensitive' } },
-                      { companyName: { contains: query, mode: 'insensitive' } },
-                    ],
-                  },
-                  ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-                ],
+        ctx.db.photographer.findMany({
+          where: photographerWhere,
+          take: shouldSearchPhotographers ? limit : 0,
+          skip: shouldSearchPhotographers ? offset : 0,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profilePic: true,
               },
-              take: limit,
-              skip: offset,
+            },
+          },
+        }),
+
+        ctx.db.event.findMany({
+          where: eventWhere,
+          take: shouldSearchEvents ? limit : 0,
+          skip: shouldSearchEvents ? offset : 0,
+          include: {
+            photographer: {
               include: {
                 user: {
                   select: {
                     id: true,
                     firstName: true,
                     lastName: true,
-                    profilePic: true,
                   },
                 },
               },
-            })
-          : Promise.resolve([]),
-
-        // Search events
-        (!filters?.type || filters.type === 'all' || filters.type === 'events')
-          ? ctx.db.event.findMany({
-              where: {
-                AND: [
-                  { isDeleted: false },
-                  {
-                    OR: [
-                      { title: { contains: query, mode: 'insensitive' } },
-                      { description: { contains: query, mode: 'insensitive' } },
-                    ],
-                  },
-                  ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-                  ...(filters?.dateFrom && filters?.dateTo
-                    ? [{
-                        date: {
-                          gte: filters.dateFrom,
-                          lte: filters.dateTo,
-                        },
-                      }]
-                    : []),
-                ],
+            },
+            _count: {
+              select: {
+                comments: true,
+                eventLikes: true,
               },
-              take: limit,
-              skip: offset,
-              include: {
-                photographer: {
-                  include: {
-                    user: {
-                      select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                      },
-                    },
-                  },
-                },
-                _count: {
-                  select: {
-                    comments: true,
-                    eventLikes: true,
-                  },
-                },
-              },
-            })
-          : Promise.resolve([]),
+            },
+          },
+        }),
       ]);
 
       return {
