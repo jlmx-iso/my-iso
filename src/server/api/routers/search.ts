@@ -1,42 +1,5 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import type { Prisma } from "@prisma/client";
-
-// Define the return types for our queries
-type PhotographerWithUser = Prisma.PhotographerGetPayload<{
-  include: {
-    user: {
-      select: {
-        id: true;
-        firstName: true;
-        lastName: true;
-        profilePic: true;
-      };
-    };
-  };
-}>;
-
-type EventWithDetails = Prisma.EventGetPayload<{
-  include: {
-    photographer: {
-      include: {
-        user: {
-          select: {
-            id: true;
-            firstName: true;
-            lastName: true;
-          };
-        };
-      };
-    };
-    _count: {
-      select: {
-        comments: true;
-        eventLikes: true;
-      };
-    };
-  };
-}>;
 
 export const searchRouter = createTRPCRouter({
   searchAll: publicProcedure
@@ -54,91 +17,86 @@ export const searchRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { query, location, filters, limit, offset } = input;
 
-      const results: {
-        photographers: PhotographerWithUser[];
-        events: EventWithDetails[];
-      } = {
-        photographers: [],
-        events: [],
-      };
-
       // Search photographers
-      if (!filters?.type || filters.type === 'all' || filters.type === 'photographers') {
-        results.photographers = await ctx.db.photographer.findMany({
-          where: {
-            AND: [
-              {
-                OR: [
-                  { name: { contains: query, mode: 'insensitive' } },
-                  { bio: { contains: query, mode: 'insensitive' } },
-                  { companyName: { contains: query, mode: 'insensitive' } },
-                ],
-              },
-              ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-            ],
-          },
-          take: limit,
-          skip: offset,
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                profilePic: true,
-              },
+      const photographers = (!filters?.type || filters.type === 'all' || filters.type === 'photographers')
+        ? await ctx.db.photographer.findMany({
+            where: {
+              AND: [
+                {
+                  OR: [
+                    { name: { contains: query, mode: 'insensitive' } },
+                    { bio: { contains: query, mode: 'insensitive' } },
+                    { companyName: { contains: query, mode: 'insensitive' } },
+                  ],
+                },
+                ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+              ],
             },
-          },
-        });
-      }
-
-      // Search events
-      if (!filters?.type || filters.type === 'all' || filters.type === 'events') {
-        results.events = await ctx.db.event.findMany({
-          where: {
-            AND: [
-              { isDeleted: false },
-              {
-                OR: [
-                  { title: { contains: query, mode: 'insensitive' } },
-                  { description: { contains: query, mode: 'insensitive' } },
-                ],
-              },
-              ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-              ...(filters?.dateFrom && filters?.dateTo
-                ? [{
-                    date: {
-                      gte: filters.dateFrom,
-                      lte: filters.dateTo,
-                    },
-                  }]
-                : []),
-            ],
-          },
-          take: limit,
-          skip: offset,
-          include: {
-            photographer: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                  },
+            take: limit,
+            skip: offset,
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  profilePic: true,
                 },
               },
             },
-            _count: {
-              select: {
-                comments: true,
-                eventLikes: true,
+          })
+        : [];
+
+      // Search events
+      const events = (!filters?.type || filters.type === 'all' || filters.type === 'events')
+        ? await ctx.db.event.findMany({
+            where: {
+              AND: [
+                { isDeleted: false },
+                {
+                  OR: [
+                    { title: { contains: query, mode: 'insensitive' } },
+                    { description: { contains: query, mode: 'insensitive' } },
+                  ],
+                },
+                ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+                ...(filters?.dateFrom && filters?.dateTo
+                  ? [{
+                      date: {
+                        gte: filters.dateFrom,
+                        lte: filters.dateTo,
+                      },
+                    }]
+                  : []),
+              ],
+            },
+            take: limit,
+            skip: offset,
+            include: {
+              photographer: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              _count: {
+                select: {
+                  comments: true,
+                  eventLikes: true,
+                },
               },
             },
-          },
-        });
-      }
+          })
+        : [];
 
-      return results;
+      return {
+        photographers,
+        events,
+      };
     }),
 });
