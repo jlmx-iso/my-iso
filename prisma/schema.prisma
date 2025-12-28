@@ -87,6 +87,11 @@ model Photographer {
   reviews         Review[]
   companyName     String
   events          Event[]
+
+  // Search performance indexes
+  @@index([name])
+  @@index([location])
+  @@index([companyName])
 }
 
 model PortfolioImage {
@@ -192,6 +197,12 @@ model Event {
   isDeleted      Boolean      @default(false)
   comments       Comment[]
   eventLikes     EventLike[]
+
+  // Search performance indexes
+  @@index([title])
+  @@index([location])
+  @@index([date])
+  @@index([isDeleted, date]) // Composite index for common filter pattern
 }
 
 model EventLike {

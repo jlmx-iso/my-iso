@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TextInput, Button, Select, Stack, Text } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { IconSearch, IconMapPin } from '@tabler/icons-react';
 import { api } from '~/trpc/react';
 import SearchResults from './_components/SearchResults';
+import SearchLoadingSkeleton from './_components/SearchLoadingSkeleton';
 
 export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +34,13 @@ export default function SearchPage() {
     }
   };
 
+  // Auto-search when filters change (but only after initial search)
+  useEffect(() => {
+    if (hasSearched && searchQuery.length > 0) {
+      // Query will auto-trigger due to enabled condition
+    }
+  }, [searchType, location, dateRange, hasSearched, searchQuery]);
+
   return (
     <Stack gap="md" p="md">
       <h1>Search</h1>
@@ -44,7 +52,12 @@ export default function SearchPage() {
         leftSection={<IconSearch size={16} />}
         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         size="md"
+        aria-label="Search query"
+        aria-describedby="search-hint"
       />
+      <Text id="search-hint" size="xs" c="dimmed" mt="-xs">
+        Press Enter to search
+      </Text>
 
       <TextInput
         placeholder="Location (optional)"
@@ -52,6 +65,7 @@ export default function SearchPage() {
         onChange={(e) => setLocation(e.currentTarget.value)}
         leftSection={<IconMapPin size={16} />}
         size="md"
+        aria-label="Filter by location"
       />
 
       <Select
@@ -75,17 +89,32 @@ export default function SearchPage() {
         />
       )}
 
-      <Button onClick={handleSearch} loading={isLoading} size="md">
+      <Button
+        onClick={handleSearch}
+        loading={isLoading}
+        size="md"
+        aria-label="Execute search"
+      >
         Search
       </Button>
 
+      {/* Screen reader announcements */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {isLoading && "Searching..."}
+        {hasSearched && !isLoading && results &&
+          `Found ${results.photographers.length + results.events.length} results`}
+        {hasSearched && !isLoading && !error && !results && "No results found"}
+        {error && `Error: ${error.message}`}
+      </div>
+
       {error && (
-        <Text c="red" size="sm">
+        <Text c="red" size="sm" role="alert">
           Error searching: {error.message}
         </Text>
       )}
 
-      {hasSearched && results && <SearchResults results={results} />}
+      {isLoading && hasSearched && <SearchLoadingSkeleton type={searchType} />}
+      {hasSearched && !isLoading && results && <SearchResults results={results} />}
       {hasSearched && !isLoading && !error && !results && (
         <Text c="dimmed">No results found</Text>
       )}
