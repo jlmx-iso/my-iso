@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import ComposeMessage from "./ComposeMessage";
 
 import { Modal } from "~/app/_components/Modal";
+import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 export type Recipient = {
@@ -34,13 +35,13 @@ export default function NewMessageModal() {
     const [opened, { open, close }] = useDisclosure(false);
     const nextStep = () => setActive((current) => (current < 2 ? current + 1 : current));
 
-    const { data: potentialRecipientData = [], isSuccess, isError, isPending } = api.message.getPotentialRecipients.useQuery({ query: recipientQuery }, {
+    const { data: potentialRecipientData = [], isSuccess, error: recipientError, isPending } = api.message.getPotentialRecipients.useQuery({ query: recipientQuery }, {
         enabled: recipientQuery.length > 1,
         initialData: [],
         refetchInterval: 500,
     });
 
-    const { data: messageThread, isSuccess: messageThreadSuccess, isError: messageThreadError } = api.message.getThreadByParticipants.useQuery({ participants: [recipient?.id ?? ""] }, {
+    const { data: messageThread, isSuccess: messageThreadSuccess, error: messageThreadError } = api.message.getThreadByParticipants.useQuery({ participants: [recipient?.id ?? ""] }, {
         enabled: false,
     });
 
@@ -49,11 +50,10 @@ export default function NewMessageModal() {
             setPotentialRecipients(potentialRecipientData)
         }
 
-        if (isError) {
-            // eslint-disable-next-line no-console
-            console.error("Error fetching recipients");
+        if (recipientError) {
+            logger.error("Error fetching recipients", { error: recipientError });
         }
-    }, [isSuccess, isError, potentialRecipientData]);
+    }, [isSuccess, recipientError, potentialRecipientData]);
 
     useEffect(() => {
         if (messageThreadSuccess && messageThread) {
@@ -62,10 +62,9 @@ export default function NewMessageModal() {
             setRecipient(undefined);
         }
         if (messageThreadError) {
-            // eslint-disable-next-line no-console
-            console.error("Error finding message", messageThreadError);
+            logger.error("Error finding message", { error: messageThreadError });
         }
-    }, [messageThreadSuccess, messageThread]);
+    }, [messageThreadSuccess, messageThread, messageThreadError, router, close]);
 
     return (
         <Modal isIconModal={false} opened={opened} buttonLabel={<span style={{ display: "flex", flexWrap: "nowrap", lineHeight: "1.75em" }}><IconMessagePlus style={{ margin: "0 4px" }} />New Message</span>} buttonProps={{ style: { margin: "8px 0" } }} title="New Message">

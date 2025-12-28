@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import EventCard from "~/app/_components/events/EventCard";
 import EventComment from "~/app/_components/events/EventComment";
 import CommentsRefetchContext from "~/context/CommentsRefetchContext";
+import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 export default function Page({ params }: { params: { id: string; }; }) {
@@ -24,13 +25,11 @@ export default function Page({ params }: { params: { id: string; }; }) {
     });
 
     const handleRefetchComments = () => {
-        // eslint-disable-next-line no-console
-        refetchComments().catch(console.error);
+        refetchComments().catch((err) => logger.error('Failed to refetch comments', { error: err }));
     };
 
     const handleRefetchCommentCount = () => {
-        // eslint-disable-next-line no-console
-        refetchCommentCount().catch(console.error);
+        refetchCommentCount().catch((err) => logger.error('Failed to refetch comment count', { error: err }));
     };
 
     if (isPending) {

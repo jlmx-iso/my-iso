@@ -1,7 +1,7 @@
 import { Autocomplete, type AutocompleteProps, useCombobox } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 
-import { debounce } from '~/_utils';
+import { debounce, logger } from '~/_utils';
 import { api } from '~/trpc/react';
 
 type LocationAutocompleteProps = AutocompleteProps & {
@@ -18,7 +18,7 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
     const [data, setData] = useState<string[]>();
     const [value, setValue] = useState('');
 
-    const { data: autocompleteData = [], isSuccess, isError } = api.google.getAutocompleteLocations.useQuery({ input: value }, {
+    const { data: autocompleteData = [], isSuccess, error } = api.google.getAutocompleteLocations.useQuery({ input: value }, {
         enabled: value.length > 0,
     });
 
@@ -27,13 +27,11 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
             setData(autocompleteData);
         }
 
-        if (isError) {
-            // add error handling here
-            // eslint-disable-next-line no-console
-            console.log("Error fetching data");
+        if (error) {
+            logger.error("Error fetching location autocomplete data", { error });
         }
 
-    }, [isSuccess, isError, autocompleteData]);
+    }, [isSuccess, error, autocompleteData]);
 
     const debouncedSetValue = useMemo(() => debounce((newValue: string) => {
         setValue(newValue);

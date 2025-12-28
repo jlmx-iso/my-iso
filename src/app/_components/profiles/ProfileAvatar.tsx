@@ -3,6 +3,7 @@
 import { Box, Button, Image, type MantineSize, SimpleGrid } from '@mantine/core';
 import { type FileWithPath } from '@mantine/dropzone';
 import { useHover } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import { IconUpload } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -12,6 +13,7 @@ import { Avatar } from '../Avatar';
 import { Dropzone } from '~/app/_components/input/Dropzone';
 import { Modal } from '~/app/_components/Modal';
 import colors from '~/app/theme/colors';
+import { logger } from '~/_utils';
 import { api } from '~/trpc/react';
 
 
@@ -47,14 +49,20 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
                     await uploadImage.mutateAsync({
                         image: base64File,
                     });
-                } catch (error) {
-                    // TODO: Figure out how to handle error
-                    // eslint-disable-next-line no-console
-                    console.error('Error uploading image:', error);
-                } finally {
+                    // Only navigate on success
                     setFiles(null);
                     setUploading(false);
                     router.push('/app/profile');
+                } catch (error) {
+                    logger.error('Error uploading profile avatar', { error });
+                    notifications.show({
+                        title: 'Upload Failed',
+                        message: 'Failed to upload image. Please try again.',
+                        color: 'red',
+                    });
+                    // Cleanup on error, but don't navigate
+                    setFiles(null);
+                    setUploading(false);
                 }
             }
         };

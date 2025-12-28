@@ -3,6 +3,7 @@
 import { Button, FileInput, NumberInput, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { zod4Resolver } from "mantine-form-zod-resolver";
@@ -11,6 +12,7 @@ import { z } from "zod";
 import { Loader } from "../Loader";
 
 import { LocationAutocomplete } from "~/app/register/_components";
+import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 
@@ -61,9 +63,12 @@ export default function CreateEventForm({ title }: CreateEventProps) {
                     try {
                         await mutateAsync({ ...values, date, image: base64File });
                     } catch (error) {
-                        // TODO: Figure out how to handle error
-                        // eslint-disable-next-line no-console
-                        console.error('Error uploading image:', error);
+                        logger.error('Error uploading event image', { error });
+                        notifications.show({
+                            title: 'Upload Failed',
+                            message: 'Failed to upload image. Please try again.',
+                            color: 'red',
+                        });
                     }
                 }
             };
