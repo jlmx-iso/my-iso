@@ -18,7 +18,7 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
     const [data, setData] = useState<string[]>();
     const [value, setValue] = useState('');
 
-    const { data: autocompleteData = [], isSuccess, isError } = api.google.getAutocompleteLocations.useQuery({ input: value }, {
+    const { data: autocompleteData = [], isSuccess, error } = api.google.getAutocompleteLocations.useQuery({ input: value }, {
         enabled: value.length > 0,
     });
 
@@ -27,11 +27,11 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
             setData(autocompleteData);
         }
 
-        if (isError) {
-            logger.error("Error fetching location autocomplete data");
+        if (error) {
+            logger.error("Error fetching location autocomplete data", { error });
         }
 
-    }, [isSuccess, isError, autocompleteData]);
+    }, [isSuccess, error, autocompleteData]);
 
     const debouncedSetValue = useMemo(() => debounce((newValue: string) => {
         setValue(newValue);

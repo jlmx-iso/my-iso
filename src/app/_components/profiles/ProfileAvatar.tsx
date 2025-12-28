@@ -49,6 +49,10 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
                     await uploadImage.mutateAsync({
                         image: base64File,
                     });
+                    // Only navigate on success
+                    setFiles(null);
+                    setUploading(false);
+                    router.push('/app/profile');
                 } catch (error) {
                     logger.error('Error uploading profile avatar', { error });
                     notifications.show({
@@ -56,10 +60,9 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
                         message: 'Failed to upload image. Please try again.',
                         color: 'red',
                     });
-                } finally {
+                    // Cleanup on error, but don't navigate
                     setFiles(null);
                     setUploading(false);
-                    router.push('/app/profile');
                 }
             }
         };
