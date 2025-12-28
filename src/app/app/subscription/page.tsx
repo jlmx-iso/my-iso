@@ -12,7 +12,8 @@ export default async function SubscriptionPage() {
     redirect("/login");
   }
 
-  const subscription = await api.subscription.getCurrentSubscription();
+  const caller = await api();
+  const subscription = await caller.subscription.getCurrentSubscription();
 
   return (
     <Container size="md" py="xl">
