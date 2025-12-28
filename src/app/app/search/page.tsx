@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { TextInput, Button, Select, Stack, Tabs } from '@mantine/core';
+import { TextInput, Button, Select, Stack, Text } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { IconSearch, IconMapPin } from '@tabler/icons-react';
 import { api } from '~/trpc/react';
@@ -14,7 +14,7 @@ export default function SearchPage() {
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const { data: results, isLoading, refetch } = api.search.searchAll.useQuery(
+  const { data: results, isLoading, error } = api.search.searchAll.useQuery(
     {
       query: searchQuery,
       location: location || undefined,
@@ -30,7 +30,6 @@ export default function SearchPage() {
   const handleSearch = () => {
     if (searchQuery) {
       setHasSearched(true);
-      refetch();
     }
   };
 
@@ -58,7 +57,7 @@ export default function SearchPage() {
       <Select
         label="Search Type"
         value={searchType}
-        onChange={(val) => setSearchType(val as any)}
+        onChange={(val) => val && setSearchType(val as 'all' | 'photographers' | 'events')}
         data={[
           { value: 'all', label: 'All' },
           { value: 'photographers', label: 'Photographers' },
@@ -80,9 +79,15 @@ export default function SearchPage() {
         Search
       </Button>
 
+      {error && (
+        <Text c="red" size="sm">
+          Error searching: {error.message}
+        </Text>
+      )}
+
       {hasSearched && results && <SearchResults results={results} />}
-      {hasSearched && !isLoading && !results && (
-        <div>No results found</div>
+      {hasSearched && !isLoading && !error && !results && (
+        <Text c="dimmed">No results found</Text>
       )}
     </Stack>
   );

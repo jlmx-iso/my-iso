@@ -1,12 +1,10 @@
 import { Tabs, Stack, Text } from '@mantine/core';
-import EventCard from '~/app/_components/events/EventCard';
+import EventSearchCard from './EventSearchCard';
 import PhotographerCard from './PhotographerCard';
+import type { RouterOutputs } from '~/trpc/react';
 
 type SearchResultsProps = {
-  results: {
-    photographers: any[];
-    events: any[];
-  };
+  results: RouterOutputs['search']['searchAll'];
 };
 
 export default function SearchResults({ results }: SearchResultsProps) {
@@ -52,7 +50,7 @@ export default function SearchResults({ results }: SearchResultsProps) {
                 <Text size="lg" fw={600} mt={hasPhotographers ? "xl" : undefined}>Events</Text>
               )}
               {results.events.map((event) => (
-                <EventCard key={event.id} eventId={event.id} />
+                <EventSearchCard key={event.id} event={event} />
               ))}
             </>
           )}
@@ -70,7 +68,7 @@ export default function SearchResults({ results }: SearchResultsProps) {
       <Tabs.Panel value="events" pt="md">
         <Stack gap="md">
           {results.events.map((event) => (
-            <EventCard key={event.id} eventId={event.id} />
+            <EventSearchCard key={event.id} event={event} />
           ))}
         </Stack>
       </Tabs.Panel>

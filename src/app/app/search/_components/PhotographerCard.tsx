@@ -4,21 +4,10 @@ import { Card, Group, Text, Title, Badge, Stack } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
 import Link from 'next/link';
 import { Avatar } from '~/app/_components/Avatar';
+import type { RouterOutputs } from '~/trpc/react';
 
 type PhotographerCardProps = {
-  photographer: {
-    id: string;
-    name: string;
-    bio?: string | null;
-    companyName?: string | null;
-    location?: string | null;
-    user: {
-      id: string;
-      firstName: string | null;
-      lastName: string | null;
-      profilePic?: string | null;
-    };
-  };
+  photographer: RouterOutputs['search']['searchAll']['photographers'][number];
 };
 
 export default function PhotographerCard({ photographer }: PhotographerCardProps) {
