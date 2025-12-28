@@ -85,7 +85,7 @@ export default function SearchPage() {
           label="Date Range (for events)"
           placeholder="Pick dates"
           value={dateRange}
-          onChange={setDateRange}
+          onChange={(value) => setDateRange(value as [Date | null, Date | null])}
         />
       )}
 
