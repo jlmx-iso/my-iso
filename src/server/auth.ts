@@ -101,8 +101,7 @@ export const authOptions: NextAuthOptions = {
     EmailProvider({
       sendVerificationRequest: async ({ identifier: email, url, provider }) => {
         if (env.NODE_ENV === "development") {
-          // eslint-disable-next-line no-console
-          console.log("sendVerificationRequest", { email, provider, url });
+          logger.info("sendVerificationRequest", { email, provider, url });
         } else {
           await sendEmail({
             email,

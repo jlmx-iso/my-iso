@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import ComposeMessage from "./ComposeMessage";
 
 import { Modal } from "~/app/_components/Modal";
+import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 export type Recipient = {
@@ -50,8 +51,7 @@ export default function NewMessageModal() {
         }
 
         if (isError) {
-            // eslint-disable-next-line no-console
-            console.error("Error fetching recipients");
+            logger.error("Error fetching recipients");
         }
     }, [isSuccess, isError, potentialRecipientData]);
 
@@ -62,8 +62,7 @@ export default function NewMessageModal() {
             setRecipient(undefined);
         }
         if (messageThreadError) {
-            // eslint-disable-next-line no-console
-            console.error("Error finding message", messageThreadError);
+            logger.error("Error finding message", { error: messageThreadError });
         }
     }, [messageThreadSuccess, messageThread]);
 

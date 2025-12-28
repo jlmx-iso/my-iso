@@ -1,7 +1,7 @@
 import { Autocomplete, type AutocompleteProps, useCombobox } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 
-import { debounce } from '~/_utils';
+import { debounce, logger } from '~/_utils';
 import { api } from '~/trpc/react';
 
 type LocationAutocompleteProps = AutocompleteProps & {
@@ -28,9 +28,7 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
         }
 
         if (isError) {
-            // add error handling here
-            // eslint-disable-next-line no-console
-            console.log("Error fetching data");
+            logger.error("Error fetching location autocomplete data");
         }
 
     }, [isSuccess, isError, autocompleteData]);
