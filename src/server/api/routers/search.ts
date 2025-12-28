@@ -17,82 +17,85 @@ export const searchRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { query, location, filters, limit, offset } = input;
 
-      // Search photographers
-      const photographers = (!filters?.type || filters.type === 'all' || filters.type === 'photographers')
-        ? await ctx.db.photographer.findMany({
-            where: {
-              AND: [
-                {
-                  OR: [
-                    { name: { contains: query, mode: 'insensitive' } },
-                    { bio: { contains: query, mode: 'insensitive' } },
-                    { companyName: { contains: query, mode: 'insensitive' } },
-                  ],
-                },
-                ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-              ],
-            },
-            take: limit,
-            skip: offset,
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  profilePic: true,
-                },
+      // Parallel queries - always run both, let the client filter if needed
+      const [photographers, events] = await Promise.all([
+        // Search photographers
+        (!filters?.type || filters.type === 'all' || filters.type === 'photographers')
+          ? ctx.db.photographer.findMany({
+              where: {
+                AND: [
+                  {
+                    OR: [
+                      { name: { contains: query, mode: 'insensitive' } },
+                      { bio: { contains: query, mode: 'insensitive' } },
+                      { companyName: { contains: query, mode: 'insensitive' } },
+                    ],
+                  },
+                  ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+                ],
               },
-            },
-          })
-        : [];
-
-      // Search events
-      const events = (!filters?.type || filters.type === 'all' || filters.type === 'events')
-        ? await ctx.db.event.findMany({
-            where: {
-              AND: [
-                { isDeleted: false },
-                {
-                  OR: [
-                    { title: { contains: query, mode: 'insensitive' } },
-                    { description: { contains: query, mode: 'insensitive' } },
-                  ],
-                },
-                ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
-                ...(filters?.dateFrom && filters?.dateTo
-                  ? [{
-                      date: {
-                        gte: filters.dateFrom,
-                        lte: filters.dateTo,
-                      },
-                    }]
-                  : []),
-              ],
-            },
-            take: limit,
-            skip: offset,
-            include: {
-              photographer: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                    },
+              take: limit,
+              skip: offset,
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    profilePic: true,
                   },
                 },
               },
-              _count: {
-                select: {
-                  comments: true,
-                  eventLikes: true,
+            })
+          : Promise.resolve([]),
+
+        // Search events
+        (!filters?.type || filters.type === 'all' || filters.type === 'events')
+          ? ctx.db.event.findMany({
+              where: {
+                AND: [
+                  { isDeleted: false },
+                  {
+                    OR: [
+                      { title: { contains: query, mode: 'insensitive' } },
+                      { description: { contains: query, mode: 'insensitive' } },
+                    ],
+                  },
+                  ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+                  ...(filters?.dateFrom && filters?.dateTo
+                    ? [{
+                        date: {
+                          gte: filters.dateFrom,
+                          lte: filters.dateTo,
+                        },
+                      }]
+                    : []),
+                ],
+              },
+              take: limit,
+              skip: offset,
+              include: {
+                photographer: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                      },
+                    },
+                  },
+                },
+                _count: {
+                  select: {
+                    comments: true,
+                    eventLikes: true,
+                  },
                 },
               },
-            },
-          })
-        : [];
+            })
+          : Promise.resolve([]),
+      ]);
 
       return {
         photographers,
