@@ -1,5 +1,42 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import type { Prisma } from "@prisma/client";
+
+// Define explicit select/include args for type inference
+const photographerArgs = {
+  include: {
+    user: {
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        profilePic: true,
+      },
+    },
+  },
+} satisfies Prisma.PhotographerFindManyArgs;
+
+const eventArgs = {
+  include: {
+    photographer: {
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    },
+    _count: {
+      select: {
+        comments: true,
+        eventLikes: true,
+      },
+    },
+  },
+} satisfies Prisma.EventFindManyArgs;
 
 export const searchRouter = createTRPCRouter({
   searchAll: publicProcedure
