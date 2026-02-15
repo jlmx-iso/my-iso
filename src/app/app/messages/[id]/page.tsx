@@ -1,13 +1,13 @@
 import MessageFeed from "../_components/MessageFeed";
 
 import { logger } from "~/_utils";
-import { getServerAuthSession } from "~/server/auth";
+import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
 
 export default async function Page({ params }: { params: Promise<{ id: string; }>; }) {
   const { id } = await params;
-  const session = await getServerAuthSession();
+  const session = await auth();
 
   if (!session?.user) return null;
 

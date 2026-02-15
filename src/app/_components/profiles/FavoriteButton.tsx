@@ -9,28 +9,23 @@ import { api } from "~/trpc/react";
 type FavoriteButtonProps = {
   isFavorite: boolean;
   targetUserId: string;
-  currentUserId: string;
 };
 
-export const FavoriteButton = ({ isFavorite, currentUserId, targetUserId }: FavoriteButtonProps) => {
+export const FavoriteButton = ({ isFavorite, targetUserId }: FavoriteButtonProps) => {
   const [isExistingFavorite, setIsExistingFavorite] = useState(isFavorite);
-  const removeFavorite = api.user.removeFavorite.useMutation();
-  const addFavorite = api.user.addFavorite.useMutation();
-  const handleClick = async () => {
+  const removeFavorite = api.user.removeFavorite.useMutation({
+    onSuccess: () => setIsExistingFavorite(false),
+  });
+  const addFavorite = api.user.addFavorite.useMutation({
+    onSuccess: () => setIsExistingFavorite(true),
+  });
+  const handleClick = () => {
     if (isExistingFavorite) {
-      removeFavorite.mutate({ photographerId: targetUserId, userId: currentUserId });
-      if (removeFavorite.error) {
-        return;
-      }
-      setIsExistingFavorite(false);
-      return;
+      removeFavorite.mutate({ photographerId: targetUserId });
+    } else {
+      addFavorite.mutate({ photographerId: targetUserId });
     }
-    addFavorite.mutate({ photographerId: targetUserId, userId: currentUserId });
-    if (addFavorite.error) {
-      return;
-    }
-    setIsExistingFavorite(true);
-  }
+  };
   return (
     <ActionIcon
       color="blue"
@@ -41,13 +36,11 @@ export const FavoriteButton = ({ isFavorite, currentUserId, targetUserId }: Favo
       radius="sm"
       size="xl"
       className="relative top-0 right-0"
-      >
-      {
-        isExistingFavorite ?
-        <IconBookmarkFilled size={24} aria-label="Bookmark" /> :
-        <IconBookmark size={24} aria-label="Bookmark" />
+    >
+      {isExistingFavorite ?
+        <IconBookmarkFilled size={24} aria-label="Remove bookmark" /> :
+        <IconBookmark size={24} aria-label="Add bookmark" />
       }
-
     </ActionIcon>
   );
 };

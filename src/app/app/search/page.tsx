@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { TextInput, Button, Select, Stack, Text } from '@mantine/core';
+import { useState } from 'react';
+import { TextInput, Button, Group, SegmentedControl, Stack, Text, Collapse, ActionIcon, Paper } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { IconSearch, IconMapPin } from '@tabler/icons-react';
+import { useDisclosure } from '@mantine/hooks';
+import { IconAdjustments, IconSearch } from '@tabler/icons-react';
 import { api } from '~/trpc/react';
+import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
+import EmptyState from '~/app/_components/EmptyState';
+import PageHeader from '~/app/_components/PageHeader';
 import SearchResults from './_components/SearchResults';
 import SearchLoadingSkeleton from './_components/SearchLoadingSkeleton';
 
@@ -14,6 +18,7 @@ export default function SearchPage() {
   const [searchType, setSearchType] = useState<'all' | 'photographers' | 'events'>('all');
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [filtersOpen, { toggle: toggleFilters }] = useDisclosure(false);
 
   const { data: results, isLoading, error } = api.search.searchAll.useQuery(
     {
@@ -34,69 +39,88 @@ export default function SearchPage() {
     }
   };
 
-  // Auto-search when filters change (but only after initial search)
-  useEffect(() => {
-    if (hasSearched && searchQuery.length > 0) {
-      // Query will auto-trigger due to enabled condition
-    }
-  }, [searchType, location, dateRange, hasSearched, searchQuery]);
+  const hasActiveFilters = location || searchType !== 'all' || dateRange[0] || dateRange[1];
 
   return (
-    <Stack gap="md" p="md">
-      <h1>Search</h1>
+    <Stack gap="lg">
+      <PageHeader
+        title="Search"
+        description="Find photographers and events near you"
+      />
 
+      {/* Search bar */}
       <TextInput
-        placeholder="Search photographers, events..."
+        placeholder="Search photographers, events, locations..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.currentTarget.value)}
-        leftSection={<IconSearch size={16} />}
         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-        size="md"
+        leftSection={<IconSearch size={20} />}
+        rightSection={
+          <Button
+            size="compact-sm"
+            onClick={handleSearch}
+            loading={isLoading}
+            mr={4}
+          >
+            Search
+          </Button>
+        }
+        rightSectionWidth={90}
         aria-label="Search query"
-        aria-describedby="search-hint"
-      />
-      <Text id="search-hint" size="xs" c="dimmed" mt="-xs">
-        Press Enter to search
-      </Text>
-
-      <TextInput
-        placeholder="Location (optional)"
-        value={location}
-        onChange={(e) => setLocation(e.currentTarget.value)}
-        leftSection={<IconMapPin size={16} />}
-        size="md"
-        aria-label="Filter by location"
+        size="lg"
+        radius="md"
       />
 
-      <Select
-        label="Search Type"
-        value={searchType}
-        onChange={(val) => val && setSearchType(val as 'all' | 'photographers' | 'events')}
-        data={[
-          { value: 'all', label: 'All' },
-          { value: 'photographers', label: 'Photographers' },
-          { value: 'events', label: 'Events' },
-        ]}
-      />
-
-      {searchType !== 'photographers' && (
-        <DatePickerInput
-          type="range"
-          label="Date Range (for events)"
-          placeholder="Pick dates"
-          value={dateRange}
-          onChange={(value) => setDateRange(value as [Date | null, Date | null])}
+      {/* Type + filter toggle */}
+      <Group justify="space-between" align="center">
+        <SegmentedControl
+          value={searchType}
+          onChange={(val) => setSearchType(val as 'all' | 'photographers' | 'events')}
+          data={[
+            { value: 'all', label: 'All' },
+            { value: 'photographers', label: 'Photographers' },
+            { value: 'events', label: 'Events' },
+          ]}
+          size="sm"
         />
-      )}
+        <ActionIcon
+          variant={hasActiveFilters ? "filled" : "subtle"}
+          color={hasActiveFilters ? undefined : "gray"}
+          onClick={toggleFilters}
+          size="lg"
+          radius="md"
+        >
+          <IconAdjustments size={20} />
+        </ActionIcon>
+      </Group>
 
-      <Button
-        onClick={handleSearch}
-        loading={isLoading}
-        size="md"
-        aria-label="Execute search"
-      >
-        Search
-      </Button>
+      {/* Collapsible filters */}
+      <Collapse in={filtersOpen}>
+        <Paper p="md" radius="md" withBorder>
+          <Stack gap="sm">
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+              Filters
+            </Text>
+            <Group grow gap="sm">
+              <LocationAutocomplete
+                label="Location"
+                placeholder="City, State"
+                isRequired={false}
+                value={location}
+                onChange={(val) => setLocation(val)}
+              />
+              {searchType !== 'photographers' && (
+                <DatePickerInput
+                  type="range"
+                  placeholder="Date range"
+                  value={dateRange}
+                  onChange={(value) => setDateRange(value as [Date | null, Date | null])}
+                />
+              )}
+            </Group>
+          </Stack>
+        </Paper>
+      </Collapse>
 
       {/* Screen reader announcements */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
@@ -113,10 +137,24 @@ export default function SearchPage() {
         </Text>
       )}
 
+      {/* Results */}
       {isLoading && hasSearched && <SearchLoadingSkeleton type={searchType} />}
       {hasSearched && !isLoading && results && <SearchResults results={results} />}
       {hasSearched && !isLoading && !error && !results && (
-        <Text c="dimmed">No results found</Text>
+        <EmptyState
+          icon={IconSearch}
+          title="No results found"
+          description="Try adjusting your search terms or filters."
+        />
+      )}
+
+      {/* Pre-search state */}
+      {!hasSearched && (
+        <EmptyState
+          icon={IconSearch}
+          title="Discover the network"
+          description="Search for photographers by name, specialty, or location. Find events near you."
+        />
       )}
     </Stack>
   );

@@ -4,17 +4,20 @@ import '@mantine/carousel/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 
-import { Center, ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { ColorSchemeScript, MantineProvider } from '@mantine/core';
 import { Analytics } from "@vercel/analytics/react"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
 import AppShell from "./_components/AppShell";
-import { MobileNav, Navbar } from "./_components/NavBar";
+import { Footer } from "./_components/Footer";
+import { Navbar } from "./_components/NavBar";
+import BottomTabBar from "./_components/nav/BottomTabBar";
 import { CSPostHogProvider } from './providers';
 import theme from "./theme";
 
+import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
 
 
@@ -24,9 +27,24 @@ const inter = Inter({
 });
 
 export const metadata = {
+  title: { default: "ISO", template: "%s | ISO" },
   description: "The Photographer Second Shooter Network",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
-  title: "ISO",
+  metadataBase: new URL("https://myiso.app"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "ISO",
+    title: "ISO — The Photographer Network",
+    description:
+      "Find skilled second shooters for weddings, events, and sessions. Build your team, grow your network.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ISO — The Photographer Network",
+    description:
+      "Find skilled second shooters for weddings, events, and sessions.",
+  },
 };
 
 export default async function RootLayout({
@@ -34,10 +52,11 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
+  const [cookieStore, session] = await Promise.all([cookies(), auth()]);
+  const isAuthed = !!session?.user;
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <ColorSchemeScript />
       </head>
@@ -45,10 +64,12 @@ export default async function RootLayout({
         <CSPostHogProvider>
           <MantineProvider theme={theme}>
             <TRPCReactProvider cookies={cookieStore.toString()}>
-              <AppShell navbar={<Navbar />} mobileNav={<MobileNav />}>
-                <Center py={96} w="100%">
-                  {children}
-                </Center>
+              <AppShell
+                header={<Navbar />}
+                bottomNav={isAuthed ? <BottomTabBar /> : undefined}
+                footer={<Footer />}
+              >
+                {children}
               </AppShell>
             </TRPCReactProvider>
           </MantineProvider>

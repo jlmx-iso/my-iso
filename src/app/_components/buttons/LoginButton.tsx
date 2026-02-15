@@ -1,11 +1,11 @@
 "use client";
 import { Button } from "@mantine/core";
-import { signIn } from "next-auth/react";
+import Link from "next/link";
 
 export const LoginButton = () => {
     return (
-        <Button onClick={() => signIn()}>
+        <Button component={Link} href="/login" miw={80}>
             Log In
         </Button>
     );
-}
+};

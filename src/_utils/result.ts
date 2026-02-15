@@ -5,6 +5,15 @@ export type Result<TOk = unknown, TErr = Error> = OkResult<TOk> | ErrResult<TErr
 
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
+/**
+ * Result type for functional error handling
+ *
+ * Usage:
+ * - Return Result.ok(value) for success
+ * - Return Result.err(error) for failure
+ * - Check result.isOk before accessing result.value
+ * - Check result.isErr before accessing result.error
+ */
 export namespace Result {
   export function ok<T>(value: T): OkResult<T> {
     return { isErr: false, isOk: true, value };
@@ -14,19 +23,3 @@ export namespace Result {
     return { error, isErr: true, isOk: false };
   }
 }
-
-// Example usage
-// function generateResult(): Result<number> {
-//   const random = Math.random();
-//   if (random > 0.5) {
-//     return Result.ok(42);
-//   }
-//   return Result.err("Something went wrong");
-// }
-
-// function consumeResult(result: Result<number>) {
-//   if (result.isOk) {
-//     return console.log(result.value);
-//   }
-//   return console.log(result.error);
-// }

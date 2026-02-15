@@ -59,12 +59,12 @@ export const searchRouter = createTRPCRouter({
         AND: [
           {
             OR: [
-              { name: { contains: query, mode: 'insensitive' } },
-              { bio: { contains: query, mode: 'insensitive' } },
-              { companyName: { contains: query, mode: 'insensitive' } },
+              { name: { contains: query } },
+              { bio: { contains: query } },
+              { companyName: { contains: query } },
             ],
           },
-          ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+          ...(location ? [{ location: { contains: location } }] : []),
         ],
       };
 
@@ -74,11 +74,11 @@ export const searchRouter = createTRPCRouter({
           { isDeleted: false },
           {
             OR: [
-              { title: { contains: query, mode: 'insensitive' } },
-              { description: { contains: query, mode: 'insensitive' } },
+              { title: { contains: query } },
+              { description: { contains: query } },
             ],
           },
-          ...(location ? [{ location: { contains: location, mode: 'insensitive' } }] : []),
+          ...(location ? [{ location: { contains: location } }] : []),
           ...(filters?.dateFrom && filters?.dateTo
             ? [{
                 date: {
@@ -94,48 +94,57 @@ export const searchRouter = createTRPCRouter({
       const shouldSearchPhotographers = !filters?.type || filters.type === 'all' || filters.type === 'photographers';
       const shouldSearchEvents = !filters?.type || filters.type === 'all' || filters.type === 'events';
 
-      // Run queries in parallel (use take: 0 to skip query without changing return type)
-      const [photographers, events] = await Promise.all([
-        ctx.db.photographer.findMany({
-          where: photographerWhere,
-          take: shouldSearchPhotographers ? limit : 0,
-          skip: shouldSearchPhotographers ? offset : 0,
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                profilePic: true,
-              },
-            },
-          },
-        }),
-
-        ctx.db.event.findMany({
-          where: eventWhere,
-          take: shouldSearchEvents ? limit : 0,
-          skip: shouldSearchEvents ? offset : 0,
-          include: {
-            photographer: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                  },
+      // Execute queries conditionally for better performance
+      // Using Promise.all ensures parallel execution when both are needed
+      const photographersPromise = shouldSearchPhotographers
+        ? ctx.db.photographer.findMany({
+            where: photographerWhere,
+            take: limit,
+            skip: offset,
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  profilePic: true,
                 },
               },
             },
-            _count: {
-              select: {
-                comments: true,
-                eventLikes: true,
+          })
+        : Promise.resolve([]);
+
+      const eventsPromise = shouldSearchEvents
+        ? ctx.db.event.findMany({
+            where: eventWhere,
+            take: limit,
+            skip: offset,
+            include: {
+              photographer: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              _count: {
+                select: {
+                  comments: true,
+                  eventLikes: true,
+                },
               },
             },
-          },
-        }),
+          })
+        : Promise.resolve([]);
+
+      // Run queries in parallel
+      const [photographers, events] = await Promise.all([
+        photographersPromise,
+        eventsPromise,
       ]);
 
       return {

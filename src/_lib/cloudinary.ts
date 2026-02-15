@@ -1,9 +1,5 @@
-import { type UploadApiErrorResponse, type UploadApiResponse, v2 } from "cloudinary";
-
 import { Result, logger } from "../_utils";
-
 import { env } from "~/env";
-
 
 export type Resource = {
   public_id: string;
@@ -27,56 +23,118 @@ export type Resource = {
   };
 };
 
-v2.config({
-  api_key: env.CLOUDINARY_API_KEY,
-  api_secret: env.CLOUDINARY_API_SECRET,
-  cloud_name: env.CLOUDINARY_CLOUD_NAME,
-  secure: true,
-});
+export type UploadApiResponse = {
+  public_id: string;
+  secure_url: string;
+  format: string;
+  width: number;
+  height: number;
+  bytes: number;
+  created_at: string;
+};
 
+export type UploadApiErrorResponse = {
+  message: string;
+  http_code: number;
+};
 
+/**
+ * Generate SHA-1 signature for Cloudinary API requests
+ * Edge-compatible implementation using Web Crypto API
+ */
+async function generateSignature(paramsToSign: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(paramsToSign);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Edge-compatible Cloudinary client using fetch API
+ * Replaces cloudinary/v2 SDK which uses Node.js APIs
+ */
 export const cloudinaryClient = {
+  /**
+   * Create an image tag with Cloudinary transformations
+   */
   createImageTag: (publicId: string) => {
-
-    // Create an image tag with transformations applied to the src URL
-    const imageTag = v2.image(publicId, {
-      // transformation: [
-      //   { width: 250, height: 250, gravity: 'faces', crop: 'thumb' },
-      //   { radius: 'max' },
-      //   { effect: 'outline:10', color: effectColor },
-      //   { background: backgroundColor },
-      // ],
-    });
-
-    return imageTag;
+    const baseUrl = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload`;
+    return `<img src="${baseUrl}/${publicId}" />`;
   },
 
-  getAssetInfo: async (publicId: string) => {
-
-    // Return colors in the response
-    const options = {
-      colors: true,
-    };
-
+  /**
+   * Get asset information from Cloudinary
+   */
+  getAssetInfo: async (publicId: string): Promise<{ secure_url: string } | undefined> => {
     try {
-      // Get details about the asset
-      const result = await v2.api.resource(publicId, options) as { secure_url: string };
-      return result;
+      const timestamp = Math.round(Date.now() / 1000);
+      const paramsToSign = `public_id=${publicId}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
+      const signature = await generateSignature(paramsToSign);
+
+      const url = new URL(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload`);
+      url.searchParams.set('public_ids', publicId);
+      url.searchParams.set('api_key', env.CLOUDINARY_API_KEY);
+      url.searchParams.set('timestamp', timestamp.toString());
+      url.searchParams.set('signature', signature);
+
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        logger.error("Failed to fetch asset info from Cloudinary", {
+          status: response.status,
+          publicId
+        });
+        return undefined;
+      }
+
+      const data = await response.json() as { resources: Array<{ secure_url: string }> };
+
+      // Check if resources array is empty
+      if (!data.resources || data.resources.length === 0) {
+        logger.warn("No resources found in Cloudinary response", { publicId });
+        return undefined;
+      }
+
+      return data.resources[0];
     } catch (error) {
       logger.error("An error occurred while fetching asset info.", { error, publicId });
+      return undefined;
     }
   },
 
-  getAssetsByPrefix: async (prefix: string): Promise<Result<{ resources: Resource[]; }>> => {
+  /**
+   * Get assets by prefix from Cloudinary
+   */
+  getAssetsByPrefix: async (prefix: string): Promise<Result<{ resources: Resource[] }>> => {
     try {
-      // Get details about the asset
-      const result = await v2.api.resources({
-        max_results: 5,
-        prefix: prefix,
-        type: "upload",
-      }) as { resources: Resource[] };
-      logger.info("Fetched assets from Cloudinary.", { prefix });
-      return Result.ok(result);
+      const timestamp = Math.round(Date.now() / 1000);
+      const paramsToSign = `max_results=5&prefix=${prefix}&timestamp=${timestamp}&type=upload${env.CLOUDINARY_API_SECRET}`;
+      const signature = await generateSignature(paramsToSign);
+
+      const url = new URL(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image`);
+      url.searchParams.set('prefix', prefix);
+      url.searchParams.set('max_results', '5');
+      url.searchParams.set('type', 'upload');
+      url.searchParams.set('api_key', env.CLOUDINARY_API_KEY);
+      url.searchParams.set('timestamp', timestamp.toString());
+      url.searchParams.set('signature', signature);
+
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.warn("Failed to fetch assets from Cloudinary", {
+          status: response.status,
+          error: errorText,
+          prefix
+        });
+        return Result.err(new Error(`Cloudinary API error: ${response.status}`));
+      }
+
+      const data = await response.json() as { resources: Resource[] };
+      logger.info("Fetched assets from Cloudinary.", { prefix, count: data.resources.length });
+      return Result.ok(data);
     } catch (error) {
       logger.warn("An error occurred while fetching assets.", { error, prefix });
       if (error instanceof Error) {
@@ -86,22 +144,61 @@ export const cloudinaryClient = {
     }
   },
 
-  uploadStream: async (stream: Buffer, folder: string): Promise<Result<UploadApiResponse | undefined, UploadApiErrorResponse>> => {
+  /**
+   * Upload image to Cloudinary using base64 data
+   * Edge-compatible implementation using fetch API
+   */
+  upload: async (
+    base64Data: string,
+    folder: string
+  ): Promise<Result<UploadApiResponse | undefined, UploadApiErrorResponse>> => {
     logger.info("Uploading asset to Cloudinary.", { folder });
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-      const uploadResult = await new Promise((resolve) => {
-        v2.uploader.upload_stream(
-          { folder, resource_type: "image" },
-          (error, result) => {
-            return resolve(result);
-          }
-        ).end(stream);
-      }) as UploadApiResponse | undefined;
-      return Result.ok(uploadResult);
+      const timestamp = Math.round(Date.now() / 1000);
+      const paramsToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
+      const signature = await generateSignature(paramsToSign);
+
+      const formData = new FormData();
+      formData.append('file', `data:image/png;base64,${base64Data}`);
+      formData.append('folder', folder);
+      formData.append('api_key', env.CLOUDINARY_API_KEY);
+      formData.append('timestamp', timestamp.toString());
+      formData.append('signature', signature);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json() as { error: { message: string } };
+        logger.error('Cloudinary upload failed', {
+          status: response.status,
+          error: error.error?.message,
+          folder
+        });
+        return Result.err({
+          message: error.error?.message || 'Upload failed',
+          http_code: response.status,
+        });
+      }
+
+      const data = await response.json() as UploadApiResponse;
+      logger.info("Successfully uploaded asset to Cloudinary.", {
+        public_id: data.public_id,
+        folder
+      });
+      return Result.ok(data);
     } catch (error) {
       logger.error("An error occurred while uploading asset to Cloudinary.", { error, folder });
-      return Result.err(error as UploadApiErrorResponse);
+      return Result.err({
+        message: error instanceof Error ? error.message : 'Unknown error',
+        http_code: 500,
+      });
     }
   }
 };

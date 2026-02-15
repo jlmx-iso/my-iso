@@ -1,15 +1,18 @@
+import { Stack } from '@mantine/core'
+import { IconCalendarEvent } from '@tabler/icons-react'
 import { redirect } from 'next/navigation'
 
+import EmptyState from "~/app/_components/EmptyState";
 import EventCard from "./EventCard";
 
-import { getServerAuthSession } from "~/server/auth";
+import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
 
 const EVENTS_LIMIT = 10;
 
 export default async function EventsFeed() {
-    const session = await getServerAuthSession();
+    const session = await auth();
 
     if (!session?.user) {
         return redirect('/api/auth/signin');
@@ -30,12 +33,20 @@ export default async function EventsFeed() {
     });
 
     if (events.length === 0) {
-        return <p>No upcoming events</p>;
+        return (
+            <EmptyState
+                icon={IconCalendarEvent}
+                title="No upcoming events"
+                description="Events in your area will show up here. Create one to get started."
+            />
+        );
     }
 
     return (
-        events.map((event: any) => (
-            <EventCard key={event.id} eventId={event.id} />
-        ))
+        <Stack gap="md">
+            {events.map((event: any) => (
+                <EventCard key={event.id} eventId={event.id} />
+            ))}
+        </Stack>
     )
 }

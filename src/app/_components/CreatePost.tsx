@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-import { getServerAuthSession } from "~/server/auth";
+import { auth } from "~/auth";
 
 // import { useRouter } from "next/navigation";
 // import { useState } from "react";
@@ -8,7 +8,7 @@ import { getServerAuthSession } from "~/server/auth";
 // import { api } from "~/trpc/react";
 
 export async function CreatePost() {
-  const session = await getServerAuthSession();
+  const session = await auth();
   // const router = useRouter();
   // const [name, setName] = useState("");
 

@@ -7,7 +7,7 @@ export const photographerRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({
       avatar: z.string().min(1).optional(),
-      bio: z.string().min(1),
+      bio: z.string().min(1).optional(),
       companyName: z.string().min(1),
       facebook: z.string().min(1).nullable(),
       instagram: z.string().min(1).nullable(),
@@ -15,15 +15,13 @@ export const photographerRouter = createTRPCRouter({
       name: z.string().min(1),
       tiktok: z.string().min(1).nullable(),
       twitter: z.string().min(1).nullable(),
-      userId: z.string().min(1),
       vimeo: z.string().min(1).nullable(),
       website: z.string().min(1).nullable(),
       youtube: z.string().min(1).nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
-
       return ctx.db.photographer.create({
-        data: input,
+        data: { ...input, userId: ctx.session.user.id },
       });
     }),
 
@@ -61,9 +59,9 @@ export const photographerRouter = createTRPCRouter({
       return ctx.db.photographer.findMany({
         where: {
           OR: [
-            { name: { contains: input.query, mode: "insensitive" } },
-            { companyName: { contains: input.query, mode: "insensitive" } },
-            { location: { contains: input.query, mode: "insensitive" } },
+            { name: { contains: input.query } },
+            { companyName: { contains: input.query } },
+            { location: { contains: input.query } },
           ],
         },
       });
@@ -88,7 +86,7 @@ export const photographerRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       return ctx.db.photographer.update({
         data: input,
-        where: { id: input.id, userId: ctx.session?.user.id },
+        where: { id: input.id, userId: ctx.session.user.id },
       }).catch((error: unknown) => {
         logger.error("Failed to update profile", { error: error as Error });
         throw new Error("Failed to update profile");
@@ -100,9 +98,7 @@ export const photographerRouter = createTRPCRouter({
       image: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const buffer = Buffer.from(input.image, "base64");
-
-      const result = await ctx.cloudinaryClient.uploadStream(buffer, `${ctx.session.user.id}/profile`).catch(
+      const result = await ctx.cloudinaryClient.upload(input.image, `${ctx.session.user.id}/profile`).catch(
         (error) => {
           logger.error("Failed to upload profile image", { error: error as Error });
           throw new Error("Failed to upload profile image");
@@ -134,6 +130,120 @@ export const photographerRouter = createTRPCRouter({
       }).catch((error: unknown) => {
         logger.error("Failed to update user profile pic", { error: error as Error });
         throw new Error("Failed to update user profile pic");
+      });
+    }),
+
+  addPortfolioImage: protectedProcedure
+    .input(z.object({
+      image: z.string().min(1),
+      title: z.string().min(1).max(200),
+      description: z.string().max(1000).optional(),
+      tags: z.array(z.string()).default([]),
+      isFeatured: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const photographer = await ctx.db.photographer.findFirst({
+        where: { userId: ctx.session.user.id },
+      });
+
+      if (!photographer) {
+        throw new Error("Photographer profile not found");
+      }
+
+      const uploadResult = await ctx.cloudinaryClient.upload(
+        input.image,
+        `${ctx.session.user.id}/portfolio`
+      ).catch((error) => {
+        logger.error("Failed to upload portfolio image", { error: error as Error });
+        throw new Error("Failed to upload portfolio image");
+      });
+
+      if (uploadResult.isErr) {
+        logger.error("Failed to upload portfolio image", { error: uploadResult.error });
+        throw new Error("Failed to upload portfolio image");
+      }
+
+      const imageUrl = uploadResult.value?.secure_url;
+      if (!imageUrl) {
+        throw new Error("Failed to get image URL from upload");
+      }
+
+      return ctx.db.portfolioImage.create({
+        data: {
+          photographerId: photographer.id,
+          image: imageUrl,
+          title: input.title,
+          description: input.description ?? null,
+          tags: JSON.stringify(input.tags),
+          isFeatured: input.isFeatured,
+        },
+      });
+    }),
+
+  getPortfolioImages: publicProcedure
+    .input(z.object({ photographerId: z.string().min(1) }))
+    .query(({ ctx, input }) => {
+      return ctx.db.portfolioImage.findMany({
+        where: {
+          photographerId: input.photographerId,
+          isDeleted: false,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }),
+
+  updatePortfolioImage: protectedProcedure
+    .input(z.object({
+      id: z.string().min(1),
+      title: z.string().min(1).max(200).optional(),
+      description: z.string().max(1000).nullable().optional(),
+      tags: z.array(z.string()).optional(),
+      isFeatured: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const image = await ctx.db.portfolioImage.findFirst({
+        where: { id: input.id },
+        include: { photographer: true },
+      });
+
+      if (!image) {
+        throw new Error("Portfolio image not found");
+      }
+
+      if (image.photographer.userId !== ctx.session.user.id) {
+        throw new Error("Not authorized to update this image");
+      }
+
+      return ctx.db.portfolioImage.update({
+        where: { id: input.id },
+        data: {
+          ...(input.title !== undefined && { title: input.title }),
+          ...(input.description !== undefined && { description: input.description }),
+          ...(input.tags !== undefined && { tags: JSON.stringify(input.tags) }),
+          ...(input.isFeatured !== undefined && { isFeatured: input.isFeatured }),
+        },
+      });
+    }),
+
+  deletePortfolioImage: protectedProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const image = await ctx.db.portfolioImage.findFirst({
+        where: { id: input.id },
+        include: { photographer: true },
+      });
+
+      if (!image) {
+        throw new Error("Portfolio image not found");
+      }
+
+      if (image.photographer.userId !== ctx.session.user.id) {
+        throw new Error("Not authorized to delete this image");
+      }
+
+      return ctx.db.portfolioImage.update({
+        where: { id: input.id },
+        data: { isDeleted: true },
       });
     }),
 })

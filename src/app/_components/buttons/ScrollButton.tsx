@@ -1,7 +1,7 @@
 "use client"
 
 import { Button, Flex } from "@mantine/core";
-import { useState, useEffect } from "react";
+import { IconArrowDown } from "@tabler/icons-react";
 
 type ScrollButtonProps = {
     children: React.ReactNode;
@@ -9,39 +9,21 @@ type ScrollButtonProps = {
     onClick: () => void;
 };
 
-export const useScrollButton = () => {
-    const [isHidden, setIsHidden] = useState(true);
-
-    const hide = () => setIsHidden(true);
-
-    return { hide, isHidden };
-}
-
 export default function ScrollButton({ children, hide, onClick }: ScrollButtonProps) {
-    const [isHidden, setIsHidden] = useState(true);
-
-    useEffect(() => {
-        setIsHidden(hide);
-    }, [hide]);
-
-    const handleClick = () => {
-        onClick();
-        // setIsHidden(true);
-    }
+    if (hide) return null;
 
     return (
-        <Flex w="100%" justify="center">
+        <Flex w="100%" justify="center" pos="sticky" bottom={8} style={{ zIndex: 10 }}>
             <Button
+                onClick={onClick}
+                variant="filled"
+                color="orange"
+                size="compact-sm"
+                radius="xl"
+                leftSection={<IconArrowDown size={14} />}
                 style={{
-                    alignSelf: "center",
-                    bottom: 16,
-                    position: "absolute",
-                    textDecoration: "underline",
-                    zIndex: 1000,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                 }}
-                hidden={isHidden}
-                onClick={handleClick}
-                variant="subtle"
             >
                 {children}
             </Button>

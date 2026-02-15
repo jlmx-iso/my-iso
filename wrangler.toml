@@ -1,0 +1,36 @@
+name = "my-iso"
+compatibility_date = "2025-12-29"
+pages_build_output_dir = ".vercel/output/static"
+
+# Node.js compatibility for edge runtime
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database binding
+# This binding makes the D1 database available as globalThis.DB in your code
+[[d1_databases]]
+binding = "DB"
+database_name = "my-iso-db"
+database_id = "aad00920-a190-4144-b414-c17ff5388755"
+
+# KV Namespace for rate limiting
+# Create KV namespace with: wrangler kv:namespace create RATE_LIMITER
+# For local dev: wrangler kv:namespace create RATE_LIMITER --preview
+[[kv_namespaces]]
+binding = "RATE_LIMITER"
+id = "9de595b0d67f43e18ed13a35ab1bd383"
+# preview_id = "CHANGE_ME_CREATE_PREVIEW_KV_NAMESPACE"
+
+# Environment variables
+# Set these in Cloudflare dashboard or via wrangler secret
+# Required secrets:
+# - AUTH_SECRET
+# - GOOGLE_CLIENT_ID
+# - GOOGLE_CLIENT_SECRET
+# - CLOUDINARY_API_KEY
+# - CLOUDINARY_API_SECRET
+# - RESEND_API_KEY
+# - STRIPE_SECRET_KEY
+# - STRIPE_WEBHOOK_SECRET
+
+# For local development, create a .dev.vars file with your secrets
+# See: https://developers.cloudflare.com/workers/configuration/secrets/

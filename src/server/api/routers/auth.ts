@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { sendEmail } from "../../_lib/postmark";
+import { sendEmail } from "../../_lib/email";
 
 import { UserVerificationErrors } from "~/_types/errors";
 import { logger } from "~/_utils";
@@ -14,7 +14,7 @@ export const authRouter = createTRPCRouter({
   register: publicProcedure
     .input(z.object({
       companyName: z.string().min(1),
-      email: z.string().min(1),
+      email: z.string().email(),
       facebook: z.string().trim().url().optional().or(z.literal("")),
       firstName: z.string().min(1),
       instagram: z.string().trim().url().optional().or(z.literal("")),
@@ -51,7 +51,7 @@ export const authRouter = createTRPCRouter({
         email: input.email,
         html: `
           <p>Thanks for registering!</p>
-          <p>Please <a href=${verificationUrl}>verify your email address</a> to get started!</p>
+          <p>Please <a href="${verificationUrl}">verify your email address</a> to get started!</p>
           `,
         subject: "Almost done setting up your ISO account!",
 

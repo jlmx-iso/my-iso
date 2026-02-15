@@ -34,3 +34,12 @@ const handler = (req: NextRequest) =>
   });
 
 export { handler as GET, handler as POST };
+
+/**
+ * Runtime configuration:
+ * - Local development: Node.js runtime (better-sqlite3 requires fs)
+ * - Production on Cloudflare: Edge runtime (D1 adapter, no fs needed)
+ *
+ * Switch to 'edge' when deploying to Cloudflare Workers/Pages.
+ */
+export const runtime = 'nodejs';
