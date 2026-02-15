@@ -1,7 +1,7 @@
 "use client";
 
 import { Notification as MantineNotification, type MantineStyleProp } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type NotificationProps = {
     children: string;
@@ -22,15 +22,15 @@ export const Notification = ({ children, type, autoDismiss = 5000 }: Notificatio
         zIndex: 1000,
     };
 
-    const handleClose = () => {
+    const handleClose = useCallback(() => {
         setLeft("-100%");
         setOpacity(0);
-    };
+    }, []);
 
     useEffect(() => {
         const timer = setTimeout(handleClose, autoDismiss);
-        return () => clearTimeout(timer); // Cleanup the timer on component unmount
-    }, [autoDismiss]);
+        return () => clearTimeout(timer);
+    }, [autoDismiss, handleClose]);
 
     return (
         <MantineNotification

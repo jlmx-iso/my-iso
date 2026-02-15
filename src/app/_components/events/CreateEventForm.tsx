@@ -35,7 +35,7 @@ const schema = z.object({
 });
 
 export default function CreateEventForm({ title }: CreateEventProps) {
-    const { mutateAsync, mutate, isPending, isError, isSuccess } = api.event.create.useMutation();
+    const { mutateAsync, mutate, isPending, isError, isSuccess, reset } = api.event.create.useMutation();
     const form = useForm({
         initialValues: {
             date: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -69,6 +69,14 @@ export default function CreateEventForm({ title }: CreateEventProps) {
                     }
                 }
             };
+            reader.onerror = () => {
+                logger.error('Error reading file');
+                notifications.show({
+                    title: 'File Error',
+                    message: 'Could not read the selected file. Please try a different image.',
+                    color: 'red',
+                });
+            };
             reader.readAsDataURL(image);
             return;
         }
@@ -94,8 +102,11 @@ export default function CreateEventForm({ title }: CreateEventProps) {
             <Stack align="center" gap="sm" py="xl">
                 <Text fw={500} c="red">Something went wrong</Text>
                 <Text size="sm" c="dimmed">
-                    We couldn&apos;t create your event. Please try again later.
+                    We couldn&apos;t create your event. Please try again.
                 </Text>
+                <Button variant="light" onClick={reset}>
+                    Try again
+                </Button>
             </Stack>
         );
     }

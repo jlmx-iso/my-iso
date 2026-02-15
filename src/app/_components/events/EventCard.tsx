@@ -114,6 +114,7 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
                                     size="lg"
                                     variant="subtle"
                                     color="gray"
+                                    aria-label="Toggle comments"
                                     onClick={(e) => {
                                         e.preventDefault();
                                         handleCommentButtonClick()
@@ -141,4 +142,6 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
             </div>
         )
     }
+
+    return null;
 }

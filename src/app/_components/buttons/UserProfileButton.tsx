@@ -32,9 +32,9 @@ export const UserProfileButton = ({ session }: UserProfileButtonProps) => {
         );
     }
     return (
-        <Popover width={300} trapFocus position="bottom" offset={{ crossAxis: -130, mainAxis: 10 }} shadow="md" opened={opened}>
+        <Popover width={300} trapFocus position="bottom" offset={{ crossAxis: -130, mainAxis: 10 }} shadow="md" opened={opened} onClose={close}>
             <Popover.Target>
-                <ActionIcon onClick={toggleOpened} radius="xl" size="lg" variant="subtle">
+                <ActionIcon onClick={toggleOpened} radius="xl" size="lg" variant="subtle" aria-expanded={opened} aria-haspopup="true">
                     <Avatar
                         src={session.user.profilePic}
                         name={session.user.name ?? ""}

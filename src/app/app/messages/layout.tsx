@@ -58,22 +58,24 @@ export default async function Layout({ children, params }: LayoutProps) {
                         <Stack gap={0}>
                             {data?.length ? (
                                 data.map((messageThread) => {
-                                    const participants = messageThread.participants.filter(
+                                    const otherParticipants = messageThread.participants.filter(
                                         (participant) => participant.id !== session.user.id
                                     );
-                                    return participants.map((p) => (
+                                    const firstParticipant = otherParticipants[0];
+                                    if (!firstParticipant) return null;
+                                    return (
                                         <Link
-                                            key={p.id}
+                                            key={messageThread.id}
                                             href={`/app/messages/${messageThread.id}`}
                                             style={{ textDecoration: "none", color: "inherit" }}
                                         >
                                             <ConversationTile
                                                 isCurrentConversation={resolvedParams?.id === messageThread.id}
                                                 threadId={messageThread.id}
-                                                recipient={p}
+                                                recipient={firstParticipant}
                                             />
                                         </Link>
-                                    ));
+                                    );
                                 })
                             ) : (
                                 <Box p="xl">

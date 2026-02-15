@@ -35,6 +35,8 @@ export function NotificationBell() {
                         radius="xl"
                         onClick={() => setOpened((prev) => !prev)}
                         aria-label="Notifications"
+                        aria-expanded={opened}
+                        aria-haspopup="true"
                     >
                         <IconBell size={22} />
                     </ActionIcon>

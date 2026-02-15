@@ -89,6 +89,8 @@ export default function SearchPage() {
           onClick={toggleFilters}
           size="lg"
           radius="md"
+          aria-label="Toggle filters"
+          aria-expanded={filtersOpen}
         >
           <IconAdjustments size={20} />
         </ActionIcon>
@@ -112,7 +114,8 @@ export default function SearchPage() {
               {searchType !== 'photographers' && (
                 <DatePickerInput
                   type="range"
-                  placeholder="Date range"
+                  label="Date range"
+                  placeholder="Select dates"
                   value={dateRange}
                   onChange={(value) => setDateRange(value as [Date | null, Date | null])}
                 />
