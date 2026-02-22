@@ -56,6 +56,7 @@ export const env = createEnv({
     AUTH_SECRET: process.env.AUTH_SECRET,
     AUTH_URL: process.env.AUTH_URL,
     NODE_ENV: process.env.NODE_ENV,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
@@ -109,6 +110,7 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    ANTHROPIC_API_KEY: z.string().optional(), // Optional — AI features degrade gracefully
     RESEND_API_KEY: z.string().optional(), // Make optional until API key is obtained
     STRIPE_SECRET_KEY: z.string(),
     STRIPE_WEBHOOK_SECRET: z.string(),

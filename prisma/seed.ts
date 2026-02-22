@@ -40,6 +40,8 @@ async function main() {
     await db.event.deleteMany({ where: { photographer: { userId: { in: seedUserIds } } } });
     await db.message.deleteMany({ where: { senderId: { in: seedUserIds } } });
     await db.messageThread.deleteMany({ where: { participants: { some: { id: { in: seedUserIds } } } } });
+    await db.swipe.deleteMany({ where: { OR: [{ swiperId: { in: seedUserIds } }, { targetId: { in: seedUserIds } }] } });
+    await db.match.deleteMany({ where: { OR: [{ user1Id: { in: seedUserIds } }, { user2Id: { in: seedUserIds } }] } });
     await db.portfolioImage.deleteMany({ where: { photographer: { userId: { in: seedUserIds } } } });
     await db.favorite.deleteMany({ where: { userId: { in: seedUserIds } } });
     await db.photographer.deleteMany({ where: { userId: { in: seedUserIds } } });
@@ -64,6 +66,7 @@ async function main() {
         city: "Austin",
         state: "TX",
         country: "US",
+        isDiscoverable: true,
       },
     }),
     db.user.create({
@@ -76,6 +79,7 @@ async function main() {
         city: "Denver",
         state: "CO",
         country: "US",
+        isDiscoverable: true,
       },
     }),
     db.user.create({
@@ -88,6 +92,7 @@ async function main() {
         city: "Portland",
         state: "OR",
         country: "US",
+        isDiscoverable: true,
       },
     }),
     db.user.create({
@@ -100,6 +105,7 @@ async function main() {
         city: "Nashville",
         state: "TN",
         country: "US",
+        isDiscoverable: true,
       },
     }),
     db.user.create({
@@ -112,6 +118,7 @@ async function main() {
         city: "Seattle",
         state: "WA",
         country: "US",
+        isDiscoverable: true,
       },
     }),
     db.user.create({
@@ -124,6 +131,7 @@ async function main() {
         city: "Chicago",
         state: "IL",
         country: "US",
+        isDiscoverable: true,
       },
     }),
   ]);

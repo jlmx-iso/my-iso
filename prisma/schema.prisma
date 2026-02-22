@@ -135,6 +135,7 @@ model MessageThread {
   updatedAt    DateTime  @updatedAt
   participants User[]
   messages     Message[]
+  match        Match?
 }
 
 model Message {
@@ -183,6 +184,14 @@ model User {
   notifications     Notification[]
   referralsSent     Referral[]      @relation("ReferralReferrer")
   referralsReceived Referral[]      @relation("ReferralReferred")
+  swipesSent        Swipe[]         @relation("SwipesSent")
+  swipesReceived    Swipe[]         @relation("SwipesReceived")
+  matchesAsUser1    Match[]         @relation("MatchesAsUser1")
+  matchesAsUser2    Match[]         @relation("MatchesAsUser2")
+  isDiscoverable    Boolean         @default(false)
+  seekingTypes      String?         // JSON array: ["wedding", "portrait", "event", "commercial"]
+  budgetMin         Int?
+  budgetMax         Int?
 }
 
 model Event {
@@ -308,4 +317,37 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Swipe {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  swiperId  String
+  targetId  String
+  direction String   // "like" | "pass"
+  swiper    User     @relation("SwipesSent", fields: [swiperId], references: [id], onDelete: Cascade)
+  target    User     @relation("SwipesReceived", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([swiperId, targetId])
+  @@index([swiperId])
+  @@index([targetId, direction])
+}
+
+model Match {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user1Id         String
+  user2Id         String
+  status          String         @default("matched") // matched, messaged, booked, expired
+  messageThreadId String?        @unique
+  aiSummary       String?
+  expiresAt       DateTime?
+  user1           User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2           User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messageThread   MessageThread? @relation(fields: [messageThreadId], references: [id])
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id, status])
+  @@index([user2Id, status])
 }

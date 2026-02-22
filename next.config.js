@@ -7,6 +7,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import("next").NextConfig} */
 const config = {
+  serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  transpilePackages: ["prettier"],
   images: {
     remotePatterns: [
       {

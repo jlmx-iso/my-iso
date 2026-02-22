@@ -12,6 +12,7 @@ import { auth } from "~/auth";
 
 const authLinks = [
     { href: "/app/events", label: "Events" },
+    { href: "/app/discover", label: "Discover" },
     { href: "/app/search", label: "Search" },
     { href: "/app/messages", label: "Messages" },
     { href: "/app/bookings", label: "Bookings" },

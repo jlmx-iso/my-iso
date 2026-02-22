@@ -3,6 +3,7 @@
 import { Group, Stack, Text, UnstyledButton } from "@mantine/core";
 import {
     IconCalendarEvent,
+    IconHeartHandshake,
     IconMessageCircle,
     IconSearch,
     IconUser,
@@ -12,6 +13,7 @@ import { usePathname } from "next/navigation";
 
 const tabs = [
     { href: "/app/events", label: "Events", icon: IconCalendarEvent },
+    { href: "/app/discover", label: "Discover", icon: IconHeartHandshake },
     { href: "/app/search", label: "Search", icon: IconSearch },
     { href: "/app/messages", label: "Messages", icon: IconMessageCircle },
     { href: "/app/profile", label: "Profile", icon: IconUser },

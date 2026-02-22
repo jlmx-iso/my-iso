@@ -1,3 +1,5 @@
+Loaded Prisma config from prisma.config.ts.
+
 -- CreateTable
 CREATE TABLE "Example" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -148,7 +150,11 @@ CREATE TABLE "User" (
     "country" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    "stripeId" TEXT
+    "stripeId" TEXT,
+    "isDiscoverable" BOOLEAN NOT NULL DEFAULT false,
+    "seekingTypes" TEXT,
+    "budgetMin" INTEGER,
+    "budgetMax" INTEGER
 );
 
 -- CreateTable
@@ -206,10 +212,84 @@ CREATE TABLE "CommentLike" (
 );
 
 -- CreateTable
+CREATE TABLE "Booking" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "applicantId" TEXT NOT NULL,
+    "ownerId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'applied',
+    "rate" TEXT,
+    "notes" TEXT,
+    "ownerNotes" TEXT,
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    CONSTRAINT "Booking_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Booking_applicantId_fkey" FOREIGN KEY ("applicantId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Booking_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Notification" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "recipientId" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "isRead" BOOLEAN NOT NULL DEFAULT false,
+    "linkUrl" TEXT,
+    "data" TEXT,
+    CONSTRAINT "Notification_recipientId_fkey" FOREIGN KEY ("recipientId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Referral" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "referrerId" TEXT NOT NULL,
+    "referredId" TEXT,
+    "code" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "rewardType" TEXT,
+    "rewardedAt" DATETIME,
+    CONSTRAINT "Referral_referrerId_fkey" FOREIGN KEY ("referrerId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Referral_referredId_fkey" FOREIGN KEY ("referredId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
 CREATE TABLE "VerificationToken" (
     "identifier" TEXT NOT NULL,
     "token" TEXT NOT NULL,
     "expires" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Swipe" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "swiperId" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "direction" TEXT NOT NULL,
+    CONSTRAINT "Swipe_swiperId_fkey" FOREIGN KEY ("swiperId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Swipe_targetId_fkey" FOREIGN KEY ("targetId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Match" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "user1Id" TEXT NOT NULL,
+    "user2Id" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'matched',
+    "messageThreadId" TEXT,
+    "aiSummary" TEXT,
+    "expiresAt" DATETIME,
+    CONSTRAINT "Match_user1Id_fkey" FOREIGN KEY ("user1Id") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Match_user2Id_fkey" FOREIGN KEY ("user2Id") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Match_messageThreadId_fkey" FOREIGN KEY ("messageThreadId") REFERENCES "MessageThread" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -263,14 +343,68 @@ CREATE INDEX "Event_date_idx" ON "Event"("date");
 CREATE INDEX "Event_isDeleted_date_idx" ON "Event"("isDeleted", "date");
 
 -- CreateIndex
+CREATE INDEX "Booking_applicantId_status_idx" ON "Booking"("applicantId", "status");
+
+-- CreateIndex
+CREATE INDEX "Booking_ownerId_status_idx" ON "Booking"("ownerId", "status");
+
+-- CreateIndex
+CREATE INDEX "Booking_eventId_idx" ON "Booking"("eventId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Booking_eventId_applicantId_key" ON "Booking"("eventId", "applicantId");
+
+-- CreateIndex
+CREATE INDEX "Notification_recipientId_isRead_idx" ON "Notification"("recipientId", "isRead");
+
+-- CreateIndex
+CREATE INDEX "Notification_recipientId_createdAt_idx" ON "Notification"("recipientId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Referral_code_key" ON "Referral"("code");
+
+-- CreateIndex
+CREATE INDEX "Referral_referrerId_idx" ON "Referral"("referrerId");
+
+-- CreateIndex
+CREATE INDEX "Referral_code_idx" ON "Referral"("code");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "VerificationToken_token_key" ON "VerificationToken"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VerificationToken_identifier_token_key" ON "VerificationToken"("identifier", "token");
 
 -- CreateIndex
+CREATE INDEX "Swipe_swiperId_idx" ON "Swipe"("swiperId");
+
+-- CreateIndex
+CREATE INDEX "Swipe_targetId_direction_idx" ON "Swipe"("targetId", "direction");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Swipe_swiperId_targetId_key" ON "Swipe"("swiperId", "targetId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Match_messageThreadId_key" ON "Match"("messageThreadId");
+
+-- CreateIndex
+CREATE INDEX "Match_user1Id_status_idx" ON "Match"("user1Id", "status");
+
+-- CreateIndex
+CREATE INDEX "Match_user2Id_status_idx" ON "Match"("user2Id", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Match_user1Id_user2Id_key" ON "Match"("user1Id", "user2Id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "_MessageThreadToUser_AB_unique" ON "_MessageThreadToUser"("A", "B");
 
 -- CreateIndex
 CREATE INDEX "_MessageThreadToUser_B_index" ON "_MessageThreadToUser"("B");
+┌─────────────────────────────────────────────────────────┐
+│  Update available 7.2.0 -> 7.4.1                        │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
 

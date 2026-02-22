@@ -8,7 +8,9 @@
     "db:push": "prisma generate && prisma db push",
     "db:studio": "prisma studio",
     "dev": "next dev",
-    "dev:wrangler": "next build && wrangler pages dev .vercel/output/static --compatibility-date=2025-12-29 --compatibility-flags=nodejs_compat",
+    "build:cf": "npx opennextjs-cloudflare build",
+    "deploy": "npm run build:cf && wrangler deploy",
+    "dev:wrangler": "npm run build:cf && wrangler dev",
     "lint": "next lint",
     "postinstall": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate || echo 'Prisma generation failed - this is a known CDN issue. Build may continue if client was previously generated.'",
     "start": "next start",
@@ -16,6 +18,7 @@
     "db:reset": "prisma db push --force-reset && npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
     "@auth/d1-adapter": "^1.11.1",
     "@auth/prisma-adapter": "^2.11.1",
     "@libsql/client": "^0.15.15",
@@ -26,6 +29,7 @@
     "@mantine/form": "8.3.10",
     "@mantine/hooks": "8.3.10",
     "@mantine/notifications": "^8.3.10",
+    "@opennextjs/cloudflare": "^1.16.5",
     "@prisma/adapter-better-sqlite3": "^7.4.0",
     "@prisma/adapter-d1": "^7.2.0",
     "@prisma/adapter-libsql": "^7.2.0",
@@ -92,7 +96,8 @@
     "prettier-plugin-tailwindcss": "^0.5.14",
     "prisma": "^7.2.0",
     "tailwindcss": "^3.4.4",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "wrangler": "^4.65.0"
   },
   "peerDependencies": {
     "supports-color": "^8.1.1"

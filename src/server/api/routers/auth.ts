@@ -1,8 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { sendEmail } from "../../_lib/email";
-
 import { UserVerificationErrors } from "~/_types/errors";
 import { logger } from "~/_utils";
 import { env } from "~/env";
@@ -47,6 +45,7 @@ export const authRouter = createTRPCRouter({
       }
 
       const verificationUrl = new URL(`/verify/${verificationTokenResult.value}`, env.BASE_URL).toString();
+      const { sendEmail } = await import("../../_lib/email");
       const emailResponse = await sendEmail({
         email: input.email,
         html: `
