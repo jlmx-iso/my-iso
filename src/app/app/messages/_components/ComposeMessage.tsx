@@ -84,6 +84,9 @@ export default function ComposeMessage(props: ComposeMessageProps) {
           size="lg"
           radius="xl"
           mb={1}
+          loading={createMessageMutation.isPending || createMessageThreadMutation.isPending}
+          disabled={createMessageMutation.isPending || createMessageThreadMutation.isPending}
+          aria-label="Send message"
         >
           <IconSend size={18} />
         </ActionIcon>

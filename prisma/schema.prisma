@@ -105,6 +105,8 @@ model PortfolioImage {
   tags           String // JSON-serialized array for SQLite compatibility
   isFeatured     Boolean
   isDeleted      Boolean      @default(false)
+
+  @@index([photographerId, isDeleted])
 }
 
 model Favorite {
@@ -114,6 +116,9 @@ model Favorite {
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetId  String
+
+  @@unique([userId, targetId])
+  @@index([targetId])
 }
 
 model Review {
@@ -149,6 +154,8 @@ model Message {
   content   String
   isRead    Boolean       @default(false)
   isDeleted Boolean       @default(false)
+
+  @@index([threadId])
 }
 
 model User {
@@ -243,6 +250,8 @@ model Comment {
   content      String
   isDeleted    Boolean       @default(false)
   commentLikes CommentLike[]
+
+  @@index([eventId, isDeleted])
 }
 
 model CommentLike {

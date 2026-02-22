@@ -3,7 +3,7 @@
 import { Box, Center, Loader, Stack } from "@mantine/core";
 import { IconHeartHandshake } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import EmptyState from "~/app/_components/EmptyState";
 import { api } from "~/trpc/react";
@@ -30,10 +30,13 @@ export default function CardStack() {
 
   // Expire stale matches on mount
   const expireMutation = api.discover.expireStaleMatches.useMutation();
+  const hasExpired = useRef(false);
   useEffect(() => {
-    expireMutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!hasExpired.current) {
+      expireMutation.mutate();
+      hasExpired.current = true;
+    }
+  }, [expireMutation]);
 
   const handleSwipe = useCallback(
     async (direction: "like" | "pass") => {
@@ -103,7 +106,7 @@ export default function CardStack() {
         mih={400}
         style={{ touchAction: "pan-y" }}
       >
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           {visibleCards.length > 0 ? (
             <Stack pos="relative" w="100%">
               {visibleCards.map((user, i) => (
@@ -144,7 +147,7 @@ export default function CardStack() {
         threadId={matchData?.threadId ?? ""}
         otherUserName={matchData?.otherUserName ?? ""}
         otherUserAvatar={matchData?.otherUserAvatar}
-        currentUserAvatar={currentUser ? undefined : undefined}
+        currentUserAvatar={currentUser?.photographer?.avatar ?? undefined}
       />
     </>
   );

@@ -516,6 +516,9 @@ export const discoverRouter = createTRPCRouter({
           seekingTypes: true,
           budgetMin: true,
           budgetMax: true,
+          photographer: {
+            select: { avatar: true },
+          },
         },
       });
       return {
@@ -523,6 +526,7 @@ export const discoverRouter = createTRPCRouter({
         seekingTypes: user?.seekingTypes ? (JSON.parse(user.seekingTypes) as string[]) : [],
         budgetMin: user?.budgetMin ?? null,
         budgetMax: user?.budgetMax ?? null,
+        photographer: user?.photographer ?? null,
       };
     } catch (error) {
       logger.error("Failed to get preferences", { error, userId });

@@ -14,9 +14,11 @@ import {
  */
 function generateReferralCode(): string {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789"; // no ambiguous chars (0,o,1,l,i)
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
   let code = "";
   for (let i = 0; i < 8; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+    code += chars[bytes[i]! % chars.length];
   }
   return code;
 }

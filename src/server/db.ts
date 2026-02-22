@@ -19,19 +19,28 @@ function createExtendedClient(adapter: any) {
         : ["error"],
   });
 
+  // Auto-filter isDeleted: false on all models that have soft-delete
+  const softDeleteFilter = {
+    async findMany({ args, query }: { args: { where?: Record<string, unknown> }; query: (args: unknown) => unknown }) {
+      return query({
+        ...args,
+        where: {
+          ...(args.where ?? {}),
+          isDeleted: false,
+        },
+      });
+    },
+  };
+
   return client.$extends({
     query: {
-      message: {
-        async findMany({ args, query }) {
-          return query({
-            ...args,
-            where: {
-              ...(args.where ?? {}),
-              isDeleted: false,
-            },
-          });
-        },
-      },
+      message: softDeleteFilter,
+      event: softDeleteFilter,
+      comment: softDeleteFilter,
+      commentLike: softDeleteFilter,
+      eventLike: softDeleteFilter,
+      portfolioImage: softDeleteFilter,
+      booking: softDeleteFilter,
     },
   });
 }

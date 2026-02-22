@@ -12,6 +12,7 @@ export function NotificationBell() {
 
     const { data } = api.notification.getUnreadCount.useQuery(undefined, {
         refetchInterval: 30000,
+        refetchIntervalInBackground: false,
     });
 
     const unreadCount = data?.count ?? 0;

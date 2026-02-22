@@ -1,7 +1,7 @@
 "use client";
 
 import { Autocomplete, type AutocompleteProps, useCombobox } from '@mantine/core';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { debounce } from '~/_utils';
 import { api } from '~/trpc/react';
@@ -26,6 +26,10 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
     const debouncedSetValue = useMemo(() => debounce((newValue: string) => {
         setValue(newValue);
     }, 300), []);
+
+    useEffect(() => {
+        return () => debouncedSetValue.cancel();
+    }, [debouncedSetValue]);
 
     return (
         <Autocomplete

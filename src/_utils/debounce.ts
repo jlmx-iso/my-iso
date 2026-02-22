@@ -1,11 +1,11 @@
 export function debounce<T = string>(func: (...args: T[]) => void, wait: number) {
-    let timeout: NodeJS.Timeout;
-    return function executedFunction(...args: T[]) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
+    let timeout: NodeJS.Timeout | undefined;
+    const executedFunction = (...args: T[]) => {
         clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        timeout = setTimeout(() => {
+            func(...args);
+        }, wait);
     };
+    executedFunction.cancel = () => clearTimeout(timeout);
+    return executedFunction;
 }

@@ -322,6 +322,18 @@ CREATE INDEX "Photographer_location_idx" ON "Photographer"("location");
 CREATE INDEX "Photographer_companyName_idx" ON "Photographer"("companyName");
 
 -- CreateIndex
+CREATE INDEX "PortfolioImage_photographerId_isDeleted_idx" ON "PortfolioImage"("photographerId", "isDeleted");
+
+-- CreateIndex
+CREATE INDEX "Favorite_targetId_idx" ON "Favorite"("targetId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Favorite_userId_targetId_key" ON "Favorite"("userId", "targetId");
+
+-- CreateIndex
+CREATE INDEX "Message_threadId_idx" ON "Message"("threadId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "User_handle_key" ON "User"("handle");
 
 -- CreateIndex
@@ -341,6 +353,9 @@ CREATE INDEX "Event_date_idx" ON "Event"("date");
 
 -- CreateIndex
 CREATE INDEX "Event_isDeleted_date_idx" ON "Event"("isDeleted", "date");
+
+-- CreateIndex
+CREATE INDEX "Comment_eventId_isDeleted_idx" ON "Comment"("eventId", "isDeleted");
 
 -- CreateIndex
 CREATE INDEX "Booking_applicantId_status_idx" ON "Booking"("applicantId", "status");
@@ -401,10 +416,4 @@ CREATE UNIQUE INDEX "_MessageThreadToUser_AB_unique" ON "_MessageThreadToUser"("
 
 -- CreateIndex
 CREATE INDEX "_MessageThreadToUser_B_index" ON "_MessageThreadToUser"("B");
-┌─────────────────────────────────────────────────────────┐
-│  Update available 7.2.0 -> 7.4.1                        │
-│  Run the following to update                            │
-│    npm i --save-dev prisma@latest                       │
-│    npm i @prisma/client@latest                          │
-└─────────────────────────────────────────────────────────┘
 

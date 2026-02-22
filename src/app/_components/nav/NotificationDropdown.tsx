@@ -97,7 +97,7 @@ export function NotificationDropdown({
                     )}
                 </Group>
                 <Divider />
-                <ScrollArea.Autosize mah={320}>
+                <ScrollArea.Autosize mah={320} aria-live="polite">
                     {notifications.length === 0 ? (
                         <Text c="dimmed" size="sm" ta="center" py="xl" px="md">
                             No notifications yet
