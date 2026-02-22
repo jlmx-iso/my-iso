@@ -5,8 +5,6 @@ import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 
 import { ColorSchemeScript, MantineProvider } from '@mantine/core';
-import { Analytics } from "@vercel/analytics/react"
-import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
@@ -74,8 +72,6 @@ export default async function RootLayout({
             </TRPCReactProvider>
           </MantineProvider>
         </CSPostHogProvider>
-        <SpeedInsights />
-        <Analytics />
       </body>
     </html>
   );

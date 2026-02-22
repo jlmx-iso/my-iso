@@ -84,8 +84,6 @@ export default withSentryConfig(
       treeshake: {
         removeDebugLogging: true,
       },
-      // Enables automatic instrumentation of Vercel Cron Monitors
-      automaticVercelMonitors: true,
     },
   }
 );

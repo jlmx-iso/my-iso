@@ -59,8 +59,8 @@ db.sqlite
 # Generated
 src/generated/
 
-# Screenshots
-*.png
+# Screenshots (root-level only, not public/img/)
+/*.png
 
 # Misc binaries
 *.deb

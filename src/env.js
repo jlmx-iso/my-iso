@@ -100,13 +100,7 @@ export const env = createEnv({
     // CRITICAL: Must be at least 32 characters for security
     // Generate with: openssl rand -base64 32
     AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters for security"),
-    AUTH_URL: z.preprocess(
-      // This makes Vercel/Cloudflare deployments not fail if you don't set AUTH_URL
-      // Auth.js automatically detects the URL in most environments
-      (str) => process.env.VERCEL_URL ?? str,
-      // VERCEL_URL doesn't include `https` so it cant be validated as a URL
-      process.env.VERCEL ? z.string() : z.string().url().optional()
-    ),
+    AUTH_URL: z.string().url().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
