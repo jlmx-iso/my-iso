@@ -1,14 +1,12 @@
-import { getServerSession } from "next-auth";
-
 import { ProfilePage } from "../../_components/profiles/ProfilePage";
 
-import { authOptions } from "~/server/auth";
+import { auth } from "~/auth";
 
 
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const resolvedSearchParams = await searchParams;
-  const session = await getServerSession(authOptions)
+  const session = await auth()
 
   if (!session || !session.user) {
     return null;

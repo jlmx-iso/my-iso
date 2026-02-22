@@ -7,6 +7,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import("next").NextConfig} */
 const config = {
+  serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  transpilePackages: ["prettier"],
   images: {
     remotePatterns: [
       {
@@ -82,8 +84,6 @@ export default withSentryConfig(
       treeshake: {
         removeDebugLogging: true,
       },
-      // Enables automatic instrumentation of Vercel Cron Monitors
-      automaticVercelMonitors: true,
     },
   }
 );

@@ -43,3 +43,30 @@ yarn-error.log*
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Cloudflare
+.open-next/
+.wrangler/
+.dev.vars
+
+# Playwright
+.playwright-mcp/
+
+# Local databases
+dev.db
+db.sqlite
+
+# Generated
+src/generated/
+
+# Screenshots (root-level only, not public/img/)
+/*.png
+
+# Misc binaries
+*.deb
+
+# Backup files
+*.backup
+
+# Claude Code local settings
+.claude/settings.local.json

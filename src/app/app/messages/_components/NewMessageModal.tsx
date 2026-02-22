@@ -1,15 +1,13 @@
 "use client";
 
-import { Autocomplete, Stepper, Text, useCombobox } from "@mantine/core";
+import { Autocomplete, Loader, Stepper } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconMessagePlus } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import ComposeMessage from "./ComposeMessage";
 
 import { Modal } from "~/app/_components/Modal";
-import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 export type Recipient = {
@@ -24,84 +22,42 @@ export type Recipient = {
 };
 
 export default function NewMessageModal() {
-    const router = useRouter();
-    const combobox = useCombobox({
-        onDropdownClose: () => combobox.resetSelectedOption(),
-    })
-    const [recipientQuery, setRecipientQuery] = useState<string>('');
+    const [recipientQuery, setRecipientQuery] = useState('');
     const [recipient, setRecipient] = useState<Recipient>();
-    const [potentialRecipients, setPotentialRecipients] = useState<Recipient[]>([]);
     const [active, setActive] = useState(0);
-    const [opened, { open, close }] = useDisclosure(false);
+    const [opened, { close }] = useDisclosure(false);
     const nextStep = () => setActive((current) => (current < 2 ? current + 1 : current));
 
-    const { data: potentialRecipientData = [], isSuccess, error: recipientError, isPending } = api.message.getPotentialRecipients.useQuery({ query: recipientQuery }, {
-        enabled: recipientQuery.length > 1,
-        initialData: [],
-        refetchInterval: 500,
-    });
-
-    const { data: messageThread, isSuccess: messageThreadSuccess, error: messageThreadError } = api.message.getThreadByParticipants.useQuery({ participants: [recipient?.id ?? ""] }, {
-        enabled: false,
-    });
-
-    useEffect(() => {
-        if (isSuccess) {
-            setPotentialRecipients(potentialRecipientData)
-        }
-
-        if (recipientError) {
-            logger.error("Error fetching recipients", { error: recipientError });
-        }
-    }, [isSuccess, recipientError, potentialRecipientData]);
-
-    useEffect(() => {
-        if (messageThreadSuccess && messageThread) {
-            router.push(`/app/messages/${messageThread?.id}`);
-            close();
-            setRecipient(undefined);
-        }
-        if (messageThreadError) {
-            logger.error("Error finding message", { error: messageThreadError });
-        }
-    }, [messageThreadSuccess, messageThread, messageThreadError, router, close]);
+    const { data: potentialRecipients = [], isPending } = api.message.getPotentialRecipients.useQuery(
+        { query: recipientQuery },
+        { enabled: recipientQuery.length > 1 },
+    );
 
     return (
-        <Modal isIconModal={false} opened={opened} buttonLabel={<span style={{ display: "flex", flexWrap: "nowrap", lineHeight: "1.75em" }}><IconMessagePlus style={{ margin: "0 4px" }} />New Message</span>} buttonProps={{ style: { margin: "8px 0" } }} title="New Message">
-            <Stepper
-                active={active}
-            >
+        <Modal isIconModal={false} opened={opened} buttonLabel="New Message" buttonProps={{ leftSection: <IconMessagePlus size={18} />, size: "sm" }} title="New Message">
+            <Stepper active={active}>
                 <Stepper.Step withIcon={false}>
                     <Autocomplete
                         label="Recipient"
                         placeholder="Search for a recipient"
-                        data={potentialRecipients.map((recipient) => `${recipient.firstName} ${recipient.lastName}`)}
-                        rightSection={isPending ? "Loading..." : null}
-                        onChange={(event) => {
-                            setRecipientQuery(event);
-                            combobox.resetSelectedOption();
-                            if (!combobox.dropdownOpened) {
-                                combobox.openDropdown();
-                            };
-                        }}
-                        onOptionSubmit={(value) => {
-                            const selectedRecipient = potentialRecipients.find((recipient) => `${recipient.firstName} ${recipient.lastName}` === value);
-                            if (selectedRecipient) {
-                                setRecipient(selectedRecipient);
+                        data={potentialRecipients.map((r) => ({
+                            value: r.id,
+                            label: `${r.firstName} ${r.lastName}`,
+                        }))}
+                        rightSection={isPending ? <Loader size="xs" /> : null}
+                        onChange={(value) => setRecipientQuery(value)}
+                        onOptionSubmit={(id) => {
+                            const selected = potentialRecipients.find((r) => r.id === id);
+                            if (selected) {
+                                setRecipient(selected);
+                                nextStep();
                             }
-                            nextStep();
                         }}
-
                     />
                 </Stepper.Step>
                 <Stepper.Step withIcon={false}>
-                    {messageThreadSuccess && messageThread ? (
-                        <Text>Loading message thread...</Text>
-                    ) : (
-                        recipient && <ComposeMessage recipient={recipient} />
-                    )}
+                    {recipient && <ComposeMessage recipient={recipient} />}
                 </Stepper.Step>
-
             </Stepper>
         </Modal>
     );

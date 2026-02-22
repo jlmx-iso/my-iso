@@ -1,0 +1,79 @@
+# ==============================================================================
+# CLOUDFLARE WORKERS/PAGES LOCAL DEVELOPMENT ENVIRONMENT VARIABLES
+# ==============================================================================
+#
+# This file is for local Cloudflare Workers/Pages development with Wrangler
+# Copy this file to `.dev.vars` and populate with your actual values
+#
+# DO NOT commit .dev.vars to version control (it's gitignored)
+# This .dev.vars.example file shows what variables are needed
+#
+# Usage: `npx wrangler pages dev` automatically loads .dev.vars
+#
+# Note: D1 database binding is configured in wrangler.toml, not here
+# ==============================================================================
+
+# ==============================================================================
+# AUTHENTICATION - Auth.js v5
+# ==============================================================================
+
+# REQUIRED: Generate with: openssl rand -base64 32
+AUTH_SECRET=CHANGE_ME_RUN_openssl_rand_base64_32
+AUTH_URL=http://localhost:8788
+
+# Google OAuth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# ==============================================================================
+# EMAIL - Resend
+# ==============================================================================
+
+EMAIL_FROM=noreply@example.com
+RESEND_API_KEY=
+
+# ==============================================================================
+# CLOUDINARY - Image Management
+# ==============================================================================
+
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# ==============================================================================
+# SUPABASE - File Storage
+# ==============================================================================
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+# ==============================================================================
+# STRIPE - Payment Processing
+# ==============================================================================
+
+STRIPE_SECRET_KEY=
+NEXT_PUBLIC_STRIPE_PUBLIC_KEY=
+
+# CRITICAL: Required for webhook security
+STRIPE_WEBHOOK_SECRET=
+
+# ==============================================================================
+# GOOGLE MAPS / PLACES API
+# ==============================================================================
+
+GOOGLE_PLACES_API_KEY=
+NEXT_PUBLIC_GOOGLE_PLACES_API_KEY=
+
+# ==============================================================================
+# ANALYTICS - PostHog
+# ==============================================================================
+
+NEXT_PUBLIC_POSTHOG_HOST=
+NEXT_PUBLIC_POSTHOG_PUBLIC_KEY=
+
+# ==============================================================================
+# APPLICATION
+# ==============================================================================
+
+BASE_URL=http://localhost:8788
+NODE_ENV=development

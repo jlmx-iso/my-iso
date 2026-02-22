@@ -1,3 +1,5 @@
+"use client";
+
 import { ActionIcon } from "@mantine/core";
 import { IconPencil } from "@tabler/icons-react";
 import Link, { type LinkProps } from "next/link";

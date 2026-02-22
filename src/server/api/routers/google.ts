@@ -1,22 +1,24 @@
-import { PlaceAutocompleteType } from "@googlemaps/google-maps-services-js";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
-import { env } from "~/env";
+import { placeAutocomplete } from "~/server/_lib/google";
 
 
 export const googleRouter = createTRPCRouter({
     getAutocompleteLocations: publicProcedure
-        .input(z.object({ input: z.string().min(1) }))
-        .query(async ({ ctx, input }) => {
-            const data = await ctx.googleMapsClient.placeAutocomplete({
-                params: {
-                    input: input.input,
-                    key: env.GOOGLE_PLACES_API_KEY,
-                    types: PlaceAutocompleteType.cities,
-                },
-            });
-            return data.data.predictions.map((prediction) => prediction.description);
+        .input(z.object({ query: z.string().min(1) }))
+        .query(async ({ input }) => {
+            const result = await placeAutocomplete(input.query);
+
+            if (result.isErr) {
+                throw new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: 'Failed to fetch location suggestions'
+                });
+            }
+
+            return result.value;
         }),
 });

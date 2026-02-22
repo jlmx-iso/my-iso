@@ -8,6 +8,13 @@ export const createVerificationToken = async ({ identifier, token }: { identifie
     if (!token) {
         token = generateVerificationCode();
     }
+
+    // Validate token format (only 6 digits for security - prevents XSS)
+    if (!/^[0-9]{6}$/.test(token)) {
+        logger.error("Invalid verification token format", { token: '[REDACTED]' });
+        return Result.err(new Error("Invalid verification token format"));
+    }
+
     try {
         const result = await db.verificationToken.create({
             data: {

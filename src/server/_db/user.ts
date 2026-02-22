@@ -41,49 +41,45 @@ export const createUser = async (input: CreateUserInput): Promise<Result<User>> 
         logger.error("Error finding user", { error });
         return Result.err(new Error("Error finding user"));
     }
-    const user = await db.user.create({
-        data: {
-            accounts: {
-                create: [
-                    {
-                        provider: input.provider,
-                        providerAccountId: input.email,
-                        type: "email",
+    try {
+        const user = await db.user.create({
+            data: {
+                accounts: {
+                    create: [
+                        {
+                            provider: input.provider,
+                            providerAccountId: input.email,
+                            type: "email",
+                        }
+                    ],
+                },
+                email: input.email,
+                firstName: input.firstName,
+                lastName: input.lastName,
+                phone: input.phone,
+                photographer: {
+                    create: {
+                        companyName: input.companyName,
+                        facebook: input.facebook,
+                        instagram: input.instagram,
+                        location: input.location,
+                        name: input.firstName + " " + input.lastName,
+                        tiktok: input.tiktok,
+                        twitter: input.twitter,
+                        vimeo: input.vimeo,
+                        website: input.website,
+                        youtube: input.youtube,
                     }
-                ],
+                },
             },
-            email: input.email,
-            firstName: input.firstName,
-            lastName: input.lastName,
-            phone: input.phone,
-            photographer: {
-                create: {
-                    companyName: input.companyName,
-                    facebook: input.facebook,
-                    instagram: input.instagram,
-                    location: input.location,
-                    name: input.firstName + " " + input.lastName,
-                    tiktok: input.tiktok,
-                    twitter: input.twitter,
-                    vimeo: input.vimeo,
-                    website: input.website,
-                    youtube: input.youtube,
-                }
-            },
-        },
-    }).then(
-        (user: User) => {
-            logger.info("YO!!!! User registered successfully", { user });
-            return user;
-        }
-    ).catch((error: unknown) => {
-        logger.error("Error registering user", { error });
-        return new Error("Error registering user");
-    });
-    if ("email" in user) {
+        });
+
+        logger.info("User registered successfully", { userId: user.id });
         return Result.ok(user);
+    } catch (error: unknown) {
+        logger.error("Error registering user", { error });
+        return Result.err(new Error("Error registering user"));
     }
-    return Result.err(user);
 }
 
 export const verifyUserEmail = async (token: string): Promise<Result<User["id"]>> => {
@@ -114,17 +110,35 @@ export const verifyUserEmail = async (token: string): Promise<Result<User["id"]>
             logger.error(UserVerificationErrors.USER_ALREADY_VERIFIED, { user });
             return Result.err(new Error(UserVerificationErrors.USER_ALREADY_VERIFIED));
         }
-        user = await db.user.update({
-            data: {
-                emailVerified: new Date(),
-            },
-            where: {
-                id: user.id,
-            },
+        // Use transaction to ensure atomic operation:
+        // 1. Verify email
+        // 2. Delete token
+        // This prevents token reuse if deletion fails
+        await db.$transaction(async (tx) => {
+            await tx.user.update({
+                data: {
+                    emailVerified: new Date(),
+                },
+                where: {
+                    id: user.id,
+                },
+            });
+
+            // Delete the verification token to prevent replay attacks
+            await tx.verificationToken.delete({
+                where: {
+                    identifier_token: {
+                        identifier: verificationToken.identifier,
+                        token: verificationToken.token,
+                    },
+                },
+            });
         });
+
+        logger.info("Email verified successfully", { userId: user.id });
         return Result.ok(user.id);
     } catch (error: unknown) {
-        logger.error("HI THERE Error verifying email", { error });
+        logger.error("Error verifying email", { error });
         return Result.err(new Error("Error verifying email"));
     }
 }

@@ -109,9 +109,7 @@ export const eventRouter = createTRPCRouter({
         });
 
       if (input.image) {
-        const buffer = Buffer.from(input.image, "base64");
-
-        const result = await ctx.cloudinaryClient.uploadStream(buffer, `/app/${photographerId}/events`)
+        const result = await ctx.cloudinaryClient.upload(input.image, `/app/${photographerId}/events`)
           .catch((error: unknown) => {
             logger.error("Error uploading image", { error: error as Error });
             throw new Error("Error uploading image");
@@ -143,8 +141,12 @@ export const eventRouter = createTRPCRouter({
       id: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.event.delete({
-        where: { id: input.id },
+      return ctx.db.event.update({
+        data: { isDeleted: true },
+        where: {
+          id: input.id,
+          photographer: { userId: ctx.session.user.id },
+        },
       });
     }),
 
@@ -154,7 +156,7 @@ export const eventRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.comment.delete({
-        where: { id: input.id },
+        where: { id: input.id, userId: ctx.session.user.id },
       });
     }),
 
@@ -171,7 +173,7 @@ export const eventRouter = createTRPCRouter({
             },
           }
         },
-        where: { id: input.id },
+        where: { id: input.id, isDeleted: false },
       }).catch((error: unknown) => {
         logger.error("Error getting event", { error: error as Error });
         throw new Error("Error getting event");
@@ -192,7 +194,7 @@ export const eventRouter = createTRPCRouter({
     .input(z.object({ photographerId: z.string().min(1) }))
     .query(({ ctx, input }) => {
       return ctx.db.event.findMany({
-        where: { photographerId: input.photographerId },
+        where: { photographerId: input.photographerId, isDeleted: false },
       });
     }),
 
@@ -229,7 +231,7 @@ export const eventRouter = createTRPCRouter({
           throw new Error("Comment not found");
         }
 
-        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like: any) => like.userId === ctx.session.user.id) };
+        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like) => like.userId === ctx.session.user.id) };
       }).catch((error: unknown) => {
         logger.error("Error getting comment", { error: error as Error });
         throw new Error("Error getting comment");
@@ -280,7 +282,7 @@ export const eventRouter = createTRPCRouter({
       });
 
       return comments.map((comment) => {
-        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like: any) => like.userId === ctx.session.user.id) };
+        return { ...comment, commentLikes: comment.commentLikes.length, isLiked: comment.commentLikes.some((like) => like.userId === ctx.session.user.id) };
       });
     }),
 
@@ -291,6 +293,13 @@ export const eventRouter = createTRPCRouter({
       startAt: z.number().min(0).optional(),
     }))
     .query(({ ctx, input }) => {
+      // Extract city names from location strings for fuzzy matching
+      // e.g. "Austin, TX, USA" → "Austin" so it matches "Austin, TX"
+      const locationFilters = input.locations
+        .map((loc) => loc.split(",")[0]?.trim())
+        .filter(Boolean)
+        .map((city) => ({ location: { contains: city } }));
+
       return ctx.db.event.findMany({
         include: {
           photographer: {
@@ -305,9 +314,10 @@ export const eventRouter = createTRPCRouter({
         skip: input.startAt ?? 0,
         take: input.limit ?? 10,
         where: {
-          location: {
-            in: input.locations,
-          }
+          isDeleted: false,
+          ...(locationFilters.length > 0
+            ? { OR: locationFilters }
+            : {}),
         },
       });
     }),
@@ -321,34 +331,36 @@ export const eventRouter = createTRPCRouter({
     .query(({ ctx, input }) => {
       return ctx.db.event.findMany({
         where: {
+          isDeleted: false,
+          date: { gte: input.afterDate, lte: input.beforeDate },
           OR: [
-            { title: { contains: input.query, mode: "insensitive" } },
-            { description: { contains: input.query, mode: "insensitive" } },
-            { location: { contains: input.query, mode: "insensitive" } },
-            { date: { gte: input.afterDate, lte: input.beforeDate } },
+            { title: { contains: input.query } },
+            { description: { contains: input.query } },
+            { location: { contains: input.query } },
           ],
         },
+        take: 50,
       });
     }),
 
   update: protectedProcedure
     .input(z.object({
-      date: z.string().min(1),
-      description: z.string().min(1),
-      duration: z.number().min(1),
+      date: z.string().min(1).optional(),
+      description: z.string().min(1).optional(),
+      duration: z.number().min(1).optional(),
       id: z.string().min(1),
-      image: z.string().min(1),
-      location: z.string().min(1),
-      name: z.string().min(1),
-      photographerId: z.string().min(1),
-      price: z.string().min(1),
-      time: z.string().min(1),
-      title: z.string().min(1),
+      image: z.string().min(1).optional(),
+      location: z.string().min(1).optional(),
+      title: z.string().min(1).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
       return ctx.db.event.update({
-        data: input,
-        where: { id: input.id },
+        data,
+        where: {
+          id,
+          photographer: { userId: ctx.session.user.id },
+        },
       });
     }),
 });

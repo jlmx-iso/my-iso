@@ -1,17 +1,17 @@
 "use client";
 
-import { Button, FileInput, NumberInput, TextInput, Textarea } from "@mantine/core";
+import { Button, FileInput, Group, NumberInput, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { IconUpload } from "@tabler/icons-react";
+import { IconCheck, IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
 import { Loader } from "../Loader";
 
-import { LocationAutocomplete } from "~/app/register/_components";
+import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
@@ -29,16 +29,13 @@ const schema = z.object({
     }, "Date must be in the future"),
     description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
     duration: z.number().min(1, "Duration must be at least 1 hour"),
-    // image: z.union([z.instanceof(File), z.string()]).optional(),
-image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
-
-location: z.string().min(1, "Location is required"),
-
+    image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
+    location: z.string().min(1, "Location is required"),
     title: z.string().max(140, "Title is required an must be less than 140 characters"),
 });
 
 export default function CreateEventForm({ title }: CreateEventProps) {
-    const { mutateAsync, mutate, isPending, isError, isSuccess } = api.event.create.useMutation();
+    const { mutateAsync, mutate, isPending, isError, isSuccess, reset } = api.event.create.useMutation();
     const form = useForm({
         initialValues: {
             date: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -57,7 +54,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         const reader = new FileReader();
         if (image) {
             reader.onloadend = async () => {
-                const base64File = reader.result?.toString().split(',')[1]; // Get base64 string without the prefix
+                const base64File = reader.result?.toString().split(',')[1];
 
                 if (base64File) {
                     try {
@@ -72,7 +69,15 @@ export default function CreateEventForm({ title }: CreateEventProps) {
                     }
                 }
             };
-            reader.readAsDataURL(image); // Convert image to base64
+            reader.onerror = () => {
+                logger.error('Error reading file');
+                notifications.show({
+                    title: 'File Error',
+                    message: 'Could not read the selected file. Please try a different image.',
+                    color: 'red',
+                });
+            };
+            reader.readAsDataURL(image);
             return;
         }
 
@@ -84,22 +89,76 @@ export default function CreateEventForm({ title }: CreateEventProps) {
     }
 
     if (isSuccess) {
-        return <div>Event created successfully!</div>;
+        return (
+            <Stack align="center" gap="md" py="xl">
+                <IconCheck size={40} color="var(--mantine-color-teal-5)" />
+                <Text fw={500}>Event created successfully!</Text>
+            </Stack>
+        );
     }
 
     if (isError) {
-        return <div>Uh oh, it seems something went wrong while creating the event. Please try again later.</div>;
+        return (
+            <Stack align="center" gap="sm" py="xl">
+                <Text fw={500} c="red">Something went wrong</Text>
+                <Text size="sm" c="dimmed">
+                    We couldn&apos;t create your event. Please try again.
+                </Text>
+                <Button variant="light" onClick={reset}>
+                    Try again
+                </Button>
+            </Stack>
+        );
     }
 
     return (
         <form onSubmit={form.onSubmit(handleSubmit)}>
-            <TextInput label="Title" required {...form.getInputProps("title")} />
-            <Textarea label="Description" required maxLength={MAX_DESCRIPTION_LENGTH + 1} autosize minRows={2} maxRows={4} {...form.getInputProps("description")} />
-            <DateTimePicker label="Date" valueFormat="DD MMM YYYY hh:mm A" required withSeconds={false} minDate={dayjs().format('YYYY-MM-DD HH:mm:ss')} firstDayOfWeek={0} {...form.getInputProps("date")} />
-            <NumberInput label="Hours" required min={1} max={24} {...form.getInputProps("duration")} />
-            <LocationAutocomplete label="City, State" isRequired placeholder="Austin, TX" {...form.getInputProps("location")} />
-            <FileInput label="Image" leftSection={<IconUpload />} placeholder="Upload Image" accept="image/*" {...form.getInputProps("image")} />
-            <Button type="submit" disabled={!form.isValid} style={{ marginTop: "1em", right: 0 }}>Create Event</Button>
+            <Stack gap="md">
+                <TextInput label="Title" required {...form.getInputProps("title")} />
+                <Textarea
+                    label="Description"
+                    required
+                    maxLength={MAX_DESCRIPTION_LENGTH + 1}
+                    autosize
+                    minRows={3}
+                    maxRows={6}
+                    {...form.getInputProps("description")}
+                />
+                <Group grow>
+                    <DateTimePicker
+                        label="Date"
+                        valueFormat="DD MMM YYYY hh:mm A"
+                        required
+                        withSeconds={false}
+                        minDate={dayjs().format('YYYY-MM-DD HH:mm:ss')}
+                        firstDayOfWeek={0}
+                        {...form.getInputProps("date")}
+                    />
+                    <NumberInput
+                        label="Duration (hours)"
+                        required
+                        min={1}
+                        max={24}
+                        {...form.getInputProps("duration")}
+                    />
+                </Group>
+                <LocationAutocomplete
+                    label="Location"
+                    isRequired
+                    placeholder="Austin, TX"
+                    {...form.getInputProps("location")}
+                />
+                <FileInput
+                    label="Cover Image"
+                    leftSection={<IconUpload size={16} />}
+                    placeholder="Upload an image"
+                    accept="image/*"
+                    {...form.getInputProps("image")}
+                />
+                <Button type="submit" disabled={!form.isValid} mt="xs">
+                    Create Event
+                </Button>
+            </Stack>
         </form>
     );
 }

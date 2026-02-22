@@ -44,10 +44,6 @@ export const env = createEnv({
     CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
     DATABASE_URL: process.env.DATABASE_URL,
     EMAIL_FROM: process.env.EMAIL_FROM,
-    EMAIL_SERVER_HOST: process.env.EMAIL_SERVER_HOST,
-    EMAIL_SERVER_PASSWORD: process.env.EMAIL_SERVER_PASSWORD,
-    EMAIL_SERVER_PORT: process.env.EMAIL_SERVER_PORT,
-    EMAIL_SERVER_USER: process.env.EMAIL_SERVER_USER,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
@@ -57,10 +53,11 @@ export const env = createEnv({
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    AUTH_SECRET: process.env.AUTH_SECRET,
+    AUTH_URL: process.env.AUTH_URL,
     NODE_ENV: process.env.NODE_ENV,
-    POSTMARK_API_TOKEN: process.env.POSTMARK_API_TOKEN,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   },
@@ -82,42 +79,33 @@ export const env = createEnv({
     CLOUDINARY_CLOUD_NAME: z.string(),
 
 
+    // DATABASE_URL is optional when using D1 on Cloudflare
+    // Required for local development with LibSQL
     DATABASE_URL: z
       .string()
       .url()
+      .optional()
       .refine(
-        (str) => !str.includes("YOUR_MYSQL_URL_HERE"),
+        (str) => !str || !str.includes("YOUR_MYSQL_URL_HERE"),
         "You forgot to change the default URL"
       ),
 
     EMAIL_FROM: z.string().email(),
 
-    EMAIL_SERVER_HOST: z.string(),
-
-    EMAIL_SERVER_PASSWORD: z.string(),
-
-    EMAIL_SERVER_PORT: z.string(),
-
-    EMAIL_SERVER_USER: z.string(),
     // Add ` on ID and SECRET if you want to make sure they're not empty
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
     GOOGLE_PLACES_API_KEY: z.string(),
-    NEXTAUTH_SECRET:
-      process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().optional(),
-    NEXTAUTH_URL: z.preprocess(
-      // This makes Vercel deployments not fail if you don't set NEXTAUTH_URL
-      // Since NextAuth.js automatically uses the VERCEL_URL if present.
-      (str) => process.env.VERCEL_URL ?? str,
-      // VERCEL_URL doesn't include `https` so it cant be validated as a URL
-      process.env.VERCEL ? z.string() : z.string().url()
-    ),
+    // Auth.js v5 requires AUTH_SECRET for JWT encryption
+    // CRITICAL: Must be at least 32 characters for security
+    // Generate with: openssl rand -base64 32
+    AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters for security"),
+    AUTH_URL: z.string().url().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    POSTMARK_API_TOKEN: z.string(),
+    ANTHROPIC_API_KEY: z.string().optional(), // Optional — AI features degrade gracefully
+    RESEND_API_KEY: z.string().optional(), // Make optional until API key is obtained
     STRIPE_SECRET_KEY: z.string(),
     STRIPE_WEBHOOK_SECRET: z.string(),
   },

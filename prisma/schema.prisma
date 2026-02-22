@@ -6,13 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  // NOTE: When using postgresql, mysql or sqlserver, uncomment the @db.Text annotations in model Account below
-  // Further reading:
-  // https://next-auth.js.org/adapters/prisma#create-the-prisma-schema
-  // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
-  // Note: In Prisma v7, the connection URL is passed through the adapter in PrismaClient constructor
-  // See src/server/db.ts for the adapter configuration
+  provider = "sqlite"
 }
 
 model Example {
@@ -87,6 +81,16 @@ model Photographer {
   reviews         Review[]
   companyName     String
   events          Event[]
+
+  // Search performance indexes
+  @@index([name])
+  @@index([location])
+  // Note: bio field uses LIKE/contains queries which can't be fully optimized with standard indexes
+  // For production scale, consider:
+  // 1. Full-text search (FTS5 for SQLite/D1)
+  // 2. External search service (Algolia, Meilisearch, Typesense)
+  // 3. Limit search to indexed fields only
+  @@index([companyName])
 }
 
 model PortfolioImage {
@@ -98,9 +102,11 @@ model PortfolioImage {
   image          String
   title          String
   description    String?
-  tags           String[]
+  tags           String // JSON-serialized array for SQLite compatibility
   isFeatured     Boolean
   isDeleted      Boolean      @default(false)
+
+  @@index([photographerId, isDeleted])
 }
 
 model Favorite {
@@ -110,6 +116,9 @@ model Favorite {
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetId  String
+
+  @@unique([userId, targetId])
+  @@index([targetId])
 }
 
 model Review {
@@ -131,6 +140,7 @@ model MessageThread {
   updatedAt    DateTime  @updatedAt
   participants User[]
   messages     Message[]
+  match        Match?
 }
 
 model Message {
@@ -144,36 +154,51 @@ model Message {
   content   String
   isRead    Boolean       @default(false)
   isDeleted Boolean       @default(false)
+
+  @@index([threadId])
 }
 
 model User {
-  id             String          @id @default(cuid())
-  firstName      String
-  lastName       String
-  handle         String?         @unique
-  email          String          @unique
-  emailVerified  DateTime?
-  profilePic     String?
-  phone          String?
-  address        String?
-  city           String?
-  state          String?
-  zip            String?
-  country        String?
-  accounts       Account[]
-  sessions       Session[]
-  subscription   Subscription?
-  photographer   Photographer?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  favorites      Favorite[]
-  reviews        Review[]
-  messages       Message[]
-  messageThreads MessageThread[]
-  comments       Comment[]
-  stripeId       String?         @unique
-  commentLikes   CommentLike[]
-  eventLike      EventLike[]
+  id                String          @id @default(cuid())
+  firstName         String
+  lastName          String
+  handle            String?         @unique
+  email             String          @unique
+  emailVerified     DateTime?
+  profilePic        String?
+  phone             String?
+  address           String?
+  city              String?
+  state             String?
+  zip               String?
+  country           String?
+  accounts          Account[]
+  sessions          Session[]
+  subscription      Subscription?
+  photographer      Photographer?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  favorites         Favorite[]
+  reviews           Review[]
+  messages          Message[]
+  messageThreads    MessageThread[]
+  comments          Comment[]
+  stripeId          String?         @unique
+  commentLikes      CommentLike[]
+  eventLike         EventLike[]
+  bookingsApplied   Booking[]       @relation("BookingApplicant")
+  bookingsOwned     Booking[]       @relation("BookingOwner")
+  notifications     Notification[]
+  referralsSent     Referral[]      @relation("ReferralReferrer")
+  referralsReceived Referral[]      @relation("ReferralReferred")
+  swipesSent        Swipe[]         @relation("SwipesSent")
+  swipesReceived    Swipe[]         @relation("SwipesReceived")
+  matchesAsUser1    Match[]         @relation("MatchesAsUser1")
+  matchesAsUser2    Match[]         @relation("MatchesAsUser2")
+  isDiscoverable    Boolean         @default(false)
+  seekingTypes      String?         // JSON array: ["wedding", "portrait", "event", "commercial"]
+  budgetMin         Int?
+  budgetMax         Int?
 }
 
 model Event {
@@ -192,6 +217,15 @@ model Event {
   isDeleted      Boolean      @default(false)
   comments       Comment[]
   eventLikes     EventLike[]
+  bookings       Booking[]
+  // Note: description field uses LIKE/contains queries which can't be fully optimized with standard indexes
+  // For production scale, consider full-text search (FTS5) or external search service
+
+  // Search performance indexes
+  @@index([title])
+  @@index([location])
+  @@index([date])
+  @@index([isDeleted, date]) // Composite index for common filter pattern
 }
 
 model EventLike {
@@ -216,6 +250,8 @@ model Comment {
   content      String
   isDeleted    Boolean       @default(false)
   commentLikes CommentLike[]
+
+  @@index([eventId, isDeleted])
 }
 
 model CommentLike {
@@ -229,10 +265,98 @@ model CommentLike {
   isDeleted Boolean  @default(false)
 }
 
+model Booking {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     String
+  applicant   User     @relation("BookingApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String
+  owner       User     @relation("BookingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String
+  status      String   @default("applied") // applied, accepted, declined, completed, canceled
+  rate        String? // Proposed rate
+  notes       String? // Message from applicant
+  ownerNotes  String? // Response from event owner
+  isDeleted   Boolean  @default(false)
+
+  @@unique([eventId, applicantId])
+  @@index([applicantId, status])
+  @@index([ownerId, status])
+  @@index([eventId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientId String
+  type        String // booking_applied, booking_accepted, booking_declined, booking_completed, new_message, review_received, profile_view
+  title       String
+  body        String
+  isRead      Boolean  @default(false)
+  linkUrl     String? // Deep link to relevant page
+  data        String? // JSON-serialized extra data
+
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
+}
+
+model Referral {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  referrer   User      @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referrerId String
+  referred   User?     @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  referredId String?
+  code       String    @unique
+  status     String    @default("pending") // pending, signed_up, rewarded, expired
+  rewardType String? // free_month, credit
+  rewardedAt DateTime?
+
+  @@index([referrerId])
+  @@index([code])
+}
+
 model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Swipe {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  swiperId  String
+  targetId  String
+  direction String   // "like" | "pass"
+  swiper    User     @relation("SwipesSent", fields: [swiperId], references: [id], onDelete: Cascade)
+  target    User     @relation("SwipesReceived", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([swiperId, targetId])
+  @@index([swiperId])
+  @@index([targetId, direction])
+}
+
+model Match {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user1Id         String
+  user2Id         String
+  status          String         @default("matched") // matched, messaged, booked, expired
+  messageThreadId String?        @unique
+  aiSummary       String?
+  expiresAt       DateTime?
+  user1           User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2           User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messageThread   MessageThread? @relation(fields: [messageThreadId], references: [id])
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id, status])
+  @@index([user2Id, status])
 }

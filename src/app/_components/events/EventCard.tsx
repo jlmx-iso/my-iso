@@ -1,12 +1,13 @@
 "use client";
 
-import { ActionIcon, Badge, Card, Group, Image, Text, Title } from "@mantine/core";
+import { ActionIcon, Badge, Card, Group, Image, Stack, Text, Title } from "@mantine/core";
 import { useHover } from '@mantine/hooks';
 import { IconMessageCircle } from "@tabler/icons-react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-
+import ApplyModal from "../bookings/ApplyModal";
 import UserBadge from "../UserBadge";
 import EventCardSkeleton from "./EventCardSkeleton";
 import AddCommentForm from "../AddCommentForm";
@@ -22,17 +23,20 @@ type EventCardProps = {
 
 export default function EventCard({ eventId, initialCommentCount = 0, isEventPage }: EventCardProps) {
     const [isCommentFormOpen, setIsCommentFormOpen] = useState(isEventPage);
-    const [numComments, setNumComments] = useState(initialCommentCount);
     const { hovered, ref } = useHover();
+    const session = useSession();
     const { data, isPending, isError } = api.event.getById.useQuery({
         id: eventId
     });
 
-    useEffect(() => {
-        if (data?.commentCount !== undefined) {
-            setNumComments(data.commentCount);
-        }
-    }, [data?.commentCount]);
+    const currentUserId = session.data?.user?.id;
+    const isOwnEvent = data?.photographer?.userId === currentUserId;
+    const numComments = data?.commentCount ?? initialCommentCount;
+
+    const { data: applicationStatus } = api.booking.hasApplied.useQuery(
+        { eventId },
+        { enabled: !!data?.id && !isOwnEvent },
+    );
 
     const handleCommentButtonClick = () => {
         if (!isEventPage) setIsCommentFormOpen((prev) => !prev);
@@ -40,7 +44,7 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
 
     if (isPending) {
         return (
-            <Card>
+            <Card p="xl" radius="md" withBorder>
                 <EventCardSkeleton />
             </Card>
         )
@@ -48,8 +52,8 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
 
     if (isError) {
         return (
-            <Card>
-                <p>Error loading event</p>
+            <Card p="xl" radius="md" withBorder>
+                <Text c="dimmed" size="sm">Error loading event</Text>
             </Card>
         )
     }
@@ -57,41 +61,87 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
     if (data?.id) {
         return (
             <div ref={ref}>
-                <Card shadow={hovered ? "xl" : "sm"} p="xl" pb="sm" radius="md" withBorder >
-                    <Group p="sm" justify="end" gap="lg" m="-2em">
-                        <Text size="sm" fs="italic">{data.location}</Text>
-                        <Badge size="lg" variant="transparent">{data.date.toLocaleDateString()}</Badge>
-                        <Badge size="sm" variant="outline">{data.duration} Hour{data.duration > 1 && "s"}</Badge>
-                    </Group>
-                    <UserBadge user={data.photographer} />
-                    <Link href={`/app/events/${data.id}`}>
-                        <Title order={3}>{data.title}</Title>
-                        <Text mt="xs" c="dimmed" size="sm">{data.description}</Text>
-                    </Link>
-                    {data.image && (
-                        <Card.Section m="md">
-                            <Card component={Link} href={`/app/events/${data.id}`} radius="md" shadow="none" withBorder m="0" mah={320} p={0}>
-                                <Image src={data.image} alt={data.title} h={320} style={{ position: "relative" }} />
-                            </Card>
-                        </Card.Section>
-                    )}
-                    <Group justify="space-between">
-                        <ActionIcon
-                            size="xl"
-                            variant="subtle"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                handleCommentButtonClick()
-                            }}
-                            style={{ zIndex: 9 }}
-                        >
-                            <IconMessageCircle size="2em" />{numComments > 0 && ` ${numComments}`}
-                        </ActionIcon>
-                        <Timemarker date={data.createdAt} />
-                    </Group>
-                    {isCommentFormOpen && <AddCommentForm eventId={data.id} />}
+                <Card
+                    shadow={hovered ? "md" : "xs"}
+                    p="xl"
+                    radius="md"
+                    withBorder
+                    style={{ transition: "box-shadow 150ms ease" }}
+                >
+                    <Stack gap="sm">
+                        <Group justify="space-between" align="center">
+                            <UserBadge user={data.photographer} />
+                            <Timemarker date={data.createdAt} />
+                        </Group>
+
+                        <Link href={`/app/events/${data.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                            <Title order={3} mb={4}>{data.title}</Title>
+                            {data.description && (
+                                <Text c="dimmed" size="sm" lineClamp={3}>{data.description}</Text>
+                            )}
+                        </Link>
+
+                        <Group gap="xs" wrap="wrap">
+                            {data.location && (
+                                <Badge variant="light" color="gray" size="sm">
+                                    {data.location}
+                                </Badge>
+                            )}
+                            <Badge variant="light" size="sm">
+                                {data.date.toLocaleDateString()}
+                            </Badge>
+                            <Badge variant="outline" size="sm">
+                                {data.duration} hour{data.duration > 1 ? "s" : ""}
+                            </Badge>
+                        </Group>
+
+                        {data.image && (
+                            <Card.Section mt="xs">
+                                <Link href={`/app/events/${data.id}`}>
+                                    <Image
+                                        src={data.image}
+                                        alt={data.title}
+                                        h={280}
+                                        fit="cover"
+                                    />
+                                </Link>
+                            </Card.Section>
+                        )}
+
+                        <Group justify="space-between" align="center">
+                            <Group>
+                                <ActionIcon
+                                    size="lg"
+                                    variant="subtle"
+                                    color="gray"
+                                    aria-label="Toggle comments"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        handleCommentButtonClick()
+                                    }}
+                                >
+                                    <IconMessageCircle size={20} />
+                                </ActionIcon>
+                                {numComments > 0 && (
+                                    <Text size="sm" c="dimmed">{numComments}</Text>
+                                )}
+                            </Group>
+
+                            {!isOwnEvent && (
+                                <ApplyModal
+                                    eventId={data.id}
+                                    eventTitle={data.title}
+                                    hasApplied={applicationStatus?.hasApplied ?? false}
+                                />
+                            )}
+                        </Group>
+
+                        {isCommentFormOpen && <AddCommentForm eventId={data.id} />}
+                    </Stack>
                 </Card>
             </div>
         )
     }
+
+    return null;
 }

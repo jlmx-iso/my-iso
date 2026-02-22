@@ -1,4 +1,4 @@
-import { type MessageThread } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -9,11 +9,22 @@ import { logger } from "~/_utils";
 export const messageRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({
-      content: z.string().min(1),
+      content: z.string().min(1).max(5000),
       threadId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
       try {
+        // Verify user is a participant of the thread
+        const thread = await ctx.db.messageThread.findFirst({
+          where: {
+            id: input.threadId,
+            participants: { some: { id: ctx.session.user.id } },
+          },
+        });
+        if (!thread) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a participant of this thread' });
+        }
+
         const message = await ctx.db.message.create({
           data: {
             content: input.content,
@@ -31,48 +42,47 @@ export const messageRouter = createTRPCRouter({
         });
         return message;
       } catch (error) {
-        logger.error("Unable to create message", { error, threadId: input.threadId, userId: ctx.session.user.id })
+        logger.error("Unable to create message", { error, threadId: input.threadId, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create message. Please try again.',
+          cause: error,
+        });
       }
     }),
   createThread: protectedProcedure
     .input(z.object({
-      initialMessage: z.string().min(1),
+      initialMessage: z.string().min(1).max(5000),
       participants: z.array(z.string().min(1)),
     }))
     .mutation(async ({ ctx, input }) => {
-      input.participants.push(ctx.session.user.id);
-      let thread: MessageThread
+      const allParticipants = [...input.participants, ctx.session.user.id];
       try {
-        thread = await ctx.db.messageThread.create({
-          data: {
-            participants: {
-              connect: input.participants.map((id) => ({ id })),
-            },
-          },
-        });
-      } catch (error) {
-        logger.error("unable to create message thread", { error, senderId: ctx.session.user.id });
-        return null;
-      }
-      try {
-        await ctx.db.message.create({
-          data: {
-            content: input.initialMessage,
-            sender: {
-              connect: {
-                id: ctx.session.user.id,
+        const thread = await ctx.db.$transaction(async (tx) => {
+          const newThread = await tx.messageThread.create({
+            data: {
+              participants: {
+                connect: allParticipants.map((id) => ({ id })),
               },
             },
-            thread: {
-              connect: {
-                id: thread.id,
-              },
+          });
+          await tx.message.create({
+            data: {
+              content: input.initialMessage,
+              sender: { connect: { id: ctx.session.user.id } },
+              thread: { connect: { id: newThread.id } },
             },
-          },
+          });
+          return newThread;
         });
         return thread;
       } catch (error) {
-        logger.error("unable to create message", { error, senderId: ctx.session.user.id, threadId: thread.id });
+        logger.error("Unable to create message thread", { error, senderId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create message thread. Please try again.',
+          cause: error,
+        });
       }
     }),
 
@@ -87,14 +97,19 @@ export const messageRouter = createTRPCRouter({
           where: { id: input.id, senderId: ctx.session.user.id },
         });
       } catch (error) {
-        logger.error("unable to delete message", { error, messageId: input.id, userId: ctx.session.user.id })
+        logger.error("Unable to delete message", { error, messageId: input.id, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to delete message. Please try again.',
+          cause: error,
+        });
       }
     }),
 
   getLatestThreadByUserId: protectedProcedure
-    .query(({ ctx }) => {
+    .query(async ({ ctx }) => {
       try {
-        return ctx.db.messageThread.findFirst({
+        return await ctx.db.messageThread.findFirst({
           orderBy: {
             updatedAt: "desc",
           },
@@ -110,20 +125,24 @@ export const messageRouter = createTRPCRouter({
               }
             }
           },
-        })
+        });
       } catch (error) {
-        logger.error("unable to get latest thread by userId", { error, userId: ctx.session.user.id })
+        logger.error("Unable to get latest thread by userId", { error, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to retrieve latest thread. Please try again.',
+          cause: error,
+        });
       }
-    }
-    ),
+    }),
 
   getLatestThreadMessage: protectedProcedure
     .input(z.object({
       threadId: z.string().min(1),
     }))
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       try {
-        return ctx.db.message.findFirst({
+        return await ctx.db.message.findFirst({
           orderBy: {
             createdAt: "desc",
           },
@@ -133,7 +152,6 @@ export const messageRouter = createTRPCRouter({
             id: true,
             sender: {
               select: {
-                email: true,
                 firstName: true,
                 id: true,
                 lastName: true,
@@ -164,7 +182,12 @@ export const messageRouter = createTRPCRouter({
           },
         });
       } catch (error) {
-        logger.error("unable to get latest thread message", { error, threadId: input.threadId, userId: ctx.session.user.id });
+        logger.error("Unable to get latest thread message", { error, threadId: input.threadId, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to retrieve latest message. Please try again.',
+          cause: error,
+        });
       }
     }),
 
@@ -174,7 +197,6 @@ export const messageRouter = createTRPCRouter({
       try {
         return ctx.db.user.findMany({
           select: {
-            email: true,
             firstName: true,
             id: true,
             lastName: true,
@@ -188,23 +210,16 @@ export const messageRouter = createTRPCRouter({
           },
           take: 10,
           where: {
+            id: { not: ctx.session.user.id },
             OR: [
               {
                 firstName: {
                   contains: input.query,
-                  mode: "insensitive",
                 }
               },
               {
                 lastName: {
                   contains: input.query,
-                  mode: "insensitive",
-                }
-              },
-              {
-                email: {
-                  contains: input.query,
-                  mode: "insensitive",
                 }
               },
               {
@@ -228,9 +243,9 @@ export const messageRouter = createTRPCRouter({
       startAt: z.number().min(0).default(0),
       threadId: z.string().min(1),
     }))
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       try {
-        return ctx.db.messageThread.findUnique({
+        return await ctx.db.messageThread.findFirst({
           select: {
             _count: {
               select: {
@@ -240,7 +255,7 @@ export const messageRouter = createTRPCRouter({
             id: true,
             messages: {
               orderBy: {
-                createdAt: "desc",
+                createdAt: "asc",
               },
               select: {
                 content: true,
@@ -248,7 +263,6 @@ export const messageRouter = createTRPCRouter({
                 id: true,
                 sender: {
                   select: {
-                    email: true,
                     firstName: true,
                     id: true,
                     lastName: true,
@@ -279,39 +293,45 @@ export const messageRouter = createTRPCRouter({
           },
           where: {
             id: input.threadId,
+            participants: { some: { id: ctx.session.user.id } },
           },
         });
       } catch (error) {
-        logger.error("issue retrieving message thread", { error, threadId: input.threadId, userId: ctx.session.user.id });
-        return null;
+        logger.error("Failed to retrieve message thread", { error, threadId: input.threadId, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to retrieve message thread. Please try again.',
+          cause: error,
+        });
       }
     }),
   getThreadByParticipants: protectedProcedure
     .input(z.object({
       participants: z.array(z.string().min(1)),
     }))
-    .query(({ ctx, input }) => {
-      input.participants.push(ctx.session.user.id);
+    .query(async ({ ctx, input }) => {
+      const allParticipants = [...input.participants, ctx.session.user.id];
       try {
-        return ctx.db.messageThread.findFirst({
+        return await ctx.db.messageThread.findFirst({
           where: {
-            participants: {
-              some: {
-                id: {
-                  in: input.participants,
-                },
-              },
-            },
+            AND: allParticipants.map((id) => ({
+              participants: { some: { id } },
+            })),
           },
         });
       } catch (error) {
         logger.error("Unable to get thread by participants", { error, participants: input.participants, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to retrieve thread. Please try again.',
+          cause: error,
+        });
       }
     }),
   getThreadsByUserId: protectedProcedure
-    .query(({ ctx }) => {
+    .query(async ({ ctx }) => {
       try {
-        return ctx.db.messageThread.findMany({
+        return await ctx.db.messageThread.findMany({
           select: {
             id: true,
             participants: {
@@ -338,9 +358,14 @@ export const messageRouter = createTRPCRouter({
               }
             }
           },
-        })
+        });
       } catch (error) {
-        logger.error("unable to get threads by userId", { error, userId: ctx.session.user.id })
+        logger.error("Unable to get threads by userId", { error, userId: ctx.session.user.id });
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to retrieve message threads. Please try again.',
+          cause: error,
+        });
       }
     }),
 });

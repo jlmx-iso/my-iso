@@ -1,33 +1,32 @@
 "use client";
-import { Burger, Center, Group, AppShell as MantineAppShell } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { AppShell as MantineAppShell } from "@mantine/core";
 
 type AppShellProps = {
-    navbar: React.ReactNode;
-    mobileNav: React.ReactNode;
+    header: React.ReactNode;
+    bottomNav?: React.ReactNode;
+    footer?: React.ReactNode;
     children: React.ReactNode;
 };
 
-export default function AppShell({ children, navbar, mobileNav }: AppShellProps) {
-    const [opened, { toggle }] = useDisclosure();
+export default function AppShell({ children, header, bottomNav, footer }: AppShellProps) {
     return (
         <MantineAppShell
-            header={{ height: { base: 0, sm: 60 } }}
-            navbar={{ breakpoint: 'sm', collapsed: { desktop: true, mobile: !opened }, width: 300 }}
+            header={{ height: 60 }}
+            footer={{ height: { base: bottomNav ? 60 : 0, sm: 0 } }}
             padding="md"
         >
             <MantineAppShell.Header withBorder={false}>
-                <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" m="sm" />
-                <Group visibleFrom="sm">
-                    {navbar}
-                </Group>
+                {header}
             </MantineAppShell.Header>
-            <MantineAppShell.Navbar py={0} px={4} mt="3em">
-                {mobileNav}
-            </MantineAppShell.Navbar>
-            <Center>
+            {bottomNav && (
+                <MantineAppShell.Footer hiddenFrom="sm">
+                    {bottomNav}
+                </MantineAppShell.Footer>
+            )}
+            <MantineAppShell.Main>
                 {children}
-            </Center>
+                {footer}
+            </MantineAppShell.Main>
         </MantineAppShell>
     );
 }

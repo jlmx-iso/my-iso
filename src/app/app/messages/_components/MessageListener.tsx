@@ -1,6 +1,6 @@
 "use client";
 import { type Message } from "@prisma/client";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { messageSub } from "../_utils";
 import MessageTile from "./MessageTile";
@@ -13,25 +13,33 @@ type MessageListenerProps = {
 
 export default function MessageListener({ threadId, userId, newMessageCb }: MessageListenerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const messageReceived = (payload: { new: Message }) => {
-    setMessages((messages) => [...messages, (payload as { new: Message }).new]);
-    if (newMessageCb) {
-      newMessageCb();
-    }
-  };
 
-  messageSub({ cb: messageReceived, threadId });
+  const onNewMessage = useCallback(() => {
+    newMessageCb?.();
+  }, [newMessageCb]);
+
+  useEffect(() => {
+    const channel = messageSub({
+      cb: (payload: { new: Message }) => {
+        setMessages((prev) => [...prev, payload.new]);
+        onNewMessage();
+      },
+      threadId,
+    });
+
+    return () => {
+      void channel.unsubscribe();
+    };
+  }, [threadId, onNewMessage]);
 
   return (
     <div>
-      {
-        messages.map((message) => (
-          <MessageTile
-            key={message.id}
-            message={{ ...message, isAuthor: userId === message.senderId }}
-          />
-        ))}
+      {messages.map((message) => (
+        <MessageTile
+          key={message.id}
+          message={{ ...message, isAuthor: userId === message.senderId }}
+        />
+      ))}
     </div>
-  )
-
-};
+  );
+}

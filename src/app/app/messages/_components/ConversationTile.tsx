@@ -1,10 +1,9 @@
-import { Group, Stack, Text, Title } from "@mantine/core";
+import { Box, Group, Stack, Text } from "@mantine/core";
 
 import { type Recipient } from "./NewMessageModal";
 
-import ProfileAvatar from "~/app/_components/profiles/ProfileAvatar";
+import { Avatar } from "~/app/_components/Avatar";
 import Timemarker from "~/app/_components/Timemarker";
-import colors from "~/app/theme/colors";
 import { api } from "~/trpc/server";
 
 type ConversationTileProps = {
@@ -16,18 +15,44 @@ type ConversationTileProps = {
 export default async function ConversationTile({ threadId, recipient, isCurrentConversation }: ConversationTileProps) {
     const lastMessage = await (await api()).message.getLatestThreadMessage({ threadId });
     return (
-        <Group wrap="nowrap" bg={isCurrentConversation ? "blue" : "transparent"}>
-            <ProfileAvatar size="md" avatar={recipient.profilePic} name={`${recipient.firstName} ${recipient.lastName}`} isSelf={false} />
-            <Stack>
-                <Group justify="space-between">
-                    <Title order={3} fw="600">{`${recipient.firstName} ${recipient.lastName}`}</Title>
-                    {lastMessage && <Timemarker date={lastMessage.updatedAt} />}
-                </Group>
-                {lastMessage &&
-                    <Text mt="-1rem" c={colors.gray?.[7]} size="sm" fs="italic">{lastMessage.content}</Text>
-                }
-            </Stack>
-        </Group>
-
+        <Box
+            px="md"
+            py="sm"
+            style={{
+                backgroundColor: isCurrentConversation
+                    ? "var(--mantine-color-orange-0)"
+                    : "transparent",
+                borderLeft: isCurrentConversation
+                    ? "3px solid var(--mantine-color-orange-5)"
+                    : "3px solid transparent",
+                transition: "background-color 150ms ease",
+                cursor: "pointer",
+            }}
+        >
+            <Group wrap="nowrap" gap="sm">
+                <Avatar
+                    size="md"
+                    src={recipient.profilePic}
+                    name={`${recipient.firstName} ${recipient.lastName}`}
+                />
+                <Stack gap={2} style={{ flex: 1, overflow: "hidden" }}>
+                    <Group justify="space-between" wrap="nowrap">
+                        <Text fw={600} size="sm" truncate>
+                            {recipient.firstName} {recipient.lastName}
+                        </Text>
+                        {lastMessage && (
+                            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                                <Timemarker date={lastMessage.updatedAt} />
+                            </Text>
+                        )}
+                    </Group>
+                    {lastMessage && (
+                        <Text size="xs" c="dimmed" lineClamp={1}>
+                            {lastMessage.content}
+                        </Text>
+                    )}
+                </Stack>
+            </Group>
+        </Box>
     )
 }

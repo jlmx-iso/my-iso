@@ -1,8 +1,9 @@
 "use client";
 
-import { Button, Group, Space, TextInput, Textarea } from "@mantine/core";
+import { Button, Group, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
+import { IconCheck } from "@tabler/icons-react";
 import { zod4Resolver } from 'mantine-form-zod-resolver';
 import Link from "next/link";
 import { redirect } from 'next/navigation';
@@ -10,7 +11,7 @@ import { z } from "zod";
 
 import { Loader } from "../Loader";
 
-import { LocationAutocomplete } from "~/app/register/_components";
+import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { api } from "~/trpc/react";
 
 
@@ -58,93 +59,112 @@ export default function EditProfile({ photographer }: EditProfileProps) {
     if (isPending) return <Loader />;
 
     if (isError) {
-        return <div>Failed to update profile <br />{error.message}</div>
+        return (
+            <Stack align="center" gap="sm" py="xl">
+                <Text fw={500} c="red">Failed to update profile</Text>
+                <Text size="sm" c="dimmed">{error.message}</Text>
+            </Stack>
+        );
     }
 
     if (isSuccess) {
         return redirect("/app/profile?success=true");
     }
 
-
     return (
         <form onSubmit={form.onSubmit(submitForm)}>
-            <TextInput
-                label="Name"
-                placeholder="Name"
-                required
-                key={form.key("name")}
-                {...form.getInputProps("name")}
-            />
-            <TextInput
-                label="Company Name"
-                placeholder="Company Name"
-                required
-                key={form.key("companyName")}
-                {...form.getInputProps("companyName")}
-            />
-            <Textarea
-                label="Bio"
-                placeholder="Bio"
-                required
-                key={form.key("bio")}
-                {...form.getInputProps("bio")}
-            />
-            <LocationAutocomplete
-                isRequired
-                label="Location"
-                placeholder="Location"
-                required
-                key={form.key("location")}
-                {...form.getInputProps("location")}
-            />
-            <TextInput
-                label="Website"
-                placeholder="Website"
-                required
-                key={form.key("website")}
-                {...form.getInputProps("website")}
-            />
-            <TextInput
-                label="Facebook"
-                placeholder="Facebook"
-                key={form.key("facebook")}
-                {...form.getInputProps("facebook")}
-            />
-            <TextInput
-                label="Instagram"
-                placeholder="Instagram"
-                key={form.key("instagram")}
-                {...form.getInputProps("instagram")}
-            />
-            <TextInput
-                label="Twitter"
-                placeholder="Twitter"
-                key={form.key("twitter")}
-                {...form.getInputProps("twitter")}
-            />
-            <TextInput
-                label="YouTube"
-                placeholder="YouTube"
-                key={form.key("youtube")}
-                {...form.getInputProps("youtube")}
-            />
-            <TextInput
-                label="Vimeo"
-                placeholder="Vimeo"
-                key={form.key("vimeo")}
-                {...form.getInputProps("vimeo")}
-            />
-            <TextInput
-                label="TikTok"
-                placeholder="TikTok"
-                key={form.key("tiktok")}
-                {...form.getInputProps("tiktok")}
-            />
-            <Space h="md" />
-            <Group>
-                <Button type="submit">Submit</Button>
-                <Button variant="outline" component={Link} href="/app/profile" replace>Cancel</Button>
-            </Group>
+            <Stack gap="md">
+                <TextInput
+                    label="Name"
+                    placeholder="Your full name"
+                    required
+                    key={form.key("name")}
+                    {...form.getInputProps("name")}
+                />
+                <TextInput
+                    label="Company Name"
+                    placeholder="Your business name"
+                    required
+                    key={form.key("companyName")}
+                    {...form.getInputProps("companyName")}
+                />
+                <Textarea
+                    label="Bio"
+                    placeholder="Tell us about yourself..."
+                    required
+                    autosize
+                    minRows={3}
+                    maxRows={6}
+                    key={form.key("bio")}
+                    {...form.getInputProps("bio")}
+                />
+                <LocationAutocomplete
+                    isRequired
+                    label="Location"
+                    placeholder="City, State"
+                    required
+                    key={form.key("location")}
+                    {...form.getInputProps("location")}
+                />
+                <TextInput
+                    label="Website"
+                    placeholder="https://yoursite.com"
+                    required
+                    key={form.key("website")}
+                    {...form.getInputProps("website")}
+                />
+
+                <Text size="sm" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }} mt="xs">
+                    Social Links
+                </Text>
+                <Group grow>
+                    <TextInput
+                        label="Facebook"
+                        placeholder="https://facebook.com/..."
+                        key={form.key("facebook")}
+                        {...form.getInputProps("facebook")}
+                    />
+                    <TextInput
+                        label="Instagram"
+                        placeholder="https://instagram.com/..."
+                        key={form.key("instagram")}
+                        {...form.getInputProps("instagram")}
+                    />
+                </Group>
+                <Group grow>
+                    <TextInput
+                        label="Twitter / X"
+                        placeholder="https://x.com/..."
+                        key={form.key("twitter")}
+                        {...form.getInputProps("twitter")}
+                    />
+                    <TextInput
+                        label="YouTube"
+                        placeholder="https://youtube.com/..."
+                        key={form.key("youtube")}
+                        {...form.getInputProps("youtube")}
+                    />
+                </Group>
+                <Group grow>
+                    <TextInput
+                        label="Vimeo"
+                        placeholder="https://vimeo.com/..."
+                        key={form.key("vimeo")}
+                        {...form.getInputProps("vimeo")}
+                    />
+                    <TextInput
+                        label="TikTok"
+                        placeholder="https://tiktok.com/..."
+                        key={form.key("tiktok")}
+                        {...form.getInputProps("tiktok")}
+                    />
+                </Group>
+
+                <Group mt="xs">
+                    <Button type="submit">Save Changes</Button>
+                    <Button variant="subtle" component={Link} href="/app/profile" replace>Cancel</Button>
+                </Group>
+            </Stack>
         </form>
     )
 }

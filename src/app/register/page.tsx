@@ -1,20 +1,40 @@
 "use client";
-import { Box, Button, Grid, Group, Space, Stack, Stepper, TextInput } from "@mantine/core";
+import { Anchor, Badge, Box, Button, Divider, Grid, Group, Paper, Stack, Stepper, Text, TextInput, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { IconBrandFacebook, IconBrandGoogle } from "@tabler/icons-react";
+import { IconBrandGoogle, IconUserPlus } from "@tabler/icons-react";
 import Link from "next/link";
-import { type MouseEventHandler, useState } from "react";
+import { signIn } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
+import { type MouseEventHandler, useEffect, useState } from "react";
 
 
-import { LocationAutocomplete } from "./_components";
+import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { ErrorAlert } from "../_components/Alerts";
 import { Loader } from "../_components/Loader";
 
 import { api } from "~/trpc/react";
 
 export default function Page() {
+  const searchParams = useSearchParams();
+  const refCode = searchParams.get("ref") ?? "";
+  const [referralCode] = useState(refCode);
   const [active, setActive] = useState(0);
   const { mutate: submitRegistration, error: submitError, isError, isPending, isSuccess } = api.auth.register.useMutation();
+  const { mutate: claimReferral } = api.referral.claimReferral.useMutation();
+
+  // After successful registration, attempt to claim the referral code.
+  // The claim requires authentication, so we also persist the code in
+  // localStorage for a post-login retry if needed.
+  useEffect(() => {
+    if (isSuccess && referralCode) {
+      try {
+        localStorage.setItem("iso_referral_code", referralCode);
+      } catch {
+        // localStorage may be unavailable
+      }
+      claimReferral({ code: referralCode });
+    }
+  }, [isSuccess, referralCode, claimReferral]);
   const nextStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
     const stepOneFields = ["firstName", "lastName", "email", "phoneNumber", "location"];
@@ -80,7 +100,7 @@ export default function Page() {
       },
       twitter: (value: string) => {
         // regex to confirm valid twitter includes "twitter.com" or "x.com"
-        if (value.length && (!/^(http|https):\/\/(www.)?twitter.com\/[^ "]+$/.test(value) || !/^(http|https):\/\/(www.)?x.com\/[^ "]+$/.test(value))) return "Invalid Twitter URL";
+        if (value.length && !/^(http|https):\/\/(www.)?(twitter\.com|x\.com)\/[^ "]+$/.test(value)) return "Invalid Twitter URL";
       },
       vimeo: (value: string) => {
         // regex to confirm valid vimeo includes "vimeo.com"
@@ -125,99 +145,132 @@ export default function Page() {
     return <Loader />
   }
   if (isSuccess) {
-    return <Box p="xl" maw={800}>Registration successful!</Box>
+    return (
+      <Box maw={600} w="100%" mx="auto">
+        <Paper withBorder shadow="md" p="xl" radius="md">
+          <Stack align="center" gap="md">
+            <Title order={2}>You&apos;re all set!</Title>
+            <Text c="dimmed" ta="center">
+              Registration successful. You can now sign in to your account.
+            </Text>
+            <Button component="a" href="/login">
+              Sign in
+            </Button>
+          </Stack>
+        </Paper>
+      </Box>
+    );
   }
   return (
-    <Box p="xl" maw={800}>
-      <form onSubmit={handleSubmit}>
-        {isError && <ErrorAlert title="Error" message={submitError.message} />}
-        <Stepper mt="xl" active={active} onStepClick={setActive} allowNextStepsSelect={false}>
-          <Stepper.Step label="Personal Info" description="Enter your personal information">
-            <Group grow>
-              <TextInput
-                label="First Name"
-                placeholder="First name"
-                required
-                {...form.getInputProps("firstName")}
-              />
-              <TextInput
-                label="Last Name"
-                placeholder="Last name"
-                required
-                {...form.getInputProps("lastName")}
-              />
-            </Group>
-            <TextInput
-              label="Email"
-              placeholder="Email"
-              required
-              {...form.getInputProps("email")}
-            />
-            <TextInput
-              label="Phone Number"
-              placeholder="Phone number"
-              required
-              {...form.getInputProps("phoneNumber")}
-            />
-            <LocationAutocomplete
-              label="Location"
-              placeholder="Location"
-              isRequired={true}
-              {...form.getInputProps("location")}
-            />
-          </Stepper.Step>
-          <Stepper.Step label="Business Info" description="Enter your business information">
-            <TextInput label="Business Name" placeholder="Awesome Photography, LLC" {...form.getInputProps("companyName")} />
-            <TextInput label="Website" placeholder="https://awesome-photographer.com" {...form.getInputProps("website")} />
-            <Grid grow>
-              <Grid.Col span={6}>
-                <TextInput label="Facebook" placeholder="https://facebook.com/awesome-photographer" />
-                <TextInput label="Instagram" placeholder="https://instagram.com/awesome-photographer" {...form.getInputProps("instagram")} />
-                <TextInput label="TikTok" placeholder="https://tiktok.com/awesome-photographer" {...form.getInputProps("tiktok")} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput label="Twitter" placeholder="https://twitter.com/awesome-photographer" {...form.getInputProps("twitter")} />
-                <TextInput label="Vimeo" placeholder="https://vimeo.com/awesome-photographer" {...form.getInputProps("vimeo")} />
-                <TextInput label="YouTube" placeholder="https://youtube.com/awesome-photographer" {...form.getInputProps("youtube")} />
-              </Grid.Col>
-            </Grid>
-          </Stepper.Step>
-        </Stepper>
-        <Group justify="flex-end" mt="md">
-          {
-            active > 0 &&
-            <Button onClick={prevStep} variant="subtle">Back</Button>
-          }
-          {
-            active < 1 ?
-              <Button onClick={nextStep} variant="outline">Next</Button> :
-              <Button type="submit" variant="outline" color="blue">Register</Button>
-          }
-        </Group>
-        <Stack mt="xl" justify="center" w="100%" align="center" >
-          <Button
-            component="a"
-            href="/api/auth/signin"
-            w="240"
+    <Box maw={600} w="100%" mx="auto">
+      <Stack align="center" mb="xl">
+        <Title order={2} ta="center">
+          Create your account
+        </Title>
+        <Text c="dimmed" size="sm" ta="center">
+          Join the photographer network
+        </Text>
+        {referralCode && (
+          <Badge
+            color="teal"
+            variant="light"
+            size="lg"
+            leftSection={<IconUserPlus size={14} />}
           >
-            <IconBrandGoogle /><Space w="md" /> Sign Up with Google
-          </Button>
+            Referred by a friend
+          </Badge>
+        )}
+      </Stack>
+
+      <Paper withBorder shadow="md" p="xl" radius="md">
+        <form onSubmit={handleSubmit}>
+          {isError && <ErrorAlert title="Error" message={submitError.message} />}
+
           <Button
-            component="a"
-            href="/api/auth/signin"
-            w="240"
+            onClick={() => signIn("google", { callbackUrl: "/app/events" })}
+            leftSection={<IconBrandGoogle size={20} />}
+            variant="default"
+            size="md"
+            fullWidth
+            mb="md"
           >
-            <IconBrandFacebook /><Space w="md" /> Sign Up with Facebook
+            Sign Up with Google
           </Button>
 
-          <span>
-            Already have an account?{" "}
-            <Link href="/login" style={{
-              textDecoration: "underline",
-            }}>Login</Link>
-          </span>
-        </Stack>
-      </form>
+          <Divider label="or register with email" labelPosition="center" mb="md" />
+
+          <Stepper active={active} onStepClick={setActive} allowNextStepsSelect={false}>
+            <Stepper.Step label="Personal Info" description="About you">
+              <Stack gap="sm">
+                <Group grow>
+                  <TextInput
+                    label="First Name"
+                    placeholder="First name"
+                    required
+                    {...form.getInputProps("firstName")}
+                  />
+                  <TextInput
+                    label="Last Name"
+                    placeholder="Last name"
+                    required
+                    {...form.getInputProps("lastName")}
+                  />
+                </Group>
+                <TextInput
+                  label="Email"
+                  placeholder="you@example.com"
+                  required
+                  {...form.getInputProps("email")}
+                />
+                <TextInput
+                  label="Phone Number"
+                  placeholder="Phone number"
+                  required
+                  {...form.getInputProps("phoneNumber")}
+                />
+                <LocationAutocomplete
+                  label="Location"
+                  placeholder="City, State"
+                  isRequired={true}
+                  {...form.getInputProps("location")}
+                />
+              </Stack>
+            </Stepper.Step>
+            <Stepper.Step label="Business Info" description="Your business">
+              <Stack gap="sm">
+                <TextInput label="Business Name" placeholder="Awesome Photography, LLC" {...form.getInputProps("companyName")} />
+                <TextInput label="Website" placeholder="https://awesome-photographer.com" {...form.getInputProps("website")} />
+                <Grid grow>
+                  <Grid.Col span={6}>
+                    <TextInput label="Facebook" placeholder="https://facebook.com/..." {...form.getInputProps("facebook")} />
+                    <TextInput label="Instagram" placeholder="https://instagram.com/..." {...form.getInputProps("instagram")} />
+                    <TextInput label="TikTok" placeholder="https://tiktok.com/..." {...form.getInputProps("tiktok")} />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput label="Twitter" placeholder="https://x.com/..." {...form.getInputProps("twitter")} />
+                    <TextInput label="Vimeo" placeholder="https://vimeo.com/..." {...form.getInputProps("vimeo")} />
+                    <TextInput label="YouTube" placeholder="https://youtube.com/..." {...form.getInputProps("youtube")} />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+          </Stepper>
+          <Group justify="flex-end" mt="lg">
+            {active > 0 && <Button onClick={prevStep} variant="subtle">Back</Button>}
+            {active < 1
+              ? <Button onClick={nextStep}>Next</Button>
+              : <Button type="submit">Register</Button>
+            }
+          </Group>
+        </form>
+      </Paper>
+
+      <Text ta="center" mt="md" size="sm">
+        Already have an account?{" "}
+        <Anchor component={Link} href="/login" fw={500}>
+          Sign in
+        </Anchor>
+      </Text>
     </Box>
   )
 }

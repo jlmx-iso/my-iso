@@ -11,10 +11,8 @@ import { TRPCError, initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
-import { googleMapsClient } from "../_lib";
-
 import { cloudinaryClient } from "~/_lib";
-import { getServerAuthSession } from "~/server/auth";
+import { auth } from "~/auth";
 import { db } from "~/server/db";
 
 
@@ -31,12 +29,11 @@ import { db } from "~/server/db";
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const session = await getServerAuthSession();
+  const session = await auth();
 
   return {
     cloudinaryClient,
     db,
-    googleMapsClient,
     session,
     ...opts,
   };
@@ -108,3 +105,41 @@ const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
  * @see https://trpc.io/docs/procedures
  */
 export const protectedProcedure = t.procedure.use(enforceUserIsAuthed);
+
+/** Reusable middleware that enforces the user has an active Pro subscription. */
+const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.session || !ctx.session.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+
+  const subscription = await ctx.db.subscription.findUnique({
+    where: { userId: ctx.session.user.id },
+  });
+
+  if (!subscription || !subscription.isActive) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "An active Pro subscription is required to access this feature.",
+    });
+  }
+
+  return next({
+    ctx: {
+      session: { ...ctx.session, user: ctx.session.user },
+      subscription,
+    },
+  });
+});
+
+/**
+ * Pro (authenticated + subscribed) procedure
+ *
+ * Use this for queries or mutations that require an active Pro subscription.
+ * It chains authentication check + subscription check.
+ * Throws UNAUTHORIZED if not logged in, FORBIDDEN if no active subscription.
+ *
+ * @see https://trpc.io/docs/procedures
+ */
+export const proProcedure = t.procedure
+  .use(enforceUserIsAuthed)
+  .use(enforceUserHasProSubscription);
