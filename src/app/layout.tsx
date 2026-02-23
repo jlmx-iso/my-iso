@@ -29,6 +29,9 @@ export const metadata = {
   description: "The Photographer Second Shooter Network",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
   metadataBase: new URL("https://myiso.app"),
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
