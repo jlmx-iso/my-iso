@@ -32,10 +32,10 @@ export const metadata = {
   openGraph: {
     images: [
       {
+        alt: "ISO — The Photographer Network",
+        height: 630,
         url: "https://myiso.app/api/og?title=ISO&subtitle=The+Photographer+Network",
         width: 1200,
-        height: 630,
-        alt: "ISO — The Photographer Network",
       },
     ],
     type: "website",

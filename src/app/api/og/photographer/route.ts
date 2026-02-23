@@ -1,11 +1,11 @@
 import { ImageResponse } from "workers-og";
+
 import { db } from "~/server/db";
 
 export const runtime = "edge";
 
 const BASE_URL = "https://myiso.app";
 
-// Prevent HTML injection in template strings
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -32,8 +32,8 @@ export async function GET(request: Request) {
   }
 
   const photographer = await db.photographer.findFirst({
-    where: { user: { handle } },
     include: { user: true },
+    where: { user: { handle } },
   });
 
   if (!photographer) {
@@ -63,10 +63,10 @@ export async function GET(request: Request) {
   `;
 
   return new ImageResponse(html, {
-    width: 1200,
-    height: 630,
     headers: {
       "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
     },
+    height: 630,
+    width: 1200,
   });
 }
