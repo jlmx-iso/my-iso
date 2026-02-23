@@ -43,7 +43,8 @@ export async function GET(request: Request) {
   const name = escapeHtml(photographer.name || "Photographer");
   const location = escapeHtml(photographer.location || "");
   const company = escapeHtml(photographer.companyName || "");
-  const avatarUrl = resolveUrl(photographer.avatar || "");
+  const rawAvatarUrl = resolveUrl(photographer.avatar || "");
+  const avatarUrl = rawAvatarUrl ? escapeHtml(rawAvatarUrl) : "";
 
   const html = `
     <div style="display: flex; flex-direction: row; width: 1200px; height: 630px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 60px;">
