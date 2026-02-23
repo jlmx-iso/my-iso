@@ -97,8 +97,14 @@ export const authConfig = {
 
       if (!pending) return;
 
-      // Generate a unique invite code for the new user (use firstName from adapter)
-      const firstName = (user as { firstName?: string }).firstName ?? "USER";
+      // Generate a unique invite code for the new user.
+      // PrismaAdapter maps Google's `given_name` → firstName, but fall back to
+      // parsing the full `name` (which Google always provides) if firstName is empty.
+      let firstName = (user as { firstName?: string }).firstName;
+      if (!firstName && user.name) {
+        firstName = user.name.split(" ")[0];
+      }
+      firstName = firstName ?? "USER";
       const newCode = await generateUniqueInviteCode(
         firstName,
         async (code) => {

@@ -165,7 +165,9 @@ export const waitlistRouter = createTRPCRouter({
       });
 
       // Send approval email (I1)
-      const joinUrl = `${process.env.NEXTAUTH_URL ?? "https://myiso.app"}/join?waitlist=approved`;
+      // Include email so the join page can show "Sign in with the Google account matching {email}"
+      const encodedEmail = encodeURIComponent(entry.email);
+      const joinUrl = `${process.env.NEXTAUTH_URL ?? "https://myiso.app"}/join?waitlist=approved&email=${encodedEmail}`;
       const emailResult = await sendTemplateEmail({
         email: entry.email,
         subject: "You're in! Your spot on ISO is ready",

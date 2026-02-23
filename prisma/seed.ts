@@ -168,9 +168,11 @@ async function main() {
   ]);
   console.log("Created 6 invite codes");
 
-  // Add sample waitlist entries
+  // Add sample waitlist entries (scoped to seed domain only)
   console.log("Creating waitlist entries...");
-  await db.waitlist.deleteMany({});
+  await db.waitlist.deleteMany({
+    where: { email: { endsWith: "@waitlist.example.com" } },
+  });
   await Promise.all([
     db.waitlist.create({
       data: { name: "Alex Thompson", email: "alex@waitlist.example.com", instagram: "@alexthompson", userType: "second", referralSource: "Instagram", position: 1 },

@@ -18,6 +18,7 @@ export const inviteRouter = createTRPCRouter({
     .input(z.object({ code: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       // Rate limit invite code validation to prevent brute-force (M4)
+      // Backed by Cloudflare KV — see src/server/_utils/rateLimit.ts for setup
       const ip = ctx.headers.get("x-forwarded-for") ?? "unknown";
       const rl = await checkRateLimit(`invite-validate:${ip}`, RateLimits.STRICT);
       if (!rl.allowed) {
@@ -85,6 +86,12 @@ export const inviteRouter = createTRPCRouter({
 
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
+      // Opportunistic cleanup: delete expired PendingInviteValidation records
+      // to prevent unbounded table growth (no cron needed)
+      await ctx.db.pendingInviteValidation.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+
       await ctx.db.pendingInviteValidation.upsert({
         where: { email: input.email.toLowerCase() },
         update: {
@@ -105,6 +112,11 @@ export const inviteRouter = createTRPCRouter({
   /**
    * Redeem an invite code for the current user (post-registration).
    * Uses interactive transaction to prevent race conditions.
+   *
+   * NOTE: Currently unused by the UI — invite redemption happens automatically
+   * in the auth.ts createUser event when a new user signs up via Google OAuth.
+   * This procedure is kept for future API-based or manual redemption flows
+   * (e.g., redeeming a code after initial signup without one).
    */
   redeem: protectedProcedure
     .input(z.object({ code: z.string().min(1) }))

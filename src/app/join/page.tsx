@@ -32,6 +32,7 @@ function JoinContent() {
   const codeParam = searchParams.get("code") ?? "";
   const errorParam = searchParams.get("error");
   const waitlistApproved = searchParams.get("waitlist") === "approved";
+  const waitlistEmail = searchParams.get("email") ?? "";
 
   const [code, setCode] = useState(codeParam);
   const [email, setEmail] = useState("");
@@ -111,8 +112,9 @@ function JoinContent() {
               Your waitlist application has been approved!
             </Alert>
             <Text size="sm" c="dimmed" ta="center">
-              Sign in with the Google account that matches the email you applied
-              with.
+              {waitlistEmail
+                ? `Sign in with the Google account that matches ${waitlistEmail}`
+                : "Sign in with the Google account that matches the email you applied with."}
             </Text>
             <Button
               leftSection={<IconBrandGoogle size={20} />}
