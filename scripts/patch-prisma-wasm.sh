@@ -51,10 +51,12 @@ else:
 patterns = [
     # Turbopack chunk loader pattern: getQueryCompilerWasmModule:async()=>{let{default:X}=await Y.A(ID);return X}
     r'getQueryCompilerWasmModule:async\(\)=>\{let\{default:\w+\}=await \w+\.A\(\d+\);return \w+\}',
-    # wasm_worker_loader pattern: getQueryCompilerWasmModule:async()=>(await(await Promise.resolve().then(()=>(init_wasm_worker_loader(),wasm_worker_loader_exports))).default).default}
+    # wasm_worker_loader pattern (last prop): ...wasm_worker_loader_exports))).default).default}
     r'getQueryCompilerWasmModule:async\(\)=>\(await\(await Promise\.resolve\(\)\.then\(\(\)=>\(init_wasm_worker_loader\(\),wasm_worker_loader_exports\)\)\)\.default\)\.default\}',
+    # wasm_worker_loader pattern (not last prop): ...wasm_worker_loader_exports))).default).default,
+    r'getQueryCompilerWasmModule:async\(\)=>\(await\(await Promise\.resolve\(\)\.then\(\(\)=>\(init_wasm_worker_loader\(\),wasm_worker_loader_exports\)\)\)\.default\)\.default',
 ]
-replacement = 'getQueryCompilerWasmModule:async()=>__prismaQueryWasm}'
+replacement = 'getQueryCompilerWasmModule:async()=>__prismaQueryWasm'
 
 total = 0
 for pattern in patterns:

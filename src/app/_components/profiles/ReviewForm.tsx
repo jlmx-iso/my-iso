@@ -77,8 +77,8 @@ export default function ReviewForm({
       description: "",
     },
     validate: {
-      rating: (value) => (value < 1 || value > 5 ? "Please select a rating" : null),
-      title: (value) => (value.trim().length === 0 ? "Title is required" : null),
+      rating: (value: number) => (value < 1 || value > 5 ? "Please select a rating" : null),
+      title: (value: string) => (value.trim().length === 0 ? "Title is required" : null),
     },
   });
 
