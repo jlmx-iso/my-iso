@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { logger } from "~/_utils";
 import { env } from "~/env";
+import { getPriceIdForCheckout, getPricingForRole } from "~/server/_utils/pricing";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY);
@@ -31,58 +32,70 @@ export const subscriptionRouter = createTRPCRouter({
   }),
 
   /**
-   * Create a Stripe Checkout session for the Pro plan ($10/mo).
-   * Returns the checkout session URL for redirect.
+   * Create a Stripe Checkout session for the Pro plan.
+   * Uses the user's role to determine founding vs standard pricing,
+   * and the billingInterval to select monthly vs annual.
    */
   createCheckoutSession: protectedProcedure
     .input(
-      z
-        .object({
-          priceId: z.string().min(1),
-        })
-        .optional()
+      z.object({
+        billingInterval: z.enum(["monthly", "annual"]),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const userEmail = ctx.session.user.email;
+      const billingInterval = input.billingInterval;
 
       if (!userEmail) {
         throw new Error("User email is required to create a checkout session");
       }
 
-      // Check if user already has a Stripe customer ID
+      // Look up user's role and Stripe customer ID
       const user = await ctx.db.user.findUnique({
         where: { id: userId },
-        select: { stripeId: true },
+        select: { role: true, stripeId: true },
       });
 
-      // Build checkout session params
-      const sessionParams: Stripe.Checkout.SessionCreateParams = {
-        mode: "subscription",
-        payment_method_types: ["card"],
-        line_items: [
+      const role = user?.role ?? "standard";
+      const priceId = getPriceIdForCheckout(role, billingInterval);
+      const pricing = getPricingForRole(role);
+
+      // Build line_items based on whether we have a Stripe Price ID or need inline price_data
+      let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
+      if (priceId) {
+        lineItems = [{ price: priceId, quantity: 1 }];
+      } else {
+        const amount = billingInterval === "monthly"
+          ? pricing.monthlyPrice * 100
+          : pricing.annualPrice * 100;
+        lineItems = [
           {
             price_data: {
               currency: "usd",
               product_data: {
-                name: "ISO Pro",
                 description:
                   "Unlimited bookings, priority search placement, analytics dashboard, and more.",
+                name: "ISO Pro",
               },
-              unit_amount: 1000, // $10.00 in cents
               recurring: {
-                interval: "month",
+                interval: billingInterval === "monthly" ? "month" : "year",
               },
+              unit_amount: amount,
             },
             quantity: 1,
           },
-        ],
-        success_url: `${env.BASE_URL}/app/settings?checkout=success`,
+        ];
+      }
+
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         cancel_url: `${env.BASE_URL}/app/settings?checkout=canceled`,
         client_reference_id: userId,
-        metadata: {
-          userId,
-        },
+        line_items: lineItems,
+        metadata: { userId },
+        mode: "subscription",
+        payment_method_types: ["card"],
+        success_url: `${env.BASE_URL}/app/settings?checkout=success`,
       };
 
       // Use existing Stripe customer if available, otherwise let Stripe create one
@@ -90,16 +103,6 @@ export const subscriptionRouter = createTRPCRouter({
         sessionParams.customer = user.stripeId;
       } else {
         sessionParams.customer_email = userEmail;
-      }
-
-      // If a specific priceId was passed, use it instead of inline price_data
-      if (input?.priceId) {
-        sessionParams.line_items = [
-          {
-            price: input.priceId,
-            quantity: 1,
-          },
-        ];
       }
 
       const session = await stripe.checkout.sessions
@@ -113,6 +116,8 @@ export const subscriptionRouter = createTRPCRouter({
         });
 
       logger.info("Stripe checkout session created", {
+        billingInterval,
+        role,
         sessionId: session.id,
         userId,
       });

@@ -23,6 +23,7 @@ import {
 import BillingActions from "./_components/BillingActions";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
+import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
 const PRO_FEATURES = [
@@ -70,10 +71,14 @@ export default async function SettingsPage() {
   if (!session?.user) return null;
 
   const caller = await api();
-  const subscription = await caller.subscription.getStatus();
+  const [subscription, user] = await Promise.all([
+    caller.subscription.getStatus(),
+    caller.user.getMe(),
+  ]);
 
   const isProUser = subscription?.isActive === true;
   const isCanceled = subscription?.isCanceled === true;
+  const pricing = getPricingForRole(user.role);
 
   return (
     <Container size="md" py="lg">
@@ -117,7 +122,7 @@ export default async function SettingsPage() {
                 </Text>
               )}
             </Stack>
-            <BillingActions isProUser={isProUser} />
+            <BillingActions isProUser={isProUser} pricing={pricing} />
           </Group>
         </Paper>
 
@@ -178,12 +183,24 @@ export default async function SettingsPage() {
                     </Badge>
                   )}
                 </Group>
-                <Text size="xl" fw={700} c="orange.6">
-                  $10
-                  <Text span size="sm" fw={400} c="dimmed">
-                    /month
+                <Group gap="xs" align="baseline">
+                  <Text size="xl" fw={700} c="orange.6">
+                    ${pricing.monthlyPrice}
+                    <Text span size="sm" fw={400} c="dimmed">
+                      /month
+                    </Text>
                   </Text>
-                </Text>
+                  {pricing.isFoundingPrice && (
+                    <>
+                      <Text size="sm" td="line-through" c="dimmed">
+                        ${pricing.standardMonthlyPrice}
+                      </Text>
+                      <Badge color="orange" variant="light" size="sm">
+                        Founding Price
+                      </Badge>
+                    </>
+                  )}
+                </Group>
                 <Stack gap="xs">
                   {PRO_FEATURES.map((feature) => (
                     <Group key={feature.title} gap="xs" wrap="nowrap">
