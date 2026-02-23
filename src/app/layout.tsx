@@ -33,6 +33,14 @@ export const metadata = {
     canonical: "/",
   },
   openGraph: {
+    images: [
+      {
+        alt: "ISO — The Photographer Network",
+        height: 630,
+        url: "https://myiso.app/api/og?title=ISO&subtitle=The+Photographer+Network",
+        width: 1200,
+      },
+    ],
     type: "website",
     locale: "en_US",
     siteName: "ISO",
