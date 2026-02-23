@@ -1,0 +1,34 @@
+# ISO — The Photographer Network
+
+## What is ISO?
+ISO connects lead photographers with skilled second shooters for weddings, events, and sessions. It's a two-sided marketplace built by photographers, for photographers.
+
+## Who is it for?
+- Lead photographers who need a second shooter for an event
+- Second shooters looking for work opportunities
+- Wedding, event, and portrait photographers
+
+## Key Features
+- Create a professional photographer profile with portfolio
+- Search for second shooters by location, specialty, and availability
+- Discover photographers near you with swipe-based matching
+- Direct messaging to coordinate shoots
+- Booking management with application tracking
+- Reviews and ratings to build trust
+
+## Pricing
+- Basic (Free): Create profile, browse listings, direct messaging
+- Pro ($10-19/mo): Priority search, advanced booking, analytics
+
+## Markets
+Currently focused on Austin, TX and Denver, CO with plans to expand nationwide.
+
+## Founded by
+Penny Lamoreaux — wedding photographer with 12+ years of experience, featured in Wed Society Austin, Style Me Pretty, and The Knot.
+
+## Links
+- Website: https://myiso.app
+- Join: https://myiso.app/join
+- Waitlist: https://myiso.app/waitlist
+- About: https://myiso.app/about
+- Contact: https://myiso.app/contact
