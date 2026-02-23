@@ -2,10 +2,19 @@ import { ImageResponse } from "workers-og";
 
 export const runtime = "edge";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const title = searchParams.get("title") || "ISO";
-  const subtitle = searchParams.get("subtitle") || "The Photographer Network";
+  const title = escapeHtml(searchParams.get("title") || "ISO");
+  const subtitle = escapeHtml(searchParams.get("subtitle") || "The Photographer Network");
 
   const html = `
     <div style="display: flex; flex-direction: column; width: 1200px; height: 630px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 60px; justify-content: center; align-items: center;">
