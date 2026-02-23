@@ -21,7 +21,8 @@ import {
     renderNewMessageEmail,
     renderReviewReceivedEmail,
     renderUpgradePitchEmail,
-    renderReferralInviteEmail,
+    renderInviteFriendsEmail,
+    renderWaitlistApprovedEmail,
 } from "./emails";
 
 type SendEmail = {
@@ -111,7 +112,8 @@ const templateRenderers: Record<string, (props: any) => Promise<string>> = {
     "new-message": renderNewMessageEmail,
     "review-received": renderReviewReceivedEmail,
     "upgrade-pitch": renderUpgradePitchEmail,
-    "referral-invite": renderReferralInviteEmail,
+    "invite-friends": renderInviteFriendsEmail,
+    "waitlist-approved": renderWaitlistApprovedEmail,
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

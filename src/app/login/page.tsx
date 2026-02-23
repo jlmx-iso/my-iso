@@ -131,8 +131,8 @@ export default function Page() {
 
       <Text ta="center" mt="md" size="sm">
         Don&apos;t have an account?{" "}
-        <Anchor component={Link} href="/register" fw={500}>
-          Register
+        <Anchor component={Link} href="/join" fw={500}>
+          Join
         </Anchor>
       </Text>
     </Box>

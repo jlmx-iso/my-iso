@@ -14,6 +14,8 @@ import { ZodError } from "zod";
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
 import { db } from "~/server/db";
+import { ADMIN_ROLES } from "~/server/_utils/roles";
+import type { UserRole } from "~/server/_utils/roles";
 
 
 /**
@@ -143,3 +145,38 @@ const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
 export const proProcedure = t.procedure
   .use(enforceUserIsAuthed)
   .use(enforceUserHasProSubscription);
+
+/** Reusable middleware that enforces the user has a founder or ambassador role. */
+const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.session || !ctx.session.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+
+  const user = await ctx.db.user.findUnique({
+    where: { id: ctx.session.user.id },
+    select: { role: true },
+  });
+
+  if (!user || !ADMIN_ROLES.includes(user.role as UserRole)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Founder or ambassador access is required.",
+    });
+  }
+
+  return next({
+    ctx: {
+      session: { ...ctx.session, user: ctx.session.user },
+    },
+  });
+});
+
+/**
+ * Founder (authenticated + founder/ambassador role) procedure
+ *
+ * Use this for admin-level queries or mutations that only founders/ambassadors can access.
+ * Throws UNAUTHORIZED if not logged in, FORBIDDEN if not a founder/ambassador.
+ */
+export const founderProcedure = t.procedure
+  .use(enforceUserIsAuthed)
+  .use(enforceUserIsFounder);
