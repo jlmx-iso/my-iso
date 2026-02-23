@@ -1,10 +1,11 @@
-import { env } from "~/env";
 import { USER_ROLES, type UserRole } from "./roles";
 
+import { env } from "~/env";
+
 export type PricingInfo = {
-  monthlyPrice: number;
   annualPrice: number;
   isFoundingPrice: boolean;
+  monthlyPrice: number;
   standardMonthlyPrice: number;
 };
 
@@ -19,17 +20,17 @@ export function getPricingForRole(role: string): PricingInfo {
 
   if (isFounding) {
     return {
-      monthlyPrice: 10,
       annualPrice: 99,
       isFoundingPrice: true,
+      monthlyPrice: 10,
       standardMonthlyPrice: 19,
     };
   }
 
   return {
-    monthlyPrice: 19,
     annualPrice: 179,
     isFoundingPrice: false,
+    monthlyPrice: 19,
     standardMonthlyPrice: 19,
   };
 }

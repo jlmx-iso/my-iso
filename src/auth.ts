@@ -3,14 +3,14 @@ import type { NextAuthConfig } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
+import { logger } from "~/_utils";
+import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
+import { providers, sessionConfig } from "~/auth.config";
 import { env } from "~/env";
 import { db } from "~/server/db";
 import { checkIfUserExists } from "~/server/_utils/auth/auth";
 import { generateUniqueInviteCode } from "~/server/_utils/invite";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
-import { logger } from "~/_utils";
-import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
-import { providers, sessionConfig } from "~/auth.config";
 
 /**
  * Auth.js v5 configuration

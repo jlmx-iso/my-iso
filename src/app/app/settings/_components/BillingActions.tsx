@@ -4,14 +4,8 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
+import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
-
-type PricingInfo = {
-  monthlyPrice: number;
-  annualPrice: number;
-  isFoundingPrice: boolean;
-  standardMonthlyPrice: number;
-};
 
 type BillingActionsProps = {
   isProUser: boolean;
@@ -23,24 +17,24 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
+    onError: (err) => {
+      setError(err.message ?? "Failed to create checkout session");
+    },
     onSuccess: (data) => {
       if (data.url) {
         window.location.href = data.url;
       }
-    },
-    onError: (err) => {
-      setError(err.message ?? "Failed to create checkout session");
     },
   });
 
   const createPortal = api.subscription.createPortalSession.useMutation({
+    onError: (err) => {
+      setError(err.message ?? "Failed to create portal session");
+    },
     onSuccess: (data) => {
       if (data.url) {
         window.location.href = data.url;
       }
-    },
-    onError: (err) => {
-      setError(err.message ?? "Failed to create portal session");
     },
   });
 

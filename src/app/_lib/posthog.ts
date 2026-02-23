@@ -13,15 +13,15 @@ export type FlagsMatcher = Record<string, undefined | {
 }>
 
 export const FeatureFlags = {
-    IS_APP_DISABLED: 'is_app_disabled',
-    INVITE_ONLY: 'invite-only',
-    FOUNDING_LANDING: 'founding-landing',
-    EMAIL_SEQUENCES: 'email-sequences',
-    WAITLIST_REFERRALS: 'waitlist-referrals',
     ADMIN_SCORING: 'admin-scoring',
-    DISCOVER_INVITE_CTA: 'discover-invite-cta',
     ASYMMETRIC_INVITES: 'asymmetric-invites',
+    DISCOVER_INVITE_CTA: 'discover-invite-cta',
+    EMAIL_SEQUENCES: 'email-sequences',
     FOUNDING_CLOSE: 'founding-close',
+    FOUNDING_LANDING: 'founding-landing',
+    INVITE_ONLY: 'invite-only',
+    IS_APP_DISABLED: 'is_app_disabled',
+    WAITLIST_REFERRALS: 'waitlist-referrals',
 } as const;
 
 export type FeatureFlags = typeof FeatureFlags[keyof typeof FeatureFlags];
