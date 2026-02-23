@@ -1,5 +1,6 @@
 import { USER_ROLES, type UserRole } from "./roles";
 
+import { logger } from "~/_utils";
 import { env } from "~/env";
 
 export type PricingInfo = {
@@ -35,19 +36,27 @@ export function getPricingForRole(role: string): PricingInfo {
   };
 }
 
+const PRICE_ENV_VAR_MAP = {
+  "founding:annual": "STRIPE_FOUNDING_ANNUAL_PRICE_ID",
+  "founding:monthly": "STRIPE_FOUNDING_MONTHLY_PRICE_ID",
+  "standard:annual": "STRIPE_STANDARD_ANNUAL_PRICE_ID",
+  "standard:monthly": "STRIPE_STANDARD_MONTHLY_PRICE_ID",
+} as const;
+
 export function getPriceIdForCheckout(
   role: string,
   billingInterval: "monthly" | "annual",
 ): string | null {
   const isFounding = FOUNDING_ROLES.includes(role as UserRole);
+  const tier = isFounding ? "founding" : "standard";
+  const key = `${tier}:${billingInterval}` as keyof typeof PRICE_ENV_VAR_MAP;
+  const envVarName = PRICE_ENV_VAR_MAP[key];
 
-  if (isFounding) {
-    return billingInterval === "monthly"
-      ? (env.STRIPE_FOUNDING_MONTHLY_PRICE_ID ?? null)
-      : (env.STRIPE_FOUNDING_ANNUAL_PRICE_ID ?? null);
+  const priceId = env[envVarName] ?? null;
+
+  if (!priceId) {
+    logger.warn(`Missing ${envVarName} — falling back to inline price_data. Set this env var in production to use Stripe Price objects.`);
   }
 
-  return billingInterval === "monthly"
-    ? (env.STRIPE_STANDARD_MONTHLY_PRICE_ID ?? null)
-    : (env.STRIPE_STANDARD_ANNUAL_PRICE_ID ?? null);
+  return priceId;
 }
