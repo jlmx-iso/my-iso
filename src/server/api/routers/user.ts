@@ -23,6 +23,7 @@ export const userRouter = createTRPCRouter({
           city: true,
           state: true,
           country: true,
+          role: true,
         },
       });
     }),

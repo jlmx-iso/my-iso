@@ -9,6 +9,7 @@ import { checkIfUserExists } from "~/server/_utils/auth/auth";
 import { generateUniqueInviteCode } from "~/server/_utils/invite";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import { logger } from "~/_utils";
+import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
 import { providers, sessionConfig } from "~/auth.config";
 
 /**
@@ -67,6 +68,23 @@ export const authConfig = {
       // Existing users always pass
       const existing = await db.user.findUnique({ where: { email: normalizedEmail } });
       if (existing) return true;
+
+      // Check if invite-only mode is disabled via PostHog feature flag
+      let inviteOnly: boolean | string | undefined;
+      try {
+        inviteOnly = await getFeatureFlagVariant(normalizedEmail, FeatureFlags.INVITE_ONLY);
+      } catch (error) {
+        // Fail-closed: if PostHog is unavailable, keep invite-only enforced
+        logger.warn("Failed to fetch invite-only feature flag, defaulting to invite-only", {
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+        inviteOnly = true;
+      }
+
+      // If invite-only is explicitly false, allow new users through (open registration)
+      if (inviteOnly === false) {
+        return true;
+      }
 
       // New users via Google OAuth: require PendingInviteValidation
       if (account?.provider === "google") {

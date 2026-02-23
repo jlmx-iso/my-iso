@@ -60,6 +60,10 @@ export const env = createEnv({
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_FOUNDING_MONTHLY_PRICE_ID: process.env.STRIPE_FOUNDING_MONTHLY_PRICE_ID,
+    STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
+    STRIPE_STANDARD_MONTHLY_PRICE_ID: process.env.STRIPE_STANDARD_MONTHLY_PRICE_ID,
+    STRIPE_STANDARD_ANNUAL_PRICE_ID: process.env.STRIPE_STANDARD_ANNUAL_PRICE_ID,
   },
 
 
@@ -108,6 +112,10 @@ export const env = createEnv({
     RESEND_API_KEY: z.string().optional(), // Make optional until API key is obtained
     STRIPE_SECRET_KEY: z.string(),
     STRIPE_WEBHOOK_SECRET: z.string(),
+    STRIPE_FOUNDING_MONTHLY_PRICE_ID: z.string().optional(),
+    STRIPE_FOUNDING_ANNUAL_PRICE_ID: z.string().optional(),
+    STRIPE_STANDARD_MONTHLY_PRICE_ID: z.string().optional(),
+    STRIPE_STANDARD_ANNUAL_PRICE_ID: z.string().optional(),
   },
 
   /**
