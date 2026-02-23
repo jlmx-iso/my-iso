@@ -31,6 +31,7 @@ import { FavoriteButton } from "./FavoriteButton";
 import EditProfile from "./EditProfile";
 import EmptyState from "../EmptyState";
 import { Notification } from "../Notification";
+import { PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
 import { getPortfolioImages } from "~/app/_server_utils/";
@@ -301,16 +302,18 @@ export const ProfilePage = async ({
         <Box style={{ gridColumn: resources.length > 0 ? "span 2" : "span 1" }}>
           {resources.length > 0 ? (
             <Paper p="lg" radius="md" withBorder>
-              <Text
-                size="xs"
-                fw={700}
-                c="dimmed"
-                tt="uppercase"
-                mb="md"
-                style={{ letterSpacing: 1 }}
-              >
-                Portfolio
-              </Text>
+              <Group justify="space-between" mb="md">
+                <Text
+                  size="xs"
+                  fw={700}
+                  c="dimmed"
+                  tt="uppercase"
+                  style={{ letterSpacing: 1 }}
+                >
+                  Portfolio
+                </Text>
+                {isSelf && <PortfolioUpload />}
+              </Group>
               <SimpleGrid
                 cols={{ base: 2, sm: 3 }}
                 spacing="sm"
@@ -356,6 +359,7 @@ export const ProfilePage = async ({
                     Upload photos to showcase your work and attract more clients.
                   </Text>
                 </Stack>
+                <PortfolioUpload />
               </Stack>
             </Paper>
           ) : null}
