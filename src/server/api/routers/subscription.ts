@@ -39,13 +39,13 @@ export const subscriptionRouter = createTRPCRouter({
   createCheckoutSession: protectedProcedure
     .input(
       z.object({
-        billingInterval: z.enum(["monthly", "annual"]).default("monthly"),
-      }).optional()
+        billingInterval: z.enum(["monthly", "annual"]),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const userEmail = ctx.session.user.email;
-      const billingInterval = input?.billingInterval ?? "monthly";
+      const billingInterval = input.billingInterval;
 
       if (!userEmail) {
         throw new Error("User email is required to create a checkout session");
