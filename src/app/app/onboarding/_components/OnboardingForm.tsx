@@ -3,23 +3,36 @@
 import {
   Box,
   Button,
-  Grid,
   Group,
+  Image,
   Paper,
+  SimpleGrid,
   Stack,
   Stepper,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
+import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { useRouter } from "next/navigation";
 import { type MouseEventHandler, useState } from "react";
 
-import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { OnboardingComplete } from "./OnboardingComplete";
+import { PlanSelection } from "./PlanSelection";
+import { WelcomeScreen } from "./WelcomeScreen";
+
 import { ErrorAlert } from "~/app/_components/Alerts";
+import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
+import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { logger } from "~/_utils";
+import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
+
+// Onboarding stages (not steps in the stepper — separate screens)
+type Stage = "welcome" | "profile" | "plan" | "complete";
 
 type OnboardingUser = {
   id: string;
@@ -33,20 +46,35 @@ type OnboardingUser = {
   country: string | null;
 };
 
-export function OnboardingForm({ user }: { user: OnboardingUser }) {
+type OnboardingFormProps = {
+  user: OnboardingUser;
+  pricing: PricingInfo;
+};
+
+// Profile stepper steps
+const PROFILE_STEPS = 3; // basics, business, avatar
+
+export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
   const router = useRouter();
-  const [active, setActive] = useState(0);
+  const [stage, setStage] = useState<Stage>("welcome");
+  const [profileStep, setProfileStep] = useState(0);
+  const [isPro, setIsPro] = useState(false);
+
+  // Avatar upload state
+  const [avatarFiles, setAvatarFiles] = useState<FileWithPath[] | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const updateProfile = api.user.updateProfile.useMutation();
-  const createPhotographer = api.photographer.create.useMutation({
-    onSuccess: () => {
-      router.push("/app/events");
-      router.refresh();
-    },
-  });
+  const createPhotographer = api.photographer.create.useMutation();
+  const uploadAvatar = api.photographer.uploadProfileImage.useMutation();
 
-  const isPending = updateProfile.isPending || createPhotographer.isPending;
-  const error = updateProfile.error ?? createPhotographer.error;
+  const isPending =
+    updateProfile.isPending ||
+    createPhotographer.isPending ||
+    avatarUploading;
+
+  const error =
+    updateProfile.error ?? createPhotographer.error ?? uploadAvatar.error;
 
   const form = useForm({
     initialValues: {
@@ -55,64 +83,69 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
       location: "",
       companyName: "",
       website: "",
-      facebook: "",
       instagram: "",
-      tiktok: "",
-      twitter: "",
-      vimeo: "",
-      youtube: "",
     },
-
     validate: {
       phoneNumber: (value: string) => {
-        if (!/^\d{10}$/.test(value)) return "Invalid phone number (10 digits)";
+        if (!/^\d{10}$/.test(value))
+          return "Invalid phone number (10 digits)";
         return null;
       },
-      location: (value: string) => (value.length > 0 ? null : "Location is required"),
-      companyName: (value: string) => (value.length > 0 ? null : "Business name is required"),
-      facebook: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?facebook.com\/[^ "]+$/.test(value)) return "Invalid Facebook URL";
-      },
+      location: (value: string) =>
+        value.length > 0 ? null : "Location is required",
+      companyName: (value: string) =>
+        value.length > 0 ? null : "Business name is required",
       instagram: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)) return "Invalid Instagram URL";
-      },
-      tiktok: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?tiktok.com\/[^ "]+$/.test(value)) return "Invalid TikTok URL";
-      },
-      twitter: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?(twitter\.com|x\.com)\/[^ "]+$/.test(value)) return "Invalid Twitter URL";
-      },
-      vimeo: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?vimeo.com\/[^ "]+$/.test(value)) return "Invalid Vimeo URL";
+        if (
+          value.length &&
+          !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)
+        )
+          return "Invalid Instagram URL";
+        return null;
       },
       website: (value: string) => {
-        if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value)) return "Invalid website URL";
-      },
-      youtube: (value: string) => {
-        if (value.length && !/^(http|https):\/\/(www.)?youtube.com\/[^ "]+$/.test(value)) return "Invalid YouTube URL";
+        if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value))
+          return "Invalid website URL";
+        return null;
       },
     },
   });
 
-  const nextStep: MouseEventHandler<HTMLButtonElement> = (e) => {
+  const avatarPreviews = avatarFiles?.map((file, index) => {
+    const url = URL.createObjectURL(file);
+    return (
+      <Image
+        key={index}
+        src={url}
+        radius="md"
+        onLoad={() => URL.revokeObjectURL(url)}
+      />
+    );
+  });
+
+  // Validate fields for each profile sub-step
+  const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
-    const stepOneFields = ["phoneNumber", "location"];
+    const stepFields: Record<number, string[]> = {
+      0: ["phoneNumber", "location"],
+      1: ["companyName", "instagram", "website"],
+    };
+    const fields = stepFields[profileStep] ?? [];
     let hasErrors = false;
-    for (const field of stepOneFields) {
-      if (form.validateField(field).hasError) {
-        hasErrors = true;
-      }
+    for (const field of fields) {
+      if (form.validateField(field).hasError) hasErrors = true;
     }
-    if (hasErrors) return;
-    setActive((current) => (current < 1 ? current + 1 : current));
+    if (!hasErrors)
+      setProfileStep((s) => Math.min(s + 1, PROFILE_STEPS - 1));
   };
 
-  const prevStep: MouseEventHandler<HTMLButtonElement> = (e) => {
+  const prevProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
-    setActive((current) => (current > 0 ? current - 1 : current));
+    setProfileStep((s) => Math.max(s - 1, 0));
   };
 
-  const handleSubmit = async () => {
+  // Submit profile data (called after avatar step)
+  const submitProfile = async () => {
     const validation = form.validate();
     if (validation.hasErrors) return;
 
@@ -126,15 +159,58 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
     await createPhotographer.mutateAsync({
       name: `${user.firstName} ${user.lastName}`,
       companyName: values.companyName,
-      location: values.location,
-      website: values.website || null,
-      facebook: values.facebook || null,
+      facebook: null,
       instagram: values.instagram || null,
-      tiktok: values.tiktok || null,
-      twitter: values.twitter || null,
-      vimeo: values.vimeo || null,
-      youtube: values.youtube || null,
+      location: values.location,
+      tiktok: null,
+      twitter: null,
+      vimeo: null,
+      website: values.website || null,
+      youtube: null,
     });
+
+    // Upload avatar if provided
+    if (avatarFiles?.[0]) {
+      setAvatarUploading(true);
+      const file = avatarFiles[0];
+      const reader = new FileReader();
+      await new Promise<void>((resolve) => {
+        reader.onloadend = async () => {
+          const base64File = reader.result?.toString().split(",")[1];
+          if (base64File) {
+            try {
+              await uploadAvatar.mutateAsync({ image: base64File });
+            } catch (err) {
+              logger.error("Avatar upload failed during onboarding", { err });
+              notifications.show({
+                color: "yellow",
+                message:
+                  "Profile created, but avatar upload failed. You can upload it from your profile.",
+                title: "Avatar not uploaded",
+              });
+            }
+          }
+          setAvatarUploading(false);
+          resolve();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    setStage("plan");
+  };
+
+  const handleSelectFree = () => {
+    setIsPro(false);
+    setStage("complete");
+  };
+
+  // Called when Stripe redirects back after successful checkout
+  // (In practice, the user is redirected to Stripe and comes back to /app/settings)
+  // So "complete" from PlanSelection only happens for Free users
+  const handleProSelected = () => {
+    setIsPro(true);
+    setStage("complete");
   };
 
   if (isPending) {
@@ -148,24 +224,59 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
     );
   }
 
+  // Stage: Welcome
+  if (stage === "welcome") {
+    return (
+      <WelcomeScreen
+        firstName={user.firstName}
+        onContinue={() => setStage("profile")}
+      />
+    );
+  }
+
+  // Stage: Complete
+  if (stage === "complete") {
+    return <OnboardingComplete isPro={isPro} />;
+  }
+
+  // Stage: Plan selection
+  if (stage === "plan") {
+    return (
+      <PlanSelection
+        pricing={pricing}
+        onSelectFree={handleSelectFree}
+        onProSelected={handleProSelected}
+      />
+    );
+  }
+
+  // Stage: Profile setup (multi-step stepper)
   return (
-    <Box maw={600} w="100%" mx="auto">
+    <Box maw={640} w="100%" mx="auto">
       <Stack align="center" mb="xl">
         <Title order={2} ta="center">
-          Complete your profile
+          Set up your profile
         </Title>
         <Text c="dimmed" size="sm" ta="center">
-          Welcome, {user.firstName}! Let&apos;s finish setting up your account.
+          Tell other photographers about yourself.
         </Text>
       </Stack>
 
       <Paper withBorder shadow="md" p="xl" radius="md">
-        <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}>
+        <form onSubmit={(e) => e.preventDefault()}>
           {error && <ErrorAlert title="Error" message={error.message} />}
 
-          <Stepper active={active} onStepClick={setActive} allowNextStepsSelect={false}>
-            <Stepper.Step label="Personal Info" description="About you">
-              <Stack gap="sm">
+          <Stepper
+            active={profileStep}
+            onStepClick={(step) => {
+              // Only allow going back
+              if (step < profileStep) setProfileStep(step);
+            }}
+            allowNextStepsSelect={false}
+          >
+            {/* Step 1: Basics */}
+            <Stepper.Step label="The basics" description="Who you are">
+              <Stack gap="sm" mt="md">
                 <Group grow>
                   <TextInput
                     label="First Name"
@@ -178,11 +289,7 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
                     disabled
                   />
                 </Group>
-                <TextInput
-                  label="Email"
-                  value={user.email}
-                  disabled
-                />
+                <TextInput label="Email" value={user.email} disabled />
                 <TextInput
                   label="Phone Number"
                   placeholder="10-digit phone number"
@@ -190,8 +297,9 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
                   {...form.getInputProps("phoneNumber")}
                 />
                 <TextInput
-                  label="Handle"
-                  placeholder="username (optional)"
+                  label="Username"
+                  placeholder="@yourhandle (optional)"
+                  leftSection={<Text size="sm" c="dimmed">@</Text>}
                   {...form.getInputProps("handle")}
                 />
                 <LocationAutocomplete
@@ -203,47 +311,87 @@ export function OnboardingForm({ user }: { user: OnboardingUser }) {
               </Stack>
             </Stepper.Step>
 
-            <Stepper.Step label="Business Info" description="Your business">
-              <Stack gap="sm">
+            {/* Step 2: Business */}
+            <Stepper.Step label="Your business" description="How to find you">
+              <Stack gap="sm" mt="md">
                 <TextInput
                   label="Business Name"
-                  placeholder="Awesome Photography, LLC"
+                  placeholder="Jane Smith Photography"
                   required
                   {...form.getInputProps("companyName")}
                 />
                 <TextInput
                   label="Website"
-                  placeholder="https://awesome-photographer.com"
+                  placeholder="https://your-website.com"
                   {...form.getInputProps("website")}
                 />
-                <Grid grow>
-                  <Grid.Col span={6}>
-                    <TextInput label="Facebook" placeholder="https://facebook.com/..." {...form.getInputProps("facebook")} />
-                    <TextInput label="Instagram" placeholder="https://instagram.com/..." {...form.getInputProps("instagram")} />
-                    <TextInput label="TikTok" placeholder="https://tiktok.com/..." {...form.getInputProps("tiktok")} />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
-                    <TextInput label="Twitter" placeholder="https://x.com/..." {...form.getInputProps("twitter")} />
-                    <TextInput label="Vimeo" placeholder="https://vimeo.com/..." {...form.getInputProps("vimeo")} />
-                    <TextInput label="YouTube" placeholder="https://youtube.com/..." {...form.getInputProps("youtube")} />
-                  </Grid.Col>
-                </Grid>
+                <TextInput
+                  label="Instagram"
+                  placeholder="https://instagram.com/yourhandle"
+                  description="Most photographers live on Instagram — this is the one that counts."
+                  {...form.getInputProps("instagram")}
+                />
+                <Text size="xs" c="dimmed">
+                  You can add Facebook, TikTok, and other socials from your
+                  profile later.
+                </Text>
+              </Stack>
+            </Stepper.Step>
+
+            {/* Step 3: Avatar */}
+            <Stepper.Step label="Your photo" description="Put a face to the name">
+              <Stack gap="md" mt="md">
+                <Text size="sm" c="dimmed">
+                  Profiles with a photo get significantly more views. You can
+                  skip this and add it later from your profile.
+                </Text>
+                <Dropzone
+                  multiple={false}
+                  loading={avatarUploading}
+                  handleFileChange={(files) => setAvatarFiles(files)}
+                />
+                {avatarPreviews && avatarPreviews.length > 0 && (
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
+                    {avatarPreviews}
+                  </SimpleGrid>
+                )}
               </Stack>
             </Stepper.Step>
           </Stepper>
 
-          <Group justify="flex-end" mt="lg">
-            {active > 0 && (
-              <Button onClick={prevStep} variant="subtle">
+          <Group justify="space-between" mt="xl">
+            {profileStep > 0 ? (
+              <Button onClick={prevProfileStep} variant="subtle">
                 Back
               </Button>
-            )}
-            {active < 1 ? (
-              <Button onClick={nextStep}>Next</Button>
             ) : (
-              <Button type="submit" disabled={isPending}>
-                Complete Setup
+              <Box />
+            )}
+
+            {profileStep < PROFILE_STEPS - 1 ? (
+              <Button onClick={nextProfileStep} color="orange">
+                Next
               </Button>
+            ) : (
+              <Group gap="sm">
+                {!avatarFiles?.length && (
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => void submitProfile()}
+                    disabled={isPending}
+                  >
+                    Skip for now
+                  </Button>
+                )}
+                <Button
+                  color="orange"
+                  onClick={() => void submitProfile()}
+                  loading={isPending}
+                >
+                  {avatarFiles?.length ? "Upload & Continue" : "Continue"}
+                </Button>
+              </Group>
             )}
           </Group>
         </form>
