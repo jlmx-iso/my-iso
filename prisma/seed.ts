@@ -3,6 +3,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { config } from "dotenv";
 import { resolve } from "path";
+import { generateInviteCode } from "../src/server/_utils/invite";
 
 // Load .env file
 config();
@@ -35,7 +36,8 @@ async function main() {
     await db.eventLike.deleteMany({ where: { userId: { in: seedUserIds } } });
     await db.booking.deleteMany({ where: { OR: [{ applicantId: { in: seedUserIds } }, { ownerId: { in: seedUserIds } }] } });
     await db.notification.deleteMany({ where: { recipientId: { in: seedUserIds } } });
-    await db.referral.deleteMany({ where: { OR: [{ referrerId: { in: seedUserIds } }, { referredId: { in: seedUserIds } }] } });
+    await db.inviteRedemption.deleteMany({ where: { redeemedById: { in: seedUserIds } } });
+    await db.inviteCode.deleteMany({ where: { creatorId: { in: seedUserIds } } });
     await db.review.deleteMany({ where: { userId: { in: seedUserIds } } });
     await db.event.deleteMany({ where: { photographer: { userId: { in: seedUserIds } } } });
     await db.message.deleteMany({ where: { senderId: { in: seedUserIds } } });
@@ -50,6 +52,14 @@ async function main() {
     await db.subscription.deleteMany({ where: { userId: { in: seedUserIds } } });
     await db.user.deleteMany({ where: { id: { in: seedUserIds } } });
   }
+
+  // Clean up seed-specific entries only (preserve real user data)
+  await db.pendingInviteValidation.deleteMany({
+    where: { email: { endsWith: "@example.com" } },
+  });
+  await db.waitlist.deleteMany({
+    where: { email: { endsWith: "@waitlist.example.com" } },
+  });
 
   console.log(`Cleared ${seedUserIds.length} seed users`);
 
@@ -137,6 +147,45 @@ async function main() {
   ]);
 
   console.log(`Created ${users.length} users`);
+
+  // Set roles for seed users
+  await Promise.all([
+    db.user.update({ where: { id: users[0]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[1]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[2]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[3]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[4]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[5]!.id }, data: { role: "founding_member" } }),
+  ]);
+
+  console.log("Creating invite codes...");
+  await Promise.all([
+    db.inviteCode.create({ data: { code: "ISO-SARAH-A1B2", creatorId: users[0]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-MARCU-C3D4", creatorId: users[1]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-AISHA-E5F6", creatorId: users[2]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-JAMES-G7H8", creatorId: users[3]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-YUKIT-J9K2", creatorId: users[4]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-ELENA-L3M4", creatorId: users[5]!.id } }),
+  ]);
+  console.log("Created 6 invite codes");
+
+  // Add sample waitlist entries (scoped to seed domain only)
+  console.log("Creating waitlist entries...");
+  await db.waitlist.deleteMany({
+    where: { email: { endsWith: "@waitlist.example.com" } },
+  });
+  await Promise.all([
+    db.waitlist.create({
+      data: { name: "Alex Thompson", email: "alex@waitlist.example.com", instagram: "@alexthompson", userType: "second", referralSource: "Instagram", position: 1 },
+    }),
+    db.waitlist.create({
+      data: { name: "Jordan Kim", email: "jordan@waitlist.example.com", website: "https://jordankimphoto.com", userType: "lead", referralSource: "Friend", position: 2 },
+    }),
+    db.waitlist.create({
+      data: { name: "Sam Garcia", email: "sam@waitlist.example.com", instagram: "@samgarcia_photo", website: "https://samgarcia.com", userType: "both", position: 3 },
+    }),
+  ]);
+  console.log("Created 3 waitlist entries");
 
   console.log("Creating photographer profiles...");
 
@@ -490,6 +539,16 @@ async function main() {
     if (!realUser.photographer) continue;
 
     console.log(`Creating seed data for real user: ${realUser.firstName} ${realUser.lastName}`);
+
+    // Set founder role and create invite code for real user
+    await db.user.update({ where: { id: realUser.id }, data: { role: "founder" } });
+    const existingCode = await db.inviteCode.findUnique({ where: { creatorId: realUser.id } });
+    if (!existingCode) {
+      const code = generateInviteCode(realUser.firstName);
+      await db.inviteCode.create({
+        data: { code, creatorId: realUser.id, maxRedemptions: 99 },
+      });
+    }
 
     // --- Bookings ---
     // 1. Someone applied to the Austin events (real user is the event owner for Austin events)

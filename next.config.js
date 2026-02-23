@@ -21,6 +21,13 @@ const config = {
       }
     ],
   },
+  redirects: async () => [
+    {
+      source: "/register",
+      destination: "/join",
+      permanent: true,
+    },
+  ],
   headers: async () => (
     [
       {

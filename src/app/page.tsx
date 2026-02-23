@@ -74,8 +74,8 @@ function HeroSection() {
         </FadeInOnScroll>
         <FadeInOnScroll delay={0.3}>
           <Group mt="md">
-            <Button component="a" href="/register" size="lg" rightSection={<IconArrowRight size={18} />}>
-              Get Started
+            <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+              Join the Founding Class
             </Button>
             <Button component="a" href="/login" size="lg" variant="default">
               Sign In
@@ -289,7 +289,7 @@ function PricingPreviewSection() {
                 </Group>
               ))}
             </Stack>
-            <Button component="a" href="/register" variant="default" fullWidth>
+            <Button component="a" href="/join" variant="default" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -309,13 +309,16 @@ function PricingPreviewSection() {
               <Text fw={600} size="lg">
                 Pro
               </Text>
-              <Badge size="sm" variant="light">
-                Popular
+              <Badge size="sm" variant="light" color="orange">
+                Founding Price
               </Badge>
             </Group>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
                 $10
+              </Text>
+              <Text c="dimmed" size="sm" td="line-through">
+                $19
               </Text>
               <Text c="dimmed" size="sm">
                 / month
@@ -334,7 +337,7 @@ function PricingPreviewSection() {
                 </Group>
               ))}
             </Stack>
-            <Button component="a" href="/register" fullWidth>
+            <Button component="a" href="/join" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -361,11 +364,11 @@ function CtaSection() {
             Ready to find your next second shooter?
           </Title>
           <Text c="dimmed" ta="center">
-            Join hundreds of photographers already using ISO to build their teams
-            and book more work.
+            Join the founding class of photographers building their teams
+            and booking more work on ISO.
           </Text>
-          <Button component="a" href="/register" size="lg" rightSection={<IconArrowRight size={18} />}>
-            Create your free account
+          <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+            Join the founding class
           </Button>
         </Stack>
       </Paper>

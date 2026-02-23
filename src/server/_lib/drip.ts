@@ -106,7 +106,7 @@ const campaigns: DripCampaign[] = [
             },
             {
                 delayDays: 3,
-                template: "referral-invite",
+                template: "invite-friends",
                 subject: "Know someone who'd love ISO?",
             },
         ],
@@ -128,12 +128,12 @@ const campaigns: DripCampaign[] = [
         steps: [
             {
                 delayDays: 0,
-                template: "referral-invite",
+                template: "invite-friends",
                 subject: "Know someone who'd love ISO?",
             },
             {
                 delayDays: 7,
-                template: "referral-invite",
+                template: "invite-friends",
                 subject: "Reminder: share ISO with a photographer friend",
             },
         ],

@@ -15,4 +15,5 @@ export { BookingCompletedEmail, renderBookingCompletedEmail } from "./booking-co
 export { NewMessageEmail, renderNewMessageEmail } from "./new-message";
 export { ReviewReceivedEmail, renderReviewReceivedEmail } from "./review-received";
 export { UpgradePitchEmail, renderUpgradePitchEmail } from "./upgrade-pitch";
-export { ReferralInviteEmail, renderReferralInviteEmail } from "./referral-invite";
+export { InviteFriendsEmail, renderInviteFriendsEmail } from "./invite-friends";
+export { WaitlistApprovedEmail, renderWaitlistApprovedEmail } from "./waitlist-approved";

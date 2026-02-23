@@ -1,7 +1,7 @@
 "use client";
 import { ActionIcon, Divider, NavLink, Popover, Text } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconLogout, IconUser } from "@tabler/icons-react";
+import { IconLogout, IconUser, IconUserPlus } from "@tabler/icons-react";
 import { type Session } from "next-auth";
 import { signOut } from "next-auth/react";
 
@@ -49,6 +49,11 @@ export const UserProfileButton = ({ session }: UserProfileButtonProps) => {
                     href="/app/profile"
                     label="Profile"
                     leftSection={<IconUser color={colors.orange![4]} />}
+                />
+                <NavLink
+                    href="/app/invites"
+                    label="Invites"
+                    leftSection={<IconUserPlus color={colors.orange![4]} />}
                 />
                 <NavLink
                     component="button"

@@ -189,8 +189,13 @@ model User {
   bookingsApplied   Booking[]       @relation("BookingApplicant")
   bookingsOwned     Booking[]       @relation("BookingOwner")
   notifications     Notification[]
-  referralsSent     Referral[]      @relation("ReferralReferrer")
-  referralsReceived Referral[]      @relation("ReferralReferred")
+  role              String   @default("standard")
+  invitedByUserId   String?
+  invitedBy         User?    @relation("InvitedByUser", fields: [invitedByUserId], references: [id])
+  invitees          User[]   @relation("InvitedByUser")
+  inviteCode        InviteCode?
+  inviteRedemptions InviteRedemption[]
+  waitlistReviews   Waitlist[] @relation("WaitlistReviewer")
   swipesSent        Swipe[]         @relation("SwipesSent")
   swipesReceived    Swipe[]         @relation("SwipesReceived")
   matchesAsUser1    Match[]         @relation("MatchesAsUser1")
@@ -303,21 +308,59 @@ model Notification {
   @@index([recipientId, createdAt])
 }
 
-model Referral {
-  id         String    @id @default(cuid())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  referrer   User      @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
-  referrerId String
-  referred   User?     @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
-  referredId String?
-  code       String    @unique
-  status     String    @default("pending") // pending, signed_up, rewarded, expired
-  rewardType String? // free_month, credit
-  rewardedAt DateTime?
+model InviteCode {
+  id                 String             @id @default(cuid())
+  code               String             @unique
+  creatorId          String             @unique
+  creator            User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  maxRedemptions     Int                @default(5)
+  currentRedemptions Int                @default(0)
+  createdAt          DateTime           @default(now())
+  regeneratedAt      DateTime?
+  redemptions        InviteRedemption[]
 
-  @@index([referrerId])
   @@index([code])
+}
+
+model InviteRedemption {
+  id           String     @id @default(cuid())
+  inviteCodeId String
+  inviteCode   InviteCode @relation(fields: [inviteCodeId], references: [id], onDelete: Cascade)
+  redeemedById String
+  redeemedBy   User       @relation(fields: [redeemedById], references: [id], onDelete: Cascade)
+  redeemedAt   DateTime   @default(now())
+
+  @@unique([inviteCodeId, redeemedById])
+  @@index([redeemedById])
+}
+
+model Waitlist {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  instagram      String?
+  website        String?
+  userType       String    @default("both") // lead, second, both
+  referralSource String?
+  status         String    @default("pending") // pending, approved, rejected
+  position       Int?
+  createdAt      DateTime  @default(now())
+  reviewedAt     DateTime?
+  reviewedById   String?
+  reviewedBy     User?     @relation("WaitlistReviewer", fields: [reviewedById], references: [id])
+  convertedAt    DateTime?
+
+  @@index([status, createdAt])
+}
+
+model PendingInviteValidation {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  code      String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model VerificationToken {

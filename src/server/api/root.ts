@@ -5,14 +5,15 @@ import { discoverRouter } from "./routers/discover";
 import { eventRouter } from "./routers/event";
 import { favoriteRouter } from "./routers/favorite";
 import { googleRouter } from "./routers/google";
+import { inviteRouter } from "./routers/invite";
 import { messageRouter } from "./routers/message";
 import { notificationRouter } from "./routers/notification";
 import { photographerRouter } from "./routers/photographer";
-import { referralRouter } from "./routers/referral";
 import { reviewRouter } from "./routers/review";
 import { searchRouter } from "./routers/search";
 import { subscriptionRouter } from "./routers/subscription";
 import { userRouter } from "./routers/user";
+import { waitlistRouter } from "./routers/waitlist";
 
 import { createTRPCRouter } from "~/server/api/trpc";
 
@@ -28,14 +29,15 @@ export const appRouter = createTRPCRouter({
   event: eventRouter,
   favorite: favoriteRouter,
   google: googleRouter,
+  invite: inviteRouter,
   message: messageRouter,
   notification: notificationRouter,
   photographer: photographerRouter,
-  referral: referralRouter,
   review: reviewRouter,
   search: searchRouter,
   subscription: subscriptionRouter,
   user: userRouter,
+  waitlist: waitlistRouter,
 });
 
 // export type definition of API
