@@ -30,6 +30,14 @@ export const metadata = {
   icons: [{ rel: "icon", url: "/favicon.ico" }],
   metadataBase: new URL("https://myiso.app"),
   openGraph: {
+    images: [
+      {
+        url: "https://myiso.app/api/og?title=ISO&subtitle=The+Photographer+Network",
+        width: 1200,
+        height: 630,
+        alt: "ISO — The Photographer Network",
+      },
+    ],
     type: "website",
     locale: "en_US",
     siteName: "ISO",
