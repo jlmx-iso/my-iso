@@ -38,11 +38,9 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
     },
   });
 
-  const displayPrice = billingInterval === "monthly"
+  const monthlyEquivalent = billingInterval === "monthly"
     ? pricing.monthlyPrice
-    : pricing.annualPrice;
-
-  const intervalLabel = billingInterval === "monthly" ? "/mo" : "/yr";
+    : Math.round((pricing.annualPrice / 12) * 100) / 100;
 
   const annualSavings = pricing.monthlyPrice * 12 - pricing.annualPrice;
 
@@ -87,11 +85,11 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
         color="orange"
         size="md"
       >
-        Upgrade to Pro - ${displayPrice}{intervalLabel}
+        Upgrade to Pro - ${monthlyEquivalent}/mo
       </Button>
       {billingInterval === "annual" && annualSavings > 0 && (
         <Text size="xs" c="green">
-          Save ${annualSavings}/yr with annual billing
+          ${pricing.annualPrice}/yr — save ${annualSavings} vs monthly
         </Text>
       )}
       {error && (
