@@ -37,6 +37,7 @@ function JoinContent() {
   const [code, setCode] = useState(codeParam);
   const [email, setEmail] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   const {
     data: validation,
@@ -57,12 +58,16 @@ function JoinContent() {
 
   const handleGoogleSignIn = async () => {
     if (!email.trim()) return;
+    setSignInError(null);
     setIsSigningIn(true);
     try {
       await prepareRegistration({ code: code.trim(), email: email.trim() });
       await signIn("google", { callbackUrl: "/app/events" });
-    } catch {
+    } catch (err) {
       setIsSigningIn(false);
+      const message =
+        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setSignInError(message);
     }
   };
 
@@ -172,6 +177,12 @@ function JoinContent() {
                   value={email}
                   onChange={(e) => setEmail(e.currentTarget.value)}
                 />
+
+                {signInError && (
+                  <Alert color="red" icon={<IconAlertCircle size={16} />}>
+                    {signInError}
+                  </Alert>
+                )}
 
                 <Button
                   leftSection={<IconBrandGoogle size={20} />}

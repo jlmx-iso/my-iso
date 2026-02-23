@@ -1,9 +1,11 @@
 "use client";
 import {
+  Alert,
   Box,
   Button,
   CopyButton,
   Group,
+  Loader,
   Paper,
   Progress,
   Stack,
@@ -12,6 +14,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import {
+  IconAlertCircle,
   IconCheck,
   IconCopy,
   IconLink,
@@ -24,16 +27,30 @@ import { api } from "~/trpc/react";
 
 export default function Page() {
   const utils = api.useUtils();
-  const { data: inviteCode, isLoading } = api.invite.getMyCode.useQuery();
+  const { data: inviteCode, isLoading, error } = api.invite.getMyCode.useQuery();
   const { mutate: regenerate, isPending: isRegenerating } =
     api.invite.regenerate.useMutation({
       onSuccess: () => utils.invite.getMyCode.invalidate(),
     });
 
-  if (isLoading || !inviteCode) {
+  if (isLoading) {
     return (
       <Stack gap="lg">
-        <PageHeader title="Invite Friends" description="Loading..." />
+        <PageHeader title="Invite Friends" description="Loading your invite code..." />
+        <Stack align="center" py="xl">
+          <Loader size="sm" />
+        </Stack>
+      </Stack>
+    );
+  }
+
+  if (error || !inviteCode) {
+    return (
+      <Stack gap="lg">
+        <PageHeader title="Invite Friends" />
+        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Could not load invite code">
+          {error?.message ?? "No invite code found. Please try refreshing the page."}
+        </Alert>
       </Stack>
     );
   }

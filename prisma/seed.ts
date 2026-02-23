@@ -3,6 +3,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { config } from "dotenv";
 import { resolve } from "path";
+import { generateInviteCode } from "../src/server/_utils/invite";
 
 // Load .env file
 config();
@@ -543,12 +544,9 @@ async function main() {
     await db.user.update({ where: { id: realUser.id }, data: { role: "founder" } });
     const existingCode = await db.inviteCode.findUnique({ where: { creatorId: realUser.id } });
     if (!existingCode) {
-      const handle = realUser.firstName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 5).padEnd(3, "X");
-      // Generate a random 4-char suffix to avoid collisions between real users (M9)
-      const charset = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-      const suffix = Array.from({ length: 4 }, () => charset[Math.floor(Math.random() * charset.length)]).join("");
+      const code = generateInviteCode(realUser.firstName);
       await db.inviteCode.create({
-        data: { code: `ISO-${handle}-${suffix}`, creatorId: realUser.id, maxRedemptions: 99 },
+        data: { code, creatorId: realUser.id, maxRedemptions: 99 },
       });
     }
 

@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Group,
+  Loader,
   Pagination,
   Paper,
   SegmentedControl,
@@ -11,6 +12,7 @@ import {
   Text,
 } from "@mantine/core";
 import {
+  IconAlertCircle,
   IconCheck,
   IconExternalLink,
   IconLock,
@@ -37,7 +39,7 @@ export default function Page() {
   const [status, setStatus] = useState<"pending" | "approved" | "rejected" | "all">("pending");
   const [page, setPage] = useState(1);
 
-  const { data, error, refetch } = api.waitlist.getAll.useQuery({ status, page, limit: 20 });
+  const { data, error, isLoading, refetch } = api.waitlist.getAll.useQuery({ status, page, limit: 20 });
   const { mutate: approve } = api.waitlist.approve.useMutation({ onSuccess: () => refetch() });
   const { mutate: reject } = api.waitlist.reject.useMutation({ onSuccess: () => refetch() });
 
@@ -75,8 +77,24 @@ export default function Page() {
         ]}
       />
 
-      <Stack gap="sm">
-        {data?.items.map((entry) => (
+      {isLoading && (
+        <Stack align="center" py="xl">
+          <Loader size="sm" />
+          <Text size="sm" c="dimmed">Loading waitlist...</Text>
+        </Stack>
+      )}
+
+      {!isLoading && error && (
+        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Failed to load waitlist">
+          {error.message}
+          <Button size="xs" variant="subtle" onClick={() => refetch()} mt="xs">
+            Retry
+          </Button>
+        </Alert>
+      )}
+
+      {!isLoading && data && <Stack gap="sm">
+        {data.items.map((entry) => (
           <Paper key={entry.id} withBorder p="md" radius="md">
             <Group justify="space-between" wrap="nowrap">
               <Stack gap={4} style={{ flex: 1 }}>
@@ -102,6 +120,7 @@ export default function Page() {
                       component="a"
                       href={entry.instagram.startsWith("http") ? entry.instagram : `https://instagram.com/${entry.instagram.replace("@", "")}`}
                       target="_blank"
+                      rel="noopener noreferrer"
                       c="blue"
                     >
                       Instagram <IconExternalLink size={10} />
@@ -113,6 +132,7 @@ export default function Page() {
                       component="a"
                       href={entry.website.startsWith("http") ? entry.website : `https://${entry.website}`}
                       target="_blank"
+                      rel="noopener noreferrer"
                       c="blue"
                     >
                       Website <IconExternalLink size={10} />
@@ -155,12 +175,12 @@ export default function Page() {
           </Paper>
         ))}
 
-        {data?.items.length === 0 && (
+        {data.items.length === 0 && (
           <Text c="dimmed" ta="center" py="xl">
             No {status === "all" ? "" : status} entries.
           </Text>
         )}
-      </Stack>
+      </Stack>}
 
       {data && data.totalPages > 1 && (
         <Pagination

@@ -148,7 +148,10 @@ export const proProcedure = t.procedure
 
 /** Reusable middleware that enforces the user has a founder or ambassador role. */
 const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.session || !ctx.session.user) {
+  // Defense-in-depth: session is guaranteed by enforceUserIsAuthed in the
+  // founderProcedure chain, but we check here too so this middleware is safe
+  // to use standalone.
+  if (!ctx.session?.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
@@ -157,7 +160,11 @@ const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
     select: { role: true },
   });
 
-  if (!user || !ADMIN_ROLES.includes(user.role as UserRole)) {
+  if (
+    !user ||
+    typeof user.role !== "string" ||
+    !ADMIN_ROLES.includes(user.role as UserRole)
+  ) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Founder or ambassador access is required.",

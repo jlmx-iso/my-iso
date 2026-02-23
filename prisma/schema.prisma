@@ -359,6 +359,8 @@ model PendingInviteValidation {
   code      String
   createdAt DateTime @default(now())
   expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model VerificationToken {
