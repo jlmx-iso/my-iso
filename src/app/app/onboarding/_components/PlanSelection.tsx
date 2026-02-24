@@ -53,10 +53,10 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
   const [error, setError] = useState<string | null>(null);
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
-    onMutate: () => setError(null),
     onError: (err) => {
       setError(err.message ?? "Failed to create checkout session");
     },
+    onMutate: () => setError(null),
     onSuccess: (data) => {
       if (data.url) {
         setError(null);

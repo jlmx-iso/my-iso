@@ -22,12 +22,12 @@ import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
+import { logger } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import type { PricingInfo } from "~/server/_utils/pricing";
-import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 // Onboarding stages (not steps in the stepper — separate screens)
@@ -116,7 +116,9 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
 
   useEffect(() => {
     return () => {
-      avatarUrls.forEach((url) => URL.revokeObjectURL(url));
+      avatarUrls.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
     };
   }, [avatarUrls]);
 
@@ -179,8 +181,8 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
     if (avatarFiles?.[0]) {
       setAvatarUploading(true);
       const file = avatarFiles[0];
-      const reader = new FileReader();
       await new Promise<void>((resolve) => {
+        const reader = new FileReader();
         reader.onloadend = async () => {
           const base64File = reader.result?.toString().split(",")[1];
           if (base64File) {
@@ -198,6 +200,20 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
               });
             }
           }
+          setAvatarUploading(false);
+          resolve();
+        };
+        reader.onerror = () => {
+          logger.error("FileReader error during avatar upload");
+          notifications.show({
+            color: "yellow",
+            message: "Could not read the selected file. You can upload your photo from your profile.",
+            title: "File read error",
+          });
+          setAvatarUploading(false);
+          resolve();
+        };
+        reader.onabort = () => {
           setAvatarUploading(false);
           resolve();
         };
