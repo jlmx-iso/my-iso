@@ -232,8 +232,10 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   };
 
   const handleSelectFree = () => setStage("complete");
-  // Note: Pro users are redirected to Stripe checkout via PlanSelection
-  // and land on /app/settings after payment. The complete stage is Free-only.
+  // Note: Pro users are redirected to Stripe checkout via PlanSelection.
+  // After payment, Stripe returns to /app/onboarding/complete?plan=pro which shows
+  // the celebration screen with Pro messaging (same as free, but with Pro copy).
+  // The /app/settings?checkout=success route is bypassed intentionally for better UX.
 
   if (isPending) {
     return (
