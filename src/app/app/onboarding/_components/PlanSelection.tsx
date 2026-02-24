@@ -80,10 +80,8 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
           Choose your plan
         </Title>
         <Text c="dimmed" ta="center" maw={500}>
-          Start free or unlock everything with Pro.
-          {pricing.isFoundingPrice && (
-            <> As a founding member, you&apos;ll lock in a price that never goes up.</>
-          )}
+          Start free or unlock everything with Pro. As a founding member,
+          you&apos;ll lock in a price that never goes up.
         </Text>
         <SegmentedControl
           value={billingInterval}
