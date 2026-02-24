@@ -40,7 +40,7 @@ export const subscriptionRouter = createTRPCRouter({
     .input(
       z.object({
         billingInterval: z.enum(["monthly", "annual"]),
-        successPath: z.string().optional(),
+        successPath: z.string().startsWith("/").optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {

@@ -4,7 +4,7 @@ import { logger } from "~/_utils";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
-  count: publicProcedure.query(({ ctx }) => {
+  count: protectedProcedure.query(({ ctx }) => {
     return ctx.db.photographer.count();
   }),
 
