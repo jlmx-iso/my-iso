@@ -17,10 +17,6 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 
-type OnboardingCompleteProps = {
-  isPro: boolean;
-};
-
 const FIRST_ACTIONS = [
   {
     icon: IconCamera,
@@ -45,7 +41,7 @@ const FIRST_ACTIONS = [
   },
 ];
 
-export function OnboardingComplete({ isPro }: OnboardingCompleteProps) {
+export function OnboardingComplete() {
   return (
     <Box maw={600} w="100%" mx="auto" py={40}>
       <Stack align="center" gap="xl">
@@ -57,16 +53,10 @@ export function OnboardingComplete({ isPro }: OnboardingCompleteProps) {
           <Title order={1} ta="center">
             You&apos;re in! 🎉
           </Title>
-          {isPro ? (
-            <Text size="lg" c="dimmed" ta="center" maw={420}>
-              Welcome to Pro! Your founding member badge is live and your
-              price is locked in forever.
-            </Text>
-          ) : (
-            <Text size="lg" c="dimmed" ta="center" maw={420}>
-              Your profile is live. You can upgrade to Pro anytime from Settings.
-            </Text>
-          )}
+          <Text size="lg" c="dimmed" ta="center" maw={420}>
+            Your profile is live. Upgrade to Pro anytime from Settings to
+            unlock unlimited messaging, bookings, and more.
+          </Text>
         </Stack>
 
         <Stack gap="md" w="100%">

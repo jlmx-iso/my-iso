@@ -28,7 +28,6 @@ import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
-  onProSelected?: () => void;
   onSelectFree: () => void;
   pricing: PricingInfo;
 };

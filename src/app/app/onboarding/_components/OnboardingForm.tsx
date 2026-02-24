@@ -16,7 +16,6 @@ import {
 import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { useRouter } from "next/navigation";
 import { type MouseEventHandler, useState } from "react";
 
 import { OnboardingComplete } from "./OnboardingComplete";
@@ -55,10 +54,8 @@ type OnboardingFormProps = {
 const PROFILE_STEPS = 3; // basics, business, avatar
 
 export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
-  const router = useRouter();
   const [stage, setStage] = useState<Stage>("welcome");
   const [profileStep, setProfileStep] = useState(0);
-  const [isPro, setIsPro] = useState(false);
 
   // Avatar upload state
   const [avatarFiles, setAvatarFiles] = useState<FileWithPath[] | null>(null);
@@ -200,18 +197,9 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
     setStage("plan");
   };
 
-  const handleSelectFree = () => {
-    setIsPro(false);
-    setStage("complete");
-  };
-
-  // Called when Stripe redirects back after successful checkout
-  // (In practice, the user is redirected to Stripe and comes back to /app/settings)
-  // So "complete" from PlanSelection only happens for Free users
-  const handleProSelected = () => {
-    setIsPro(true);
-    setStage("complete");
-  };
+  const handleSelectFree = () => setStage("complete");
+  // Note: Pro users are redirected to Stripe checkout via PlanSelection
+  // and land on /app/settings after payment. The complete stage is Free-only.
 
   if (isPending) {
     return (
@@ -234,9 +222,9 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
     );
   }
 
-  // Stage: Complete
+  // Stage: Complete (Free users only — Pro users are redirected to Stripe)
   if (stage === "complete") {
-    return <OnboardingComplete isPro={isPro} />;
+    return <OnboardingComplete />;
   }
 
   // Stage: Plan selection
@@ -245,7 +233,6 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
       <PlanSelection
         pricing={pricing}
         onSelectFree={handleSelectFree}
-        onProSelected={handleProSelected}
       />
     );
   }
