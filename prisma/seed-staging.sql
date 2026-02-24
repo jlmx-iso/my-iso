@@ -73,11 +73,11 @@ INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, cont
 INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c5', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e4', 'seed_u6', 'This is a dream gig! Available all 3 days. Happy to share my live music portfolio.', 0);
 INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c6', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e5', 'seed_u4', 'I specialize in intimate weddings. This sounds right up my alley!', 0);
 INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c7', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e6', 'seed_u3', 'I have experience with high-volume headshot days. What lighting setup are you planning?', 0);
-INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c8', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e12', 'seed_u8', 'I grew up on boats — no seasickness worries here. Would love to hear more about the vision.', 0);
-INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c9', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e13', 'seed_u9', 'Agency work is my bread and butter. Available both days, can bring my own tethering kit.', 0);
-INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c10', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e19', 'seed_u2', 'I hike 14ers regularly and can carry a full pack. This is exactly my kind of shoot!', 0);
-INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c11', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e24', 'seed_u3', 'Forest weddings are my favorite. I shoot a lot at the Gorge — know the light patterns well.', 0);
-INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c12', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e27', 'seed_u8', 'Tulum is incredible — I''ve shot there twice. Would love to be on this one.', 0);
+INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c8', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e12', 'seed_u1', 'I grew up on boats — no seasickness worries here. Would love to hear more about the vision.', 0);
+INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c9', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e13', 'seed_u4', 'Agency work is my bread and butter. Available both days, can bring my own tethering kit.', 0);
+INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c10', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e19', 'seed_u6', 'I hike 14ers regularly and can carry a full pack. This is exactly my kind of shoot!', 0);
+INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c11', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e24', 'seed_u7', 'Forest weddings are my favorite. I shoot a lot at the Gorge — know the light patterns well.', 0);
+INSERT OR IGNORE INTO "Comment" (id, createdAt, updatedAt, eventId, userId, content, isDeleted) VALUES ('seed_c12', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_e27', 'seed_u5', 'Tulum is incredible — I''ve shot there twice. Would love to be on this one.', 0);
 
 INSERT OR IGNORE INTO "Favorite" (id, createdAt, updatedAt, userId, targetId) VALUES ('seed_f1', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_u1', 'seed_p2');
 INSERT OR IGNORE INTO "Favorite" (id, createdAt, updatedAt, userId, targetId) VALUES ('seed_f2', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'seed_u1', 'seed_p3');
@@ -93,4 +93,4 @@ INSERT OR IGNORE INTO "Waitlist" (id, createdAt, name, email, instagram, website
 
 COMMIT;
 PRAGMA foreign_keys = ON;
--- Seed complete: 10 users/photographers, 30 events, 12 comments, 7 favorites, 3 waitlist
+-- Seed complete: 10 users/photographers, 30 events, 10 invite codes, 12 comments, 7 favorites, 3 waitlist
