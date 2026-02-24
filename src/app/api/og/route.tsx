@@ -9,22 +9,22 @@ export async function GET(request: Request) {
     (
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          width: 1200,
-          height: 630,
+          alignItems: "center",
           background:
             "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
-          padding: 60,
+          display: "flex",
+          flexDirection: "column",
+          height: 630,
           justifyContent: "center",
-          alignItems: "center",
+          padding: 60,
+          width: 1200,
         }}
       >
         <div
           style={{
+            color: "white",
             fontSize: 72,
             fontWeight: 800,
-            color: "white",
             marginBottom: 16,
             textAlign: "center",
           }}
@@ -33,8 +33,8 @@ export async function GET(request: Request) {
         </div>
         <div
           style={{
-            fontSize: 32,
             color: "rgba(255,255,255,0.7)",
+            fontSize: 32,
             textAlign: "center",
           }}
         >
@@ -42,8 +42,8 @@ export async function GET(request: Request) {
         </div>
         <div
           style={{
-            fontSize: 20,
             color: "rgba(255,255,255,0.4)",
+            fontSize: 20,
             marginTop: 40,
           }}
         >

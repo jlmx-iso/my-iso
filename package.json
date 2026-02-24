@@ -16,7 +16,7 @@
     "start": "next start",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && npx tsx prisma/seed.ts",
-    "db:seed:staging": "wrangler d1 execute my-iso-db-staging --remote --env staging --file=prisma/seed-staging.sql"
+    "db:seed:staging": "wrangler d1 execute DB --remote --env staging --file=prisma/seed-staging.sql"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

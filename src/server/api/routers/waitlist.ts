@@ -74,12 +74,12 @@ export const waitlistRouter = createTRPCRouter({
         },
       });
 
-      // Send confirmation email — fire-and-forget, submission succeeds even if email fails
+      // Send confirmation email — awaited for logging, but failure does not throw
       const emailResult = await sendTemplateEmail({
         email,
+        props: { name: input.name },
         subject: "You're on the ISO waitlist — we'll be in touch",
         template: "waitlist-confirmation",
-        props: { name: input.name },
       });
 
       if (!emailResult.isOk) {

@@ -1,5 +1,6 @@
 -- Staging seed data
 PRAGMA foreign_keys = OFF;
+BEGIN;
 
 INSERT OR IGNORE INTO "User" (id, createdAt, updatedAt, firstName, lastName, email, handle, phone, city, state, country, role, isDiscoverable) VALUES ('seed_u1', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'Sarah', 'Chen', 'sarah@example.com', 'sarahchen', '555-0101', 'Austin', 'TX', 'US', 'founding_member', 1);
 INSERT OR IGNORE INTO "User" (id, createdAt, updatedAt, firstName, lastName, email, handle, phone, city, state, country, role, isDiscoverable) VALUES ('seed_u2', '2026-02-24T12:00:00.000Z', '2026-02-24T12:00:00.000Z', 'Marcus', 'Rivera', 'marcus@example.com', 'marcusrivera', '555-0102', 'Denver', 'CO', 'US', 'founding_member', 1);
@@ -90,5 +91,6 @@ INSERT OR IGNORE INTO "Waitlist" (id, createdAt, name, email, instagram, userTyp
 INSERT OR IGNORE INTO "Waitlist" (id, createdAt, name, email, website, userType, referralSource, position) VALUES ('seed_w2', '2026-02-24T12:00:00.000Z', 'Jordan Kim', 'jordan@waitlist.example.com', 'https://jordankimphoto.com', 'lead', 'Friend', 2);
 INSERT OR IGNORE INTO "Waitlist" (id, createdAt, name, email, instagram, website, userType, position) VALUES ('seed_w3', '2026-02-24T12:00:00.000Z', 'Sam Garcia', 'sam@waitlist.example.com', '@samgarcia_photo', 'https://samgarcia.com', 'both', 3);
 
+COMMIT;
 PRAGMA foreign_keys = ON;
 -- Seed complete: 10 users/photographers, 30 events, 12 comments, 7 favorites, 3 waitlist

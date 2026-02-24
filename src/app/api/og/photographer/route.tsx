@@ -40,22 +40,22 @@ export async function GET(request: Request) {
     (
       <div
         style={{
-          display: "flex",
-          flexDirection: "row",
-          width: 1200,
-          height: 630,
           background:
             "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+          display: "flex",
+          flexDirection: "row",
+          height: 630,
           padding: 60,
+          width: 1200,
         }}
       >
         <div
           style={{
+            alignItems: "flex-start",
             display: "flex",
+            flex: 1,
             flexDirection: "column",
             justifyContent: "center",
-            alignItems: "flex-start",
-            flex: 1,
             paddingRight: 40,
           }}
         >
@@ -63,27 +63,27 @@ export async function GET(request: Request) {
             <img
               src={avatarUrl}
               style={{
-                width: 120,
-                height: 120,
-                borderRadius: 60,
-                objectFit: "cover",
                 border: "3px solid rgba(255,255,255,0.3)",
+                borderRadius: 60,
+                height: 120,
                 marginBottom: 24,
+                objectFit: "cover",
+                width: 120,
               }}
             />
           ) : (
             <div
               style={{
-                display: "flex",
-                width: 120,
-                height: 120,
-                borderRadius: 60,
-                background: "rgba(255,255,255,0.15)",
                 alignItems: "center",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 60,
+                color: "white",
+                display: "flex",
+                fontSize: 48,
+                height: 120,
                 justifyContent: "center",
                 marginBottom: 24,
-                fontSize: 48,
-                color: "white",
+                width: 120,
               }}
             >
               {name.charAt(0)}
@@ -92,9 +92,9 @@ export async function GET(request: Request) {
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div
               style={{
+                color: "white",
                 fontSize: 48,
                 fontWeight: 700,
-                color: "white",
                 lineHeight: 1.2,
                 marginBottom: 8,
               }}
@@ -104,8 +104,8 @@ export async function GET(request: Request) {
             {company ? (
               <div
                 style={{
-                  fontSize: 24,
                   color: "rgba(255,255,255,0.7)",
+                  fontSize: 24,
                   marginBottom: 12,
                 }}
               >
@@ -115,10 +115,10 @@ export async function GET(request: Request) {
             {location ? (
               <div
                 style={{
-                  display: "flex",
                   alignItems: "center",
-                  fontSize: 22,
                   color: "rgba(255,255,255,0.6)",
+                  display: "flex",
+                  fontSize: 22,
                 }}
               >
                 {location}
@@ -128,20 +128,20 @@ export async function GET(request: Request) {
         </div>
         <div
           style={{
+            alignItems: "flex-end",
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-end",
-            alignItems: "flex-end",
           }}
         >
           <img
             src={LOGO_BASE64}
-            style={{ width: 80, height: 80, opacity: 0.9 }}
+            style={{ height: 80, opacity: 0.9, width: 80 }}
           />
           <div
             style={{
-              fontSize: 18,
               color: "rgba(255,255,255,0.5)",
+              fontSize: 18,
               marginTop: 8,
             }}
           >
