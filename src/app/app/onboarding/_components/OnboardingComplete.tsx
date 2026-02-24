@@ -19,25 +19,25 @@ import {
 
 const FIRST_ACTIONS = [
   {
-    icon: IconCamera,
-    title: "Upload portfolio photos",
+    color: "orange",
     description: "Show leads what you can do",
     href: "/app/profile",
-    color: "orange",
+    icon: IconCamera,
+    title: "Upload portfolio photos",
   },
   {
-    icon: IconSearch,
-    title: "Discover photographers",
+    color: "blue",
     description: "Swipe through photographers near you",
     href: "/app/discover",
-    color: "blue",
+    icon: IconSearch,
+    title: "Discover photographers",
   },
   {
-    icon: IconCalendarEvent,
-    title: "Post your first event",
+    color: "green",
     description: "Find a second shooter for an upcoming shoot",
     href: "/app/events",
-    color: "green",
+    icon: IconCalendarEvent,
+    title: "Post your first event",
   },
 ];
 
@@ -72,8 +72,8 @@ export function OnboardingComplete() {
               p="md"
               radius="md"
               style={{
-                textDecoration: "none",
                 cursor: "pointer",
+                textDecoration: "none",
                 transition: "border-color 0.15s ease",
               }}
             >

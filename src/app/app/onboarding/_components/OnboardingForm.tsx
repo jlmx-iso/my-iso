@@ -22,11 +22,11 @@ import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
+import { logger } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
-import { logger } from "~/_utils";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
@@ -46,8 +46,8 @@ type OnboardingUser = {
 };
 
 type OnboardingFormProps = {
-  user: OnboardingUser;
   pricing: PricingInfo;
+  user: OnboardingUser;
 };
 
 // Profile stepper steps
@@ -75,21 +75,14 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
 
   const form = useForm({
     initialValues: {
-      phoneNumber: user.phone ?? "",
-      handle: user.handle ?? "",
-      location: "",
       companyName: "",
-      website: "",
+      handle: user.handle ?? "",
       instagram: "",
+      location: "",
+      phoneNumber: user.phone ?? "",
+      website: "",
     },
     validate: {
-      phoneNumber: (value: string) => {
-        if (!/^\d{10}$/.test(value))
-          return "Invalid phone number (10 digits)";
-        return null;
-      },
-      location: (value: string) =>
-        value.length > 0 ? null : "Location is required",
       companyName: (value: string) =>
         value.length > 0 ? null : "Business name is required",
       instagram: (value: string) => {
@@ -98,6 +91,13 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
           !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)
         )
           return "Invalid Instagram URL";
+        return null;
+      },
+      location: (value: string) =>
+        value.length > 0 ? null : "Location is required",
+      phoneNumber: (value: string) => {
+        if (!/^\d{10}$/.test(value))
+          return "Invalid phone number (10 digits)";
         return null;
       },
       website: (value: string) => {
@@ -148,23 +148,28 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
 
     const values = form.values;
 
-    await updateProfile.mutateAsync({
-      phone: values.phoneNumber,
-      handle: values.handle || undefined,
-    });
+    try {
+      await updateProfile.mutateAsync({
+        handle: values.handle || undefined,
+        phone: values.phoneNumber,
+      });
 
-    await createPhotographer.mutateAsync({
-      name: `${user.firstName} ${user.lastName}`,
-      companyName: values.companyName,
-      facebook: null,
-      instagram: values.instagram || null,
-      location: values.location,
-      tiktok: null,
-      twitter: null,
-      vimeo: null,
-      website: values.website || null,
-      youtube: null,
-    });
+      await createPhotographer.mutateAsync({
+        companyName: values.companyName,
+        facebook: null,
+        instagram: values.instagram || null,
+        location: values.location,
+        name: `${user.firstName} ${user.lastName}`,
+        tiktok: null,
+        twitter: null,
+        vimeo: null,
+        website: values.website || null,
+        youtube: null,
+      });
+    } catch (err) {
+      logger.error("Profile setup failed during onboarding", { err });
+      return; // error displayed via `error` reactive var — don't advance stage
+    }
 
     // Upload avatar if provided
     if (avatarFiles?.[0]) {
@@ -177,8 +182,8 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
           if (base64File) {
             try {
               await uploadAvatar.mutateAsync({ image: base64File });
-            } catch (err) {
-              logger.error("Avatar upload failed during onboarding", { err });
+            } catch (uploadErr) {
+              logger.error("Avatar upload failed during onboarding", { uploadErr });
               notifications.show({
                 color: "yellow",
                 message:

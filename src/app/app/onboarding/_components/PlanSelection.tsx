@@ -58,7 +58,10 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
     },
     onSuccess: (data) => {
       if (data.url) {
+        setError(null);
         window.location.href = data.url;
+      } else {
+        setError("Checkout session created but no redirect URL was returned. Please try again.");
       }
     },
   });
