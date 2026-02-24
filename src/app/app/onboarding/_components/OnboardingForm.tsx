@@ -90,7 +90,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       instagram: (value: string) => {
         if (
           value.length &&
-          !/^(http|https):\/\/(www.)?instagram.com\/[^ "]+$/.test(value)
+          !/^(https?):\/\/(www\.)?instagram\.com\/[^ "]+$/.test(value)
         )
           return "Invalid Instagram URL";
         return null;
