@@ -4,6 +4,10 @@ import { logger } from "~/_utils";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
+  count: protectedProcedure.query(({ ctx }) => {
+    return ctx.db.photographer.count();
+  }),
+
   create: protectedProcedure
     .input(z.object({
       avatar: z.string().min(1).optional(),

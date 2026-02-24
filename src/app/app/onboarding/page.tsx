@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { OnboardingForm } from "./_components/OnboardingForm";
 
 import { auth } from "~/auth";
+import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
 export default async function OnboardingPage() {
@@ -18,6 +19,8 @@ export default async function OnboardingPage() {
   }
 
   const user = await caller.user.getMe();
+  const pricing = getPricingForRole(user.role);
+  const photographerCount = await caller.photographer.count();
 
-  return <OnboardingForm user={user} />;
+  return <OnboardingForm photographerCount={photographerCount} pricing={pricing} user={user} />;
 }

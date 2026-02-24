@@ -10,6 +10,8 @@ export const env = createEnv({
   */
   client: {
 
+    NEXT_PUBLIC_BASE_URL: z.string().url(),
+
     NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: z.string(),
 
     NEXT_PUBLIC_POSTHOG_HOST: z.string().url(),
@@ -38,7 +40,7 @@ export const env = createEnv({
      * middlewares) or client-side so we need to destruct manually.
      */
   runtimeEnv: {
-    BASE_URL: process.env.BASE_URL,
+    NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL ?? process.env.BASE_URL,
     CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
@@ -72,8 +74,6 @@ export const env = createEnv({
      * isn't built with invalid env vars.
      */
   server: {
-    BASE_URL: z.string().url(),
-
     CLOUDINARY_API_KEY: z.string(),
 
 
