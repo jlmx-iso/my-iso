@@ -159,7 +159,12 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
         handle: values.handle || undefined,
         phone: values.phoneNumber,
       });
+    } catch (err) {
+      logger.error("Profile update failed during onboarding", { err });
+      return;
+    }
 
+    try {
       await createPhotographer.mutateAsync({
         companyName: values.companyName,
         facebook: null,
@@ -173,8 +178,8 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
         youtube: null,
       });
     } catch (err) {
-      logger.error("Profile setup failed during onboarding", { err });
-      return; // error displayed via `error` reactive var — don't advance stage
+      logger.error("Photographer creation failed during onboarding", { err });
+      return;
     }
 
     // Upload avatar if provided
