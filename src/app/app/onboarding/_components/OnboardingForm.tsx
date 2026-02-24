@@ -16,33 +16,33 @@ import {
 import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { type MouseEventHandler, useState } from "react";
+import { type MouseEventHandler, useEffect, useMemo, useState } from "react";
 
 import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
-import { logger } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import type { PricingInfo } from "~/server/_utils/pricing";
+import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 // Onboarding stages (not steps in the stepper — separate screens)
 type Stage = "welcome" | "profile" | "plan" | "complete";
 
 type OnboardingUser = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string | null;
-  handle: string | null;
   city: string | null;
-  state: string | null;
   country: string | null;
+  email: string;
+  firstName: string;
+  handle: string | null;
+  id: string;
+  lastName: string;
+  phone: string | null;
+  state: string | null;
 };
 
 type OnboardingFormProps = {
@@ -108,23 +108,27 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
     },
   });
 
-  const avatarPreviews = avatarFiles?.map((file, index) => {
-    const url = URL.createObjectURL(file);
-    return (
-      <Image
-        key={index}
-        src={url}
-        radius="md"
-        onLoad={() => URL.revokeObjectURL(url)}
-      />
-    );
-  });
+  // Memoize avatar preview URLs and revoke on cleanup to prevent URL leaks
+  const avatarUrls = useMemo(
+    () => (avatarFiles ?? []).map((file) => URL.createObjectURL(file)),
+    [avatarFiles],
+  );
+
+  useEffect(() => {
+    return () => {
+      avatarUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [avatarUrls]);
+
+  const avatarPreviews = avatarUrls.map((url, index) => (
+    <Image key={index} src={url} radius="md" />
+  ));
 
   // Validate fields for each profile sub-step
   const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
     const stepFields: Record<number, string[]> = {
-      0: ["phoneNumber", "location"],
+      0: ["location", "phoneNumber"],
       1: ["companyName", "instagram", "website"],
     };
     const fields = stepFields[profileStep] ?? [];
@@ -183,7 +187,9 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
             try {
               await uploadAvatar.mutateAsync({ image: base64File });
             } catch (uploadErr) {
-              logger.error("Avatar upload failed during onboarding", { uploadErr });
+              logger.error("Avatar upload failed during onboarding", {
+                uploadErr,
+              });
               notifications.show({
                 color: "yellow",
                 message:
@@ -234,12 +240,7 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
 
   // Stage: Plan selection
   if (stage === "plan") {
-    return (
-      <PlanSelection
-        pricing={pricing}
-        onSelectFree={handleSelectFree}
-      />
-    );
+    return <PlanSelection pricing={pricing} onSelectFree={handleSelectFree} />;
   }
 
   // Stage: Profile setup (multi-step stepper)
@@ -331,7 +332,10 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
             </Stepper.Step>
 
             {/* Step 3: Avatar */}
-            <Stepper.Step label="Your photo" description="Put a face to the name">
+            <Stepper.Step
+              label="Your photo"
+              description="Put a face to the name"
+            >
               <Stack gap="md" mt="md">
                 <Text size="sm" c="dimmed">
                   Profiles with a photo get significantly more views. You can
@@ -342,7 +346,7 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
                   loading={avatarUploading}
                   handleFileChange={(files) => setAvatarFiles(files)}
                 />
-                {avatarPreviews && avatarPreviews.length > 0 && (
+                {avatarPreviews.length > 0 && (
                   <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
                     {avatarPreviews}
                   </SimpleGrid>
