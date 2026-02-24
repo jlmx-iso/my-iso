@@ -10,12 +10,15 @@ import {
 } from "@mantine/core";
 import { IconCamera, IconStar } from "@tabler/icons-react";
 
+const SOCIAL_PROOF_THRESHOLD = 50;
+
 type WelcomeScreenProps = {
   firstName: string;
   onContinue: () => void;
+  photographerCount: number;
 };
 
-export function WelcomeScreen({ firstName, onContinue }: WelcomeScreenProps) {
+export function WelcomeScreen({ firstName, onContinue, photographerCount }: WelcomeScreenProps) {
   return (
     <Box maw={500} w="100%" mx="auto" py={60}>
       <Stack align="center" gap="xl">
@@ -28,7 +31,9 @@ export function WelcomeScreen({ firstName, onContinue }: WelcomeScreenProps) {
             Welcome to ISO, {firstName}!
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={400}>
-            You&apos;re one of the first photographers to join the network.
+            {photographerCount >= SOCIAL_PROOF_THRESHOLD
+              ? `Joining ${photographerCount.toLocaleString()} photographers on ISO.`
+              : "You\u2019re one of the first photographers to join the network."}
           </Text>
         </Stack>
 

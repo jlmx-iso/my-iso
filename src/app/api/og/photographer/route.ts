@@ -1,10 +1,11 @@
 import { ImageResponse } from "workers-og";
 
+import { env } from "~/env";
 import { db } from "~/server/db";
 
 export const runtime = "edge";
 
-const BASE_URL = "https://myiso.app";
+const BASE_URL = env.NEXT_PUBLIC_BASE_URL;
 
 function escapeHtml(str: string): string {
   return str

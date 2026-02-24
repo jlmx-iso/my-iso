@@ -40,6 +40,7 @@ export const subscriptionRouter = createTRPCRouter({
     .input(
       z.object({
         billingInterval: z.enum(["monthly", "annual"]),
+        successPath: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -89,13 +90,13 @@ export const subscriptionRouter = createTRPCRouter({
       }
 
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
-        cancel_url: `${env.BASE_URL}/app/settings?checkout=canceled`,
+        cancel_url: `${env.NEXT_PUBLIC_BASE_URL}/app/settings?checkout=canceled`,
         client_reference_id: userId,
         line_items: lineItems,
         metadata: { userId },
         mode: "subscription",
         payment_method_types: ["card"],
-        success_url: `${env.BASE_URL}/app/settings?checkout=success`,
+        success_url: `${env.NEXT_PUBLIC_BASE_URL}${input.successPath ?? "/app/settings?checkout=success"}`,
       };
 
       // Use existing Stripe customer if available, otherwise let Stripe create one
@@ -147,7 +148,7 @@ export const subscriptionRouter = createTRPCRouter({
     const session = await stripe.billingPortal.sessions
       .create({
         customer: user.stripeId,
-        return_url: `${env.BASE_URL}/app/settings`,
+        return_url: `${env.NEXT_PUBLIC_BASE_URL}/app/settings`,
       })
       .catch((error: unknown) => {
         logger.error("Error creating Stripe portal session", {

@@ -27,6 +27,7 @@ import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { env } from "~/env";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
@@ -46,6 +47,7 @@ type OnboardingUser = {
 };
 
 type OnboardingFormProps = {
+  photographerCount: number;
   pricing: PricingInfo;
   user: OnboardingUser;
 };
@@ -53,7 +55,7 @@ type OnboardingFormProps = {
 // Profile stepper steps
 const PROFILE_STEPS = 3; // basics, business, avatar
 
-export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
+export function OnboardingForm({ photographerCount, pricing, user }: OnboardingFormProps) {
   const [stage, setStage] = useState<Stage>("welcome");
   const [profileStep, setProfileStep] = useState(0);
 
@@ -250,13 +252,14 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
       <WelcomeScreen
         firstName={user.firstName}
         onContinue={() => setStage("profile")}
+        photographerCount={photographerCount}
       />
     );
   }
 
   // Stage: Complete (Free users only — Pro users are redirected to Stripe)
   if (stage === "complete") {
-    return <OnboardingComplete />;
+    return <OnboardingComplete plan="free" />;
   }
 
   // Stage: Plan selection
@@ -310,12 +313,19 @@ export function OnboardingForm({ user, pricing }: OnboardingFormProps) {
                   required
                   {...form.getInputProps("phoneNumber")}
                 />
-                <TextInput
-                  label="Username"
-                  placeholder="@yourhandle (optional)"
-                  leftSection={<Text size="sm" c="dimmed">@</Text>}
-                  {...form.getInputProps("handle")}
-                />
+                <Stack gap={4}>
+                  <TextInput
+                    label="Username"
+                    placeholder="@yourhandle (optional)"
+                    leftSection={<Text size="sm" c="dimmed">@</Text>}
+                    {...form.getInputProps("handle")}
+                  />
+                  {form.values.handle && (
+                    <Text size="xs" c="dimmed">
+                      Your profile: {env.NEXT_PUBLIC_BASE_URL}/photographer/@{form.values.handle}
+                    </Text>
+                  )}
+                </Stack>
                 <LocationAutocomplete
                   label="Location"
                   placeholder="City, State"

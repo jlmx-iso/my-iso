@@ -44,7 +44,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const verificationUrl = new URL(`/verify/${verificationTokenResult.value}`, env.BASE_URL).toString();
+      const verificationUrl = new URL(`/verify/${verificationTokenResult.value}`, env.NEXT_PUBLIC_BASE_URL).toString();
       const { sendEmail } = await import("../../_lib/email");
       const emailResponse = await sendEmail({
         email: input.email,

@@ -35,13 +35,17 @@ const FIRST_ACTIONS = [
   {
     color: "green",
     description: "Find a second shooter for an upcoming shoot",
-    href: "/app/events",
+    href: "/app/events/create",
     icon: IconCalendarEvent,
     title: "Post your first event",
   },
 ];
 
-export function OnboardingComplete() {
+type OnboardingCompleteProps = {
+  plan?: "free" | "pro";
+};
+
+export function OnboardingComplete({ plan = "free" }: OnboardingCompleteProps) {
   return (
     <Box maw={600} w="100%" mx="auto" py={40}>
       <Stack align="center" gap="xl">
@@ -54,8 +58,9 @@ export function OnboardingComplete() {
             You&apos;re in! 🎉
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={420}>
-            Your profile is live. Upgrade to Pro anytime from Settings to
-            unlock unlimited messaging, bookings, and more.
+            {plan === "pro"
+              ? "Welcome to Pro! Your founding member badge is live."
+              : "Your profile is live. Upgrade to Pro anytime from Settings to unlock unlimited messaging, bookings, and more."}
           </Text>
         </Stack>
 

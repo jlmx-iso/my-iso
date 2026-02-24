@@ -20,6 +20,7 @@ export default async function OnboardingPage() {
 
   const user = await caller.user.getMe();
   const pricing = getPricingForRole(user.role);
+  const photographerCount = await caller.photographer.count();
 
-  return <OnboardingForm user={user} pricing={pricing} />;
+  return <OnboardingForm photographerCount={photographerCount} pricing={pricing} user={user} />;
 }

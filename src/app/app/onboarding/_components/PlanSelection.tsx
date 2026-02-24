@@ -182,7 +182,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
                 size="md"
                 fullWidth
                 loading={createCheckout.isPending}
-                onClick={() => createCheckout.mutate({ billingInterval })}
+                onClick={() => createCheckout.mutate({ billingInterval, successPath: "/app/onboarding/complete?plan=pro" })}
               >
                 Upgrade to Pro — ${monthlyEquivalent}/mo
               </Button>
