@@ -7,8 +7,6 @@ import { db } from "~/server/db";
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
-export const useStripe = () => stripe;
-
 /**
  * Stripe webhook handler with signature verification
  * SECURITY: Verifies all webhook events using Stripe signature to prevent forgery
@@ -424,10 +422,3 @@ const handler = async (req: NextRequest) => {
 
 export { handler as GET, handler as POST };
 
-/**
- * Runtime configuration: Edge runtime for Cloudflare Workers/Pages
- *
- * When running with wrangler pages dev, this uses D1 database
- * When running with npm run dev (Node.js), change to 'nodejs'
- */
-export const runtime = 'edge';

@@ -17,3 +17,4 @@ export { ReviewReceivedEmail, renderReviewReceivedEmail } from "./review-receive
 export { UpgradePitchEmail, renderUpgradePitchEmail } from "./upgrade-pitch";
 export { InviteFriendsEmail, renderInviteFriendsEmail } from "./invite-friends";
 export { WaitlistApprovedEmail, renderWaitlistApprovedEmail } from "./waitlist-approved";
+export { WaitlistConfirmationEmail, renderWaitlistConfirmationEmail } from "./waitlist-confirmation";

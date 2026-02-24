@@ -40,12 +40,12 @@ export default function Page() {
       referralSource: "",
     },
     validate: {
-      name: (v) => (v.trim().length > 0 ? null : "Name is required"),
-      email: (v) => {
+      email: (v: string) => {
         if (!v.trim()) return "Email is required";
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return "Invalid email";
         return null;
       },
+      name: (v: string) => (v.trim().length > 0 ? null : "Name is required"),
     },
   });
 

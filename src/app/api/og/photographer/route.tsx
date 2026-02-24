@@ -1,20 +1,9 @@
-import { ImageResponse } from "workers-og";
+import { ImageResponse } from "next/og";
 
 import { env } from "~/env";
 import { db } from "~/server/db";
 
-export const runtime = "edge";
-
 const BASE_URL = env.NEXT_PUBLIC_BASE_URL;
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 function resolveUrl(url: string): string {
   if (!url) return "";
@@ -41,34 +30,133 @@ export async function GET(request: Request) {
     return new Response("Photographer not found", { status: 404 });
   }
 
-  const name = escapeHtml(photographer.name || "Photographer");
-  const location = escapeHtml(photographer.location || "");
-  const company = escapeHtml(photographer.companyName || "");
+  const name = photographer.name || "Photographer";
+  const location = photographer.location || "";
+  const company = photographer.companyName || "";
   const rawAvatarUrl = resolveUrl(photographer.avatar || "");
-  const avatarUrl = rawAvatarUrl ? escapeHtml(rawAvatarUrl) : "";
+  const avatarUrl = rawAvatarUrl || "";
 
-  const html = `
-    <div style="display: flex; flex-direction: row; width: 1200px; height: 630px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 60px;">
-      <div style="display: flex; flex-direction: column; justify-content: center; align-items: flex-start; flex: 1; padding-right: 40px;">
-        ${avatarUrl ? `<img src="${avatarUrl}" style="width: 120px; height: 120px; border-radius: 60px; object-fit: cover; border: 3px solid rgba(255,255,255,0.3); margin-bottom: 24px;" />` : `<div style="display: flex; width: 120px; height: 120px; border-radius: 60px; background: rgba(255,255,255,0.15); align-items: center; justify-content: center; margin-bottom: 24px; font-size: 48px; color: white;">${name.charAt(0)}</div>`}
-        <div style="display: flex; flex-direction: column;">
-          <div style="font-size: 48px; font-weight: 700; color: white; line-height: 1.2; margin-bottom: 8px;">${name}</div>
-          ${company ? `<div style="font-size: 24px; color: rgba(255,255,255,0.7); margin-bottom: 12px;">${company}</div>` : ""}
-          ${location ? `<div style="display: flex; align-items: center; font-size: 22px; color: rgba(255,255,255,0.6);">${location}</div>` : ""}
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+          display: "flex",
+          flexDirection: "row",
+          height: 630,
+          padding: 60,
+          width: 1200,
+        }}
+      >
+        <div
+          style={{
+            alignItems: "flex-start",
+            display: "flex",
+            flex: 1,
+            flexDirection: "column",
+            justifyContent: "center",
+            paddingRight: 40,
+          }}
+        >
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              style={{
+                border: "3px solid rgba(255,255,255,0.3)",
+                borderRadius: 60,
+                height: 120,
+                marginBottom: 24,
+                objectFit: "cover",
+                width: 120,
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                alignItems: "center",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 60,
+                color: "white",
+                display: "flex",
+                fontSize: 48,
+                height: 120,
+                justifyContent: "center",
+                marginBottom: 24,
+                width: 120,
+              }}
+            >
+              {name.charAt(0)}
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                color: "white",
+                fontSize: 48,
+                fontWeight: 700,
+                lineHeight: 1.2,
+                marginBottom: 8,
+              }}
+            >
+              {name}
+            </div>
+            {company ? (
+              <div
+                style={{
+                  color: "rgba(255,255,255,0.7)",
+                  fontSize: 24,
+                  marginBottom: 12,
+                }}
+              >
+                {company}
+              </div>
+            ) : null}
+            {location ? (
+              <div
+                style={{
+                  alignItems: "center",
+                  color: "rgba(255,255,255,0.6)",
+                  display: "flex",
+                  fontSize: 22,
+                }}
+              >
+                {location}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div
+          style={{
+            alignItems: "flex-end",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-end",
+          }}
+        >
+          <img
+            src={LOGO_BASE64}
+            style={{ height: 80, opacity: 0.9, width: 80 }}
+          />
+          <div
+            style={{
+              color: "rgba(255,255,255,0.5)",
+              fontSize: 18,
+              marginTop: 8,
+            }}
+          >
+            myiso.app
+          </div>
         </div>
       </div>
-      <div style="display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end;">
-        <img src="${LOGO_BASE64}" style="width: 80px; height: 80px; opacity: 0.9;" />
-        <div style="font-size: 18px; color: rgba(255,255,255,0.5); margin-top: 8px;">myiso.app</div>
-      </div>
-    </div>
-  `;
-
-  return new ImageResponse(html, {
-    headers: {
-      "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
+    ),
+    {
+      headers: {
+        "Cache-Control":
+          "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
+      },
+      height: 630,
+      width: 1200,
     },
-    height: 630,
-    width: 1200,
-  });
+  );
 }

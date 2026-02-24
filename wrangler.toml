@@ -15,3 +15,15 @@ database_id = "aad00920-a190-4144-b414-c17ff5388755"
 [observability.logs]
 enabled = true
 invocation_logs = true
+
+[env.staging]
+name = "my-iso-staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "my-iso-db-staging"
+database_id = "9074bb91-5827-4b4b-88d1-f7f9eba70146"
+
+[env.staging.observability.logs]
+enabled = true
+invocation_logs = true

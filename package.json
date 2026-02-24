@@ -15,7 +15,8 @@
     "postinstall": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate || echo 'Prisma generation failed - this is a known CDN issue. Build may continue if client was previously generated.'",
     "start": "next start",
     "db:seed": "npx tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && npx tsx prisma/seed.ts"
+    "db:reset": "prisma db push --force-reset && npx tsx prisma/seed.ts",
+    "db:seed:staging": "wrangler d1 execute DB --remote --env staging --file=prisma/seed-staging.sql"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
@@ -69,8 +70,7 @@
     "server-only": "^0.0.1",
     "stripe": "^14.25.0",
     "superjson": "^2.2.1",
-    "zod": "^4.2.1",
-    "workers-og": "^0.0.14"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251229.0",

@@ -23,6 +23,7 @@ import {
     renderUpgradePitchEmail,
     renderInviteFriendsEmail,
     renderWaitlistApprovedEmail,
+    renderWaitlistConfirmationEmail,
 } from "./emails";
 
 type SendEmail = {
@@ -114,6 +115,7 @@ const templateRenderers: Record<string, (props: any) => Promise<string>> = {
     "upgrade-pitch": renderUpgradePitchEmail,
     "invite-friends": renderInviteFriendsEmail,
     "waitlist-approved": renderWaitlistApprovedEmail,
+    "waitlist-confirmation": renderWaitlistConfirmationEmail,
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
