@@ -8,8 +8,8 @@
 set -e
 
 HANDLER=".open-next/server-functions/default/handler.mjs"
-WASM_SRC="src/generated/prisma/internal/query_compiler_bg.wasm"
-WASM_DEST=".open-next/server-functions/default/query_compiler_bg.wasm"
+WASM_SRC=".open-next/server-functions/default/node_modules/.prisma/client/query_compiler_fast_bg.wasm"
+WASM_DEST=".open-next/server-functions/default/query_compiler_fast_bg.wasm"
 
 if [ ! -f "$HANDLER" ]; then
   echo "ERROR: $HANDLER not found. Run 'npx opennextjs-cloudflare build' first."
@@ -17,7 +17,7 @@ if [ ! -f "$HANDLER" ]; then
 fi
 
 if [ ! -f "$WASM_SRC" ]; then
-  echo "ERROR: $WASM_SRC not found. Run 'npx prisma generate' first."
+  echo "ERROR: $WASM_SRC not found. Run 'npx opennextjs-cloudflare build' first."
   exit 1
 fi
 
@@ -38,7 +38,7 @@ with open(handler_path, "r") as f:
 
 # Add WASM import after the first import statement
 first_import_end = content.index("\n") + 1
-wasm_import = 'import __prismaQueryWasm from "./query_compiler_bg.wasm";\n'
+wasm_import = 'import __prismaQueryWasm from "./query_compiler_fast_bg.wasm";\n'
 
 if "__prismaQueryWasm" in content:
     print("Already patched, skipping import insertion.")
