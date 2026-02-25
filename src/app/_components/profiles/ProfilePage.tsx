@@ -34,6 +34,7 @@ import { Notification } from "../Notification";
 import { PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
+import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import { getPortfolioImages } from "~/app/_server_utils/";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
@@ -46,13 +47,13 @@ type ProfilePageProps = {
 };
 
 const socialLinks = [
-  { key: "website" as const, icon: IconWorld, label: "Website" },
-  { key: "instagram" as const, icon: IconBrandInstagram, label: "Instagram" },
-  { key: "facebook" as const, icon: IconBrandFacebook, label: "Facebook" },
-  { key: "twitter" as const, icon: IconBrandX, label: "X" },
-  { key: "youtube" as const, icon: IconBrandYoutube, label: "YouTube" },
-  { key: "tiktok" as const, icon: IconBrandTiktok, label: "TikTok" },
-  { key: "vimeo" as const, icon: IconBrandVimeo, label: "Vimeo" },
+  { key: "website" as const, icon: IconWorld, label: "Website", toUrl: (h: string) => h },
+  { key: "instagram" as const, icon: IconBrandInstagram, label: "Instagram", toUrl: instagramUrl },
+  { key: "facebook" as const, icon: IconBrandFacebook, label: "Facebook", toUrl: facebookUrl },
+  { key: "twitter" as const, icon: IconBrandX, label: "X", toUrl: twitterUrl },
+  { key: "youtube" as const, icon: IconBrandYoutube, label: "YouTube", toUrl: youTubeUrl },
+  { key: "tiktok" as const, icon: IconBrandTiktok, label: "TikTok", toUrl: tikTokUrl },
+  { key: "vimeo" as const, icon: IconBrandVimeo, label: "Vimeo", toUrl: vimeoUrl },
 ] as const;
 
 export const ProfilePage = async ({
@@ -274,8 +275,9 @@ export const ProfilePage = async ({
               </Text>
               <Stack gap="xs">
                 {activeSocials.map((social) => {
-                  const href = photographer[social.key];
-                  if (!href) return null;
+                  const handle = photographer[social.key];
+                  if (!handle) return null;
+                  const href = social.toUrl(handle);
                   const Icon = social.icon;
                   return (
                     <Anchor

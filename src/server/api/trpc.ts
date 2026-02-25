@@ -8,11 +8,13 @@
  */
 
 import { TRPCError, initTRPC } from "@trpc/server";
+import { jwtVerify } from "jose";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
+import { env } from "~/env";
 import { db } from "~/server/db";
 import { ADMIN_ROLES } from "~/server/_utils/roles";
 import type { UserRole } from "~/server/_utils/roles";
@@ -31,7 +33,34 @@ import type { UserRole } from "~/server/_utils/roles";
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const session = await auth();
+  let session = await auth();
+
+  // Fall back to mobile Bearer JWT when there is no NextAuth session
+  if (!session) {
+    const authHeader = opts.headers.get("authorization");
+    const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (bearer) {
+      try {
+        const secret = new TextEncoder().encode(env.AUTH_SECRET);
+        const { payload } = await jwtVerify(bearer, secret);
+        if (typeof payload.sub === "string") {
+          const user = await db.user.findUnique({
+            where: { id: payload.sub },
+            select: { id: true, email: true, firstName: true, lastName: true },
+          });
+          if (user) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            session = {
+              user: { id: user.id, email: user.email ?? "", name: `${user.firstName} ${user.lastName}` },
+              expires: new Date(((payload.exp as number) ?? 0) * 1000).toISOString(),
+            } as any;
+          }
+        }
+      } catch {
+        // Invalid or expired token — leave session as null
+      }
+    }
+  }
 
   return {
     cloudinaryClient,

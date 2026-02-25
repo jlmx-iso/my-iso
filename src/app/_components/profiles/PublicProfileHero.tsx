@@ -11,6 +11,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import {
   IconBrandFacebook,
   IconBrandInstagram,
@@ -158,22 +159,22 @@ export default function PublicProfileHero({
                 <SocialLink href={photographer.website} icon={IconWorld} label="Website" />
               )}
               {photographer.instagram && (
-                <SocialLink href={photographer.instagram} icon={IconBrandInstagram} label="Instagram" />
+                <SocialLink href={instagramUrl(photographer.instagram)} icon={IconBrandInstagram} label="Instagram" />
               )}
               {photographer.facebook && (
-                <SocialLink href={photographer.facebook} icon={IconBrandFacebook} label="Facebook" />
+                <SocialLink href={facebookUrl(photographer.facebook)} icon={IconBrandFacebook} label="Facebook" />
               )}
               {photographer.twitter && (
-                <SocialLink href={photographer.twitter} icon={IconBrandTwitter} label="Twitter" />
+                <SocialLink href={twitterUrl(photographer.twitter)} icon={IconBrandTwitter} label="Twitter" />
               )}
               {photographer.youtube && (
-                <SocialLink href={photographer.youtube} icon={IconBrandYoutube} label="YouTube" />
+                <SocialLink href={youTubeUrl(photographer.youtube)} icon={IconBrandYoutube} label="YouTube" />
               )}
               {photographer.tiktok && (
-                <SocialLink href={photographer.tiktok} icon={IconBrandTiktok} label="TikTok" />
+                <SocialLink href={tikTokUrl(photographer.tiktok)} icon={IconBrandTiktok} label="TikTok" />
               )}
               {photographer.vimeo && (
-                <SocialLink href={photographer.vimeo} icon={IconBrandVimeo} label="Vimeo" />
+                <SocialLink href={vimeoUrl(photographer.vimeo)} icon={IconBrandVimeo} label="Vimeo" />
               )}
             </Group>
           )}

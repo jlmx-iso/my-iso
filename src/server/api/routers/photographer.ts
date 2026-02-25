@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
@@ -13,15 +13,15 @@ export const photographerRouter = createTRPCRouter({
       avatar: z.string().min(1).optional(),
       bio: z.string().min(1).optional(),
       companyName: z.string().min(1),
-      facebook: z.string().min(1).nullable(),
-      instagram: z.string().min(1).nullable(),
+      facebook: socialHandleNullable,
+      instagram: instagramHandleNullable,
       location: z.string().min(1),
       name: z.string().min(1),
-      tiktok: z.string().min(1).nullable(),
-      twitter: z.string().min(1).nullable(),
-      vimeo: z.string().min(1).nullable(),
+      tiktok: socialHandleNullable,
+      twitter: socialHandleNullable,
+      vimeo: socialHandleNullable,
       website: z.string().min(1).nullable(),
-      youtube: z.string().min(1).nullable(),
+      youtube: socialHandleNullable,
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.photographer.create({
@@ -76,16 +76,16 @@ export const photographerRouter = createTRPCRouter({
       avatar: z.string().min(1).optional(),
       bio: z.string().min(1).max(1000).nullable(),
       companyName: z.string().min(1),
-      facebook: z.string().min(1).nullable(),
+      facebook: socialHandleNullable,
       id: z.string().min(1),
-      instagram: z.string().min(1).nullable(),
+      instagram: instagramHandleNullable,
       location: z.string().min(1),
       name: z.string().min(1),
-      tiktok: z.string().min(1).nullable(),
-      twitter: z.string().min(1).nullable(),
-      vimeo: z.string().min(1).nullable(),
+      tiktok: socialHandleNullable,
+      twitter: socialHandleNullable,
+      vimeo: socialHandleNullable,
       website: z.string().min(1).nullable(),
-      youtube: z.string().min(1).nullable(),
+      youtube: socialHandleNullable,
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.photographer.update({

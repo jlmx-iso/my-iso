@@ -1,11 +1,15 @@
 import { TRPCError } from "@trpc/server";
+import { SignJWT } from "jose";
 import { z } from "zod";
 
 import { UserVerificationErrors } from "~/_types/errors";
-import { logger } from "~/_utils";
+import { instagramHandleOptional, logger, phoneSchema, socialHandleOptional } from "~/_utils";
 import { env } from "~/env";
 import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
+import { generateVerificationCode } from "~/server/_utils";
+import { captureEvent } from "~/server/_lib/posthog";
 import { createTRPCRouter, publicProcedure, } from "~/server/api/trpc";
+import { db } from "~/server/db";
 
 
 export const authRouter = createTRPCRouter({
@@ -13,18 +17,18 @@ export const authRouter = createTRPCRouter({
     .input(z.object({
       companyName: z.string().min(1),
       email: z.string().email(),
-      facebook: z.string().trim().url().optional().or(z.literal("")),
+      facebook: socialHandleOptional,
       firstName: z.string().min(1),
-      instagram: z.string().trim().url().optional().or(z.literal("")),
+      instagram: instagramHandleOptional,
       lastName: z.string().min(1),
       location: z.string().min(1),
-      phone: z.string().min(1),
+      phone: phoneSchema,
       provider: z.enum(["email", "google", "facebook"]),
-      tiktok: z.string().trim().url().optional().or(z.literal("")),
-      twitter: z.string().trim().url().optional().or(z.literal("")),
-      vimeo: z.string().trim().url().optional().or(z.literal("")),
+      tiktok: socialHandleOptional,
+      twitter: socialHandleOptional,
+      vimeo: socialHandleOptional,
       website: z.string().trim().url().optional().or(z.literal("")),
-      youtube: z.string().trim().url().optional().or(z.literal("")),
+      youtube: socialHandleOptional,
     }))
     .mutation(async ({ input }) => {
       const result = await createUser(input);
@@ -103,5 +107,133 @@ export const authRouter = createTRPCRouter({
         }
       }
       return "Email verified successfully!";
+    }),
+
+  exchangeMobileToken: publicProcedure
+    .input(z.object({
+      idToken: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`);
+      if (!tokenInfoRes.ok) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
+      }
+
+      const tokenInfo = await tokenInfoRes.json() as {
+        email?: string;
+        given_name?: string;
+        family_name?: string;
+      };
+
+      if (!tokenInfo.email) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
+      }
+
+      const normalizedEmail = tokenInfo.email.toLowerCase();
+
+      const user = await db.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true, email: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No account found. Please sign up on the web first.' });
+      }
+
+      const secret = new TextEncoder().encode(env.AUTH_SECRET);
+      const token = await new SignJWT({ sub: user.id, email: user.email })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('24h')
+        .sign(secret);
+
+      void captureEvent(user.id, 'user_signed_in', { provider: 'google', platform: 'ios' });
+
+      return { token, userId: user.id };
+    }),
+
+  requestMobileOtp: publicProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(async ({ input }) => {
+      const normalizedEmail = input.email.toLowerCase();
+
+      const user = await db.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true },
+      });
+
+      // Silently succeed if no account — avoids email enumeration
+      if (!user) {
+        return { sent: true, devCode: undefined };
+      }
+
+      // Delete any existing OTP tokens for this email to avoid stale codes
+      await db.verificationToken.deleteMany({
+        where: { identifier: `otp:${normalizedEmail}` },
+      });
+
+      const isDev = env.NODE_ENV === 'development';
+      const code = isDev ? '000000' : generateVerificationCode();
+      const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
+
+      await db.verificationToken.create({
+        data: { identifier: `otp:${normalizedEmail}`, token: code, expires },
+      });
+
+      if (!isDev) {
+        const { sendEmail } = await import("../../_lib/email");
+        const { renderMobileOtpEmail } = await import("../../_lib/emails");
+        const html = await renderMobileOtpEmail({ code });
+        const emailResult = await sendEmail({ email: normalizedEmail, subject: `${code} is your ISO sign-in code`, html });
+
+        if (emailResult.isErr) {
+          logger.error("Error sending OTP email", { error: emailResult.error });
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to send code. Please try again.' });
+        }
+      }
+
+      return { sent: true, devCode: isDev ? code : undefined };
+    }),
+
+  verifyMobileOtp: publicProcedure
+    .input(z.object({ email: z.string().email(), code: z.string().length(6) }))
+    .mutation(async ({ input }) => {
+      const normalizedEmail = input.email.toLowerCase();
+      const identifier = `otp:${normalizedEmail}`;
+
+      const record = await db.verificationToken.findUnique({
+        where: { identifier_token: { identifier, token: input.code } },
+      });
+
+      if (!record) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid code.' });
+      }
+
+      if (record.expires < new Date()) {
+        await db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Code has expired. Please request a new one.' });
+      }
+
+      await db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
+
+      const user = await db.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true, email: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found.' });
+      }
+
+      const secret = new TextEncoder().encode(env.AUTH_SECRET);
+      const token = await new SignJWT({ sub: user.id, email: user.email })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('24h')
+        .sign(secret);
+
+      void captureEvent(user.id, 'user_signed_in', { provider: 'email_otp', platform: 'ios' });
+
+      return { token, userId: user.id };
     }),
 });

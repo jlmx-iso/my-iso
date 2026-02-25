@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Group, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import { Button, Group, Stack, Text, TextInput, Textarea, type TextInputProps } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
 import { IconCheck } from "@tabler/icons-react";
@@ -11,25 +11,44 @@ import { z } from "zod";
 
 import { Loader } from "../Loader";
 
+import { isValidInstagramHandle, isValidSocialHandle, normalizeInstagramHandle, normalizeFacebookHandle, normalizeTwitterHandle, normalizeTikTokHandle, normalizeVimeoHandle, normalizeYouTubeHandle } from "~/_utils";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { api } from "~/trpc/react";
 
+
+function SocialHandleInput({ prefix, ...props }: TextInputProps & { prefix: string }) {
+    return (
+        <TextInput
+            placeholder="yourhandle"
+            leftSection={
+                <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", userSelect: "none" }}>
+                    {prefix}
+                </Text>
+            }
+            leftSectionWidth={`calc(${prefix.length}ch + 1rem)`}
+            styles={{ input: { paddingLeft: `calc(${prefix.length}ch + 1.25rem)` } }}
+            {...props}
+        />
+    );
+}
 
 type EditProfileProps = {
     photographer: Photographer;
 }
 
+const handleField = z.string().refine((v) => !v || isValidSocialHandle(v), "Enter a valid handle (e.g. yourhandle)").nullable();
+
 const schema = z.object({
     bio: z.string().min(1).max(1000, "Bio must be between 0 and 1000 characters"),
     companyName: z.string().max(100, "Company name must be between 0 and 100 characters"),
-    facebook: z.string().url().includes("facebook.com", { message: "Not a valid Facebook URL" }).nullable(),
-    instagram: z.string().url().includes("instagram.com", { message: "Not a valid Instagram URL" }).nullable(),
+    facebook: handleField,
+    instagram: z.string().refine((v) => !v || isValidInstagramHandle(v), "Enter a valid Instagram handle (e.g. yourhandle)").nullable(),
     location: z.string().max(100),
-    tiktok: z.string().url().includes("tiktok.com", { message: "Not a valid TikTok URL" }).nullable(),
-    twitter: z.string().url().includes("x.com", { message: "Not a valid X URL" }).or(z.string().url().includes("twitter.com", { message: "Not a valid X URL" })).nullable(),
-    vimeo: z.string().url().includes("vimeo.com", { message: "Not a valid Vimeo URL" }).nullable(),
+    tiktok: handleField,
+    twitter: handleField,
+    vimeo: handleField,
     website: z.string().url("Website must be a valid URL"),
-    youtube: z.string().url().includes("youtube.com", { message: "Not a valid YouTube URL" }).nullable(),
+    youtube: handleField,
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
@@ -38,22 +57,31 @@ export default function EditProfile({ photographer }: EditProfileProps) {
         initialValues: {
             bio: photographer.bio,
             companyName: photographer.companyName,
-            facebook: photographer.facebook,
-            instagram: photographer.instagram,
+            facebook: photographer.facebook ? normalizeFacebookHandle(photographer.facebook) : photographer.facebook,
+            instagram: photographer.instagram ? normalizeInstagramHandle(photographer.instagram) : photographer.instagram,
             location: photographer.location,
             name: photographer.name,
-            tiktok: photographer.tiktok,
-            twitter: photographer.twitter,
-            vimeo: photographer.vimeo,
+            tiktok: photographer.tiktok ? normalizeTikTokHandle(photographer.tiktok) : photographer.tiktok,
+            twitter: photographer.twitter ? normalizeTwitterHandle(photographer.twitter) : photographer.twitter,
+            vimeo: photographer.vimeo ? normalizeVimeoHandle(photographer.vimeo) : photographer.vimeo,
             website: photographer.website,
-            youtube: photographer.youtube,
+            youtube: photographer.youtube ? normalizeYouTubeHandle(photographer.youtube) : photographer.youtube,
         },
         mode: "uncontrolled",
         validate: zod4Resolver(schema),
     });
 
     const submitForm = (values: typeof form.values) => {
-        mutate({ ...values, id: photographer.id });
+        mutate({
+            ...values,
+            id: photographer.id,
+            facebook: values.facebook ? normalizeFacebookHandle(values.facebook) : values.facebook,
+            instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : values.instagram,
+            tiktok: values.tiktok ? normalizeTikTokHandle(values.tiktok) : values.tiktok,
+            twitter: values.twitter ? normalizeTwitterHandle(values.twitter) : values.twitter,
+            vimeo: values.vimeo ? normalizeVimeoHandle(values.vimeo) : values.vimeo,
+            youtube: values.youtube ? normalizeYouTubeHandle(values.youtube) : values.youtube,
+        });
     }
 
     if (isPending) return <Loader />;
@@ -118,43 +146,43 @@ export default function EditProfile({ photographer }: EditProfileProps) {
                     Social Links
                 </Text>
                 <Group grow>
-                    <TextInput
+                    <SocialHandleInput
                         label="Facebook"
-                        placeholder="https://facebook.com/..."
+                        prefix="facebook.com/"
                         key={form.key("facebook")}
                         {...form.getInputProps("facebook")}
                     />
-                    <TextInput
+                    <SocialHandleInput
                         label="Instagram"
-                        placeholder="https://instagram.com/..."
+                        prefix="instagram.com/"
                         key={form.key("instagram")}
                         {...form.getInputProps("instagram")}
                     />
                 </Group>
                 <Group grow>
-                    <TextInput
+                    <SocialHandleInput
                         label="Twitter / X"
-                        placeholder="https://x.com/..."
+                        prefix="x.com/"
                         key={form.key("twitter")}
                         {...form.getInputProps("twitter")}
                     />
-                    <TextInput
+                    <SocialHandleInput
                         label="YouTube"
-                        placeholder="https://youtube.com/..."
+                        prefix="youtube.com/@"
                         key={form.key("youtube")}
                         {...form.getInputProps("youtube")}
                     />
                 </Group>
                 <Group grow>
-                    <TextInput
+                    <SocialHandleInput
                         label="Vimeo"
-                        placeholder="https://vimeo.com/..."
+                        prefix="vimeo.com/"
                         key={form.key("vimeo")}
                         {...form.getInputProps("vimeo")}
                     />
-                    <TextInput
+                    <SocialHandleInput
                         label="TikTok"
-                        placeholder="https://tiktok.com/..."
+                        prefix="tiktok.com/@"
                         key={form.key("tiktok")}
                         {...form.getInputProps("tiktok")}
                     />

@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { instagramHandleOptional, logger } from "~/_utils";
 import { sendTemplateEmail } from "~/server/_lib/email";
 import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
@@ -22,7 +22,7 @@ export const waitlistRouter = createTRPCRouter({
       z.object({
         name: z.string().min(1).max(200),
         email: z.string().email(),
-        instagram: z.string().max(200).optional(),
+        instagram: instagramHandleOptional,
         website: z.string().max(500).refine(
           (v) => !v || urlPattern.test(v),
           { message: "Website must be a valid URL starting with http:// or https://" },
