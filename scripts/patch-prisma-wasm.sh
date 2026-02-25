@@ -8,8 +8,8 @@
 set -e
 
 HANDLER=".open-next/server-functions/default/handler.mjs"
-WASM_SRC=".open-next/server-functions/default/node_modules/.prisma/client/query_compiler_fast_bg.wasm"
-WASM_DEST=".open-next/server-functions/default/query_compiler_fast_bg.wasm"
+WASM_SRC=".open-next/server-functions/default/node_modules/.prisma/client/query_compiler_bg.wasm"
+WASM_DEST=".open-next/server-functions/default/query_compiler_bg.wasm"
 
 if [ ! -f "$HANDLER" ]; then
   echo "ERROR: $HANDLER not found. Run 'npx opennextjs-cloudflare build' first."
@@ -38,9 +38,15 @@ with open(handler_path, "r") as f:
 
 # Add WASM import after the first import statement
 first_import_end = content.index("\n") + 1
-wasm_import = 'import __prismaQueryWasm from "./query_compiler_fast_bg.wasm";\n'
+wasm_import = 'import __prismaQueryWasm from "./query_compiler_bg.wasm";\n'
 
-if "__prismaQueryWasm" in content:
+old_fast_import = 'import __prismaQueryWasm from "./query_compiler_fast_bg.wasm";\n'
+if wasm_import in content:
+    print("Already patched with correct WASM import, skipping.")
+elif old_fast_import in content:
+    content = content.replace(old_fast_import, wasm_import)
+    print("Replaced fast WASM import with bg WASM import.")
+elif "__prismaQueryWasm" in content:
     print("Already patched, skipping import insertion.")
 else:
     content = content[:first_import_end] + wasm_import + content[first_import_end:]
@@ -66,11 +72,15 @@ for pattern in patterns:
         total += count
 
 if total == 0:
-    print("WARNING: No getQueryCompilerWasmModule patterns found to patch!")
-    # Show what's actually in the file for debugging
-    for m in re.finditer(r'getQueryCompilerWasmModule.{0,150}', content):
-        print(f"  Found at {m.start()}: {repr(m.group()[:120])}")
-    sys.exit(1)
+    # Check if already patched
+    if 'getQueryCompilerWasmModule:async()=>__prismaQueryWasm' in content:
+        print("Already patched, skipping replacement.")
+    else:
+        print("WARNING: No getQueryCompilerWasmModule patterns found to patch!")
+        # Show what's actually in the file for debugging
+        for m in re.finditer(r'getQueryCompilerWasmModule.{0,150}', content):
+            print(f"  Found at {m.start()}: {repr(m.group()[:120])}")
+        sys.exit(1)
 
 print(f"Patched {total} getQueryCompilerWasmModule function(s) total")
 

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import ResendProvider from "next-auth/providers/resend";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
@@ -22,7 +23,12 @@ import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
  */
 export const authConfig = {
   adapter: PrismaAdapter(db) as Adapter,
-  providers,
+  providers: [
+    ...providers,
+    ...(env.RESEND_API_KEY
+      ? [ResendProvider({ from: env.EMAIL_FROM, apiKey: env.RESEND_API_KEY })]
+      : []),
+  ],
   callbacks: {
     jwt: async ({ account, user, token }) => {
       if (account) {

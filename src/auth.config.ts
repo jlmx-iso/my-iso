@@ -1,6 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
 import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
-import ResendProvider from "next-auth/providers/resend";
 import { env } from "~/env";
 
 /**
@@ -13,8 +12,9 @@ export const sessionConfig = {
 };
 
 /**
- * Shared provider configuration
- * Used by both main auth and edge middleware configs
+ * Edge-compatible providers (no adapter required).
+ * Resend/email provider is excluded here — it needs a DB adapter
+ * and is added only in auth.ts where PrismaAdapter is configured.
  */
 export const providers = [
   GoogleProvider({
@@ -28,14 +28,6 @@ export const providers = [
       emailVerified: profile.email_verified ? new Date() : null,
     }),
   }),
-  ...(env.RESEND_API_KEY
-    ? [
-        ResendProvider({
-          from: env.EMAIL_FROM,
-          apiKey: env.RESEND_API_KEY,
-        }),
-      ]
-    : []),
 ];
 
 /**
