@@ -9,7 +9,7 @@ import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_
 import { generateVerificationCode } from "~/server/_utils";
 import { captureEvent } from "~/server/_lib/posthog";
 import { createTRPCRouter, publicProcedure, } from "~/server/api/trpc";
-import { db } from "~/server/db";
+import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 
 
 export const authRouter = createTRPCRouter({
@@ -113,17 +113,22 @@ export const authRouter = createTRPCRouter({
     .input(z.object({
       idToken: z.string().min(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`);
       if (!tokenInfoRes.ok) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
       }
 
       const tokenInfo = await tokenInfoRes.json() as {
+        aud?: string;
         email?: string;
         given_name?: string;
         family_name?: string;
       };
+
+      if (tokenInfo.aud !== env.GOOGLE_CLIENT_ID) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
+      }
 
       if (!tokenInfo.email) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
@@ -131,7 +136,7 @@ export const authRouter = createTRPCRouter({
 
       const normalizedEmail = tokenInfo.email.toLowerCase();
 
-      const user = await db.user.findUnique({
+      const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
         select: { id: true, email: true },
       });
@@ -154,10 +159,15 @@ export const authRouter = createTRPCRouter({
 
   requestMobileOtp: publicProcedure
     .input(z.object({ email: z.string().email() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const normalizedEmail = input.email.toLowerCase();
 
-      const user = await db.user.findUnique({
+      const rateLimitResult = await checkRateLimit(`otp:request:${normalizedEmail}`, RateLimits.AUTH);
+      if (!rateLimitResult.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
+      }
+
+      const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
         select: { id: true },
       });
@@ -168,7 +178,7 @@ export const authRouter = createTRPCRouter({
       }
 
       // Delete any existing OTP tokens for this email to avoid stale codes
-      await db.verificationToken.deleteMany({
+      await ctx.db.verificationToken.deleteMany({
         where: { identifier: `otp:${normalizedEmail}` },
       });
 
@@ -176,7 +186,7 @@ export const authRouter = createTRPCRouter({
       const code = isDev ? '000000' : generateVerificationCode();
       const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
 
-      await db.verificationToken.create({
+      await ctx.db.verificationToken.create({
         data: { identifier: `otp:${normalizedEmail}`, token: code, expires },
       });
 
@@ -197,11 +207,16 @@ export const authRouter = createTRPCRouter({
 
   verifyMobileOtp: publicProcedure
     .input(z.object({ email: z.string().email(), code: z.string().length(6) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const normalizedEmail = input.email.toLowerCase();
       const identifier = `otp:${normalizedEmail}`;
 
-      const record = await db.verificationToken.findUnique({
+      const rateLimitResult = await checkRateLimit(`otp:verify:${normalizedEmail}`, RateLimits.STRICT);
+      if (!rateLimitResult.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
+      }
+
+      const record = await ctx.db.verificationToken.findUnique({
         where: { identifier_token: { identifier, token: input.code } },
       });
 
@@ -210,13 +225,13 @@ export const authRouter = createTRPCRouter({
       }
 
       if (record.expires < new Date()) {
-        await db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
+        await ctx.db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Code has expired. Please request a new one.' });
       }
 
-      await db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
+      await ctx.db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
 
-      const user = await db.user.findUnique({
+      const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
         select: { id: true, email: true },
       });
