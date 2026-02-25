@@ -43,7 +43,7 @@ export const messageRouter = createTRPCRouter({
           },
         });
 
-        void captureEvent(ctx.session.user.id, 'message_sent', { thread_id: input.threadId, platform: input.platform ?? 'web' });
+        void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform ?? 'web', thread_id: input.threadId });
 
         return message;
       } catch (error) {

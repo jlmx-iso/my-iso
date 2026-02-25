@@ -139,31 +139,43 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   // Crop the image on canvas and store as a File
   const applyCrop = useCallback(async () => {
     if (!cropSrc || !croppedAreaPixels) return;
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new window.Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = cropSrc;
-    });
-    const canvas = document.createElement("canvas");
-    const size = 512;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(
-      image,
-      croppedAreaPixels.x, croppedAreaPixels.y,
-      croppedAreaPixels.width, croppedAreaPixels.height,
-      0, 0, size, size,
-    );
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
-      setAvatarFiles([croppedFile]);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = cropSrc;
+      });
+      const canvas = document.createElement("canvas");
+      const size = 512;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(
+        image,
+        croppedAreaPixels.x, croppedAreaPixels.y,
+        croppedAreaPixels.width, croppedAreaPixels.height,
+        0, 0, size, size,
+      );
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
+        setAvatarFiles([croppedFile]);
+        setCropSrc(null);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+      }, "image/jpeg", 0.9);
+    } catch (err) {
+      logger.error("Failed to crop image", { err });
+      notifications.show({
+        color: "red",
+        message: "Failed to crop image. Please try again.",
+        title: "Crop error",
+      });
       setCropSrc(null);
       setCrop({ x: 0, y: 0 });
       setZoom(1);
-    }, "image/jpeg", 0.9);
+    }
   }, [cropSrc, croppedAreaPixels]);
 
   // Validate fields for each profile sub-step

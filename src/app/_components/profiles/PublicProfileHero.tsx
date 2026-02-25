@@ -11,7 +11,6 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import {
   IconBrandFacebook,
   IconBrandInstagram,
@@ -25,6 +24,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import Link from "next/link";
+import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 
 type Photographer = {
   id: string;

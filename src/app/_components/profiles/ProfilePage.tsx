@@ -43,15 +43,30 @@ type ProfilePageProps = {
   isSuccess?: boolean;
 };
 
-const socialLinks = [
-  { key: "website" as const, icon: IconWorld, label: "Website", toUrl: (h: string) => h },
-  { key: "instagram" as const, icon: IconBrandInstagram, label: "Instagram", toUrl: instagramUrl },
-  { key: "facebook" as const, icon: IconBrandFacebook, label: "Facebook", toUrl: facebookUrl },
-  { key: "twitter" as const, icon: IconBrandX, label: "X", toUrl: twitterUrl },
-  { key: "youtube" as const, icon: IconBrandYoutube, label: "YouTube", toUrl: youTubeUrl },
-  { key: "tiktok" as const, icon: IconBrandTiktok, label: "TikTok", toUrl: tikTokUrl },
-  { key: "vimeo" as const, icon: IconBrandVimeo, label: "Vimeo", toUrl: vimeoUrl },
-] as const;
+const toSafeWebsiteUrl = (value: string): string | null => {
+  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const socialLinks: Array<{
+  key: "website" | "instagram" | "facebook" | "twitter" | "youtube" | "tiktok" | "vimeo";
+  icon: React.ElementType;
+  label: string;
+  toUrl: (h: string) => string | null;
+}> = [
+  { key: "website", icon: IconWorld, label: "Website", toUrl: toSafeWebsiteUrl },
+  { key: "instagram", icon: IconBrandInstagram, label: "Instagram", toUrl: instagramUrl },
+  { key: "facebook", icon: IconBrandFacebook, label: "Facebook", toUrl: facebookUrl },
+  { key: "twitter", icon: IconBrandX, label: "X", toUrl: twitterUrl },
+  { key: "youtube", icon: IconBrandYoutube, label: "YouTube", toUrl: youTubeUrl },
+  { key: "tiktok", icon: IconBrandTiktok, label: "TikTok", toUrl: tikTokUrl },
+  { key: "vimeo", icon: IconBrandVimeo, label: "Vimeo", toUrl: vimeoUrl },
+];
 
 export const ProfilePage = async ({
   userId,
@@ -264,6 +279,7 @@ export const ProfilePage = async ({
                   const handle = photographer[social.key];
                   if (!handle) return null;
                   const href = social.toUrl(handle);
+                  if (!href) return null;
                   const Icon = social.icon;
                   return (
                     <Anchor

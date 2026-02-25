@@ -6,10 +6,10 @@ import { UserVerificationErrors } from "~/_types/errors";
 import { instagramHandleOptional, logger, phoneSchema, socialHandleOptional } from "~/_utils";
 import { env } from "~/env";
 import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
-import { generateVerificationCode } from "~/server/_utils";
 import { captureEvent } from "~/server/_lib/posthog";
-import { createTRPCRouter, publicProcedure, } from "~/server/api/trpc";
 import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { generateVerificationCode } from "~/server/_utils";
+import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 
 
 export const authRouter = createTRPCRouter({
@@ -114,7 +114,18 @@ export const authRouter = createTRPCRouter({
       idToken: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let tokenInfoRes: Response;
+      try {
+        tokenInfoRes = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`,
+          { signal: controller.signal },
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
       if (!tokenInfoRes.ok) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
       }
@@ -122,12 +133,30 @@ export const authRouter = createTRPCRouter({
       const tokenInfo = await tokenInfoRes.json() as {
         aud?: string;
         email?: string;
+        email_verified?: string;
+        exp?: string;
         given_name?: string;
         family_name?: string;
+        iss?: string;
       };
 
       if (tokenInfo.aud !== env.GOOGLE_CLIENT_ID) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
+      }
+
+      if (
+        tokenInfo.iss !== "accounts.google.com" &&
+        tokenInfo.iss !== "https://accounts.google.com"
+      ) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid Google ID token' });
+      }
+
+      if (!tokenInfo.exp || Date.now() / 1000 > parseInt(tokenInfo.exp, 10)) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Google ID token has expired' });
+      }
+
+      if (tokenInfo.email_verified !== "true") {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Google account email is not verified' });
       }
 
       if (!tokenInfo.email) {
@@ -138,7 +167,7 @@ export const authRouter = createTRPCRouter({
 
       const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
-        select: { id: true, email: true },
+        select: { email: true, id: true },
       });
 
       if (!user) {
@@ -146,7 +175,7 @@ export const authRouter = createTRPCRouter({
       }
 
       const secret = new TextEncoder().encode(env.AUTH_SECRET);
-      const token = await new SignJWT({ sub: user.id, email: user.email })
+      const token = await new SignJWT({ email: user.email, sub: user.id })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
         .setExpirationTime('24h')
@@ -187,7 +216,7 @@ export const authRouter = createTRPCRouter({
       const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
 
       await ctx.db.verificationToken.create({
-        data: { identifier: `otp:${normalizedEmail}`, token: code, expires },
+        data: { expires, identifier: `otp:${normalizedEmail}`, token: code },
       });
 
       if (!isDev) {
@@ -233,7 +262,7 @@ export const authRouter = createTRPCRouter({
 
       const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
-        select: { id: true, email: true },
+        select: { email: true, id: true },
       });
 
       if (!user) {
@@ -241,7 +270,7 @@ export const authRouter = createTRPCRouter({
       }
 
       const secret = new TextEncoder().encode(env.AUTH_SECRET);
-      const token = await new SignJWT({ sub: user.id, email: user.email })
+      const token = await new SignJWT({ email: user.email, sub: user.id })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
         .setExpirationTime('24h')

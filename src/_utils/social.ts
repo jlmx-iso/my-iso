@@ -7,7 +7,7 @@ import { z } from "zod";
 const HANDLE_RE = /^[a-zA-Z0-9._\-]{1,100}$/;
 
 export function isValidSocialHandle(value: string): boolean {
-  return HANDLE_RE.test(value.replace(/^@/, ""));
+  return HANDLE_RE.test(value.trim().replace(/^@/, ""));
 }
 
 export function normalizeSocialHandle(value: string): string {
@@ -56,23 +56,46 @@ export function normalizeYouTubeHandle(v: string) {
 // Per-platform URL builders (handle stored data → full link)
 // ---------------------------------------------------------------------------
 
+/**
+ * Only pass through a URL value if its hostname matches one of the allowed
+ * hosts. Otherwise fall back to constructing the canonical URL from the handle.
+ */
+function passthroughIfAllowed(value: string, allowedHosts: string[]): string | null {
+  try {
+    const url = new URL(value);
+    return allowedHosts.includes(url.hostname) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function facebookUrl(handle: string) {
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    return passthroughIfAllowed(handle, ["facebook.com", "www.facebook.com"]) ?? `https://facebook.com/${handle}`;
+  }
   return `https://facebook.com/${handle}`;
 }
 export function twitterUrl(handle: string) {
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    return passthroughIfAllowed(handle, ["x.com", "www.x.com", "twitter.com", "www.twitter.com"]) ?? `https://x.com/${handle}`;
+  }
   return `https://x.com/${handle}`;
 }
 export function tikTokUrl(handle: string) {
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    return passthroughIfAllowed(handle, ["tiktok.com", "www.tiktok.com"]) ?? `https://tiktok.com/@${handle}`;
+  }
   return `https://tiktok.com/@${handle}`;
 }
 export function vimeoUrl(handle: string) {
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    return passthroughIfAllowed(handle, ["vimeo.com", "www.vimeo.com"]) ?? `https://vimeo.com/${handle}`;
+  }
   return `https://vimeo.com/${handle}`;
 }
 export function youTubeUrl(handle: string) {
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    return passthroughIfAllowed(handle, ["youtube.com", "www.youtube.com", "youtu.be"]) ?? `https://youtube.com/@${handle}`;
+  }
   return `https://youtube.com/@${handle}`;
 }

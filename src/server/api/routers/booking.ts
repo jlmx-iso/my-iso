@@ -2,8 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
-import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { captureEvent } from "~/server/_lib/posthog";
+import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 export const bookingRouter = createTRPCRouter({
   applyToEvent: protectedProcedure

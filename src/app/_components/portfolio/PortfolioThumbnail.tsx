@@ -3,10 +3,11 @@
 import { Box } from "@mantine/core";
 import { IconCamera } from "@tabler/icons-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function PortfolioThumbnail({ src, alt }: { src: string; alt: string }) {
   const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
 
   if (broken) {
     return (

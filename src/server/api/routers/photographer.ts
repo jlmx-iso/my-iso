@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
@@ -273,7 +274,11 @@ export const photographerRouter = createTRPCRouter({
       );
       if (!allOwned) throw new Error("Not authorized");
 
-      await Promise.all(
+      if (existing.length !== ids.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more portfolio images were not found' });
+      }
+
+      await ctx.db.$transaction(
         input.images.map(({ id, sortOrder }) =>
           ctx.db.portfolioImage.update({ where: { id }, data: { sortOrder } }),
         ),

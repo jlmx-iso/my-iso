@@ -24,9 +24,13 @@ export const phoneSchema = z
 /**
  * Zod schema for an optional US phone number.
  * If provided, must be a valid US phone number.
+ * Empty strings are treated as absent (undefined).
  */
-export const phoneSchemaOptional = z
-  .string()
-  .refine(isValidPhone, "Enter a valid 10-digit US phone number")
-  .transform(normalizePhone)
-  .optional();
+export const phoneSchemaOptional = z.preprocess(
+  (v) => (v === "" ? undefined : v),
+  z
+    .string()
+    .refine(isValidPhone, "Enter a valid 10-digit US phone number")
+    .transform(normalizePhone)
+    .optional(),
+);

@@ -12,7 +12,7 @@ import {
 import { useHover } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconCamera, IconEdit, IconStar, IconTrash } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "~/trpc/react";
 
@@ -43,6 +43,7 @@ export default function PortfolioImageCard({
   const { hovered, ref } = useHover();
   const [isDeleting, setIsDeleting] = useState(false);
   const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [image]);
   const deleteMutation = api.photographer.deletePortfolioImage.useMutation();
 
   const parsedTags: string[] = (() => {

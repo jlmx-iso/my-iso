@@ -16,8 +16,8 @@ export const subscriptionRouter = createTRPCRouter({
   getPricing: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const user = await ctx.db.user.findUnique({
-      where: { id: userId },
       select: { role: true },
+      where: { id: userId },
     });
     return getPricingForRole(user?.role ?? "standard");
   }),
