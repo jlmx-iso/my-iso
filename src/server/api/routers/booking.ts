@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { captureEvent } from "~/server/_lib/posthog";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 export const bookingRouter = createTRPCRouter({
@@ -10,6 +11,7 @@ export const bookingRouter = createTRPCRouter({
       z.object({
         eventId: z.string().min(1),
         notes: z.string().max(500).optional(),
+        platform: z.enum(['ios', 'web']).optional().default('web'),
         rate: z.string().max(100).optional(),
       }),
     )
@@ -61,7 +63,7 @@ export const bookingRouter = createTRPCRouter({
         });
       }
 
-      return ctx.db.booking
+      const booking = await ctx.db.booking
         .create({
           data: {
             applicantId: userId,
@@ -78,6 +80,10 @@ export const bookingRouter = createTRPCRouter({
             message: "Failed to create booking",
           });
         });
+
+      void captureEvent(userId, 'booking_requested', { photographer_id: ownerId, platform: input.platform ?? 'web' });
+
+      return booking;
     }),
 
   getByEventId: protectedProcedure

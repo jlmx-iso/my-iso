@@ -24,17 +24,15 @@ import {
   IconUser,
   IconWorld,
 } from "@tabler/icons-react";
-import Image from "next/image";
-import { type CSSProperties } from "react";
 
 import { FavoriteButton } from "./FavoriteButton";
 import EditProfile from "./EditProfile";
 import EmptyState from "../EmptyState";
 import { Notification } from "../Notification";
-import { PortfolioUpload } from "../portfolio";
+import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
-import { getPortfolioImages } from "~/app/_server_utils/";
+import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -45,15 +43,20 @@ type ProfilePageProps = {
   isSuccess?: boolean;
 };
 
-const socialLinks = [
-  { key: "website" as const, icon: IconWorld, label: "Website" },
-  { key: "instagram" as const, icon: IconBrandInstagram, label: "Instagram" },
-  { key: "facebook" as const, icon: IconBrandFacebook, label: "Facebook" },
-  { key: "twitter" as const, icon: IconBrandX, label: "X" },
-  { key: "youtube" as const, icon: IconBrandYoutube, label: "YouTube" },
-  { key: "tiktok" as const, icon: IconBrandTiktok, label: "TikTok" },
-  { key: "vimeo" as const, icon: IconBrandVimeo, label: "Vimeo" },
-] as const;
+const socialLinks: Array<{
+  key: "website" | "instagram" | "facebook" | "twitter" | "youtube" | "tiktok" | "vimeo";
+  icon: React.ElementType;
+  label: string;
+  toUrl: (h: string) => string | null;
+}> = [
+  { icon: IconWorld, key: "website", label: "Website", toUrl: toSafeWebsiteUrl },
+  { icon: IconBrandInstagram, key: "instagram", label: "Instagram", toUrl: instagramUrl },
+  { icon: IconBrandFacebook, key: "facebook", label: "Facebook", toUrl: facebookUrl },
+  { icon: IconBrandX, key: "twitter", label: "X", toUrl: twitterUrl },
+  { icon: IconBrandYoutube, key: "youtube", label: "YouTube", toUrl: youTubeUrl },
+  { icon: IconBrandTiktok, key: "tiktok", label: "TikTok", toUrl: tikTokUrl },
+  { icon: IconBrandVimeo, key: "vimeo", label: "Vimeo", toUrl: vimeoUrl },
+];
 
 export const ProfilePage = async ({
   userId,
@@ -95,7 +98,7 @@ export const ProfilePage = async ({
   );
   const isSelf = currentUserId === userId;
   const isEditingModeEnabled = isEditing && isSelf;
-  const resources = await getPortfolioImages(photographer.userId);
+  const resources = await (await api()).photographer.getPortfolioImages({ photographerId: photographer.id });
 
   const activeSocials = socialLinks.filter(
     (s) => photographer[s.key],
@@ -124,20 +127,7 @@ export const ProfilePage = async ({
             overflow: "hidden",
           }}
         >
-          {resources.slice(0, 1).map((image) => {
-            const imageStyle: CSSProperties = {
-              objectFit: "cover",
-            };
-            return (
-              <Image
-                src={image.secure_url}
-                key={image.public_id}
-                alt=""
-                fill={true}
-                style={imageStyle}
-              />
-            );
-          })}
+          <PortfolioThumbnail src={resources[0]!.image} alt="" />
           {/* Gradient overlay for depth */}
           <Box
             pos="absolute"
@@ -274,7 +264,9 @@ export const ProfilePage = async ({
               </Text>
               <Stack gap="xs">
                 {activeSocials.map((social) => {
-                  const href = photographer[social.key];
+                  const handle = photographer[social.key];
+                  if (!handle) return null;
+                  const href = social.toUrl(handle);
                   if (!href) return null;
                   const Icon = social.icon;
                   return (
@@ -320,7 +312,7 @@ export const ProfilePage = async ({
               >
                 {resources.map((image) => (
                   <Box
-                    key={image.public_id}
+                    key={image.id}
                     pos="relative"
                     style={{
                       aspectRatio: "1",
@@ -328,12 +320,7 @@ export const ProfilePage = async ({
                       overflow: "hidden",
                     }}
                   >
-                    <Image
-                      src={image.secure_url}
-                      alt=""
-                      fill
-                      style={{ objectFit: "cover" }}
-                    />
+                    <PortfolioThumbnail src={image.image} alt={image.title} />
                   </Box>
                 ))}
               </SimpleGrid>

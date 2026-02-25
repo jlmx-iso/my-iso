@@ -118,7 +118,7 @@ export default function Page() {
                     <Text
                       size="xs"
                       component="a"
-                      href={entry.instagram.startsWith("http") ? entry.instagram : `https://instagram.com/${entry.instagram.replace("@", "")}`}
+                      href={entry.instagram.startsWith("http") ? entry.instagram : `https://instagram.com/${entry.instagram.replace(/^@/, "")}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       c="blue"

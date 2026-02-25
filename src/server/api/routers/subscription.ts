@@ -10,6 +10,19 @@ const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
 export const subscriptionRouter = createTRPCRouter({
   /**
+   * Get the pricing for the current user based on their role.
+   * Founding members / ambassadors get discounted rates.
+   */
+  getPricing: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    const user = await ctx.db.user.findUnique({
+      select: { role: true },
+      where: { id: userId },
+    });
+    return getPricingForRole(user?.role ?? "standard");
+  }),
+
+  /**
    * Get the current user's subscription status.
    * Returns the Subscription record or null if no subscription exists.
    */

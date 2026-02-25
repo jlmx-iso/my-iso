@@ -1,6 +1,7 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
 
 export const photographerRouter = createTRPCRouter({
@@ -13,15 +14,15 @@ export const photographerRouter = createTRPCRouter({
       avatar: z.string().min(1).optional(),
       bio: z.string().min(1).optional(),
       companyName: z.string().min(1),
-      facebook: z.string().min(1).nullable(),
-      instagram: z.string().min(1).nullable(),
+      facebook: socialHandleNullable,
+      instagram: instagramHandleNullable,
       location: z.string().min(1),
       name: z.string().min(1),
-      tiktok: z.string().min(1).nullable(),
-      twitter: z.string().min(1).nullable(),
-      vimeo: z.string().min(1).nullable(),
+      tiktok: socialHandleNullable,
+      twitter: socialHandleNullable,
+      vimeo: socialHandleNullable,
       website: z.string().min(1).nullable(),
-      youtube: z.string().min(1).nullable(),
+      youtube: socialHandleNullable,
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.photographer.create({
@@ -76,16 +77,16 @@ export const photographerRouter = createTRPCRouter({
       avatar: z.string().min(1).optional(),
       bio: z.string().min(1).max(1000).nullable(),
       companyName: z.string().min(1),
-      facebook: z.string().min(1).nullable(),
+      facebook: socialHandleNullable,
       id: z.string().min(1),
-      instagram: z.string().min(1).nullable(),
+      instagram: instagramHandleNullable,
       location: z.string().min(1),
       name: z.string().min(1),
-      tiktok: z.string().min(1).nullable(),
-      twitter: z.string().min(1).nullable(),
-      vimeo: z.string().min(1).nullable(),
+      tiktok: socialHandleNullable,
+      twitter: socialHandleNullable,
+      vimeo: socialHandleNullable,
       website: z.string().min(1).nullable(),
-      youtube: z.string().min(1).nullable(),
+      youtube: socialHandleNullable,
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.photographer.update({
@@ -172,6 +173,12 @@ export const photographerRouter = createTRPCRouter({
         throw new Error("Failed to get image URL from upload");
       }
 
+      const maxOrder = await ctx.db.portfolioImage.aggregate({
+        _max: { sortOrder: true },
+        where: { photographerId: photographer.id, isDeleted: false },
+      });
+      const nextSortOrder = (maxOrder._max.sortOrder ?? -1) + 1;
+
       return ctx.db.portfolioImage.create({
         data: {
           photographerId: photographer.id,
@@ -180,6 +187,7 @@ export const photographerRouter = createTRPCRouter({
           description: input.description ?? null,
           tags: JSON.stringify(input.tags),
           isFeatured: input.isFeatured,
+          sortOrder: nextSortOrder,
         },
       });
     }),
@@ -192,7 +200,7 @@ export const photographerRouter = createTRPCRouter({
           photographerId: input.photographerId,
           isDeleted: false,
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       });
     }),
 
@@ -249,5 +257,33 @@ export const photographerRouter = createTRPCRouter({
         where: { id: input.id },
         data: { isDeleted: true },
       });
+    }),
+
+  reorderPortfolioImages: protectedProcedure
+    .input(z.object({
+      images: z.array(z.object({ id: z.string().min(1), sortOrder: z.number().int().min(0) })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify all images belong to the current user before updating
+      const ids = input.images.map((i) => i.id);
+      const existing = await ctx.db.portfolioImage.findMany({
+        where: { id: { in: ids } },
+        include: { photographer: true },
+      });
+
+      if (existing.length !== ids.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more portfolio images were not found' });
+      }
+
+      const allOwned = existing.every(
+        (img) => img.photographer.userId === ctx.session.user.id,
+      );
+      if (!allOwned) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+
+      await ctx.db.$transaction(
+        input.images.map(({ id, sortOrder }) =>
+          ctx.db.portfolioImage.update({ where: { id }, data: { sortOrder } }),
+        ),
+      );
     }),
 })

@@ -6,23 +6,25 @@ import {
   Group,
   Image,
   Paper,
-  SimpleGrid,
   Stack,
   Stepper,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
+
 import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { type MouseEventHandler, useEffect, useMemo, useState } from "react";
+import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
+import Cropper, { type CropperProps } from "react-easy-crop";
+import type { Area } from "react-easy-crop";
 
 import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
-import { logger } from "~/_utils";
+import { isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
@@ -63,6 +65,13 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const [avatarFiles, setAvatarFiles] = useState<FileWithPath[] | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
+  // Crop state
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const cropSrcFileRef = useRef<FileWithPath | null>(null);
+
   const updateProfile = api.user.updateProfile.useMutation();
   const createPhotographer = api.photographer.create.useMutation();
   const uploadAvatar = api.photographer.uploadProfileImage.useMutation();
@@ -87,21 +96,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     validate: {
       companyName: (value: string) =>
         value.length > 0 ? null : "Business name is required",
-      instagram: (value: string) => {
-        if (
-          value.length &&
-          !/^(https?):\/\/(www\.)?instagram\.com\/[^ "]+$/.test(value)
-        )
-          return "Invalid Instagram URL";
-        return null;
-      },
+      instagram: (value: string) =>
+        !value || isValidInstagramHandle(value) ? null : "Enter a valid Instagram handle (e.g. yourhandle)",
       location: (value: string) =>
         value.length > 0 ? null : "Location is required",
-      phoneNumber: (value: string) => {
-        if (!/^\d{10}$/.test(value))
-          return "Invalid phone number (10 digits)";
-        return null;
-      },
+      phoneNumber: (value: string) =>
+        !value ? "Phone number is required" : isValidPhone(value) ? null : "Enter a valid 10-digit US phone number",
       website: (value: string) => {
         if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value))
           return "Invalid website URL";
@@ -110,23 +110,72 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     },
   });
 
-  // Memoize avatar preview URLs and revoke on cleanup to prevent URL leaks
-  const avatarUrls = useMemo(
-    () => (avatarFiles ?? []).map((file) => URL.createObjectURL(file)),
-    [avatarFiles],
-  );
-
+  // Preview URL for the cropped file
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   useEffect(() => {
-    return () => {
-      avatarUrls.forEach((url) => {
-        URL.revokeObjectURL(url);
-      });
-    };
-  }, [avatarUrls]);
+    if (!avatarFiles?.[0]) { setAvatarPreviewUrl(null); return; }
+    const url = URL.createObjectURL(avatarFiles[0]);
+    setAvatarPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFiles]);
 
-  const avatarPreviews = avatarUrls.map((url, index) => (
-    <Image key={index} src={url} radius="md" />
-  ));
+  // Called by react-easy-crop when the user finishes dragging
+  const onCropComplete = useCallback((_: Area, pixels: Area) => {
+    setCroppedAreaPixels(pixels);
+  }, []);
+
+  // When user picks a file, enter crop mode
+  const handleFileChange = useCallback((files: FileWithPath[]) => {
+    const file = files[0];
+    if (!file) return;
+    cropSrcFileRef.current = file;
+    const reader = new FileReader();
+    reader.onload = () => setCropSrc(reader.result as string);
+    reader.readAsDataURL(file);
+  }, []);
+
+  // Crop the image on canvas and store as a File
+  const applyCrop = useCallback(async () => {
+    if (!cropSrc || !croppedAreaPixels) return;
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = cropSrc;
+      });
+      const canvas = document.createElement("canvas");
+      const size = 512;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(
+        image,
+        croppedAreaPixels.x, croppedAreaPixels.y,
+        croppedAreaPixels.width, croppedAreaPixels.height,
+        0, 0, size, size,
+      );
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.9)
+      );
+      if (!blob) throw new Error("Failed to generate cropped image");
+      const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
+      setAvatarFiles([croppedFile]);
+      setCropSrc(null);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+    } catch (err) {
+      logger.error("Failed to crop image", { err });
+      notifications.show({
+        color: "red",
+        message: "Failed to crop image. Please try again.",
+        title: "Crop error",
+      });
+      setCropSrc(null);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+    }
+  }, [cropSrc, croppedAreaPixels]);
 
   // Validate fields for each profile sub-step
   const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
@@ -159,7 +208,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     try {
       await updateProfile.mutateAsync({
         handle: values.handle || undefined,
-        phone: values.phoneNumber,
+        phone: normalizePhone(values.phoneNumber),
       });
     } catch (err) {
       logger.error("Profile update failed during onboarding", { err });
@@ -170,7 +219,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       await createPhotographer.mutateAsync({
         companyName: values.companyName,
         facebook: null,
-        instagram: values.instagram || null,
+        instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : null,
         location: values.location,
         name: `${user.firstName} ${user.lastName}`,
         tiktok: null,
@@ -309,7 +358,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                 <TextInput label="Email" value={user.email} disabled />
                 <TextInput
                   label="Phone Number"
-                  placeholder="10-digit phone number"
+                  placeholder="(555) 555-5555"
                   required
                   {...form.getInputProps("phoneNumber")}
                 />
@@ -351,8 +400,15 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                 />
                 <TextInput
                   label="Instagram"
-                  placeholder="https://instagram.com/yourhandle"
+                  placeholder="yourhandle"
                   description="Most photographers live on Instagram — this is the one that counts."
+                  leftSection={
+                    <Text size="sm" c="dimmed" style={{ userSelect: "none", whiteSpace: "nowrap" }}>
+                      instagram.com/
+                    </Text>
+                  }
+                  leftSectionWidth="calc(14ch + 1rem)"
+                  styles={{ input: { paddingLeft: "calc(14ch + 1.25rem)" } }}
                   {...form.getInputProps("instagram")}
                 />
                 <Text size="xs" c="dimmed">
@@ -372,15 +428,49 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                   Profiles with a photo get significantly more views. You can
                   skip this and add it later from your profile.
                 </Text>
-                <Dropzone
-                  multiple={false}
-                  loading={avatarUploading}
-                  handleFileChange={(files) => setAvatarFiles(files)}
-                />
-                {avatarPreviews.length > 0 && (
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
-                    {avatarPreviews}
-                  </SimpleGrid>
+                {cropSrc ? (
+                  <Stack gap="sm">
+                    <Box pos="relative" style={{ background: "#000", borderRadius: 8, height: 320, overflow: "hidden" }}>
+                      <Cropper
+                        image={cropSrc}
+                        crop={crop}
+                        zoom={zoom}
+                        aspect={1}
+                        cropShape="round"
+                        showGrid={false}
+                        onCropChange={setCrop}
+                        onZoomChange={setZoom}
+                        onCropComplete={onCropComplete}
+                      />
+                    </Box>
+                    <Text size="xs" c="dimmed" ta="center">Drag to reposition · scroll to zoom</Text>
+                    <Group justify="flex-end" gap="xs">
+                      <Button variant="subtle" size="sm" onClick={() => setCropSrc(null)}>Cancel</Button>
+                      <Button size="sm" onClick={() => void applyCrop()}>Use this photo</Button>
+                    </Group>
+                  </Stack>
+                ) : avatarPreviewUrl ? (
+                  <Box pos="relative">
+                    <Image
+                      src={avatarPreviewUrl}
+                      radius="md"
+                      style={{ maxHeight: 400, objectFit: "cover", width: "100%" }}
+                    />
+                    <Button
+                      variant="default"
+                      size="xs"
+                      style={{ bottom: 8, position: "absolute", right: 8 }}
+                      onClick={() => setAvatarFiles(null)}
+                    >
+                      Change photo
+                    </Button>
+                  </Box>
+                ) : (
+                  <Dropzone
+                    multiple={false}
+                    loading={avatarUploading}
+                    handleFileChange={handleFileChange}
+                  />
                 )}
               </Stack>
             </Stepper.Step>

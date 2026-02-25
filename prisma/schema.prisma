@@ -105,6 +105,7 @@ model PortfolioImage {
   tags           String // JSON-serialized array for SQLite compatibility
   isFeatured     Boolean
   isDeleted      Boolean      @default(false)
+  sortOrder      Int          @default(0)
 
   @@index([photographerId, isDeleted])
 }

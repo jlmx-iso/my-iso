@@ -25,6 +25,8 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 
+import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
+
 type Photographer = {
   id: string;
   name: string;
@@ -99,8 +101,9 @@ export default function PublicProfileHero({
   averageRating,
   reviewCount,
 }: PublicProfileHeroProps) {
+  const safeWebsite = photographer.website ? toSafeWebsiteUrl(photographer.website) : null;
   const hasSocials =
-    photographer.website ||
+    safeWebsite ||
     photographer.facebook ||
     photographer.instagram ||
     photographer.twitter ||
@@ -154,26 +157,26 @@ export default function PublicProfileHero({
           {/* Social links */}
           {hasSocials && (
             <Group gap="sm" mt="xs">
-              {photographer.website && (
-                <SocialLink href={photographer.website} icon={IconWorld} label="Website" />
+              {safeWebsite && (
+                <SocialLink href={safeWebsite} icon={IconWorld} label="Website" />
               )}
               {photographer.instagram && (
-                <SocialLink href={photographer.instagram} icon={IconBrandInstagram} label="Instagram" />
+                <SocialLink href={instagramUrl(photographer.instagram)} icon={IconBrandInstagram} label="Instagram" />
               )}
               {photographer.facebook && (
-                <SocialLink href={photographer.facebook} icon={IconBrandFacebook} label="Facebook" />
+                <SocialLink href={facebookUrl(photographer.facebook)} icon={IconBrandFacebook} label="Facebook" />
               )}
               {photographer.twitter && (
-                <SocialLink href={photographer.twitter} icon={IconBrandTwitter} label="Twitter" />
+                <SocialLink href={twitterUrl(photographer.twitter)} icon={IconBrandTwitter} label="Twitter" />
               )}
               {photographer.youtube && (
-                <SocialLink href={photographer.youtube} icon={IconBrandYoutube} label="YouTube" />
+                <SocialLink href={youTubeUrl(photographer.youtube)} icon={IconBrandYoutube} label="YouTube" />
               )}
               {photographer.tiktok && (
-                <SocialLink href={photographer.tiktok} icon={IconBrandTiktok} label="TikTok" />
+                <SocialLink href={tikTokUrl(photographer.tiktok)} icon={IconBrandTiktok} label="TikTok" />
               )}
               {photographer.vimeo && (
-                <SocialLink href={photographer.vimeo} icon={IconBrandVimeo} label="Vimeo" />
+                <SocialLink href={vimeoUrl(photographer.vimeo)} icon={IconBrandVimeo} label="Vimeo" />
               )}
             </Group>
           )}

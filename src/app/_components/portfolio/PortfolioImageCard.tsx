@@ -11,8 +11,8 @@ import {
 } from "@mantine/core";
 import { useHover } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconEdit, IconStar, IconTrash } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconCamera, IconEdit, IconStar, IconTrash } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 
 import { api } from "~/trpc/react";
 
@@ -42,6 +42,8 @@ export default function PortfolioImageCard({
 }: PortfolioImageCardProps) {
   const { hovered, ref } = useHover();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [image]);
   const deleteMutation = api.photographer.deletePortfolioImage.useMutation();
 
   const parsedTags: string[] = (() => {
@@ -94,12 +96,29 @@ export default function PortfolioImageCard({
       }}
       onClick={onClick}
     >
-      <Image
-        src={image}
-        alt={title}
-        radius="md"
-        style={{ display: "block", width: "100%" }}
-      />
+      {broken ? (
+        <Box
+          style={{
+            width: "100%",
+            aspectRatio: "4/3",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--mantine-color-gray-1)",
+            borderRadius: "var(--mantine-radius-md)",
+          }}
+        >
+          <IconCamera size={32} color="var(--mantine-color-gray-4)" />
+        </Box>
+      ) : (
+        <Image
+          src={image}
+          alt={title}
+          radius="md"
+          style={{ display: "block", width: "100%" }}
+          onError={() => setBroken(true)}
+        />
+      )}
 
       {/* Hover overlay with title and actions */}
       {hovered && (

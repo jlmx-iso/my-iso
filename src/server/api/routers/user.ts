@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { phoneSchemaOptional } from "~/_utils";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 export const userRouter = createTRPCRouter({
@@ -34,7 +35,7 @@ export const userRouter = createTRPCRouter({
    */
   updateProfile: protectedProcedure
     .input(z.object({
-      phone: z.string().min(1).optional(),
+      phone: phoneSchemaOptional,
       handle: z.string().min(1).optional(),
       city: z.string().optional(),
       state: z.string().optional(),

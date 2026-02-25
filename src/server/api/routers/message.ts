@@ -4,12 +4,14 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 import { logger } from "~/_utils";
+import { captureEvent } from "~/server/_lib/posthog";
 
 
 export const messageRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({
       content: z.string().min(1).max(5000),
+      platform: z.enum(['ios', 'web']).optional().default('web'),
       threadId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -40,6 +42,9 @@ export const messageRouter = createTRPCRouter({
             }
           },
         });
+
+        void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform, thread_id: input.threadId });
+
         return message;
       } catch (error) {
         logger.error("Unable to create message", { error, threadId: input.threadId, userId: ctx.session.user.id });
@@ -54,6 +59,7 @@ export const messageRouter = createTRPCRouter({
     .input(z.object({
       initialMessage: z.string().min(1).max(5000),
       participants: z.array(z.string().min(1)),
+      platform: z.enum(['ios', 'web']).optional().default('web'),
     }))
     .mutation(async ({ ctx, input }) => {
       const allParticipants = [...input.participants, ctx.session.user.id];
@@ -75,6 +81,9 @@ export const messageRouter = createTRPCRouter({
           });
           return newThread;
         });
+
+        void captureEvent(ctx.session.user.id, 'thread_created', { platform: input.platform, thread_id: thread.id });
+
         return thread;
       } catch (error) {
         logger.error("Unable to create message thread", { error, senderId: ctx.session.user.id });

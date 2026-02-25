@@ -32,6 +32,8 @@ import {
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import { useState } from "react";
 
+import { instagramUrl } from "~/_utils";
+
 interface SwipeCardProps {
   user: {
     id: string;
@@ -121,8 +123,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 zIndex: 10,
                 padding: "8px 16px",
                 borderRadius: 8,
-                border: "3px solid var(--mantine-color-green-5)",
-                color: "var(--mantine-color-green-5)",
+                border: "3px solid var(--mantine-color-teal-5)",
+                color: "var(--mantine-color-teal-5)",
                 fontWeight: 700,
                 fontSize: 24,
                 transform: "rotate(-15deg)",
@@ -314,7 +316,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                       </Anchor>
                     )}
                     {photo.instagram && (
-                      <Anchor href={photo.instagram} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
+                      <Anchor href={instagramUrl(photo.instagram)} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
                         <Group gap={4}>
                           <ThemeIcon size={20} variant="subtle" color="grape">
                             <IconBrandInstagram size={14} />
@@ -343,7 +345,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
               </Button>
               <Button
                 variant="filled"
-                color="green"
+                color="teal"
                 leftSection={<IconHeart size={18} />}
                 onClick={() => onSwipe("like")}
               >
