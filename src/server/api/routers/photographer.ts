@@ -276,7 +276,7 @@ export const photographerRouter = createTRPCRouter({
       const allOwned = existing.every(
         (img) => img.photographer.userId === ctx.session.user.id,
       );
-      if (!allOwned) throw new Error("Not authorized");
+      if (!allOwned) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
 
       await ctx.db.$transaction(
         input.images.map(({ id, sortOrder }) =>

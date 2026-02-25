@@ -49,13 +49,13 @@ const socialLinks: Array<{
   label: string;
   toUrl: (h: string) => string | null;
 }> = [
-  { key: "website", icon: IconWorld, label: "Website", toUrl: toSafeWebsiteUrl },
-  { key: "instagram", icon: IconBrandInstagram, label: "Instagram", toUrl: instagramUrl },
-  { key: "facebook", icon: IconBrandFacebook, label: "Facebook", toUrl: facebookUrl },
-  { key: "twitter", icon: IconBrandX, label: "X", toUrl: twitterUrl },
-  { key: "youtube", icon: IconBrandYoutube, label: "YouTube", toUrl: youTubeUrl },
-  { key: "tiktok", icon: IconBrandTiktok, label: "TikTok", toUrl: tikTokUrl },
-  { key: "vimeo", icon: IconBrandVimeo, label: "Vimeo", toUrl: vimeoUrl },
+  { icon: IconWorld, key: "website", label: "Website", toUrl: toSafeWebsiteUrl },
+  { icon: IconBrandInstagram, key: "instagram", label: "Instagram", toUrl: instagramUrl },
+  { icon: IconBrandFacebook, key: "facebook", label: "Facebook", toUrl: facebookUrl },
+  { icon: IconBrandX, key: "twitter", label: "X", toUrl: twitterUrl },
+  { icon: IconBrandYoutube, key: "youtube", label: "YouTube", toUrl: youTubeUrl },
+  { icon: IconBrandTiktok, key: "tiktok", label: "TikTok", toUrl: tikTokUrl },
+  { icon: IconBrandVimeo, key: "vimeo", label: "Vimeo", toUrl: vimeoUrl },
 ];
 
 export const ProfilePage = async ({

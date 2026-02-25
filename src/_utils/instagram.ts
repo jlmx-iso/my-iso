@@ -19,8 +19,14 @@ export function isValidInstagramHandle(value: string): boolean {
 
 /** Build the full profile URL from a stored handle. */
 export function instagramUrl(handle: string): string {
-  // Handle legacy data that was stored as a full URL
-  if (handle.startsWith("http")) return handle;
+  if (handle.startsWith("http")) {
+    try {
+      const parsed = new URL(handle);
+      const host = parsed.hostname.toLowerCase();
+      if (host === "instagram.com" || host === "www.instagram.com") return handle;
+    } catch { /* fall through */ }
+    return `https://instagram.com/${handle}`;
+  }
   return `https://instagram.com/${handle}`;
 }
 

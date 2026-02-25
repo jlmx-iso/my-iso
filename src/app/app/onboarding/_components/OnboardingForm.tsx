@@ -17,8 +17,6 @@ import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
-
-import { isValidInstagramHandle, isValidPhone, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import Cropper, { type CropperProps } from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 
@@ -26,7 +24,7 @@ import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
-import { logger } from "~/_utils";
+import { isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
@@ -405,7 +403,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                   placeholder="yourhandle"
                   description="Most photographers live on Instagram — this is the one that counts."
                   leftSection={
-                    <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", userSelect: "none" }}>
+                    <Text size="sm" c="dimmed" style={{ userSelect: "none", whiteSpace: "nowrap" }}>
                       instagram.com/
                     </Text>
                   }
@@ -432,7 +430,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                 </Text>
                 {cropSrc ? (
                   <Stack gap="sm">
-                    <Box pos="relative" style={{ height: 320, borderRadius: 8, overflow: "hidden", background: "#000" }}>
+                    <Box pos="relative" style={{ background: "#000", borderRadius: 8, height: 320, overflow: "hidden" }}>
                       <Cropper
                         image={cropSrc}
                         crop={crop}
@@ -456,12 +454,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                     <Image
                       src={avatarPreviewUrl}
                       radius="md"
-                      style={{ width: "100%", maxHeight: 400, objectFit: "cover" }}
+                      style={{ maxHeight: 400, objectFit: "cover", width: "100%" }}
                     />
                     <Button
                       variant="default"
                       size="xs"
-                      style={{ position: "absolute", bottom: 8, right: 8 }}
+                      style={{ bottom: 8, position: "absolute", right: 8 }}
                       onClick={() => setAvatarFiles(null)}
                     >
                       Change photo
