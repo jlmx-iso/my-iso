@@ -224,7 +224,8 @@ export const authRouter = createTRPCRouter({
       });
 
       const isDev = env.NODE_ENV === 'development';
-      logger.info("requestMobileOtp", { isDev, NODE_ENV: env.NODE_ENV, email: normalizedEmail });
+      const redactedEmail = normalizedEmail.replace(/(^.).*(@.*$)/, "$1***$2");
+      logger.info("requestMobileOtp", { email: redactedEmail, isDev, NODE_ENV: env.NODE_ENV });
       const code = isDev ? '000000' : generateVerificationCode();
       const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
 
@@ -235,15 +236,15 @@ export const authRouter = createTRPCRouter({
       if (!isDev) {
         const { sendEmail } = await import("../../_lib/email");
         const { renderMobileOtpEmail } = await import("../../_lib/emails");
-        logger.info("Sending OTP email", { email: normalizedEmail });
+        logger.info("Sending OTP email", { email: redactedEmail });
         const html = await renderMobileOtpEmail({ code });
-        const emailResult = await sendEmail({ email: normalizedEmail, subject: `${code} is your ISO sign-in code`, html });
+        const emailResult = await sendEmail({ email: normalizedEmail, html, subject: `${code} is your ISO sign-in code` });
 
         if (emailResult.isErr) {
           logger.error("Error sending OTP email", { error: emailResult.error });
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to send code. Please try again.' });
         }
-        logger.info("OTP email sent successfully", { email: normalizedEmail });
+        logger.info("OTP email sent successfully", { email: redactedEmail });
       }
 
       return { sent: true, devCode: isDev ? code : undefined };

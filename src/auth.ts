@@ -26,7 +26,7 @@ export const authConfig = {
   providers: [
     ...providers,
     ...(env.RESEND_API_KEY
-      ? [ResendProvider({ from: env.EMAIL_FROM, apiKey: env.RESEND_API_KEY })]
+      ? [ResendProvider({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })]
       : []),
   ],
   callbacks: {
