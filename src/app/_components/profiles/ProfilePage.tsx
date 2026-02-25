@@ -24,18 +24,15 @@ import {
   IconUser,
   IconWorld,
 } from "@tabler/icons-react";
-import Image from "next/image";
-import { type CSSProperties } from "react";
 
 import { FavoriteButton } from "./FavoriteButton";
 import EditProfile from "./EditProfile";
 import EmptyState from "../EmptyState";
 import { Notification } from "../Notification";
-import { PortfolioUpload } from "../portfolio";
+import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
 import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
-import { getPortfolioImages } from "~/app/_server_utils/";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -96,7 +93,7 @@ export const ProfilePage = async ({
   );
   const isSelf = currentUserId === userId;
   const isEditingModeEnabled = isEditing && isSelf;
-  const resources = await getPortfolioImages(photographer.userId);
+  const resources = await (await api()).photographer.getPortfolioImages({ photographerId: photographer.id });
 
   const activeSocials = socialLinks.filter(
     (s) => photographer[s.key],
@@ -125,20 +122,9 @@ export const ProfilePage = async ({
             overflow: "hidden",
           }}
         >
-          {resources.slice(0, 1).map((image) => {
-            const imageStyle: CSSProperties = {
-              objectFit: "cover",
-            };
-            return (
-              <Image
-                src={image.secure_url}
-                key={image.public_id}
-                alt=""
-                fill={true}
-                style={imageStyle}
-              />
-            );
-          })}
+          {resources.slice(0, 1).map((image) => (
+            <PortfolioThumbnail key={image.id} src={image.image} alt="" />
+          ))}
           {/* Gradient overlay for depth */}
           <Box
             pos="absolute"
@@ -322,7 +308,7 @@ export const ProfilePage = async ({
               >
                 {resources.map((image) => (
                   <Box
-                    key={image.public_id}
+                    key={image.id}
                     pos="relative"
                     style={{
                       aspectRatio: "1",
@@ -330,12 +316,7 @@ export const ProfilePage = async ({
                       overflow: "hidden",
                     }}
                   >
-                    <Image
-                      src={image.secure_url}
-                      alt=""
-                      fill
-                      style={{ objectFit: "cover" }}
-                    />
+                    <PortfolioThumbnail src={image.image} alt={image.title} />
                   </Box>
                 ))}
               </SimpleGrid>

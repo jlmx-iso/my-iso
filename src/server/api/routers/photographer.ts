@@ -172,6 +172,10 @@ export const photographerRouter = createTRPCRouter({
         throw new Error("Failed to get image URL from upload");
       }
 
+      const existingCount = await ctx.db.portfolioImage.count({
+        where: { photographerId: photographer.id, isDeleted: false },
+      });
+
       return ctx.db.portfolioImage.create({
         data: {
           photographerId: photographer.id,
@@ -180,6 +184,7 @@ export const photographerRouter = createTRPCRouter({
           description: input.description ?? null,
           tags: JSON.stringify(input.tags),
           isFeatured: input.isFeatured,
+          sortOrder: existingCount,
         },
       });
     }),
@@ -192,7 +197,7 @@ export const photographerRouter = createTRPCRouter({
           photographerId: input.photographerId,
           isDeleted: false,
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       });
     }),
 
@@ -249,5 +254,29 @@ export const photographerRouter = createTRPCRouter({
         where: { id: input.id },
         data: { isDeleted: true },
       });
+    }),
+
+  reorderPortfolioImages: protectedProcedure
+    .input(z.object({
+      images: z.array(z.object({ id: z.string().min(1), sortOrder: z.number().int().min(0) })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify all images belong to the current user before updating
+      const ids = input.images.map((i) => i.id);
+      const existing = await ctx.db.portfolioImage.findMany({
+        where: { id: { in: ids } },
+        include: { photographer: true },
+      });
+
+      const allOwned = existing.every(
+        (img) => img.photographer.userId === ctx.session.user.id,
+      );
+      if (!allOwned) throw new Error("Not authorized");
+
+      await Promise.all(
+        input.images.map(({ id, sortOrder }) =>
+          ctx.db.portfolioImage.update({ where: { id }, data: { sortOrder } }),
+        ),
+      );
     }),
 })

@@ -156,12 +156,13 @@ export const cloudinaryClient = {
 
     try {
       const timestamp = Math.round(Date.now() / 1000);
-      const paramsToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
+      const paramsToSign = `folder=${folder}&format=jpg&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
       const signature = await generateSignature(paramsToSign);
 
       const formData = new FormData();
-      formData.append('file', `data:image/png;base64,${base64Data}`);
+      formData.append('file', `data:image/jpeg;base64,${base64Data}`);
       formData.append('folder', folder);
+      formData.append('format', 'jpg');
       formData.append('api_key', env.CLOUDINARY_API_KEY);
       formData.append('timestamp', timestamp.toString());
       formData.append('signature', signature);
