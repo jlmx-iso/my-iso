@@ -43,7 +43,7 @@ export const messageRouter = createTRPCRouter({
           },
         });
 
-        void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform ?? 'web', thread_id: input.threadId });
+        void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform, thread_id: input.threadId });
 
         return message;
       } catch (error) {
@@ -82,7 +82,7 @@ export const messageRouter = createTRPCRouter({
           return newThread;
         });
 
-        void captureEvent(ctx.session.user.id, 'message_sent', { is_first_message: true, platform: input.platform ?? 'web' });
+        void captureEvent(ctx.session.user.id, 'thread_created', { platform: input.platform, thread_id: thread.id });
 
         return thread;
       } catch (error) {

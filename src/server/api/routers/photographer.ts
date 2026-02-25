@@ -269,14 +269,14 @@ export const photographerRouter = createTRPCRouter({
         include: { photographer: true },
       });
 
+      if (existing.length !== ids.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more portfolio images were not found' });
+      }
+
       const allOwned = existing.every(
         (img) => img.photographer.userId === ctx.session.user.id,
       );
       if (!allOwned) throw new Error("Not authorized");
-
-      if (existing.length !== ids.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or more portfolio images were not found' });
-      }
 
       await ctx.db.$transaction(
         input.images.map(({ id, sortOrder }) =>

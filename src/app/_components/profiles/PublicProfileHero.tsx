@@ -24,7 +24,8 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
+
+import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 
 type Photographer = {
   id: string;
@@ -100,8 +101,9 @@ export default function PublicProfileHero({
   averageRating,
   reviewCount,
 }: PublicProfileHeroProps) {
+  const safeWebsite = photographer.website ? toSafeWebsiteUrl(photographer.website) : null;
   const hasSocials =
-    photographer.website ||
+    safeWebsite ||
     photographer.facebook ||
     photographer.instagram ||
     photographer.twitter ||
@@ -155,8 +157,8 @@ export default function PublicProfileHero({
           {/* Social links */}
           {hasSocials && (
             <Group gap="sm" mt="xs">
-              {photographer.website && (
-                <SocialLink href={photographer.website} icon={IconWorld} label="Website" />
+              {safeWebsite && (
+                <SocialLink href={safeWebsite} icon={IconWorld} label="Website" />
               )}
               {photographer.instagram && (
                 <SocialLink href={instagramUrl(photographer.instagram)} icon={IconBrandInstagram} label="Instagram" />

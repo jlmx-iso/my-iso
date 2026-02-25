@@ -32,7 +32,7 @@ import { Notification } from "../Notification";
 import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
-import { facebookUrl, instagramUrl, tikTokUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
+import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -41,16 +41,6 @@ type ProfilePageProps = {
   photographer?: Photographer;
   isEditing?: boolean;
   isSuccess?: boolean;
-};
-
-const toSafeWebsiteUrl = (value: string): string | null => {
-  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-  try {
-    const url = new URL(candidate);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
 };
 
 const socialLinks: Array<{
@@ -137,9 +127,7 @@ export const ProfilePage = async ({
             overflow: "hidden",
           }}
         >
-          {resources.slice(0, 1).map((image) => (
-            <PortfolioThumbnail key={image.id} src={image.image} alt="" />
-          ))}
+          <PortfolioThumbnail src={resources[0]!.image} alt="" />
           {/* Gradient overlay for depth */}
           <Box
             pos="absolute"

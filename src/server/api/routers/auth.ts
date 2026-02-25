@@ -7,8 +7,8 @@ import { instagramHandleOptional, logger, phoneSchema, socialHandleOptional } fr
 import { env } from "~/env";
 import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
 import { captureEvent } from "~/server/_lib/posthog";
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { generateVerificationCode } from "~/server/_utils";
+import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 
 
@@ -190,10 +190,15 @@ export const authRouter = createTRPCRouter({
     .input(z.object({ email: z.string().email() }))
     .mutation(async ({ ctx, input }) => {
       const normalizedEmail = input.email.toLowerCase();
+      const ip = ctx.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ctx.headers.get('x-real-ip') ?? 'unknown';
 
       const rateLimitResult = await checkRateLimit(`otp:request:${normalizedEmail}`, RateLimits.AUTH);
       if (!rateLimitResult.allowed) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
+      }
+      const ipRateLimit = await checkRateLimit(`otp:request:ip:${ip}`, RateLimits.AUTH);
+      if (!ipRateLimit.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
       }
 
       const user = await ctx.db.user.findUnique({
@@ -239,10 +244,15 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const normalizedEmail = input.email.toLowerCase();
       const identifier = `otp:${normalizedEmail}`;
+      const ip = ctx.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ctx.headers.get('x-real-ip') ?? 'unknown';
 
       const rateLimitResult = await checkRateLimit(`otp:verify:${normalizedEmail}`, RateLimits.STRICT);
       if (!rateLimitResult.allowed) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
+      }
+      const ipRateLimit = await checkRateLimit(`otp:verify:ip:${ip}`, RateLimits.STRICT);
+      if (!ipRateLimit.allowed) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
       }
 
       const record = await ctx.db.verificationToken.findUnique({

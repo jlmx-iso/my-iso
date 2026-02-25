@@ -99,3 +99,16 @@ export function youTubeUrl(handle: string) {
   }
   return `https://youtube.com/@${handle}`;
 }
+
+/** Validates a website URL and returns it (normalized to https if missing scheme)
+ *  only when the protocol is http or https. Returns null for unsafe schemes
+ *  (e.g. javascript:) or malformed URLs. */
+export function toSafeWebsiteUrl(value: string): string | null {
+  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}

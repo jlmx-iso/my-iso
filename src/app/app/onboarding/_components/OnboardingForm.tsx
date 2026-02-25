@@ -103,7 +103,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       location: (value: string) =>
         value.length > 0 ? null : "Location is required",
       phoneNumber: (value: string) =>
-        isValidPhone(value) ? null : "Enter a valid 10-digit US phone number",
+        !value ? "Phone number is required" : isValidPhone(value) ? null : "Enter a valid 10-digit US phone number",
       website: (value: string) => {
         if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value))
           return "Invalid website URL";
@@ -157,14 +157,15 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
         croppedAreaPixels.width, croppedAreaPixels.height,
         0, 0, size, size,
       );
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
-        setAvatarFiles([croppedFile]);
-        setCropSrc(null);
-        setCrop({ x: 0, y: 0 });
-        setZoom(1);
-      }, "image/jpeg", 0.9);
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.9)
+      );
+      if (!blob) throw new Error("Failed to generate cropped image");
+      const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
+      setAvatarFiles([croppedFile]);
+      setCropSrc(null);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
     } catch (err) {
       logger.error("Failed to crop image", { err });
       notifications.show({
