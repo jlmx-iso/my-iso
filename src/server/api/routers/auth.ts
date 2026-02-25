@@ -122,6 +122,13 @@ export const authRouter = createTRPCRouter({
           `https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`,
           { signal: controller.signal },
         );
+      } catch (error) {
+        clearTimeout(timeoutId);
+        logger.error("Google tokeninfo request failed", { error });
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "Unable to validate Google ID token",
+        });
       } finally {
         clearTimeout(timeoutId);
       }

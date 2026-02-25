@@ -173,9 +173,11 @@ export const photographerRouter = createTRPCRouter({
         throw new Error("Failed to get image URL from upload");
       }
 
-      const existingCount = await ctx.db.portfolioImage.count({
+      const maxOrder = await ctx.db.portfolioImage.aggregate({
+        _max: { sortOrder: true },
         where: { photographerId: photographer.id, isDeleted: false },
       });
+      const nextSortOrder = (maxOrder._max.sortOrder ?? -1) + 1;
 
       return ctx.db.portfolioImage.create({
         data: {
@@ -185,7 +187,7 @@ export const photographerRouter = createTRPCRouter({
           description: input.description ?? null,
           tags: JSON.stringify(input.tags),
           isFeatured: input.isFeatured,
-          sortOrder: existingCount,
+          sortOrder: nextSortOrder,
         },
       });
     }),
