@@ -47,11 +47,17 @@ elif old_fast_import in content:
     content = content.replace(old_fast_import, wasm_import)
     print("Replaced fast WASM import with bg WASM import.")
 elif re.search(
-    r'^\s*import\s+__prismaQueryWasm\s+from\s+"\.\/query_compiler(?:_fast)?_bg\.wasm";\s*$',
+    r'^\s*import\s+__prismaQueryWasm\s+from\s+["\']\.\/query_compiler(?:_fast)?_bg\.wasm["\'];\s*$',
     content,
     re.MULTILINE,
 ):
-    print("Already patched, skipping import insertion.")
+    content = re.sub(
+        r'^\s*import\s+__prismaQueryWasm\s+from\s+["\']\.\/query_compiler(?:_fast)?_bg\.wasm["\'];\s*$',
+        wasm_import.strip(),
+        content,
+        flags=re.MULTILINE,
+    ) + ("\n" if not content.endswith("\n") else "")
+    print("Normalized existing __prismaQueryWasm import to bg WASM import.")
 else:
     content = content[:first_import_end] + wasm_import + content[first_import_end:]
     print(f"Added WASM import at line 2")
