@@ -154,8 +154,10 @@ export const authConfig = {
         token.name = user.firstName || user.name;
         token.picture = user.profilePic ?? user.image;
       }
-      // Refresh user data from DB on session update (e.g. after onboarding)
-      if (trigger === "update" && typeof token.id === "string") {
+      // Refresh user data from DB on session update or if token is missing profile fields
+      // (handles JWTs minted before this code was deployed)
+      const needsBackfill = typeof token.id === "string" && !token.firstName;
+      if ((trigger === "update" || needsBackfill) && typeof token.id === "string") {
         const freshUser = await db.user.findUnique({
           where: { id: token.id },
           select: { firstName: true, lastName: true, profilePic: true },
