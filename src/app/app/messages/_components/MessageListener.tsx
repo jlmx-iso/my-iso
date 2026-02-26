@@ -43,7 +43,7 @@ export default function MessageListener({
     if (newMessages.length === 0) return;
 
     async function decryptNew() {
-      const results = await Promise.all(
+      const settled = await Promise.allSettled(
         newMessages.map(async (msg) => {
           const content = msg.isEncrypted
             ? await decryptMessage(threadId, msg.content)
@@ -58,10 +58,16 @@ export default function MessageListener({
         }),
       );
       if (!cancelled) {
+        const results = settled
+          .filter((r): r is PromiseFulfilledResult<DecryptedWsMessage> => r.status === "fulfilled")
+          .map((r) => r.value);
+
         for (const msg of results) {
           decryptedIdsRef.current.add(msg.id);
         }
-        setDecrypted((prev) => [...prev, ...results]);
+        if (results.length > 0) {
+          setDecrypted((prev) => [...prev, ...results]);
+        }
       }
     }
 

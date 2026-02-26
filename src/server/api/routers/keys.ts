@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { logger } from "~/_utils";
 import { env } from "~/env";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const EC_PUBLIC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
   (v) =>
@@ -50,8 +50,8 @@ async function deriveKwk(userId: string, salt: Uint8Array): Promise<CryptoKey> {
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
   }
   return btoa(binary);
 }

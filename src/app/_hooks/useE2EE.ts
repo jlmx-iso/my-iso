@@ -154,7 +154,7 @@ export function useE2EE() {
 
     const ciphertext = await encryptMessage(threadKey, plaintext);
     return { ciphertext, threadKeys: freshThreadKeys };
-  }, []);
+  }, [sessionUserId]);
 
   /**
    * Decrypt a message given its thread ID. Loads the thread key from
