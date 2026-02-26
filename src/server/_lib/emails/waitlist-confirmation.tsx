@@ -12,34 +12,42 @@ import {
 } from "./components/styles";
 
 type WaitlistConfirmationEmailProps = {
-  name: string;
+  email: string;
+  name?: string;
 };
 
 export function WaitlistConfirmationEmail({
   name,
 }: WaitlistConfirmationEmailProps) {
   return (
-    <Layout preview="You're on the ISO waitlist — we'll be in touch.">
-      <Heading style={heading}>You&apos;re on the list, {name}.</Heading>
+    <Layout
+      preview="You're on the ISO waitlist. We'll be in touch when a spot opens."
+    >
+      <Heading style={heading}>
+        {name ? `${name}, you're on the list.` : "You're on the list."}
+      </Heading>
 
       <Text style={paragraph}>
-        We&apos;ve received your application and reserved your spot on the ISO
-        waitlist. We review applications manually, so approval typically takes
-        anywhere from a few days to a few weeks.
+        Your spot on the ISO waitlist is reserved. We&apos;re glad you applied.
       </Text>
 
       <Text style={paragraph}>
-        When a spot opens up and your application is approved, you&apos;ll get
-        an email from us with a link to create your account. Keep an eye on
-        your inbox.
+        Approvals are reviewed manually, and spots open up as we grow. That
+        typically means days to a few weeks depending on where things stand
+        when you applied.
       </Text>
 
       <Text style={paragraph}>
-        Thanks for your interest — we&apos;re looking forward to seeing your
-        work.
+        When a spot opens for you, you&apos;ll hear from us at{" "}
+        hello@myiso.app, so keep an eye out.
       </Text>
 
-      <Text style={signature}>— Penny & Jordan</Text>
+      <Text style={paragraph}>
+        Thanks for your patience. We&apos;re building something good here and
+        we want the right people in the room.
+      </Text>
+
+      <Text style={signature}>Penny &amp; Jordan</Text>
     </Layout>
   );
 }
