@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
 import { env } from "~/env";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { logger } from "~/_utils";
 
 const EC_PUBLIC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
   (v) =>
