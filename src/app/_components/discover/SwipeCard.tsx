@@ -107,8 +107,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
           background: "var(--mantine-color-body)",
           overflow: "hidden",
           position: "relative",
-          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.04)",
-          transform: isTop ? undefined : "scale(0.97) translateY(8px)",
+          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.08)",
+          transform: isTop ? undefined : "scale(0.93) translateY(20px)",
         }}
       >
         {/* Swipe indicators */}

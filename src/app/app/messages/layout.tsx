@@ -1,6 +1,7 @@
 import { Box, Grid, GridCol, ScrollArea, Stack } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import ConversationTile from "./_components/ConversationTile";
 import NewMessageModal from "./_components/NewMessageModal";
@@ -35,7 +36,7 @@ export default async function Layout({ children, params }: LayoutProps) {
             `}</style>
             <PageHeader
                 title="Messages"
-                action={<NewMessageModal />}
+                action={<Suspense><NewMessageModal /></Suspense>}
             />
             <Grid
                 gutter={0}

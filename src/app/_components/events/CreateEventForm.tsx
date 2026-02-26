@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, FileInput, Group, NumberInput, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import { Button, FileInput, Group, Select, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -28,7 +28,7 @@ const schema = z.object({
         return date.isValid() && date.isAfter(dayjs());
     }, "Date must be in the future"),
     description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
-    duration: z.number().min(1, "Duration must be at least 1 hour"),
+    duration: z.coerce.number().min(0.5, "Duration must be at least 30 minutes"),
     image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
     location: z.string().min(1, "Location is required"),
     title: z.string().max(140, "Title is required an must be less than 140 characters"),
@@ -40,7 +40,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         initialValues: {
             date: dayjs().format('YYYY-MM-DD HH:mm:ss'),
             description: "",
-            duration: 1,
+            duration: "1",
             image: undefined,
             location: "",
             title: title ?? "",
@@ -51,6 +51,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
     const handleSubmit = (values: typeof form.values) => {
         const image = values.image as File | undefined
         const date = dayjs(values.date).toISOString();
+        const duration = Number(values.duration);
         const reader = new FileReader();
         if (image) {
             reader.onloadend = async () => {
@@ -58,7 +59,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
 
                 if (base64File) {
                     try {
-                        await mutateAsync({ ...values, date, image: base64File });
+                        await mutateAsync({ ...values, date, duration, image: base64File });
                     } catch (error) {
                         logger.error('Error uploading event image', { error });
                         notifications.show({
@@ -81,7 +82,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
             return;
         }
 
-        mutate({ ...values, date, image: undefined });
+        mutate({ ...values, date, duration, image: undefined });
     }
 
     if (isPending) {
@@ -134,11 +135,19 @@ export default function CreateEventForm({ title }: CreateEventProps) {
                         firstDayOfWeek={0}
                         {...form.getInputProps("date")}
                     />
-                    <NumberInput
+                    <Select
                         label="Duration (hours)"
                         required
-                        min={1}
-                        max={24}
+                        data={[
+                            { value: "0.5", label: "30 minutes" },
+                            { value: "1",   label: "1 hour" },
+                            { value: "1.5", label: "1.5 hours" },
+                            { value: "2",   label: "2 hours" },
+                            { value: "3",   label: "3 hours" },
+                            { value: "4",   label: "4 hours" },
+                            { value: "6",   label: "6 hours" },
+                            { value: "8",   label: "8 hours (full day)" },
+                        ]}
                         {...form.getInputProps("duration")}
                     />
                 </Group>

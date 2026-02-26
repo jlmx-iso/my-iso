@@ -2,9 +2,17 @@ name = "my-iso"
 compatibility_date = "2025-12-29"
 compatibility_flags = ["nodejs_compat"]
 
-main = ".open-next/worker.js"
+main = "worker.ts"
 
 assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom"]
 
 # D1 Database binding
 [[d1_databases]]

@@ -136,75 +136,92 @@ model Review {
 }
 
 model MessageThread {
-  id           String    @id @default(cuid())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id           String      @id @default(cuid())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   participants User[]
   messages     Message[]
   match        Match?
+  threadKeys   ThreadKey[]
+}
+
+model ThreadKey {
+  id           String        @id @default(cuid())
+  threadId     String
+  userId       String
+  encryptedKey String        // base64(12-byte-IV || ephemeralPubRaw || AES-KW-wrapped-thread-key)
+  thread       MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
 }
 
 model Message {
-  id        String        @id @default(cuid())
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  threadId  String
-  sender    User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  senderId  String
-  content   String
-  isRead    Boolean       @default(false)
-  isDeleted Boolean       @default(false)
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  thread      MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  threadId    String
+  sender      User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderId    String
+  content     String
+  isRead      Boolean       @default(false)
+  isDeleted   Boolean       @default(false)
+  isEncrypted Boolean       @default(false)
+  preview     String?       // Plaintext first ~80 chars (for push notifications)
 
   @@index([threadId])
 }
 
 model User {
-  id                String          @id @default(cuid())
-  firstName         String
-  lastName          String
-  handle            String?         @unique
-  email             String          @unique
-  emailVerified     DateTime?
-  profilePic        String?
-  phone             String?
-  address           String?
-  city              String?
-  state             String?
-  zip               String?
-  country           String?
-  accounts          Account[]
-  sessions          Session[]
-  subscription      Subscription?
-  photographer      Photographer?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  favorites         Favorite[]
-  reviews           Review[]
-  messages          Message[]
-  messageThreads    MessageThread[]
-  comments          Comment[]
-  stripeId          String?         @unique
-  commentLikes      CommentLike[]
-  eventLike         EventLike[]
-  bookingsApplied   Booking[]       @relation("BookingApplicant")
-  bookingsOwned     Booking[]       @relation("BookingOwner")
-  notifications     Notification[]
-  role              String   @default("standard")
-  invitedByUserId   String?
-  invitedBy         User?    @relation("InvitedByUser", fields: [invitedByUserId], references: [id])
-  invitees          User[]   @relation("InvitedByUser")
-  inviteCode        InviteCode?
-  inviteRedemptions InviteRedemption[]
-  waitlistReviews   Waitlist[] @relation("WaitlistReviewer")
-  swipesSent        Swipe[]         @relation("SwipesSent")
-  swipesReceived    Swipe[]         @relation("SwipesReceived")
-  matchesAsUser1    Match[]         @relation("MatchesAsUser1")
-  matchesAsUser2    Match[]         @relation("MatchesAsUser2")
-  isDiscoverable    Boolean         @default(false)
-  seekingTypes      String?         // JSON array: ["wedding", "portrait", "event", "commercial"]
-  budgetMin         Int?
-  budgetMax         Int?
+  id                  String             @id @default(cuid())
+  firstName           String
+  lastName            String
+  handle              String?            @unique
+  email               String             @unique
+  emailVerified       DateTime?
+  profilePic          String?
+  phone               String?
+  address             String?
+  city                String?
+  state               String?
+  zip                 String?
+  country             String?
+  accounts            Account[]
+  sessions            Session[]
+  subscription        Subscription?
+  photographer        Photographer?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  favorites           Favorite[]
+  reviews             Review[]
+  messages            Message[]
+  messageThreads      MessageThread[]
+  comments            Comment[]
+  stripeId            String?            @unique
+  commentLikes        CommentLike[]
+  eventLike           EventLike[]
+  bookingsApplied     Booking[]          @relation("BookingApplicant")
+  bookingsOwned       Booking[]          @relation("BookingOwner")
+  notifications       Notification[]
+  role                String             @default("standard")
+  invitedByUserId     String?
+  invitedBy           User?              @relation("InvitedByUser", fields: [invitedByUserId], references: [id])
+  invitees            User[]             @relation("InvitedByUser")
+  inviteCode          InviteCode?
+  inviteRedemptions   InviteRedemption[]
+  waitlistReviews     Waitlist[]         @relation("WaitlistReviewer")
+  swipesSent          Swipe[]            @relation("SwipesSent")
+  swipesReceived      Swipe[]            @relation("SwipesReceived")
+  matchesAsUser1      Match[]            @relation("MatchesAsUser1")
+  matchesAsUser2      Match[]            @relation("MatchesAsUser2")
+  isDiscoverable      Boolean            @default(false)
+  seekingTypes        String?            // JSON array: ["wedding", "portrait", "event", "commercial"]
+  budgetMin           Int?
+  budgetMax           Int?
+  publicKey           String?            // ECDH P-256 public key as JWK
+  encryptedPrivateKey String?            // AES-GCM wrapped private key (server holds KWK)
+  threadKeys          ThreadKey[]
 }
 
 model Event {

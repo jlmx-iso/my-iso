@@ -5,14 +5,23 @@ import { useScrollIntoView } from "@mantine/hooks";
 import { IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import ComposeMessage from "./ComposeMessage";
 import MessageListener from "./MessageListener";
 import MessageTile from "./MessageTile";
 
+import { useE2EE } from "~/app/_hooks/useE2EE";
 import ScrollButton from "~/app/_components/buttons/ScrollButton";
 import { api } from "~/trpc/react";
+
+type DecryptedMessage = {
+  content: string;
+  createdAt: Date;
+  id: string;
+  isAuthor: boolean;
+  senderId: string;
+};
 
 type MessageFeedProps = {
     threadId: string;
@@ -22,13 +31,44 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     const { scrollIntoView, targetRef, scrollableRef } = useScrollIntoView<HTMLDivElement>({
         offset: 60,
     });
-    const session = useSession()
+    const session = useSession();
     const userId = session.data?.user.id;
 
     const [isScrollButtonHidden, setIsScrollButtonHidden] = useState(true);
+    const [decryptedMessages, setDecryptedMessages] = useState<DecryptedMessage[]>([]);
 
     const { data } = api.message.getThreadById.useQuery({ threadId }, { enabled: !!userId });
     const messages = data?.messages ?? [];
+
+    const { decryptForThread, ready: e2eeReady } = useE2EE();
+
+    // Decrypt messages from tRPC query when they load or E2EE becomes ready
+    useEffect(() => {
+        if (!e2eeReady || !userId || messages.length === 0) return;
+
+        const encryptedThreadKey = data?.threadKeys?.[0]?.encryptedKey;
+
+        async function decryptAll() {
+            const results = await Promise.all(
+                messages.map(async (msg) => {
+                    const content = msg.isEncrypted
+                        ? await decryptForThread(threadId, msg.content, encryptedThreadKey)
+                        : msg.content;
+                    return {
+                        content,
+                        createdAt: msg.createdAt,
+                        id: msg.id,
+                        isAuthor: userId === msg.sender.id,
+                        senderId: msg.sender.id,
+                    };
+                }),
+            );
+            setDecryptedMessages(results);
+        }
+
+        void decryptAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [e2eeReady, messages, threadId, userId]);
 
     const hideScrollButton = () => setIsScrollButtonHidden(true);
     const showScrollButton = () => setIsScrollButtonHidden(false);
@@ -50,6 +90,17 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     if (!userId) {
         return null;
     }
+
+    // Use decrypted messages when E2EE is ready, fall back to raw content
+    const displayMessages: DecryptedMessage[] = e2eeReady
+        ? decryptedMessages
+        : messages.map((msg) => ({
+            content: msg.content,
+            createdAt: msg.createdAt,
+            id: msg.id,
+            isAuthor: userId === msg.sender.id,
+            senderId: msg.sender.id,
+          }));
 
     return (
         <Stack h="100%" w="100%" gap={0}>
@@ -83,17 +134,13 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                     py="sm"
                 >
                     <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} />
-                    {messages.map((message, index) => {
-                        const nextMessage = messages[index + 1];
-                        const isLastInGroup = !nextMessage || nextMessage.sender.id !== message.sender.id;
+                    {displayMessages.map((message, index) => {
+                        const nextMessage = displayMessages[index + 1];
+                        const isLastInGroup = !nextMessage || nextMessage.senderId !== message.senderId;
                         return (
                             <MessageTile
                                 key={message.id}
-                                message={{
-                                    ...message,
-                                    isAuthor: userId === message.sender.id,
-                                    senderId: message.sender.id
-                                }}
+                                message={message}
                                 showTimestamp={isLastInGroup}
                                 isLastInGroup={isLastInGroup}
                             />
@@ -113,5 +160,5 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                 <ComposeMessage threadId={threadId} />
             </Box>
         </Stack>
-    )
+    );
 }

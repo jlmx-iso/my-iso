@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import CredentialsProvider from "next-auth/providers/credentials";
 import ResendProvider from "next-auth/providers/resend";
 
 import { logger } from "~/_utils";
@@ -28,16 +29,144 @@ export const authConfig = {
     ...(env.RESEND_API_KEY
       ? [ResendProvider({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })]
       : []),
+    CredentialsProvider({
+      id: "otp",
+      name: "Email OTP",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        code: { label: "Code", type: "text" },
+      },
+      async authorize(credentials) {
+        const email = (credentials.email as string)?.toLowerCase();
+        const code = credentials.code as string;
+        if (!email || !code) return null;
+
+        const identifier = `otp:${email}`;
+        const record = await db.verificationToken.findUnique({
+          where: { identifier_token: { identifier, token: code } },
+        });
+
+        if (!record || record.expires < new Date()) {
+          if (record) {
+            await db.verificationToken.delete({
+              where: { identifier_token: { identifier, token: code } },
+            });
+          }
+          return null;
+        }
+
+        await db.verificationToken.delete({
+          where: { identifier_token: { identifier, token: code } },
+        });
+
+        let user = await db.user.findUnique({ where: { email } });
+
+        // For new sign-ups via invite code: create user and redeem invite
+        if (!user) {
+          const pending = await db.pendingInviteValidation.findFirst({
+            where: { email, expiresAt: { gt: new Date() } },
+          });
+          if (!pending) return null;
+
+          user = await db.user.create({
+            data: {
+              email,
+              firstName: "",
+              lastName: "",
+              role: USER_ROLES.FOUNDING_MEMBER,
+            },
+          });
+
+          // Generate invite code for the new user
+          const newCode = await generateUniqueInviteCode(
+            "USER",
+            async (c) => {
+              const exists = await db.inviteCode.findUnique({ where: { code: c } });
+              return exists !== null;
+            },
+          );
+
+          // Redeem the invite code (same logic as createUser event)
+          if (pending.code === WAITLIST_APPROVED_CODE) {
+            await db.$transaction([
+              db.inviteCode.create({
+                data: { code: newCode, creator: { connect: { id: user.id } } },
+              }),
+              db.pendingInviteValidation.delete({ where: { id: pending.id } }),
+            ]);
+          } else {
+            const inviteCode = await db.inviteCode.findUnique({
+              where: { code: pending.code },
+            });
+            if (inviteCode && inviteCode.currentRedemptions < inviteCode.maxRedemptions) {
+              await db.$transaction([
+                db.inviteCode.update({
+                  where: { id: inviteCode.id },
+                  data: { currentRedemptions: { increment: 1 } },
+                }),
+                db.inviteRedemption.create({
+                  data: {
+                    inviteCode: { connect: { id: inviteCode.id } },
+                    redeemedBy: { connect: { id: user.id } },
+                  },
+                }),
+                db.user.update({
+                  where: { id: user.id },
+                  data: { invitedByUserId: inviteCode.creatorId },
+                }),
+                db.inviteCode.create({
+                  data: { code: newCode, creator: { connect: { id: user.id } } },
+                }),
+                db.pendingInviteValidation.delete({ where: { id: pending.id } }),
+              ]);
+            } else {
+              await db.$transaction([
+                db.inviteCode.create({
+                  data: { code: newCode, creator: { connect: { id: user.id } } },
+                }),
+                db.pendingInviteValidation.delete({ where: { id: pending.id } }),
+              ]);
+            }
+          }
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profilePic: user.profilePic,
+        };
+      },
+    }),
   ],
   callbacks: {
-    jwt: async ({ account, user, token }) => {
+    jwt: async ({ account, user, token, trigger }) => {
       if (account) {
         token.accessToken = account.access_token;
       }
       if (user) {
-        token.name = user.firstName;
-        token.picture = user.profilePic;
         token.id = user.id;
+        token.firstName = user.firstName;
+        token.lastName = user.lastName;
+        token.profilePic = user.profilePic;
+        // Build display name: prefer firstName, fall back to Google name
+        token.name = user.firstName || user.name;
+        token.picture = user.profilePic ?? user.image;
+      }
+      // Refresh user data from DB on session update (e.g. after onboarding)
+      if (trigger === "update" && typeof token.id === "string") {
+        const freshUser = await db.user.findUnique({
+          where: { id: token.id },
+          select: { firstName: true, lastName: true, profilePic: true, name: true, image: true },
+        });
+        if (freshUser) {
+          token.firstName = freshUser.firstName;
+          token.lastName = freshUser.lastName;
+          token.profilePic = freshUser.profilePic;
+          token.name = freshUser.firstName || freshUser.name;
+          token.picture = freshUser.profilePic ?? freshUser.image;
+        }
       }
       return token;
     },
@@ -60,6 +189,13 @@ export const authConfig = {
         });
         throw new Error("Invalid session: missing user ID");
       }
+
+      // Map user profile fields from JWT to session
+      session.user.name = typeof token.name === "string" ? token.name : undefined;
+      session.user.firstName = typeof token.firstName === "string" ? token.firstName : "";
+      session.user.lastName = typeof token.lastName === "string" ? token.lastName : "";
+      session.user.profilePic = typeof token.profilePic === "string" ? token.profilePic : undefined;
+      session.user.image = typeof token.picture === "string" ? token.picture : undefined;
 
       return session;
     },
@@ -92,17 +228,17 @@ export const authConfig = {
         return true;
       }
 
-      // New users via Google OAuth: require PendingInviteValidation
-      if (account?.provider === "google") {
-        const pending = await db.pendingInviteValidation.findFirst({
-          where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
-        });
-        if (!pending) return "/join?error=invite_required";
-        return true;
+      // New users: require a PendingInviteValidation regardless of provider
+      const pending = await db.pendingInviteValidation.findFirst({
+        where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
+      });
+
+      if (!pending) {
+        // Google: redirect with a user-visible error; Resend: silently block
+        return account?.provider === "google" ? "/join?error=invite_required" : false;
       }
 
-      // Magic link: existing users only
-      return false;
+      return true;
     },
   },
   events: {

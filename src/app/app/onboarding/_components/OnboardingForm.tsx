@@ -24,6 +24,7 @@ import { OnboardingComplete } from "./OnboardingComplete";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
+import { useSession } from "next-auth/react";
 import { isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
@@ -72,6 +73,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const cropSrcFileRef = useRef<FileWithPath | null>(null);
 
+  const { update: updateSession } = useSession();
   const updateProfile = api.user.updateProfile.useMutation();
   const createPhotographer = api.photographer.create.useMutation();
   const uploadAvatar = api.photographer.uploadProfileImage.useMutation();
@@ -84,11 +86,16 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const error =
     updateProfile.error ?? createPhotographer.error ?? uploadAvatar.error;
 
+  // Name fields are editable when not pre-filled (e.g. email OTP sign-up)
+  const nameEditable = !user.firstName && !user.lastName;
+
   const form = useForm({
     initialValues: {
       companyName: "",
+      firstName: user.firstName,
       handle: user.handle ?? "",
       instagram: "",
+      lastName: user.lastName,
       location: "",
       phoneNumber: user.phone ?? "",
       website: "",
@@ -96,8 +103,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     validate: {
       companyName: (value: string) =>
         value.length > 0 ? null : "Business name is required",
+      firstName: (value: string) =>
+        nameEditable && !value.trim() ? "First name is required" : null,
       instagram: (value: string) =>
         !value || isValidInstagramHandle(value) ? null : "Enter a valid Instagram handle (e.g. yourhandle)",
+      lastName: (value: string) =>
+        nameEditable && !value.trim() ? "Last name is required" : null,
       location: (value: string) =>
         value.length > 0 ? null : "Location is required",
       phoneNumber: (value: string) =>
@@ -181,7 +192,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
     const stepFields: Record<number, string[]> = {
-      0: ["location", "phoneNumber"],
+      0: [...(nameEditable ? ["firstName", "lastName"] : []), "location", "phoneNumber"],
       1: ["companyName", "instagram", "website"],
     };
     const fields = stepFields[profileStep] ?? [];
@@ -205,8 +216,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
 
     const values = form.values;
 
+    const firstName = nameEditable ? values.firstName : user.firstName;
+    const lastName = nameEditable ? values.lastName : user.lastName;
+
     try {
       await updateProfile.mutateAsync({
+        ...(nameEditable ? { firstName, lastName } : {}),
         handle: values.handle || undefined,
         phone: normalizePhone(values.phoneNumber),
       });
@@ -221,7 +236,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
         facebook: null,
         instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : null,
         location: values.location,
-        name: `${user.firstName} ${user.lastName}`,
+        name: `${firstName} ${lastName}`,
         tiktok: null,
         twitter: null,
         vimeo: null,
@@ -277,6 +292,8 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       });
     }
 
+    // Refresh session so navbar shows updated name/avatar
+    await updateSession();
     setStage("plan");
   };
 
@@ -344,16 +361,35 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
             <Stepper.Step label="The basics" description="Who you are">
               <Stack gap="sm" mt="md">
                 <Group grow>
-                  <TextInput
-                    label="First Name"
-                    value={user.firstName}
-                    disabled
-                  />
-                  <TextInput
-                    label="Last Name"
-                    value={user.lastName}
-                    disabled
-                  />
+                  {nameEditable ? (
+                    <>
+                      <TextInput
+                        label="First Name"
+                        placeholder="First name"
+                        required
+                        {...form.getInputProps("firstName")}
+                      />
+                      <TextInput
+                        label="Last Name"
+                        placeholder="Last name"
+                        required
+                        {...form.getInputProps("lastName")}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <TextInput
+                        label="First Name"
+                        value={user.firstName}
+                        disabled
+                      />
+                      <TextInput
+                        label="Last Name"
+                        value={user.lastName}
+                        disabled
+                      />
+                    </>
+                  )}
                 </Group>
                 <TextInput label="Email" value={user.email} disabled />
                 <TextInput
@@ -365,7 +401,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                 <Stack gap={4}>
                   <TextInput
                     label="Username"
-                    placeholder="@yourhandle (optional)"
+                    placeholder="yourhandle (optional)"
                     leftSection={<Text size="sm" c="dimmed">@</Text>}
                     {...form.getInputProps("handle")}
                   />

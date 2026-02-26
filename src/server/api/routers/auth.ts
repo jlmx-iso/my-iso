@@ -208,16 +208,6 @@ export const authRouter = createTRPCRouter({
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
       }
 
-      const user = await ctx.db.user.findUnique({
-        where: { email: normalizedEmail },
-        select: { id: true },
-      });
-
-      // Silently succeed if no account — avoids email enumeration
-      if (!user) {
-        return { sent: true, devCode: undefined };
-      }
-
       // Delete any existing OTP tokens for this email to avoid stale codes
       await ctx.db.verificationToken.deleteMany({
         where: { identifier: `otp:${normalizedEmail}` },

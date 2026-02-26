@@ -1,45 +1,53 @@
 "use client";
-import { type Message } from "@prisma/client";
-import { useCallback, useEffect, useState } from "react";
 
-import { messageSub } from "../_utils";
+import { useCallback } from "react";
+
+import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
+
 import MessageTile from "./MessageTile";
 
 type MessageListenerProps = {
   threadId: string;
   userId: string;
   newMessageCb?: () => void;
+  decryptMessage?: (msg: WsMessage) => Promise<string> | string;
 };
 
-export default function MessageListener({ threadId, userId, newMessageCb }: MessageListenerProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  const onNewMessage = useCallback(() => {
+export default function MessageListener({
+  threadId,
+  userId,
+  newMessageCb,
+  decryptMessage,
+}: MessageListenerProps) {
+  const onMessage = useCallback(() => {
     newMessageCb?.();
   }, [newMessageCb]);
 
-  useEffect(() => {
-    const channel = messageSub({
-      cb: (payload: { new: Message }) => {
-        setMessages((prev) => [...prev, payload.new]);
-        onNewMessage();
-      },
-      threadId,
-    });
-
-    return () => {
-      void channel.unsubscribe();
-    };
-  }, [threadId, onNewMessage]);
+  const { messages } = useMessageWebSocket({ threadId, onMessage });
 
   return (
     <div>
-      {messages.map((message) => (
-        <MessageTile
-          key={message.id}
-          message={{ ...message, isAuthor: userId === message.senderId }}
-        />
-      ))}
+      {messages.map((msg) => {
+        // For encrypted messages, content is decrypted by the parent via decryptMessage.
+        // Until decryption resolves we show the raw ciphertext (or a placeholder).
+        // Actual async decryption is wired in MessageFeed which reads the resolved values.
+        const content = !msg.isEncrypted || !decryptMessage
+          ? msg.content
+          : msg.content; // Parent (MessageFeed) handles decryption via useE2EE
+
+        return (
+          <MessageTile
+            key={msg.id}
+            message={{
+              id: msg.id,
+              content,
+              senderId: msg.senderId,
+              createdAt: new Date(msg.createdAt),
+              isAuthor: userId === msg.senderId,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

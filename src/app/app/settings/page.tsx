@@ -216,25 +216,6 @@ export default async function SettingsPage() {
           </SimpleGrid>
         </Stack>
 
-        {/* Pro Features Detail */}
-        <Stack gap="md">
-          <Title order={3}>Pro Features</Title>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
-            {PRO_FEATURES.map((feature) => (
-              <Paper key={feature.title} withBorder p="lg" radius="md">
-                <Stack gap="sm">
-                  <ThemeIcon size={40} radius="md" variant="light" color="orange">
-                    <feature.icon size={20} />
-                  </ThemeIcon>
-                  <Text fw={500}>{feature.title}</Text>
-                  <Text size="sm" c="dimmed">
-                    {feature.description}
-                  </Text>
-                </Stack>
-              </Paper>
-            ))}
-          </SimpleGrid>
-        </Stack>
       </Stack>
     </Container>
   );

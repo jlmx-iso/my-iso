@@ -5,13 +5,16 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 import { logger } from "~/_utils";
 import { captureEvent } from "~/server/_lib/posthog";
+import type { CloudflareEnv } from "../../../../cloudflare-env";
 
 
 export const messageRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({
       content: z.string().min(1).max(5000),
+      isEncrypted: z.boolean().optional().default(false),
       platform: z.enum(['ios', 'web']).optional().default('web'),
+      preview: z.string().max(80).optional(),
       threadId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -30,6 +33,8 @@ export const messageRouter = createTRPCRouter({
         const message = await ctx.db.message.create({
           data: {
             content: input.content,
+            isEncrypted: input.isEncrypted,
+            preview: input.preview,
             sender: {
               connect: {
                 id: ctx.session.user.id,
@@ -42,6 +47,28 @@ export const messageRouter = createTRPCRouter({
             }
           },
         });
+
+        // Broadcast to Durable Object ChatRoom for real-time delivery
+        try {
+          const cfCtx = (globalThis as Record<symbol, unknown>)[Symbol.for("__cloudflare-context__")] as { env?: CloudflareEnv } | undefined;
+          const chatRoomNs = cfCtx?.env?.CHAT_ROOM;
+          if (chatRoomNs) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+            const stub = chatRoomNs.get(chatRoomNs.idFromName(input.threadId)) as any;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            void stub.broadcast(JSON.stringify({
+              content: message.content,
+              createdAt: message.createdAt.toISOString(),
+              id: message.id,
+              isEncrypted: message.isEncrypted,
+              preview: message.preview ?? undefined,
+              senderId: message.senderId,
+            }));
+          }
+        } catch (broadcastErr) {
+          // Non-fatal: WS broadcast failure does not fail the mutation
+          logger.error("Failed to broadcast message to ChatRoom DO", { error: broadcastErr });
+        }
 
         void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform, thread_id: input.threadId });
 
@@ -58,8 +85,14 @@ export const messageRouter = createTRPCRouter({
   createThread: protectedProcedure
     .input(z.object({
       initialMessage: z.string().min(1).max(5000),
+      isEncrypted: z.boolean().optional().default(false),
       participants: z.array(z.string().min(1)),
       platform: z.enum(['ios', 'web']).optional().default('web'),
+      preview: z.string().max(80).optional(),
+      threadKeys: z.array(z.object({
+        encryptedKey: z.string(),
+        userId: z.string(),
+      })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const allParticipants = [...input.participants, ctx.session.user.id];
@@ -75,10 +108,21 @@ export const messageRouter = createTRPCRouter({
           await tx.message.create({
             data: {
               content: input.initialMessage,
+              isEncrypted: input.isEncrypted,
+              preview: input.preview,
               sender: { connect: { id: ctx.session.user.id } },
               thread: { connect: { id: newThread.id } },
             },
           });
+          if (input.threadKeys?.length) {
+            await tx.threadKey.createMany({
+              data: input.threadKeys.map(({ encryptedKey, userId }) => ({
+                encryptedKey,
+                threadId: newThread.id,
+                userId,
+              })),
+            });
+          }
           return newThread;
         });
 
@@ -159,6 +203,8 @@ export const messageRouter = createTRPCRouter({
             content: true,
             createdAt: true,
             id: true,
+            isEncrypted: true,
+            preview: true,
             sender: {
               select: {
                 firstName: true,
@@ -247,6 +293,26 @@ export const messageRouter = createTRPCRouter({
       };
     }),
 
+  getRecipientById: protectedProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.user.findUnique({
+        select: {
+          firstName: true,
+          id: true,
+          lastName: true,
+          photographer: {
+            select: {
+              companyName: true,
+              id: true,
+            }
+          },
+          profilePic: true
+        },
+        where: { id: input.userId },
+      });
+    }),
+
   getThreadById: protectedProcedure
     .input(z.object({
       startAt: z.number().min(0).default(0),
@@ -270,6 +336,7 @@ export const messageRouter = createTRPCRouter({
                 content: true,
                 createdAt: true,
                 id: true,
+                isEncrypted: true,
                 sender: {
                   select: {
                     firstName: true,
@@ -283,6 +350,15 @@ export const messageRouter = createTRPCRouter({
               take: 20,
               where: {
                 isDeleted: false,
+              },
+            },
+            threadKeys: {
+              select: {
+                encryptedKey: true,
+                userId: true,
+              },
+              where: {
+                userId: ctx.session.user.id,
               },
             },
             participants: {

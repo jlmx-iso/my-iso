@@ -14,12 +14,12 @@ type UserBadgeProps = {
 
 export default function UserBadge({ user: { userId, name, avatar } }: UserBadgeProps) {
     return (
-        <Anchor c="dark" href={`/app/photographer/${userId}`} w="fit-content">
+        <Anchor c="dark" href={`/app/photographer/${userId}`} w="fit-content" underline="never">
             <HoverCard>
                 <HoverCard.Target>
-                    <Group mb="lg" align="flex-start" justify="flex-start">
-                        <Avatar src={avatar} alt={name} size="lg" />
-                        <Title fw="bold" order={4} td={"underlined"}>{name}</Title>
+                    <Group gap="sm" align="center">
+                        <Avatar src={avatar} alt={name} name={name} size="md" />
+                        <Title fw={600} order={5}>{name}</Title>
                     </Group>
                 </HoverCard.Target>
                 {/* TODO: Add profile card on hover */}
