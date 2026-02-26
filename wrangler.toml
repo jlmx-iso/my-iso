@@ -33,6 +33,14 @@ name = "my-iso-staging"
 [env.staging.vars]
 NODE_ENV = "production"
 
+[[env.staging.durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom"]
+
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "my-iso-db-staging"
