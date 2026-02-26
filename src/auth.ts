@@ -158,14 +158,14 @@ export const authConfig = {
       if (trigger === "update" && typeof token.id === "string") {
         const freshUser = await db.user.findUnique({
           where: { id: token.id },
-          select: { firstName: true, lastName: true, profilePic: true, name: true, image: true },
+          select: { firstName: true, lastName: true, profilePic: true },
         });
         if (freshUser) {
           token.firstName = freshUser.firstName;
           token.lastName = freshUser.lastName;
           token.profilePic = freshUser.profilePic;
-          token.name = freshUser.firstName || freshUser.name;
-          token.picture = freshUser.profilePic ?? freshUser.image;
+          token.name = freshUser.firstName;
+          token.picture = freshUser.profilePic;
         }
       }
       return token;

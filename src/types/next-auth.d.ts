@@ -10,7 +10,7 @@ declare module "next-auth" {
   interface User {
     firstName: string;
     lastName: string;
-    profilePic?: string;
+    profilePic?: string | null;
   }
 
   interface Session {
