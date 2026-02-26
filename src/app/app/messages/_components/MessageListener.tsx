@@ -31,7 +31,7 @@ export default function MessageListener({
     newMessageCb?.();
   }, [newMessageCb]);
 
-  const { messages } = useMessageWebSocket({ threadId, onMessage });
+  const { messages } = useMessageWebSocket({ onMessage, threadId });
   const [decrypted, setDecrypted] = useState<DecryptedWsMessage[]>([]);
   const decryptedIdsRef = useRef(new Set<string>());
 
@@ -49,11 +49,11 @@ export default function MessageListener({
             ? await decryptMessage(threadId, msg.content)
             : msg.content;
           return {
-            id: msg.id,
             content,
-            senderId: msg.senderId,
             createdAt: new Date(msg.createdAt),
+            id: msg.id,
             isAuthor: userId === msg.senderId,
+            senderId: msg.senderId,
           };
         }),
       );
