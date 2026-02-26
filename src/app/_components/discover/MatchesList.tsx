@@ -56,7 +56,8 @@ export default function MatchesList() {
       {matches.map((match) => {
         const other = match.otherUser;
         const photo = other.photographer;
-        const displayName = photo?.companyName ?? (`${other.firstName || ""} ${other.lastName || ""}`.trim() || "User");
+        const normalizedCompanyName = photo?.companyName?.trim();
+        const displayName = normalizedCompanyName || (`${other.firstName || ""} ${other.lastName || ""}`.trim() || "User");
         const avatar = photo?.avatar ?? other.profilePic;
         const timeLeft = formatTimeLeft(match.expiresAt);
 

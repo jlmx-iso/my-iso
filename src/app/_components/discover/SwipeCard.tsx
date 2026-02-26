@@ -70,7 +70,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
 
   const photo = user.photographer;
   const avatar = photo?.avatar ?? user.profilePic;
-  const displayName = photo?.companyName ?? (`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User");
+  const normalizedCompanyName = photo?.companyName?.trim();
+  const displayName = normalizedCompanyName || (`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User");
   const location = photo?.location ?? [user.city, user.state].filter(Boolean).join(", ");
 
   const hasPortfolio = photo?.portfolioImages && photo.portfolioImages.length > 0;
@@ -102,12 +103,12 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
       <Box
         p="lg"
         style={{
-          borderRadius: "var(--mantine-radius-lg)",
-          border: "1px solid var(--mantine-color-gray-2)",
           background: "var(--mantine-color-body)",
+          border: "1px solid var(--mantine-color-gray-2)",
+          borderRadius: "var(--mantine-radius-lg)",
+          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.08)",
           overflow: "hidden",
           position: "relative",
-          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.08)",
           transform: isTop ? undefined : "scale(0.93) translateY(20px)",
         }}
       >

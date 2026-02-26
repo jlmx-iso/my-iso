@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
-
 import MessageTile from "./MessageTile";
+
+import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
 
 type DecryptedWsMessage = {
   id: string;

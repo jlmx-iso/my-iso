@@ -1,18 +1,27 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { env } from "~/env";
 import { logger } from "~/_utils";
+import { env } from "~/env";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-// Validate that the JWK is an EC P-256 key with required fields
-const EC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
+const EC_PUBLIC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
   (v) =>
     v.kty === "EC" &&
     v.crv === "P-256" &&
     typeof v.x === "string" &&
     typeof v.y === "string",
-  { message: "JWK must be an EC P-256 key with x and y coordinates" },
+  { message: "JWK must be an EC P-256 public key with x and y coordinates" },
+);
+
+const EC_PRIVATE_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
+  (v) =>
+    v.kty === "EC" &&
+    v.crv === "P-256" &&
+    typeof v.x === "string" &&
+    typeof v.y === "string" &&
+    typeof v.d === "string",
+  { message: "JWK must be an EC P-256 private key with x, y, and d" },
 );
 
 // ---------------------------------------------------------------------------
@@ -63,16 +72,23 @@ async function encryptPrivateKey(userId: string, privateKeyJwk: Record<string, u
 
 async function decryptPrivateKey(userId: string, stored: string): Promise<JsonWebKey> {
   const bytes = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  // Legacy format (no salt prefix): total = 12-byte IV + ciphertext
-  // New format: 32-byte salt + 12-byte IV + ciphertext
-  const hasPerUserSalt = bytes.length > SALT_LENGTH + 12;
-  const salt = hasPerUserSalt ? bytes.slice(0, SALT_LENGTH) : new Uint8Array(SALT_LENGTH);
-  const rest = hasPerUserSalt ? bytes.slice(SALT_LENGTH) : bytes;
-  const iv = rest.slice(0, 12);
-  const ciphertext = rest.slice(12);
-  const kwk = await deriveKwk(userId, salt);
-  const plain = await crypto.subtle.decrypt({ iv, name: "AES-GCM" }, kwk, ciphertext);
-  return JSON.parse(new TextDecoder().decode(plain)) as JsonWebKey;
+
+  // Try new format first: 32-byte salt + 12-byte IV + ciphertext
+  try {
+    const salt = bytes.slice(0, SALT_LENGTH);
+    const iv = bytes.slice(SALT_LENGTH, SALT_LENGTH + 12);
+    const ciphertext = bytes.slice(SALT_LENGTH + 12);
+    const kwk = await deriveKwk(userId, salt);
+    const plain = await crypto.subtle.decrypt({ iv, name: "AES-GCM" }, kwk, ciphertext);
+    return JSON.parse(new TextDecoder().decode(plain)) as JsonWebKey;
+  } catch {
+    // Fall back to legacy format: 12-byte IV + ciphertext (zero salt)
+    const iv = bytes.slice(0, 12);
+    const ciphertext = bytes.slice(12);
+    const kwk = await deriveKwk(userId, new Uint8Array(SALT_LENGTH));
+    const plain = await crypto.subtle.decrypt({ iv, name: "AES-GCM" }, kwk, ciphertext);
+    return JSON.parse(new TextDecoder().decode(plain)) as JsonWebKey;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +128,8 @@ export const keysRouter = createTRPCRouter({
   /** Store public key + server-wrapped private key for backup. Refuses overwrite if keys already exist. */
   setup: protectedProcedure
     .input(z.object({
-      privateKeyJwk: EC_JWK_SCHEMA,
-      publicKeyJwk: EC_JWK_SCHEMA,
+      privateKeyJwk: EC_PRIVATE_JWK_SCHEMA,
+      publicKeyJwk: EC_PUBLIC_JWK_SCHEMA,
     }))
     .mutation(async ({ ctx, input }) => {
       try {

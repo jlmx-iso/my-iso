@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   decryptMessage,
@@ -127,7 +127,9 @@ export function useE2EE() {
     if (!threadKey && !threadId.startsWith("pending-")) {
       try {
         const threadData = await apiUtilsRef.current.client.message.getThreadById.query({ threadId });
-        const encryptedThreadKey = threadData?.threadKeys?.[0]?.encryptedKey;
+        const encryptedThreadKey = threadData?.threadKeys?.find(
+          (k: { userId: string }) => k.userId === sessionUserId,
+        )?.encryptedKey;
         if (encryptedThreadKey) {
           threadKey = await decryptThreadKey(encryptedThreadKey, privateKey);
           await storeThreadKey(threadId, threadKey);
@@ -167,8 +169,12 @@ export function useE2EE() {
 
     let threadKey = await getThreadKey(threadId);
     if (!threadKey && encryptedThreadKey && privateKey) {
-      threadKey = await decryptThreadKey(encryptedThreadKey, privateKey);
-      await storeThreadKey(threadId, threadKey);
+      try {
+        threadKey = await decryptThreadKey(encryptedThreadKey, privateKey);
+        await storeThreadKey(threadId, threadKey);
+      } catch {
+        return "[decryption failed]";
+      }
     }
     if (!threadKey) {
       return "[encrypted]";
