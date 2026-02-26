@@ -321,7 +321,7 @@ export const ProfilePage = async ({
                     <PortfolioImageCard
                       key={image.id}
                       {...image}
-                      isOwner={false}
+                      isOwner={isSelf}
                     />
                   ))}
                 </Box>
@@ -337,7 +337,7 @@ export const ProfilePage = async ({
                     <PortfolioImageCard
                       key={image.id}
                       {...image}
-                      isOwner={false}
+                      isOwner={isSelf}
                     />
                   ))}
                 </Box>

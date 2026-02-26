@@ -1,6 +1,5 @@
 import { Button, Container, Stack, Text, Title } from "@mantine/core";
 import { IconUserOff } from "@tabler/icons-react";
-import Link from "next/link";
 
 import { ProfilePage } from "~/app/_components/profiles/ProfilePage";
 import { api } from "~/trpc/server";
@@ -16,7 +15,7 @@ export default async function Page({ params }: { params: Promise<{ userId: strin
           <IconUserOff size={64} color="var(--mantine-color-gray-4)" />
           <Title order={2}>Photographer not found</Title>
           <Text c="dimmed">This profile doesn&apos;t exist or may have been removed.</Text>
-          <Button component={Link} href="/app/discover" variant="light">
+          <Button component="a" href="/app/discover" variant="light">
             Browse Photographers
           </Button>
         </Stack>

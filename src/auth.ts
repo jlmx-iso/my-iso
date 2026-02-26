@@ -4,6 +4,7 @@ import type { Adapter } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import ResendProvider from "next-auth/providers/resend";
+import type { PendingInviteValidation } from "@prisma/client";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
@@ -13,6 +14,76 @@ import { db } from "~/server/db";
 import { checkIfUserExists } from "~/server/_utils/auth/auth";
 import { generateUniqueInviteCode } from "~/server/_utils/invite";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
+
+/**
+ * Shared invite redemption logic used by both the OTP credential provider
+ * and the createUser event (Google OAuth).
+ */
+async function redeemInviteAndSetupUser(
+  database: typeof db,
+  userId: string,
+  pending: PendingInviteValidation,
+  firstName: string,
+): Promise<void> {
+  const newCode = await generateUniqueInviteCode(
+    firstName || "USER",
+    async (c) => {
+      const exists = await database.inviteCode.findUnique({ where: { code: c } });
+      return exists !== null;
+    },
+  );
+
+  if (pending.code === WAITLIST_APPROVED_CODE) {
+    await database.$transaction([
+      database.user.update({
+        where: { id: userId },
+        data: { role: USER_ROLES.FOUNDING_MEMBER },
+      }),
+      database.inviteCode.create({
+        data: { code: newCode, creator: { connect: { id: userId } } },
+      }),
+      database.pendingInviteValidation.delete({ where: { id: pending.id } }),
+    ]);
+    return;
+  }
+
+  await database.$transaction(async (tx) => {
+    const inviteCode = await tx.inviteCode.findUnique({
+      where: { code: pending.code },
+    });
+
+    if (!inviteCode || inviteCode.currentRedemptions >= inviteCode.maxRedemptions) {
+      if (!inviteCode) {
+        logger.warn("Invite code no longer exists during redemption", { code: pending.code, userId });
+      } else {
+        logger.warn("Invite code at capacity during redemption", { code: pending.code, userId });
+      }
+      await tx.user.update({ where: { id: userId }, data: { role: USER_ROLES.FOUNDING_MEMBER } });
+      await tx.inviteCode.create({ data: { code: newCode, creator: { connect: { id: userId } } } });
+      await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
+      return;
+    }
+
+    await tx.inviteCode.update({
+      where: { id: inviteCode.id },
+      data: { currentRedemptions: { increment: 1 } },
+    });
+    await tx.inviteRedemption.create({
+      data: {
+        inviteCode: { connect: { id: inviteCode.id } },
+        redeemedBy: { connect: { id: userId } },
+      },
+    });
+    await tx.user.update({
+      where: { id: userId },
+      data: { role: USER_ROLES.FOUNDING_MEMBER, invitedByUserId: inviteCode.creatorId },
+    });
+    await tx.inviteCode.create({
+      data: { code: newCode, creator: { connect: { id: userId } } },
+    });
+    await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
+  });
+}
 
 /**
  * Auth.js v5 configuration
@@ -71,63 +142,14 @@ export const authConfig = {
           user = await db.user.create({
             data: {
               email,
+              emailVerified: new Date(),
               firstName: "",
               lastName: "",
               role: USER_ROLES.FOUNDING_MEMBER,
             },
           });
 
-          // Generate invite code for the new user
-          const newCode = await generateUniqueInviteCode(
-            "USER",
-            async (c) => {
-              const exists = await db.inviteCode.findUnique({ where: { code: c } });
-              return exists !== null;
-            },
-          );
-
-          // Redeem the invite code (same logic as createUser event)
-          if (pending.code === WAITLIST_APPROVED_CODE) {
-            await db.$transaction([
-              db.inviteCode.create({
-                data: { code: newCode, creator: { connect: { id: user.id } } },
-              }),
-              db.pendingInviteValidation.delete({ where: { id: pending.id } }),
-            ]);
-          } else {
-            const inviteCode = await db.inviteCode.findUnique({
-              where: { code: pending.code },
-            });
-            if (inviteCode && inviteCode.currentRedemptions < inviteCode.maxRedemptions) {
-              await db.$transaction([
-                db.inviteCode.update({
-                  where: { id: inviteCode.id },
-                  data: { currentRedemptions: { increment: 1 } },
-                }),
-                db.inviteRedemption.create({
-                  data: {
-                    inviteCode: { connect: { id: inviteCode.id } },
-                    redeemedBy: { connect: { id: user.id } },
-                  },
-                }),
-                db.user.update({
-                  where: { id: user.id },
-                  data: { invitedByUserId: inviteCode.creatorId },
-                }),
-                db.inviteCode.create({
-                  data: { code: newCode, creator: { connect: { id: user.id } } },
-                }),
-                db.pendingInviteValidation.delete({ where: { id: pending.id } }),
-              ]);
-            } else {
-              await db.$transaction([
-                db.inviteCode.create({
-                  data: { code: newCode, creator: { connect: { id: user.id } } },
-                }),
-                db.pendingInviteValidation.delete({ where: { id: pending.id } }),
-              ]);
-            }
-          }
+          await redeemInviteAndSetupUser(db, user.id, pending, "USER");
         }
 
         return {
@@ -150,8 +172,9 @@ export const authConfig = {
         token.firstName = user.firstName;
         token.lastName = user.lastName;
         token.profilePic = user.profilePic;
-        // Build display name: prefer firstName, fall back to Google name
-        token.name = user.firstName || user.name;
+        // Build display name: prefer firstName+lastName, fall back to Google name
+        const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+        token.name = fullName || user.name;
         token.picture = user.profilePic ?? user.image;
       }
       // Refresh user data from DB on session update or if token is missing profile fields
@@ -166,7 +189,8 @@ export const authConfig = {
           token.firstName = freshUser.firstName;
           token.lastName = freshUser.lastName;
           token.profilePic = freshUser.profilePic;
-          token.name = freshUser.firstName;
+          const refreshedName = `${freshUser.firstName ?? ""} ${freshUser.lastName ?? ""}`.trim();
+          token.name = refreshedName || token.name;
           token.picture = freshUser.profilePic;
         }
       }
@@ -259,97 +283,14 @@ export const authConfig = {
 
       if (!pending) return;
 
-      // Generate a unique invite code for the new user.
       // PrismaAdapter maps Google's `given_name` → firstName, but fall back to
       // parsing the full `name` (which Google always provides) if firstName is empty.
       let firstName = (user as { firstName?: string }).firstName;
       if (!firstName && user.name) {
         firstName = user.name.split(" ")[0];
       }
-      firstName = firstName ?? "USER";
-      const newCode = await generateUniqueInviteCode(
-        firstName,
-        async (code) => {
-          const exists = await db.inviteCode.findUnique({ where: { code } });
-          return exists !== null;
-        },
-      );
 
-      // Waitlist-approved users: skip invite code redemption, just set role + create code
-      if (pending.code === WAITLIST_APPROVED_CODE) {
-        await db.$transaction([
-          db.user.update({
-            where: { id: user.id },
-            data: { role: USER_ROLES.FOUNDING_MEMBER },
-          }),
-          db.inviteCode.create({
-            data: { code: newCode, creator: { connect: { id: user.id } } },
-          }),
-          db.pendingInviteValidation.delete({ where: { id: pending.id } }),
-        ]);
-        return;
-      }
-
-      // Normal invite flow: redeem the invite code atomically
-      // Use interactive transaction to prevent race condition (C1)
-      await db.$transaction(async (tx) => {
-        const inviteCode = await tx.inviteCode.findUnique({
-          where: { code: pending.code },
-        });
-
-        if (!inviteCode) {
-          // Code no longer exists — still allow user creation, just skip redemption
-          await tx.user.update({
-            where: { id: user.id },
-            data: { role: USER_ROLES.FOUNDING_MEMBER },
-          });
-          await tx.inviteCode.create({
-            data: { code: newCode, creator: { connect: { id: user.id } } },
-          });
-          await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
-          return;
-        }
-
-        // Check capacity inside the transaction (prevents over-redemption)
-        if (inviteCode.currentRedemptions >= inviteCode.maxRedemptions) {
-          logger.warn("Invite code at capacity during createUser", {
-            code: pending.code,
-            userId: user.id,
-          });
-          // Still allow user creation, just skip redemption
-          await tx.user.update({
-            where: { id: user.id },
-            data: { role: USER_ROLES.FOUNDING_MEMBER },
-          });
-          await tx.inviteCode.create({
-            data: { code: newCode, creator: { connect: { id: user.id } } },
-          });
-          await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
-          return;
-        }
-
-        await tx.inviteCode.update({
-          where: { id: inviteCode.id },
-          data: { currentRedemptions: { increment: 1 } },
-        });
-        await tx.inviteRedemption.create({
-          data: {
-            inviteCode: { connect: { id: inviteCode.id } },
-            redeemedBy: { connect: { id: user.id } },
-          },
-        });
-        await tx.user.update({
-          where: { id: user.id },
-          data: {
-            role: USER_ROLES.FOUNDING_MEMBER,
-            invitedByUserId: inviteCode.creatorId,
-          },
-        });
-        await tx.inviteCode.create({
-          data: { code: newCode, creator: { connect: { id: user.id } } },
-        });
-        await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
-      });
+      await redeemInviteAndSetupUser(db, user.id, pending, firstName ?? "USER");
     },
   },
   session: sessionConfig,

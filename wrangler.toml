@@ -12,7 +12,7 @@ class_name = "ChatRoom"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["ChatRoom"]
+new_classes = ["ChatRoom"]
 
 # D1 Database binding
 [[d1_databases]]
@@ -39,7 +39,7 @@ class_name = "ChatRoom"
 
 [[env.staging.migrations]]
 tag = "v1"
-new_sqlite_classes = ["ChatRoom"]
+new_classes = ["ChatRoom"]
 
 [[env.staging.d1_databases]]
 binding = "DB"

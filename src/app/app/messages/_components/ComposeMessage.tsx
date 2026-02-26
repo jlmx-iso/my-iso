@@ -8,6 +8,7 @@ import { useCallback } from "react";
 
 import { type Recipient } from "./NewMessageModal";
 
+import { storeThreadKey } from "~/_utils/keystore";
 import { useE2EE } from "~/app/_hooks/useE2EE";
 import { api } from "~/trpc/react";
 
@@ -22,8 +23,17 @@ export default function ComposeMessage(props: ComposeMessageProps) {
   const { encryptForThread, ready: e2eeReady } = useE2EE();
 
   const createMessageThreadMutation = api.message.createThread.useMutation({
-    onSuccess: () => {
+    onSuccess: async (newThread) => {
       void utils.message.getThreadsByUserId.invalidate();
+      // Remap the thread key from the temporary placeholder to the real thread ID
+      if ("recipient" in props && newThread?.id) {
+        const { getThreadKey } = await import("~/_utils/keystore");
+        const tempThreadId = `pending-${props.recipient.id}`;
+        const threadKey = await getThreadKey(tempThreadId);
+        if (threadKey) {
+          await storeThreadKey(newThread.id, threadKey);
+        }
+      }
     },
   });
   const createMessageMutation = api.message.create.useMutation({
@@ -54,35 +64,34 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     }
   });
 
+  const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
+
   const handleSubmit = useCallback(async () => {
+    if (isPending) return;
     if (form.validate().hasErrors) return;
     const plaintext = form.values.text.trim();
     if (!plaintext) return;
 
     if ("threadId" in props) {
       if (e2eeReady) {
-        // Thread key already exists in IDB — just encrypt and send
         try {
-          const { ciphertext, preview } = await encryptForThread(props.threadId, plaintext, []);
+          const { ciphertext } = await encryptForThread(props.threadId, plaintext, []);
           createMessageMutation.mutate({
             content: ciphertext,
             isEncrypted: true,
-            preview,
             threadId: props.threadId,
           });
         } catch {
-          // Fall back to plaintext if encryption fails
-          createMessageMutation.mutate({ content: plaintext, threadId: props.threadId });
+          form.setFieldError("text", "Encryption failed. Message was not sent.");
+          return;
         }
       } else {
         createMessageMutation.mutate({ content: plaintext, threadId: props.threadId });
       }
     } else {
       if (e2eeReady) {
-        // New thread — fetch recipient public key and wrap thread key for all participants
         try {
           const recipientJwk = await getUserPublicKey(props.recipient.id);
-          // We'll also wrap for self — getCurrentUserId + getUserPublicKey
           const selfIdResult = await utils.client.keys.getCurrentUserId.query();
           const selfJwk = selfIdResult ? await getUserPublicKey(selfIdResult) : null;
 
@@ -90,9 +99,8 @@ export default function ComposeMessage(props: ComposeMessageProps) {
           if (recipientJwk) recipients.push({ jwk: recipientJwk, userId: props.recipient.id });
           if (selfJwk && selfIdResult) recipients.push({ jwk: selfJwk, userId: selfIdResult });
 
-          // Use a temporary placeholder threadId for key generation (server assigns real one)
           const tempThreadId = `pending-${props.recipient.id}`;
-          const { ciphertext, preview, threadKeys } = await encryptForThread(
+          const { ciphertext, threadKeys } = await encryptForThread(
             tempThreadId,
             plaintext,
             recipients,
@@ -102,14 +110,11 @@ export default function ComposeMessage(props: ComposeMessageProps) {
             initialMessage: ciphertext,
             isEncrypted: true,
             participants: [props.recipient.id],
-            preview,
             threadKeys,
           });
         } catch {
-          createMessageThreadMutation.mutate({
-            initialMessage: plaintext,
-            participants: [props.recipient.id],
-          });
+          form.setFieldError("text", "Encryption failed. Message was not sent.");
+          return;
         }
       } else {
         createMessageThreadMutation.mutate({
@@ -120,9 +125,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     }
 
     form.reset();
-  }, [form, props, e2eeReady, encryptForThread, createMessageMutation, createMessageThreadMutation, getUserPublicKey, utils]);
-
-  const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
+  }, [form, props, isPending, e2eeReady, encryptForThread, createMessageMutation, createMessageThreadMutation, getUserPublicKey, utils]);
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}>

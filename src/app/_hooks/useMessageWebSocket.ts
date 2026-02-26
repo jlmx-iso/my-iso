@@ -8,13 +8,14 @@ export type WsMessage = {
   senderId: string;
   createdAt: string;
   isEncrypted: boolean;
-  preview?: string;
 };
 
 type UseMessageWebSocketOptions = {
   threadId: string;
   onMessage?: (msg: WsMessage) => void;
 };
+
+const MAX_RECONNECT_DELAY = 30_000;
 
 export function useMessageWebSocket({ threadId, onMessage }: UseMessageWebSocketOptions) {
   const [messages, setMessages] = useState<WsMessage[]>([]);
@@ -25,28 +26,61 @@ export function useMessageWebSocket({ threadId, onMessage }: UseMessageWebSocket
   useEffect(() => {
     if (!threadId) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/messages/ws?threadId=${encodeURIComponent(threadId)}`;
+    // Clear stale messages from previous thread
+    setMessages([]);
 
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    let cancelled = false;
+    let reconnectAttempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
 
-    ws.onmessage = (event: MessageEvent) => {
-      try {
-        const msg = JSON.parse(event.data as string) as WsMessage;
-        setMessages((prev) => [...prev, msg]);
-        onMessageRef.current?.(msg);
-      } catch {
-        // Ignore malformed payloads
-      }
-    };
+    function connect() {
+      if (cancelled) return;
 
-    ws.onerror = () => {
-      // Connection errors are expected during dev; silently ignore
-    };
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const url = `${protocol}//${window.location.host}/api/messages/ws?threadId=${encodeURIComponent(threadId)}`;
+
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttempt = 0;
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        try {
+          const msg = JSON.parse(event.data as string) as WsMessage;
+          setMessages((prev) => [...prev, msg]);
+          onMessageRef.current?.(msg);
+        } catch {
+          // Ignore malformed payloads
+        }
+      };
+
+      ws.onclose = (event) => {
+        if (cancelled) return;
+        // Don't reconnect on normal closure (code 1000)
+        if (event.code === 1000) return;
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {
+        // onerror is always followed by onclose, so reconnection is handled there
+      };
+    }
+
+    function scheduleReconnect() {
+      if (cancelled) return;
+      const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
+      reconnectAttempt++;
+      reconnectTimer = setTimeout(connect, delay);
+    }
+
+    connect();
 
     return () => {
-      ws.close(1000, "Component unmounted");
+      cancelled = true;
+      clearTimeout(reconnectTimer);
+      wsRef.current?.close(1000, "Component unmounted");
       wsRef.current = null;
     };
   }, [threadId]);

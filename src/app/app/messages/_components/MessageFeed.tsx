@@ -5,7 +5,7 @@ import { useScrollIntoView } from "@mantine/hooks";
 import { IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import ComposeMessage from "./ComposeMessage";
 import MessageListener from "./MessageListener";
@@ -41,6 +41,11 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     const messages = data?.messages ?? [];
 
     const { decryptForThread, ready: e2eeReady } = useE2EE();
+
+    const decryptWsMessage = useCallback(async (tid: string, ciphertext: string) => {
+        const encryptedThreadKey = data?.threadKeys?.[0]?.encryptedKey;
+        return decryptForThread(tid, ciphertext, encryptedThreadKey);
+    }, [decryptForThread, data?.threadKeys]);
 
     // Decrypt messages from tRPC query when they load or E2EE becomes ready
     useEffect(() => {
@@ -84,7 +89,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
 
     const title = data?.participants
         .filter(p => p.id !== userId)
-        .map(p => `${p.firstName} ${p.lastName}`)
+        .map(p => `${p.firstName || ""} ${p.lastName || ""}`.trim() || "User")
         .join(", ");
 
     if (!userId) {
@@ -133,7 +138,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                     px="xs"
                     py="sm"
                 >
-                    <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} />
+                    <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} decryptMessage={decryptWsMessage} />
                     {displayMessages.map((message, index) => {
                         const nextMessage = displayMessages[index + 1];
                         const isLastInGroup = !nextMessage || nextMessage.senderId !== message.senderId;

@@ -41,6 +41,14 @@ export function useE2EE() {
   const restoreKeysQuery = api.keys.restore.useQuery(undefined, { enabled: false });
   const apiUtils = api.useUtils();
 
+  // Stable refs so the effect never captures stale hook instances
+  const setupRef = useRef(setupKeysMutation);
+  setupRef.current = setupKeysMutation;
+  const restoreRef = useRef(restoreKeysQuery);
+  restoreRef.current = restoreKeysQuery;
+  const apiUtilsRef = useRef(apiUtils);
+  apiUtilsRef.current = apiUtils;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -54,7 +62,7 @@ export function useE2EE() {
 
       // 2. Try to restore from server backup
       try {
-        const result = await restoreKeysQuery.refetch();
+        const result = await restoreRef.current.refetch();
         if (result.data?.privateKeyJwk) {
           privateKey = await importPrivateKeyJwk(result.data.privateKeyJwk);
           await storePrivateKey(userId, privateKey);
@@ -72,7 +80,7 @@ export function useE2EE() {
         exportPrivateKeyJwk(pair.privateKey),
       ]);
 
-      await setupKeysMutation.mutateAsync({
+      await setupRef.current.mutateAsync({
         privateKeyJwk: privateKeyJwk as Record<string, unknown>,
         publicKeyJwk: publicKeyJwk as Record<string, unknown>,
       });
@@ -82,14 +90,13 @@ export function useE2EE() {
     }
 
     // Get userId from tRPC context (session is already loaded in the app shell)
-    void apiUtils.client.keys.getCurrentUserId.query().then((userId) => {
+    void apiUtilsRef.current.client.keys.getCurrentUserId.query().then((userId) => {
       if (userId && !cancelled) void init(userId);
     }).catch(() => {
       // Not authenticated — skip E2EE init
     });
 
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -103,9 +110,9 @@ export function useE2EE() {
     recipientPublicJwks: { userId: string; jwk: JsonWebKey }[],
   ): Promise<{
     ciphertext: string;
-    preview: string;
     threadKeys?: { encryptedKey: string; userId: string }[];
   }> => {
+    if (!stateRef.current.privateKey) throw new Error("E2EE not ready");
     let threadKey = await getThreadKey(threadId);
     let freshThreadKeys: { encryptedKey: string; userId: string }[] | undefined;
 
@@ -123,8 +130,7 @@ export function useE2EE() {
     }
 
     const ciphertext = await encryptMessage(threadKey, plaintext);
-    const preview = plaintext.slice(0, 80);
-    return { ciphertext, preview, threadKeys: freshThreadKeys };
+    return { ciphertext, threadKeys: freshThreadKeys };
   }, []);
 
   /**

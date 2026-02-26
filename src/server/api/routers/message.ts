@@ -14,7 +14,6 @@ export const messageRouter = createTRPCRouter({
       content: z.string().min(1).max(5000),
       isEncrypted: z.boolean().optional().default(false),
       platform: z.enum(['ios', 'web']).optional().default('web'),
-      preview: z.string().max(80).optional(),
       threadId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -34,7 +33,6 @@ export const messageRouter = createTRPCRouter({
           data: {
             content: input.content,
             isEncrypted: input.isEncrypted,
-            preview: input.preview,
             sender: {
               connect: {
                 id: ctx.session.user.id,
@@ -61,7 +59,6 @@ export const messageRouter = createTRPCRouter({
               createdAt: message.createdAt.toISOString(),
               id: message.id,
               isEncrypted: message.isEncrypted,
-              preview: message.preview ?? undefined,
               senderId: message.senderId,
             }));
           }
@@ -88,7 +85,6 @@ export const messageRouter = createTRPCRouter({
       isEncrypted: z.boolean().optional().default(false),
       participants: z.array(z.string().min(1)),
       platform: z.enum(['ios', 'web']).optional().default('web'),
-      preview: z.string().max(80).optional(),
       threadKeys: z.array(z.object({
         encryptedKey: z.string(),
         userId: z.string(),
@@ -109,7 +105,6 @@ export const messageRouter = createTRPCRouter({
             data: {
               content: input.initialMessage,
               isEncrypted: input.isEncrypted,
-              preview: input.preview,
               sender: { connect: { id: ctx.session.user.id } },
               thread: { connect: { id: newThread.id } },
             },
@@ -204,7 +199,6 @@ export const messageRouter = createTRPCRouter({
             createdAt: true,
             id: true,
             isEncrypted: true,
-            preview: true,
             sender: {
               select: {
                 firstName: true,

@@ -3,7 +3,7 @@
 import { Autocomplete, Loader, Stepper } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconMessagePlus } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import ComposeMessage from "./ComposeMessage";
@@ -31,6 +31,7 @@ export default function NewMessageModal() {
 
     const searchParams = useSearchParams();
     const initialUserId = searchParams.get('new');
+    const hasAutoOpened = useRef(false);
 
     const { data: initialRecipient } = api.message.getRecipientById.useQuery(
         { userId: initialUserId! },
@@ -38,12 +39,13 @@ export default function NewMessageModal() {
     );
 
     useEffect(() => {
-        if (initialRecipient && !opened) {
+        if (initialRecipient && !hasAutoOpened.current) {
+            hasAutoOpened.current = true;
             setRecipient(initialRecipient);
             setActive(1);
             open();
         }
-    }, [initialRecipient, opened, open]);
+    }, [initialRecipient, open]);
 
     const { data: potentialRecipients = [], isPending } = api.message.getPotentialRecipients.useQuery(
         { query: recipientQuery },

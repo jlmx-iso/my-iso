@@ -5,10 +5,14 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { env } from "~/env";
 import { logger } from "~/_utils";
 
-// Accept any valid JWK object — JsonWebKey has many optional fields depending on key type
-const JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
-  (v) => typeof v.kty === "string",
-  { message: "JWK must have a kty field" },
+// Validate that the JWK is an EC P-256 key with required fields
+const EC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
+  (v) =>
+    v.kty === "EC" &&
+    v.crv === "P-256" &&
+    typeof v.x === "string" &&
+    typeof v.y === "string",
+  { message: "JWK must be an EC P-256 key with x and y coordinates" },
 );
 
 // ---------------------------------------------------------------------------
@@ -41,7 +45,11 @@ async function encryptPrivateKey(userId: string, privateKeyJwk: Record<string, u
   const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext), iv.byteLength);
-  return btoa(String.fromCharCode(...combined));
+  let binary = "";
+  for (let i = 0; i < combined.length; i++) {
+    binary += String.fromCharCode(combined[i]!);
+  }
+  return btoa(binary);
 }
 
 async function decryptPrivateKey(userId: string, stored: string): Promise<JsonWebKey> {
@@ -87,14 +95,22 @@ export const keysRouter = createTRPCRouter({
     }
   }),
 
-  /** Store public key + server-wrapped private key for backup. */
+  /** Store public key + server-wrapped private key for backup. Refuses overwrite if keys already exist. */
   setup: protectedProcedure
     .input(z.object({
-      privateKeyJwk: JWK_SCHEMA,
-      publicKeyJwk: JWK_SCHEMA,
+      privateKeyJwk: EC_JWK_SCHEMA,
+      publicKeyJwk: EC_JWK_SCHEMA,
     }))
     .mutation(async ({ ctx, input }) => {
       try {
+        const existing = await ctx.db.user.findUnique({
+          select: { publicKey: true },
+          where: { id: ctx.session.user.id },
+        });
+        if (existing?.publicKey) {
+          throw new TRPCError({ code: "CONFLICT", message: "Keys already exist. Re-authentication required to replace keys." });
+        }
+
         const encryptedPrivateKey = await encryptPrivateKey(
           ctx.session.user.id,
           input.privateKeyJwk,

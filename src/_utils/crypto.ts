@@ -8,6 +8,14 @@
 const ECDH_PARAMS: EcKeyGenParams = { name: "ECDH", namedCurve: "P-256" };
 const AES_GCM_PARAMS = { name: "AES-GCM", length: 256 } as const;
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
 // ---------------------------------------------------------------------------
 // Key pair (ECDH P-256)
 // ---------------------------------------------------------------------------
@@ -60,7 +68,7 @@ export async function encryptMessage(threadKey: CryptoKey, plaintext: string): P
   const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext), iv.byteLength);
-  return btoa(String.fromCharCode(...combined));
+  return uint8ToBase64(combined);
 }
 
 export async function decryptMessage(threadKey: CryptoKey, encrypted: string): Promise<string> {
@@ -73,7 +81,7 @@ export async function decryptMessage(threadKey: CryptoKey, encrypted: string): P
 
 // ---------------------------------------------------------------------------
 // Thread key wrapping (ephemeral ECDH + HKDF + AES-KW)
-// Format: base64( 12-byte-IV || ephemeralPubRaw(65 bytes) || AES-KW-wrapped-thread-key )
+// Format: base64( ephemeralPubRaw(65 bytes) || AES-KW-wrapped-thread-key )
 // ---------------------------------------------------------------------------
 
 async function deriveWrappingKey(
@@ -122,7 +130,7 @@ export async function encryptThreadKey(
   const combined = new Uint8Array(ephemeralPubRaw.byteLength + wrapped.byteLength);
   combined.set(ephemeralPubRaw, 0);
   combined.set(wrapped, ephemeralPubRaw.byteLength);
-  return btoa(String.fromCharCode(...combined));
+  return uint8ToBase64(combined);
 }
 
 export async function decryptThreadKey(
