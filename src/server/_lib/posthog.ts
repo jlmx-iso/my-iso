@@ -1,49 +1,57 @@
+import { PostHog } from "posthog-node";
 import { env } from "~/env";
-import { Result } from "~/_utils/result";
-import { logger } from "~/_utils";
 
-/**
- * Edge-compatible PostHog event capture using fetch API
- * Migrated from posthog-node for Cloudflare Workers compatibility
- */
-export async function captureEvent(
-  distinctId: string,
-  event: string,
-  properties?: Record<string, any>
-): Promise<Result<void, Error>> {
-  try {
-    const response = await fetch(`${env.NEXT_PUBLIC_POSTHOG_HOST}/capture/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY,
-        event,
-        properties,
-        distinct_id: distinctId,
-      }),
+let _client: PostHog | null = null;
+
+export function getPostHogClient(): PostHog | null {
+  if (env.NODE_ENV === "test") return null;
+  if (!process.env.POSTHOG_API_KEY) return null;
+  if (!_client) {
+    _client = new PostHog(process.env.POSTHOG_API_KEY, {
+      host: "https://us.i.posthog.com",
+      flushAt: 1,
+      flushInterval: 0,
     });
+  }
+  return _client;
+}
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.warn('PostHog capture failed', { status: response.status, error: errorText });
-      // Return ok anyway - don't break user flows due to analytics failures
-      return Result.ok(undefined);
-    }
-
-    return Result.ok(undefined);
-  } catch (error) {
-    logger.error('PostHog capture exception', { error });
-    // Return ok anyway - don't break user flows due to analytics failures
-    return Result.ok(undefined);
+export async function shutdownPostHog(): Promise<void> {
+  if (_client) {
+    await _client.shutdown();
+    _client = null;
   }
 }
 
-/**
- * Deprecated: posthogClient export for backwards compatibility
- * Use captureEvent() instead for edge-compatible analytics
- */
-export const posthogClient = {
-  capture: async (options: { distinctId: string; event: string; properties?: Record<string, any> }) => {
-    return captureEvent(options.distinctId, options.event, options.properties);
-  },
-};
+// Feature flag helpers
+export async function isFoundingMember(userId: string): Promise<boolean> {
+  const ph = getPostHogClient();
+  if (!ph) return false;
+  return (await ph.isFeatureEnabled("founding_member", userId)) === true;
+}
+
+export async function hasProAccess(userId: string): Promise<boolean> {
+  const ph = getPostHogClient();
+  if (!ph) return false;
+  return (await ph.isFeatureEnabled("pro_access", userId)) === true;
+}
+
+export async function isFoundingMemberPricingActive(): Promise<boolean> {
+  const ph = getPostHogClient();
+  if (!ph) return true; // default open if PostHog unavailable
+  return (await ph.isFeatureEnabled("founding_member_pricing_active", "anonymous")) === true;
+}
+
+export function captureEvent(
+  distinctId: string,
+  event: string,
+  properties?: Record<string, unknown>,
+): void {
+  const ph = getPostHogClient();
+  if (!ph) return;
+  try {
+    ph.capture({ distinctId, event, properties: properties ?? {} });
+  } catch (err) {
+    console.warn("[posthog] capture failed:", err);
+  }
+}

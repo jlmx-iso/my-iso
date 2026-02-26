@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { instagramHandleOptional, logger } from "~/_utils";
 import { sendTemplateEmail } from "~/server/_lib/email";
+import { captureEvent } from "~/server/_lib/posthog";
 import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import {
@@ -73,6 +74,8 @@ export const waitlistRouter = createTRPCRouter({
           position,
         },
       });
+
+      captureEvent(email, "waitlist_submitted", { role: input.userType ?? "unknown" });
 
       // Send confirmation email — awaited for logging, but failure does not throw
       const emailResult = await sendTemplateEmail({
@@ -178,6 +181,8 @@ export const waitlistRouter = createTRPCRouter({
           reviewedById: ctx.session.user.id,
         },
       });
+
+      captureEvent(entry.email, "waitlist_approved", {});
 
       // Send approval email (I1)
       // Include email so the join page can show "Sign in with the Google account matching {email}"

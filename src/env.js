@@ -59,6 +59,7 @@ export const env = createEnv({
     AUTH_URL: process.env.AUTH_URL,
     NODE_ENV: process.env.NODE_ENV,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: process.env.STRIPE_FOUNDING_MONTHLY_PRICE_ID,
@@ -109,6 +110,7 @@ export const env = createEnv({
       .enum(["development", "test", "production"])
       .default("development"),
     ANTHROPIC_API_KEY: z.string().optional(), // Optional — AI features degrade gracefully
+    POSTHOG_API_KEY: z.string().optional(), // Optional — analytics degrade gracefully
     RESEND_API_KEY: z.string().optional(), // Make optional until API key is obtained
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: z.string().optional(),

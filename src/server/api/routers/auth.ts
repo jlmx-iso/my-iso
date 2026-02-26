@@ -6,7 +6,7 @@ import { UserVerificationErrors } from "~/_types/errors";
 import { instagramHandleOptional, logger, phoneSchema, socialHandleOptional } from "~/_utils";
 import { env } from "~/env";
 import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
-import { captureEvent } from "~/server/_lib/posthog";
+import { captureEvent, getPostHogClient } from "~/server/_lib/posthog";
 import { generateVerificationCode } from "~/server/_utils";
 import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -37,6 +37,19 @@ export const authRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: result.error.message,
+        });
+      }
+      captureEvent(result.value.id, "user_signed_up", { role: result.value.role });
+      const ph = getPostHogClient();
+      if (ph) {
+        ph.identify({
+          distinctId: result.value.id,
+          properties: {
+            email: result.value.email,
+            name: `${result.value.firstName} ${result.value.lastName}`,
+            role: result.value.role,
+            created_at: result.value.createdAt,
+          },
         });
       }
       const verificationTokenResult = await createVerificationToken({ identifier: result.value.id })

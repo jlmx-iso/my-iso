@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { logger } from "~/_utils";
 import { env } from "~/env";
+import { captureEvent } from "~/server/_lib/posthog";
 import { getPriceIdForCheckout, getPricingForRole } from "~/server/_utils/pricing";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
@@ -135,6 +136,8 @@ export const subscriptionRouter = createTRPCRouter({
         sessionId: session.id,
         userId,
       });
+
+      captureEvent(userId, "upgrade_initiated", { plan: role, billing: billingInterval });
 
       return { url: session.url };
     }),
