@@ -66,7 +66,11 @@ export default function MessageListener({
           decryptedIdsRef.current.add(msg.id);
         }
         if (results.length > 0) {
-          setDecrypted((prev) => [...prev, ...results]);
+          setDecrypted((prev) => {
+            const merged = [...prev, ...results];
+            merged.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+            return merged;
+          });
         }
       }
     }
