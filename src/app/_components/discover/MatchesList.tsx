@@ -56,7 +56,7 @@ export default function MatchesList() {
       {matches.map((match) => {
         const other = match.otherUser;
         const photo = other.photographer;
-        const displayName = photo?.companyName ?? `${other.firstName} ${other.lastName}`;
+        const displayName = photo?.companyName ?? (`${other.firstName || ""} ${other.lastName || ""}`.trim() || "User");
         const avatar = photo?.avatar ?? other.profilePic;
         const timeLeft = formatTimeLeft(match.expiresAt);
 
@@ -77,7 +77,7 @@ export default function MatchesList() {
             >
               <Group gap="md" wrap="nowrap">
                 <Avatar src={avatar} size={48} radius="xl" color="orange">
-                  {other.firstName[0]}
+                  {(other.firstName || "U")[0]}
                 </Avatar>
 
                 <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>

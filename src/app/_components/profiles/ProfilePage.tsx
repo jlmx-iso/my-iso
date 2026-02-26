@@ -141,7 +141,7 @@ export const ProfilePage = async ({
       >
         {resources.length > 0 && (
           <>
-            <PortfolioThumbnail src={resources[0]!.image} alt="" />
+            <PortfolioThumbnail src={resources[0]!.image} alt={`${photographer.name} portfolio cover`} />
             <Box
               pos="absolute"
               bottom={0}

@@ -70,7 +70,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
 
   const photo = user.photographer;
   const avatar = photo?.avatar ?? user.profilePic;
-  const displayName = photo?.companyName ?? `${user.firstName} ${user.lastName}`;
+  const displayName = photo?.companyName ?? (`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User");
   const location = photo?.location ?? [user.city, user.state].filter(Boolean).join(", ");
 
   const hasPortfolio = photo?.portfolioImages && photo.portfolioImages.length > 0;
@@ -157,7 +157,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
           {/* Avatar + Name + Location */}
           <Group gap="md" wrap="nowrap">
             <Avatar src={avatar} size={64} radius="xl" color="orange">
-              {user.firstName[0]}
+              {(user.firstName || "U")[0]}
             </Avatar>
             <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
               <Title order={4} lineClamp={1}>{displayName}</Title>

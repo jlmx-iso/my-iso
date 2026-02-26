@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
 
@@ -33,13 +33,18 @@ export default function MessageListener({
 
   const { messages } = useMessageWebSocket({ threadId, onMessage });
   const [decrypted, setDecrypted] = useState<DecryptedWsMessage[]>([]);
+  const decryptedIdsRef = useRef(new Set<string>());
 
+  // Only decrypt newly arrived messages (incremental)
   useEffect(() => {
     let cancelled = false;
 
-    async function decryptAll() {
+    const newMessages = messages.filter((m) => !decryptedIdsRef.current.has(m.id));
+    if (newMessages.length === 0) return;
+
+    async function decryptNew() {
       const results = await Promise.all(
-        messages.map(async (msg) => {
+        newMessages.map(async (msg) => {
           const content = msg.isEncrypted
             ? await decryptMessage(threadId, msg.content)
             : msg.content;
@@ -52,12 +57,23 @@ export default function MessageListener({
           };
         }),
       );
-      if (!cancelled) setDecrypted(results);
+      if (!cancelled) {
+        for (const msg of results) {
+          decryptedIdsRef.current.add(msg.id);
+        }
+        setDecrypted((prev) => [...prev, ...results]);
+      }
     }
 
-    void decryptAll();
+    void decryptNew();
     return () => { cancelled = true; };
   }, [messages, threadId, userId, decryptMessage]);
+
+  // Reset when thread changes
+  useEffect(() => {
+    setDecrypted([]);
+    decryptedIdsRef.current.clear();
+  }, [threadId]);
 
   return (
     <div>

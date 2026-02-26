@@ -43,7 +43,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
             <Group justify="space-between" align="center" mb={4}>
                 <UserBadge user={{
                     avatar: user.profilePic,
-                    name: user.firstName + " " + user.lastName,
+                    name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "User",
                     userId: comment.userId
                 }} />
                 <Timemarker date={comment.createdAt} />

@@ -20,7 +20,9 @@ const EC_JWK_SCHEMA = z.record(z.string(), z.unknown()).refine(
 // The KWK is never stored — it is recomputed from KEY_WRAPPING_SECRET + userId.
 // ---------------------------------------------------------------------------
 
-async function deriveKwk(userId: string): Promise<CryptoKey> {
+const SALT_LENGTH = 32;
+
+async function deriveKwk(userId: string, salt: Uint8Array): Promise<CryptoKey> {
   const masterKeyBytes = new TextEncoder().encode(env.KEY_WRAPPING_SECRET);
   const masterKey = await crypto.subtle.importKey("raw", masterKeyBytes, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
@@ -28,7 +30,7 @@ async function deriveKwk(userId: string): Promise<CryptoKey> {
       hash: "SHA-256",
       info: new TextEncoder().encode(`private-key-wrapping:${userId}`),
       name: "HKDF",
-      salt: new Uint8Array(32),
+      salt: salt as BufferSource,
     },
     masterKey,
     { length: 256, name: "AES-GCM" },
@@ -37,26 +39,38 @@ async function deriveKwk(userId: string): Promise<CryptoKey> {
   );
 }
 
-async function encryptPrivateKey(userId: string, privateKeyJwk: Record<string, unknown>): Promise<string> {
-  const kwk = await deriveKwk(userId);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encoded = new TextEncoder().encode(JSON.stringify(privateKeyJwk));
-  const ciphertext = await crypto.subtle.encrypt({ iv, name: "AES-GCM" }, kwk, encoded);
-  const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.byteLength);
+function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (let i = 0; i < combined.length; i++) {
-    binary += String.fromCharCode(combined[i]!);
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary);
 }
 
+// Stored format: base64( 32-byte-salt || 12-byte-IV || AES-GCM-ciphertext )
+async function encryptPrivateKey(userId: string, privateKeyJwk: Record<string, unknown>): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+  const kwk = await deriveKwk(userId, salt);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(JSON.stringify(privateKeyJwk));
+  const ciphertext = await crypto.subtle.encrypt({ iv, name: "AES-GCM" }, kwk, encoded);
+  const combined = new Uint8Array(salt.byteLength + iv.byteLength + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.byteLength);
+  combined.set(new Uint8Array(ciphertext), salt.byteLength + iv.byteLength);
+  return uint8ToBase64(combined);
+}
+
 async function decryptPrivateKey(userId: string, stored: string): Promise<JsonWebKey> {
-  const kwk = await deriveKwk(userId);
   const bytes = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  const iv = bytes.slice(0, 12);
-  const ciphertext = bytes.slice(12);
+  // Legacy format (no salt prefix): total = 12-byte IV + ciphertext
+  // New format: 32-byte salt + 12-byte IV + ciphertext
+  const hasPerUserSalt = bytes.length > SALT_LENGTH + 12;
+  const salt = hasPerUserSalt ? bytes.slice(0, SALT_LENGTH) : new Uint8Array(SALT_LENGTH);
+  const rest = hasPerUserSalt ? bytes.slice(SALT_LENGTH) : bytes;
+  const iv = rest.slice(0, 12);
+  const ciphertext = rest.slice(12);
+  const kwk = await deriveKwk(userId, salt);
   const plain = await crypto.subtle.decrypt({ iv, name: "AES-GCM" }, kwk, ciphertext);
   return JSON.parse(new TextDecoder().decode(plain)) as JsonWebKey;
 }
@@ -124,6 +138,7 @@ export const keysRouter = createTRPCRouter({
         });
         return { ok: true };
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         logger.error("Failed to setup keys", { error, userId: ctx.session.user.id });
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to store keys" });
       }

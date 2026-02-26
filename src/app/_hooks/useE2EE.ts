@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import {
   decryptMessage,
@@ -37,6 +38,9 @@ export function useE2EE() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const session = useSession();
+  const sessionUserId = session.data?.user?.id;
+
   const setupKeysMutation = api.keys.setup.useMutation();
   const restoreKeysQuery = api.keys.restore.useQuery(undefined, { enabled: false });
   const apiUtils = api.useUtils();
@@ -50,6 +54,11 @@ export function useE2EE() {
   apiUtilsRef.current = apiUtils;
 
   useEffect(() => {
+    // Reset when user changes (logout/login without full reload)
+    setState({ privateKey: null, ready: false });
+
+    if (!sessionUserId) return;
+
     let cancelled = false;
 
     async function init(userId: string) {
@@ -89,15 +98,12 @@ export function useE2EE() {
       if (!cancelled) setState({ privateKey: pair.privateKey, ready: true });
     }
 
-    // Get userId from tRPC context (session is already loaded in the app shell)
-    void apiUtilsRef.current.client.keys.getCurrentUserId.query().then((userId) => {
-      if (userId && !cancelled) void init(userId);
-    }).catch(() => {
-      // Not authenticated — skip E2EE init
+    void init(sessionUserId).catch(() => {
+      // Init failed — E2EE will remain unavailable
     });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [sessionUserId]);
 
   /**
    * Encrypt plaintext for a thread.
@@ -112,9 +118,24 @@ export function useE2EE() {
     ciphertext: string;
     threadKeys?: { encryptedKey: string; userId: string }[];
   }> => {
-    if (!stateRef.current.privateKey) throw new Error("E2EE not ready");
+    const { privateKey } = stateRef.current;
+    if (!privateKey) throw new Error("E2EE not ready");
     let threadKey = await getThreadKey(threadId);
     let freshThreadKeys: { encryptedKey: string; userId: string }[] | undefined;
+
+    // If no local thread key, try to restore from server (e.g. new device)
+    if (!threadKey && !threadId.startsWith("pending-")) {
+      try {
+        const threadData = await apiUtilsRef.current.client.message.getThreadById.query({ threadId });
+        const encryptedThreadKey = threadData?.threadKeys?.[0]?.encryptedKey;
+        if (encryptedThreadKey) {
+          threadKey = await decryptThreadKey(encryptedThreadKey, privateKey);
+          await storeThreadKey(threadId, threadKey);
+        }
+      } catch {
+        // Server lookup failed — will generate a new key below
+      }
+    }
 
     if (!threadKey) {
       threadKey = await generateThreadKey();

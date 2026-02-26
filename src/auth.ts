@@ -108,8 +108,9 @@ export const authConfig = {
         code: { label: "Code", type: "text" },
       },
       async authorize(credentials) {
-        const email = (credentials.email as string)?.toLowerCase();
-        const code = credentials.code as string;
+        if (!credentials) return null;
+        const email = typeof credentials.email === "string" ? credentials.email.toLowerCase() : "";
+        const code = typeof credentials.code === "string" ? credentials.code : "";
         if (!email || !code) return null;
 
         const identifier = `otp:${email}`;
@@ -179,7 +180,7 @@ export const authConfig = {
       }
       // Refresh user data from DB on session update or if token is missing profile fields
       // (handles JWTs minted before this code was deployed)
-      const needsBackfill = typeof token.id === "string" && !token.firstName;
+      const needsBackfill = typeof token.id === "string" && token.firstName === undefined;
       if ((trigger === "update" || needsBackfill) && typeof token.id === "string") {
         const freshUser = await db.user.findUnique({
           where: { id: token.id },
