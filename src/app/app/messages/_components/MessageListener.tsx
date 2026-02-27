@@ -1,43 +1,96 @@
 "use client";
-import { type Message } from "@prisma/client";
-import { useCallback, useEffect, useState } from "react";
 
-import { messageSub } from "../_utils";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import MessageTile from "./MessageTile";
+
+import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
+
+type DecryptedWsMessage = {
+  id: string;
+  content: string;
+  senderId: string;
+  createdAt: Date;
+  isAuthor: boolean;
+};
 
 type MessageListenerProps = {
   threadId: string;
   userId: string;
   newMessageCb?: () => void;
+  decryptMessage: (threadId: string, ciphertext: string) => Promise<string>;
 };
 
-export default function MessageListener({ threadId, userId, newMessageCb }: MessageListenerProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  const onNewMessage = useCallback(() => {
+export default function MessageListener({
+  threadId,
+  userId,
+  newMessageCb,
+  decryptMessage,
+}: MessageListenerProps) {
+  const onMessage = useCallback(() => {
     newMessageCb?.();
   }, [newMessageCb]);
 
-  useEffect(() => {
-    const channel = messageSub({
-      cb: (payload: { new: Message }) => {
-        setMessages((prev) => [...prev, payload.new]);
-        onNewMessage();
-      },
-      threadId,
-    });
+  const { messages } = useMessageWebSocket({ onMessage, threadId });
+  const [decrypted, setDecrypted] = useState<DecryptedWsMessage[]>([]);
+  const decryptedIdsRef = useRef(new Set<string>());
 
-    return () => {
-      void channel.unsubscribe();
-    };
-  }, [threadId, onNewMessage]);
+  // Only decrypt newly arrived messages (incremental)
+  useEffect(() => {
+    let cancelled = false;
+
+    const newMessages = messages.filter((m) => !decryptedIdsRef.current.has(m.id));
+    if (newMessages.length === 0) return;
+
+    async function decryptNew() {
+      const settled = await Promise.allSettled(
+        newMessages.map(async (msg) => {
+          const content = msg.isEncrypted
+            ? await decryptMessage(threadId, msg.content)
+            : msg.content;
+          return {
+            content,
+            createdAt: new Date(msg.createdAt),
+            id: msg.id,
+            isAuthor: userId === msg.senderId,
+            senderId: msg.senderId,
+          };
+        }),
+      );
+      if (!cancelled) {
+        const results = settled
+          .filter((r): r is PromiseFulfilledResult<DecryptedWsMessage> => r.status === "fulfilled")
+          .map((r) => r.value);
+
+        for (const msg of results) {
+          decryptedIdsRef.current.add(msg.id);
+        }
+        if (results.length > 0) {
+          setDecrypted((prev) => {
+            const merged = [...prev, ...results];
+            merged.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+            return merged;
+          });
+        }
+      }
+    }
+
+    void decryptNew();
+    return () => { cancelled = true; };
+  }, [messages, threadId, userId, decryptMessage]);
+
+  // Reset when thread changes
+  useEffect(() => {
+    setDecrypted([]);
+    decryptedIdsRef.current.clear();
+  }, [threadId]);
 
   return (
     <div>
-      {messages.map((message) => (
+      {decrypted.map((msg) => (
         <MessageTile
-          key={message.id}
-          message={{ ...message, isAuthor: userId === message.senderId }}
+          key={msg.id}
+          message={msg}
         />
       ))}
     </div>

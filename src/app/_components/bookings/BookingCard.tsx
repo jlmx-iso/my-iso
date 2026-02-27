@@ -147,13 +147,13 @@ export default function BookingCard({
         <Group gap="sm">
           <Avatar
             src={user.profilePic}
-            alt={`${user.firstName} ${user.lastName}`}
+            alt={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
             size="sm"
             radius="xl"
           />
           <Stack gap={0}>
             <Text size="sm" fw={500}>
-              {user.firstName} {user.lastName}
+              {`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
             </Text>
             <Text size="xs" c="dimmed">
               {variant === "sent" ? "Event Owner" : "Applicant"}

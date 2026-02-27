@@ -3,10 +3,10 @@
 import { Group, Stack, Text, UnstyledButton } from "@mantine/core";
 import {
     IconCalendarEvent,
+    IconCalendarStats,
     IconHeartHandshake,
     IconMessageCircle,
     IconSearch,
-    IconUser,
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -16,7 +16,7 @@ const tabs = [
     { href: "/app/discover", label: "Discover", icon: IconHeartHandshake },
     { href: "/app/search", label: "Search", icon: IconSearch },
     { href: "/app/messages", label: "Messages", icon: IconMessageCircle },
-    { href: "/app/profile", label: "Profile", icon: IconUser },
+    { href: "/app/bookings", label: "Bookings", icon: IconCalendarStats },
 ] as const;
 
 export default function BottomTabBar() {

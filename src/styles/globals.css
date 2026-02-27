@@ -14,6 +14,23 @@
   }
 }
 
+/* Events feed masonry layout */
+.events-masonry {
+  columns: 1;
+  column-gap: var(--mantine-spacing-sm);
+}
+
+@media (min-width: 62em) {
+  .events-masonry {
+    columns: 2;
+  }
+}
+
+.events-masonry-item {
+  break-inside: avoid;
+  margin-bottom: var(--mantine-spacing-sm);
+}
+
 /* Screen reader only utility - hides element visually but keeps it accessible */
 .sr-only {
   position: absolute;

@@ -6,6 +6,7 @@ import {
   CopyButton,
   Group,
   Loader,
+  Modal,
   Paper,
   Progress,
   Stack,
@@ -13,6 +14,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import {
   IconAlertCircle,
   IconCheck,
@@ -32,6 +34,7 @@ export default function Page() {
     api.invite.regenerate.useMutation({
       onSuccess: () => utils.invite.getMyCode.invalidate(),
     });
+  const [confirmOpen, { open: openConfirm, close: closeConfirm }] = useDisclosure(false);
 
   if (isLoading) {
     return (
@@ -129,12 +132,36 @@ export default function Page() {
               variant="subtle"
               size="xs"
               leftSection={<IconRefresh size={14} />}
-              onClick={() => regenerate()}
+              onClick={openConfirm}
               loading={isRegenerating}
             >
               Regenerate code
             </Button>
           </Tooltip>
+
+          <Modal
+            opened={confirmOpen}
+            onClose={closeConfirm}
+            title="Regenerate invite code?"
+            centered
+            size="sm"
+          >
+            <Stack gap="md">
+              <Text size="sm" c="dimmed">
+                Your current code will be replaced and any existing invite links will stop working.
+              </Text>
+              <Group justify="flex-end">
+                <Button variant="subtle" onClick={closeConfirm}>Cancel</Button>
+                <Button
+                  color="orange"
+                  loading={isRegenerating}
+                  onClick={() => { regenerate(); closeConfirm(); }}
+                >
+                  Yes, regenerate
+                </Button>
+              </Group>
+            </Stack>
+          </Modal>
         </Stack>
       </Paper>
 

@@ -1,8 +1,10 @@
 'use client';
 
-import { Card, Group, Text, Title, Badge, Image } from '@mantine/core';
+import { Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
+import { IconHeart, IconMessageCircle } from '@tabler/icons-react';
 import Link from 'next/link';
+import UserBadge from '~/app/_components/UserBadge';
 import type { RouterOutputs } from '~/trpc/react';
 
 type EventSearchCardProps = {
@@ -16,43 +18,68 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
 
   return (
     <div ref={ref}>
-      <Card shadow={hovered ? "xl" : "sm"} p="xl" radius="md" withBorder>
+      <Card
+        shadow={hovered ? 'md' : 'xs'}
+        p={0}
+        radius="md"
+        withBorder
+        style={{
+          transition: 'all 200ms ease',
+          transform: hovered ? 'translateY(-2px)' : 'none',
+          borderLeft: '3px solid var(--mantine-color-orange-3)',
+        }}
+      >
         <Link href={`/app/events/${event.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-          <Group justify="space-between" mb="md" wrap="wrap">
-            <Text size="sm" fs="italic" c="dimmed">{event.location}</Text>
-            <Group gap="xs">
-              <Badge size="lg" variant="transparent">{event.date.toLocaleDateString()}</Badge>
-              <Badge size="sm" variant="outline">
-                {event.duration} Hour{event.duration > 1 && "s"}
-              </Badge>
-            </Group>
-          </Group>
-
-          <Text size="sm" c="dimmed" mb="xs">
-            by {photographerName}
-          </Text>
-
-          <Title order={3}>{event.title}</Title>
-          {event.description && (
-            <Text mt="xs" c="dimmed" size="sm" lineClamp={2}>
-              {event.description}
-            </Text>
-          )}
-
+          {/* Hero image — full bleed at top */}
           {event.image && (
-            <Card.Section mt="md">
-              <Image src={event.image} alt={event.title} h={200} />
+            <Card.Section>
+              <Image src={event.image} alt={event.title} h={160} fit="cover" />
             </Card.Section>
           )}
 
-          <Group justify="space-between" mt="md">
-            <Text size="xs" c="dimmed">
-              {event._count.comments} comment{event._count.comments !== 1 && 's'}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {event._count.eventLikes} like{event._count.eventLikes !== 1 && 's'}
-            </Text>
-          </Group>
+          <Stack gap="xs" p="md">
+            {/* UserBadge + date */}
+            <Group justify="space-between" align="center">
+              <UserBadge
+                user={{
+                  userId: event.photographer.user.id,
+                  name: photographerName,
+                  avatar: event.photographer.user.profilePic,
+                }}
+              />
+              <Text size="xs" c="dimmed">{event.date.toLocaleDateString()}</Text>
+            </Group>
+
+            {/* Title + description */}
+            <Title order={4}>{event.title}</Title>
+            {event.description && (
+              <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
+            )}
+
+            {/* Badges + counts */}
+            <Group gap="xs" wrap="wrap" justify="space-between" align="center">
+              <Group gap="xs" wrap="wrap" align="center">
+                {event.location && (
+                  <Badge variant="light" color="teal" size="xs">{event.location}</Badge>
+                )}
+                <Badge variant="light" size="xs">{event.date.toLocaleDateString()}</Badge>
+                <Badge variant="light" color="purple" size="xs">
+                  {event.duration} hour{event.duration > 1 ? 's' : ''}
+                </Badge>
+              </Group>
+
+              <Group gap="sm" align="center">
+                <Group gap={4} align="center">
+                  <IconMessageCircle size={14} color="var(--mantine-color-dimmed)" />
+                  <Text size="xs" c="dimmed">{event._count.comments}</Text>
+                </Group>
+                <Group gap={4} align="center">
+                  <IconHeart size={14} color="var(--mantine-color-dimmed)" />
+                  <Text size="xs" c="dimmed">{event._count.eventLikes}</Text>
+                </Group>
+              </Group>
+            </Group>
+          </Stack>
         </Link>
       </Card>
     </div>

@@ -73,16 +73,16 @@ export default function ReviewsList({
               <Group align="flex-start" gap="md">
                 <Avatar
                   src={review.user.profilePic}
-                  alt={`${review.user.firstName} ${review.user.lastName}`}
+                  alt={`${review.user.firstName || ""} ${review.user.lastName || ""}`.trim() || "User"}
                   size={40}
                   radius="xl"
                   color="initials"
-                  name={`${review.user.firstName} ${review.user.lastName}`}
+                  name={`${review.user.firstName || ""} ${review.user.lastName || ""}`.trim() || "User"}
                 />
                 <Stack gap={4} style={{ flex: 1 }}>
                   <Group justify="space-between" align="center">
                     <Text size="sm" fw={600}>
-                      {review.user.firstName} {review.user.lastName}
+                      {`${review.user.firstName || ""} ${review.user.lastName || ""}`.trim() || "User"}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {formatDate(review.createdAt)}

@@ -10,7 +10,7 @@ A photographer marketplace and social platform built with the T3 Stack, enabling
 - **API**: tRPC for end-to-end type safety
 - **Styling**: Tailwind CSS + Mantine UI
 - **Image Management**: Cloudinary
-- **Storage**: Supabase
+- **Realtime**: Cloudflare Durable Objects (ChatRoom WebSocket)
 - **Analytics**: PostHog, Vercel Analytics
 - **Payments**: Stripe
 - **Email**: Postmark

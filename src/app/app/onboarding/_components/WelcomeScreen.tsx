@@ -28,7 +28,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
 
         <Stack align="center" gap="xs">
           <Title order={1} ta="center">
-            Welcome to ISO, {firstName}!
+            Welcome to ISO{firstName ? `, ${firstName}` : ""}!
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={400}>
             {photographerCount >= SOCIAL_PROOF_THRESHOLD

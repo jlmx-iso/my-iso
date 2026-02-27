@@ -42,11 +42,22 @@ export default async function EventsFeed() {
         );
     }
 
+    // TODO: Pro members get hero priority
+    const [hero, ...rest] = events;
+
     return (
-        <Stack gap="md">
-            {events.map((event: any) => (
-                <EventCard key={event.id} eventId={event.id} />
-            ))}
+        <Stack gap="sm">
+            {hero && <EventCard key={hero.id} eventId={hero.id} variant="hero" />}
+
+            {rest.length > 0 && (
+                <div className="events-masonry">
+                    {rest.map((event: any) => (
+                        <div key={event.id} className="events-masonry-item">
+                            <EventCard eventId={event.id} />
+                        </div>
+                    ))}
+                </div>
+            )}
         </Stack>
     )
 }

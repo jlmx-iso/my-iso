@@ -5,6 +5,7 @@ import {
   Button,
   Divider,
   Paper,
+  PinInput,
   Stack,
   Text,
   TextInput,
@@ -18,10 +19,13 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 
 import logo from "../../../public/img/logo.webp";
+import { api } from "~/trpc/react";
 
 export default function Page() {
-  const [emailSent, setEmailSent] = useState(false);
+  const [step, setStep] = useState<"email" | "code">("email");
   const [isLoading, setIsLoading] = useState<"google" | "email" | null>(null);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const form = useForm({
     initialValues: { email: "" },
@@ -34,22 +38,43 @@ export default function Page() {
     },
   });
 
+  const requestOtp = api.auth.requestMobileOtp.useMutation({
+    onSuccess: () => {
+      setStep("code");
+      setIsLoading(null);
+    },
+    onError: (err) => {
+      setOtpError(err.message);
+      setIsLoading(null);
+    },
+  });
+
   const handleGoogleSignIn = async () => {
     setIsLoading("google");
     await signIn("google", { callbackUrl: "/app/events" });
   };
 
-  const handleEmailSignIn = async () => {
+  const handleRequestOtp = () => {
     if (form.validate().hasErrors) return;
+    setOtpError(null);
     setIsLoading("email");
-    const result = await signIn("resend", {
+    requestOtp.mutate({ email: form.values.email });
+  };
+
+  const handleVerifyOtp = async (code: string) => {
+    setOtpError(null);
+    setIsVerifying(true);
+    const result = await signIn("otp", {
       email: form.values.email,
+      code,
       redirect: false,
     });
+    setIsVerifying(false);
     if (result?.ok) {
-      setEmailSent(true);
+      window.location.href = "/app/events";
+    } else {
+      setOtpError("Invalid or expired code.");
     }
-    setIsLoading(null);
   };
 
   return (
@@ -86,22 +111,36 @@ export default function Page() {
 
           <Divider label="or continue with email" labelPosition="center" />
 
-          {emailSent ? (
-            <Stack align="center" gap="xs">
+          {step === "code" ? (
+            <Stack align="center" gap="sm">
               <IconMail size={40} color="var(--mantine-color-orange-5)" />
               <Text fw={500} ta="center">
-                Check your email
+                Enter your code
               </Text>
               <Text c="dimmed" size="sm" ta="center">
-                We sent a magic link to{" "}
+                We sent a 6-digit code to{" "}
                 <Text span fw={500}>
                   {form.values.email}
                 </Text>
               </Text>
+              <PinInput
+                length={6}
+                type="number"
+                size="md"
+                onComplete={handleVerifyOtp}
+              />
+              {otpError && (
+                <Text c="red" size="sm" ta="center">
+                  {otpError}
+                </Text>
+              )}
               <Button
                 variant="subtle"
                 size="sm"
-                onClick={() => setEmailSent(false)}
+                onClick={() => {
+                  setStep("email");
+                  setOtpError(null);
+                }}
               >
                 Use a different email
               </Button>
@@ -114,15 +153,20 @@ export default function Page() {
                 size="md"
                 {...form.getInputProps("email")}
               />
+              {otpError && (
+                <Text c="red" size="sm">
+                  {otpError}
+                </Text>
+              )}
               <Button
                 size="md"
                 variant="light"
                 leftSection={<IconMail size={20} />}
-                onClick={handleEmailSignIn}
-                loading={isLoading === "email"}
+                onClick={handleRequestOtp}
+                loading={requestOtp.isPending}
                 fullWidth
               >
-                Send magic link
+                Send sign-in code
               </Button>
             </>
           )}
