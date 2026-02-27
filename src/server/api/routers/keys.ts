@@ -133,25 +133,20 @@ export const keysRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const existing = await ctx.db.user.findUnique({
-          select: { publicKey: true },
-          where: { id: ctx.session.user.id },
-        });
-        if (existing?.publicKey) {
-          throw new TRPCError({ code: "CONFLICT", message: "Keys already exist. Re-authentication required to replace keys." });
-        }
-
         const encryptedPrivateKey = await encryptPrivateKey(
           ctx.session.user.id,
           input.privateKeyJwk,
         );
-        await ctx.db.user.update({
+        const result = await ctx.db.user.updateMany({
           data: {
             encryptedPrivateKey,
             publicKey: JSON.stringify(input.publicKeyJwk),
           },
-          where: { id: ctx.session.user.id },
+          where: { id: ctx.session.user.id, publicKey: null },
         });
+        if (result.count === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: "Keys already exist. Re-authentication required to replace keys." });
+        }
         return { ok: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
