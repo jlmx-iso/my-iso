@@ -48,7 +48,8 @@
     "**/*.cjs",
     "**/*.js",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "src/test/**"
   ],
   "exclude": [
     "node_modules"
