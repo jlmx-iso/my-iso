@@ -103,7 +103,7 @@ function makeCaller(session: unknown = null) {
     db: mockDb,
     headers: defaultHeaders,
     session,
-  } as Parameters<typeof authRouter.createCaller>[0]);
+  } as unknown as Parameters<typeof authRouter.createCaller>[0]);
 }
 
 const validRegisterInput = {

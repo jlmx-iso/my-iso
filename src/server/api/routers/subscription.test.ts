@@ -105,7 +105,7 @@ function makeAuthedCaller() {
     db: mockDb,
     headers: new Headers(),
     session: authedSession,
-  } as Parameters<typeof subscriptionRouter.createCaller>[0]);
+  } as unknown as Parameters<typeof subscriptionRouter.createCaller>[0]);
 }
 
 function makeAnonCaller() {
@@ -114,7 +114,7 @@ function makeAnonCaller() {
     db: mockDb,
     headers: new Headers(),
     session: null,
-  } as Parameters<typeof subscriptionRouter.createCaller>[0]);
+  } as unknown as Parameters<typeof subscriptionRouter.createCaller>[0]);
 }
 
 beforeEach(() => {

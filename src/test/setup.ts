@@ -2,7 +2,7 @@
 // SKIP_ENV_VALIDATION=1 (set in vitest.config.ts env) disables @t3-oss/env-nextjs validation,
 // so these only need to satisfy modules that read process.env directly.
 process.env.SKIP_ENV_VALIDATION = "1";
-process.env.NODE_ENV = "test";
+// NODE_ENV is set to "test" by Vitest via vitest.config.ts env block
 process.env.AUTH_SECRET = "test-secret-that-is-at-least-32-chars-long!!!";
 process.env.STRIPE_SECRET_KEY = "stripe_test_key_placeholder";
 process.env.STRIPE_WEBHOOK_SECRET = "stripe_webhook_secret_placeholder";

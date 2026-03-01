@@ -86,7 +86,7 @@ function makePublicCaller() {
     db: mockDb,
     headers: defaultHeaders,
     session: null,
-  } as Parameters<typeof waitlistRouter.createCaller>[0]);
+  } as unknown as Parameters<typeof waitlistRouter.createCaller>[0]);
 }
 
 function makeFounderCaller() {
@@ -96,7 +96,7 @@ function makeFounderCaller() {
     db: mockDb,
     headers: defaultHeaders,
     session: founderSession,
-  } as Parameters<typeof waitlistRouter.createCaller>[0]);
+  } as unknown as Parameters<typeof waitlistRouter.createCaller>[0]);
 }
 
 function makeOk<T>(value: T) {
