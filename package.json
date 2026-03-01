@@ -16,7 +16,12 @@
     "start": "next start",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && npx tsx prisma/seed.ts",
-    "db:seed:staging": "wrangler d1 execute DB --remote --env staging --file=prisma/seed-staging.sql"
+    "db:seed:staging": "wrangler d1 execute DB --remote --env staging --file=prisma/seed-staging.sql",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=verbose",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
@@ -84,6 +89,7 @@
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.19",
     "cross-env": "^10.1.0",
     "dotenv": "^17.2.3",
@@ -98,6 +104,7 @@
     "prisma": "^7.2.0",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
+    "vitest": "^4.0.18",
     "wrangler": "^4.65.0"
   },
   "peerDependencies": {
