@@ -53,7 +53,7 @@ vi.mock("~/env", () => ({
     NODE_ENV: "test",
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: undefined,
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: undefined,
-    STRIPE_SECRET_KEY: "sk_test_placeholder",
+    STRIPE_SECRET_KEY: "stripe_test_key_placeholder",
     STRIPE_STANDARD_ANNUAL_PRICE_ID: undefined,
     STRIPE_STANDARD_MONTHLY_PRICE_ID: undefined,
   },

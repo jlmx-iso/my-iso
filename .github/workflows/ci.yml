@@ -44,6 +44,7 @@ jobs:
         uses: codecov/codecov-action@v4
         if: always()
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
           fail_ci_if_error: false
 
@@ -65,6 +66,10 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
+
+      - name: Generate Prisma client
+        # DATABASE_URL is required by prisma.config.ts even for client generation (no DB connection made)
+        run: PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 DATABASE_URL=file:./test.db npx prisma generate
 
       - name: Build
         run: SKIP_ENV_VALIDATION=1 yarn build

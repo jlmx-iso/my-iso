@@ -69,7 +69,7 @@ vi.mock("~/env", () => ({
     GOOGLE_CLIENT_ID: "test-google-client-id",
     NEXT_PUBLIC_BASE_URL: "http://localhost:3000",
     NODE_ENV: "test",
-    STRIPE_SECRET_KEY: "sk_test_placeholder",
+    STRIPE_SECRET_KEY: "stripe_test_key_placeholder",
   },
 }));
 
