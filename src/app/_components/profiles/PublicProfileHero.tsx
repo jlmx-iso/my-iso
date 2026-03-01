@@ -160,8 +160,8 @@ export default function PublicProfileHero({
               {safeWebsite && (
                 <SocialLink href={safeWebsite} icon={IconWorld} label="Website" />
               )}
-              {photographer.instagram && (
-                <SocialLink href={instagramUrl(photographer.instagram) ?? `https://instagram.com/${photographer.instagram}`} icon={IconBrandInstagram} label="Instagram" />
+              {photographer.instagram && instagramUrl(photographer.instagram) && (
+                <SocialLink href={instagramUrl(photographer.instagram)!} icon={IconBrandInstagram} label="Instagram" />
               )}
               {photographer.facebook && (
                 <SocialLink href={facebookUrl(photographer.facebook)} icon={IconBrandFacebook} label="Facebook" />

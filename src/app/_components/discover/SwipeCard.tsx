@@ -315,8 +315,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                         </Group>
                       </Anchor>
                     )}
-                    {photo.instagram && (
-                      <Anchor href={instagramUrl(photo.instagram) ?? undefined} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
+                    {photo.instagram && instagramUrl(photo.instagram) && (
+                      <Anchor href={instagramUrl(photo.instagram)!} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
                         <Group gap={4}>
                           <ThemeIcon size={20} variant="subtle" color="grape">
                             <IconBrandInstagram size={14} />
