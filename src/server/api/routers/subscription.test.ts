@@ -7,12 +7,12 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 const mockDb = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
-    user: {
-      findUnique: vi.fn(),
-    },
     subscription: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
     },
   };
   return db;
@@ -33,8 +33,8 @@ vi.mock("stripe", () => {
   // Must use a regular function (not arrow) so it's usable as a constructor
   function MockStripe() {
     return {
-      checkout: { sessions: { create: mockStripeCheckoutCreate } },
       billingPortal: { sessions: { create: mockStripePortalCreate } },
+      checkout: { sessions: { create: mockStripeCheckoutCreate } },
       subscriptions: { list: mockStripeSubscriptionsList },
     };
   }
@@ -88,6 +88,7 @@ vi.mock("~/server/_utils/pricing", () => ({
 // ---------------------------------------------------------------------------
 
 import { subscriptionRouter } from "./subscription";
+
 import { getPriceIdForCheckout, getPricingForRole } from "~/server/_utils/pricing";
 
 // ---------------------------------------------------------------------------
@@ -179,16 +180,16 @@ describe("subscriptionRouter.getStatus", () => {
 
   it("returns subscription when one exists", async () => {
     const fakeSub = {
-      userId: "user-1",
+      expiresAt: null,
       isActive: true,
       isCanceled: false,
-      isPaused: false,
-      isTrial: false,
       isExpired: false,
-      isPending: false,
       isLifetime: false,
+      isPaused: false,
+      isPending: false,
+      isTrial: false,
       subscriptionId: "sub_123",
-      expiresAt: null,
+      userId: "user-1",
     };
     mockDb.subscription.findUnique.mockResolvedValueOnce(fakeSub);
 
