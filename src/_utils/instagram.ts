@@ -17,15 +17,15 @@ export function isValidInstagramHandle(value: string): boolean {
   return /^[a-zA-Z0-9._]{1,30}$/.test(normalizeInstagramHandle(value));
 }
 
-/** Build the full profile URL from a stored handle. */
-export function instagramUrl(handle: string): string {
+/** Build the full profile URL from a stored handle. Returns null for non-Instagram URLs. */
+export function instagramUrl(handle: string): string | null {
   if (handle.startsWith("http")) {
     try {
       const parsed = new URL(handle);
       const host = parsed.hostname.toLowerCase();
       if (host === "instagram.com" || host === "www.instagram.com") return handle;
     } catch { /* fall through */ }
-    return `https://instagram.com/${handle}`;
+    return null;
   }
   return `https://instagram.com/${handle}`;
 }

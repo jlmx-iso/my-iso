@@ -88,9 +88,7 @@ describe("instagramUrl", () => {
     expect(instagramUrl(url)).toBe(url);
   });
 
-  it("falls back for non-instagram http URLs", () => {
-    expect(instagramUrl("https://example.com/myhandle")).toBe(
-      "https://instagram.com/https://example.com/myhandle",
-    );
+  it("returns null for non-instagram http URLs", () => {
+    expect(instagramUrl("https://example.com/myhandle")).toBeNull();
   });
 });
