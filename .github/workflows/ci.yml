@@ -28,7 +28,8 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 npx prisma generate
+        # DATABASE_URL is required by prisma.config.ts even for client generation (no DB connection made)
+        run: PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 DATABASE_URL=file:./test.db npx prisma generate
 
       - name: Type check
         run: yarn type-check
