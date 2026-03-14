@@ -9,6 +9,7 @@ import {
 } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 
+import { formatLocalDate } from "~/_lib/dayjs";
 import EmptyState from "../EmptyState";
 import { StarRating } from "./PublicProfileHero";
 
@@ -32,11 +33,7 @@ type ReviewsListProps = {
 };
 
 function formatDate(date: Date): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatLocalDate(date, "MMMM D, YYYY");
 }
 
 export default function ReviewsList({
