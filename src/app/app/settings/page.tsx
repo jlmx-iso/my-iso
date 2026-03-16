@@ -112,7 +112,7 @@ export default async function SettingsPage() {
                 <Text size="sm" c="orange">
                   Your subscription is canceled but remains active until{" "}
                   {subscription.expiresAt
-                    ? <LocalDate date={subscription.expiresAt} />
+                    ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
                     : "the end of your billing period"}
                   .
                 </Text>
