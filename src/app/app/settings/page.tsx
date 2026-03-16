@@ -21,6 +21,7 @@ import {
 } from "@tabler/icons-react";
 
 import BillingActions from "./_components/BillingActions";
+import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
@@ -111,7 +112,7 @@ export default async function SettingsPage() {
                 <Text size="sm" c="orange">
                   Your subscription is canceled but remains active until{" "}
                   {subscription.expiresAt
-                    ? new Date(subscription.expiresAt).toLocaleDateString()
+                    ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
                     : "the end of your billing period"}
                   .
                 </Text>

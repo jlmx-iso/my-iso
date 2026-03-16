@@ -13,6 +13,7 @@ import EventCardSkeleton from "./EventCardSkeleton";
 import AddCommentForm from "../AddCommentForm";
 import Timemarker from "../Timemarker";
 
+import { formatLocalDate } from "~/_lib/dayjs";
 import { api } from "~/trpc/react";
 
 type EventCardProps = {
@@ -88,7 +89,7 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
                                 </Badge>
                             )}
                             <Badge variant="light" size="sm">
-                                {data.date.toLocaleDateString()}
+                                {formatLocalDate(data.date)}
                             </Badge>
                             <Badge variant="outline" size="sm">
                                 {data.duration} hour{data.duration > 1 ? "s" : ""}

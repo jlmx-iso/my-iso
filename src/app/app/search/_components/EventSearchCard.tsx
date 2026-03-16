@@ -3,6 +3,7 @@
 import { Card, Group, Text, Title, Badge, Image } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
 import Link from 'next/link';
+import { formatLocalDate } from '~/_lib/dayjs';
 import type { RouterOutputs } from '~/trpc/react';
 
 type EventSearchCardProps = {
@@ -21,7 +22,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
           <Group justify="space-between" mb="md" wrap="wrap">
             <Text size="sm" fs="italic" c="dimmed">{event.location}</Text>
             <Group gap="xs">
-              <Badge size="lg" variant="transparent">{event.date.toLocaleDateString()}</Badge>
+              <Badge size="lg" variant="transparent">{formatLocalDate(event.date)}</Badge>
               <Badge size="sm" variant="outline">
                 {event.duration} Hour{event.duration > 1 && "s"}
               </Badge>

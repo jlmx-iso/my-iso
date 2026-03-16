@@ -12,6 +12,8 @@ import { IconMessageCircle } from "@tabler/icons-react";
 import EmptyState from "../EmptyState";
 import { StarRating } from "./PublicProfileHero";
 
+import { formatLocalDate } from "~/_lib/dayjs";
+
 type Review = {
   id: string;
   rating: number;
@@ -32,11 +34,7 @@ type ReviewsListProps = {
 };
 
 function formatDate(date: Date): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatLocalDate(date, "MMMM D, YYYY");
 }
 
 export default function ReviewsList({
