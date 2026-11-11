@@ -21,6 +21,7 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 
+import { formatLocalDate } from "~/_lib/dayjs";
 import { Avatar } from "~/app/_components/Avatar";
 import PageHeader from "~/app/_components/PageHeader";
 import { api } from "~/trpc/react";
@@ -157,7 +158,7 @@ export default function Page() {
                   </Text>
                 </Box>
                 <Text size="xs" c="dimmed">
-                  {new Date(r.redeemedAt).toLocaleDateString()}
+                  {formatLocalDate(r.redeemedAt)}
                 </Text>
               </Group>
             ))}
