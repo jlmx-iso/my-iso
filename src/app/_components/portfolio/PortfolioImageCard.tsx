@@ -92,7 +92,7 @@ export default function PortfolioImageCard({
         overflow: "hidden",
         cursor: onClick ? "pointer" : "default",
         breakInside: "avoid",
-        marginBottom: "var(--mantine-spacing-md)",
+        marginBottom: "var(--mantine-spacing-sm)",
       }}
       onClick={onClick}
     >

@@ -13,6 +13,12 @@ const photographerArgs = {
         profilePic: true,
       },
     },
+    portfolioImages: {
+      where: { isDeleted: false },
+      orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }],
+      take: 4,
+      select: { id: true, image: true, title: true },
+    },
   },
 } satisfies Prisma.PhotographerFindManyArgs;
 
@@ -25,6 +31,7 @@ const eventArgs = {
             id: true,
             firstName: true,
             lastName: true,
+            profilePic: true,
           },
         },
       },
@@ -110,6 +117,12 @@ export const searchRouter = createTRPCRouter({
                   profilePic: true,
                 },
               },
+              portfolioImages: {
+                where: { isDeleted: false },
+                orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }],
+                take: 4,
+                select: { id: true, image: true, title: true },
+              },
             },
           })
         : Promise.resolve([]);
@@ -127,6 +140,7 @@ export const searchRouter = createTRPCRouter({
                       id: true,
                       firstName: true,
                       lastName: true,
+                      profilePic: true,
                     },
                   },
                 },

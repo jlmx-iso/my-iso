@@ -5,6 +5,7 @@ import { type FileWithPath } from '@mantine/dropzone';
 import { useHover } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconUpload } from '@tabler/icons-react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -29,6 +30,7 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
     const [uploading, setUploading] = useState(false);
     const [files, setFiles] = useState<FileWithPath[] | null>(null);
     const uploadImage = api.photographer.uploadProfileImage.useMutation();
+    const { update: updateSession } = useSession();
     const router = useRouter();
 
     const handleFileChange = (files: FileWithPath[]) => {
@@ -49,7 +51,8 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
                     await uploadImage.mutateAsync({
                         image: base64File,
                     });
-                    // Only navigate on success
+                    // Refresh the session so the navbar avatar updates
+                    await updateSession();
                     setFiles(null);
                     setUploading(false);
                     router.push('/app/profile');
@@ -106,7 +109,7 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
                         Upload
                     </Button>
                 </Modal>
-                <Avatar src={avatar} name={name} size={size} />
+                <Avatar src={avatar} name={name} size={120} />
             </Box>
         )
     }

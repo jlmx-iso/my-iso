@@ -1,31 +1,33 @@
 'use client';
 
 import { useState } from 'react';
-import { TextInput, Button, Group, SegmentedControl, Stack, Text, Collapse, ActionIcon, Paper } from '@mantine/core';
+import { TextInput, Button, Group, Stack, Text, Collapse, ActionIcon, Paper, SegmentedControl } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { IconAdjustments, IconSearch } from '@tabler/icons-react';
 import { api } from '~/trpc/react';
 import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
 import EmptyState from '~/app/_components/EmptyState';
-import PageHeader from '~/app/_components/PageHeader';
 import SearchResults from './_components/SearchResults';
 import SearchLoadingSkeleton from './_components/SearchLoadingSkeleton';
+
+type SearchType = 'all' | 'photographers' | 'events';
 
 export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState('');
-  const [searchType, setSearchType] = useState<'all' | 'photographers' | 'events'>('all');
+  const [searchType, setSearchType] = useState<SearchType>('all');
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [hasSearched, setHasSearched] = useState(false);
   const [filtersOpen, { toggle: toggleFilters }] = useDisclosure(false);
 
+  // Always fetch all types — searchType only controls client-side display filtering
   const { data: results, isLoading, error } = api.search.searchAll.useQuery(
     {
       query: searchQuery,
       location: location || undefined,
       filters: {
-        type: searchType,
+        type: 'all',
         dateFrom: dateRange[0] ?? undefined,
         dateTo: dateRange[1] ?? undefined,
       },
@@ -39,16 +41,15 @@ export default function SearchPage() {
     }
   };
 
-  const hasActiveFilters = location || searchType !== 'all' || dateRange[0] || dateRange[1];
+  const hasActiveFilters = location || dateRange[0] || dateRange[1];
+
+  const photographerCount = results?.photographers.length ?? 0;
+  const eventCount = results?.events.length ?? 0;
+  const totalCount = photographerCount + eventCount;
 
   return (
-    <Stack gap="lg">
-      <PageHeader
-        title="Search"
-        description="Find photographers and events near you"
-      />
-
-      {/* Search bar */}
+    <Stack gap="sm">
+      {/* Search bar with filter toggle integrated */}
       <TextInput
         placeholder="Search photographers, events, locations..."
         value={searchQuery}
@@ -56,49 +57,36 @@ export default function SearchPage() {
         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         leftSection={<IconSearch size={20} />}
         rightSection={
-          <Button
-            size="compact-sm"
-            onClick={handleSearch}
-            loading={isLoading}
-            mr={4}
-          >
-            Search
-          </Button>
+          <Group gap={4} wrap="nowrap" mr={4}>
+            <ActionIcon
+              variant={hasActiveFilters ? 'filled' : 'subtle'}
+              color={hasActiveFilters ? undefined : 'gray'}
+              onClick={toggleFilters}
+              size="sm"
+              radius="sm"
+              aria-label="Toggle filters"
+              aria-expanded={filtersOpen}
+            >
+              <IconAdjustments size={16} />
+            </ActionIcon>
+            <Button
+              size="compact-sm"
+              onClick={handleSearch}
+              loading={isLoading}
+            >
+              Search
+            </Button>
+          </Group>
         }
-        rightSectionWidth={90}
+        rightSectionWidth={130}
         aria-label="Search query"
         size="lg"
         radius="md"
       />
 
-      {/* Type + filter toggle */}
-      <Group justify="space-between" align="center">
-        <SegmentedControl
-          value={searchType}
-          onChange={(val) => setSearchType(val as 'all' | 'photographers' | 'events')}
-          data={[
-            { value: 'all', label: 'All' },
-            { value: 'photographers', label: 'Photographers' },
-            { value: 'events', label: 'Events' },
-          ]}
-          size="sm"
-        />
-        <ActionIcon
-          variant={hasActiveFilters ? "filled" : "subtle"}
-          color={hasActiveFilters ? undefined : "gray"}
-          onClick={toggleFilters}
-          size="lg"
-          radius="md"
-          aria-label="Toggle filters"
-          aria-expanded={filtersOpen}
-        >
-          <IconAdjustments size={20} />
-        </ActionIcon>
-      </Group>
-
       {/* Collapsible filters */}
       <Collapse in={filtersOpen}>
-        <Paper p="md" radius="md" withBorder>
+        <Paper p="sm" radius="md" withBorder>
           <Stack gap="sm">
             <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
               Filters
@@ -125,6 +113,20 @@ export default function SearchPage() {
         </Paper>
       </Collapse>
 
+      {/* SegmentedControl — only show after search */}
+      {hasSearched && !isLoading && results && totalCount > 0 && (
+        <SegmentedControl
+          value={searchType}
+          onChange={(v) => setSearchType(v as SearchType)}
+          data={[
+            { label: `All (${totalCount})`, value: 'all' },
+            { label: `Photographers (${photographerCount})`, value: 'photographers' },
+            { label: `Events (${eventCount})`, value: 'events' },
+          ]}
+          size="sm"
+        />
+      )}
+
       {/* Screen reader announcements */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {isLoading && "Searching..."}
@@ -142,7 +144,7 @@ export default function SearchPage() {
 
       {/* Results */}
       {isLoading && hasSearched && <SearchLoadingSkeleton type={searchType} />}
-      {hasSearched && !isLoading && results && <SearchResults results={results} />}
+      {hasSearched && !isLoading && results && <SearchResults results={results} searchType={searchType} />}
       {hasSearched && !isLoading && !error && !results && (
         <EmptyState
           icon={IconSearch}

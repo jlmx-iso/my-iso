@@ -324,7 +324,7 @@ export default function AboutPage() {
               </Text>
               <Button
                 component="a"
-                href="/register"
+                href="/join"
                 size="lg"
                 rightSection={<IconArrowRight size={18} />}
               >

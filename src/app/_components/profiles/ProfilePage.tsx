@@ -3,9 +3,9 @@ import {
   Badge,
   Box,
   Button,
+  Divider,
   Group,
   Paper,
-  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -20,6 +20,7 @@ import {
   IconBrandYoutube,
   IconCamera,
   IconMapPin,
+  IconMessage,
   IconPencil,
   IconUser,
   IconWorld,
@@ -29,6 +30,7 @@ import { FavoriteButton } from "./FavoriteButton";
 import EditProfile from "./EditProfile";
 import EmptyState from "../EmptyState";
 import { Notification } from "../Notification";
+import PortfolioImageCard from "../portfolio/PortfolioImageCard";
 import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
 import ProfileAvatar from "./ProfileAvatar";
 
@@ -83,7 +85,7 @@ export const ProfilePage = async ({
           description="Complete your registration to set up your photographer profile and start connecting."
         />
         <Group justify="center">
-          <Button component="a" href="/register" size="md">
+          <Button component="a" href="/join" size="md">
             Complete Registration
           </Button>
         </Group>
@@ -104,58 +106,71 @@ export const ProfilePage = async ({
     (s) => photographer[s.key],
   );
 
+  const sortedResources = [...resources].sort((a, b) => {
+    if (a.isFeatured && !b.isFeatured) return -1;
+    if (!a.isFeatured && b.isFeatured) return 1;
+    return 0;
+  });
+
   if (isEditingModeEnabled) {
     return <EditProfile photographer={photographer} />;
   }
 
   return (
-    <Stack w="100%" gap="xl">
+    <Stack w="100%" gap={0}>
       {isSuccess && (
-        <Notification type="success">
-          Your profile has been updated successfully!
-        </Notification>
-      )}
-
-      {/* Cover / Portfolio Banner */}
-      {resources.length > 0 && (
-        <Box
-          h={{ base: 200, sm: 280 }}
-          pos="relative"
-          w="100%"
-          style={{
-            borderRadius: "var(--mantine-radius-lg)",
-            overflow: "hidden",
-          }}
-        >
-          <PortfolioThumbnail src={resources[0]!.image} alt="" />
-          {/* Gradient overlay for depth */}
-          <Box
-            pos="absolute"
-            bottom={0}
-            left={0}
-            right={0}
-            h={80}
-            style={{
-              background:
-                "linear-gradient(transparent, rgba(0,0,0,0.3))",
-            }}
-          />
+        <Box mb="lg">
+          <Notification type="success">
+            Your profile has been updated successfully!
+          </Notification>
         </Box>
       )}
 
-      {/* Profile Header Card */}
-      <Paper
-        p={{ base: "lg", sm: "xl" }}
-        radius="lg"
-        withBorder
+      {/* Cover Banner */}
+      <Box
+        h={{ base: 200, sm: 300 }}
+        pos="relative"
+        w="100%"
         style={{
-          marginTop: resources.length > 0 ? -48 : 0,
-          position: "relative",
-          zIndex: 1,
+          borderRadius: "var(--mantine-radius-lg)",
+          overflow: "hidden",
+          background: resources.length === 0
+            ? "linear-gradient(135deg, var(--mantine-color-orange-0) 0%, var(--mantine-color-teal-0) 40%, var(--mantine-color-purple-0) 100%)"
+            : undefined,
         }}
       >
-        <Group align="flex-start" wrap="nowrap" gap="lg">
-          {/* Avatar */}
+        {resources.length > 0 && (
+          <>
+            <PortfolioThumbnail src={resources[0]!.image} alt={`${photographer.name} portfolio cover`} />
+            <Box
+              pos="absolute"
+              bottom={0}
+              left={0}
+              right={0}
+              h={120}
+              style={{
+                background:
+                  "linear-gradient(transparent, rgba(0,0,0,0.45))",
+              }}
+            />
+          </>
+        )}
+      </Box>
+
+      {/* Profile Header — overlaps the banner */}
+      <Box
+        px={{ base: "md", sm: "xl" }}
+        style={{ marginTop: -60, position: "relative", zIndex: 1 }}
+      >
+        <Box
+          style={{
+            background: "var(--mantine-color-body)",
+            border: "3px solid var(--mantine-color-body)",
+            borderRadius: "50%",
+            lineHeight: 0,
+            width: "fit-content",
+          }}
+        >
           <Box visibleFrom="sm">
             <ProfileAvatar
               avatar={photographer.avatar}
@@ -172,10 +187,12 @@ export const ProfilePage = async ({
               size="lg"
             />
           </Box>
+        </Box>
 
-          {/* Name + Meta */}
-          <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-            <Group gap="xs" wrap="nowrap">
+        {/* Name + Meta + Bio */}
+        <Stack gap={6} mt="md">
+          <Group gap="xs" align="center" justify="space-between" wrap="nowrap">
+            <Group gap="xs" align="center" style={{ minWidth: 0 }}>
               <Title order={2} lineClamp={1}>
                 {photographer.name}
               </Title>
@@ -187,12 +204,44 @@ export const ProfilePage = async ({
               </Badge>
             </Group>
 
+            <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+              {!isSelf && (
+                <>
+                  <FavoriteButton
+                    isFavorite={isFavorite}
+                    targetUserId={photographer.id}
+                  />
+                  <Button
+                    component="a"
+                    href={`/app/messages?new=${photographer.userId}`}
+                    size="sm"
+                    variant="filled"
+                    leftSection={<IconMessage size={16} />}
+                  >
+                    Message
+                  </Button>
+                </>
+              )}
+              {isSelf && (
+                <Button
+                  component="a"
+                  href="/app/profile?edit=true"
+                  variant="light"
+                  size="sm"
+                  leftSection={<IconPencil size={16} />}
+                >
+                  Edit Profile
+                </Button>
+              )}
+            </Group>
+          </Group>
+
+          <Group gap="md">
             {photographer.companyName && (
               <Text size="sm" fw={500} c="dimmed">
                 {photographer.companyName}
               </Text>
             )}
-
             {photographer.location && (
               <Group gap={4}>
                 <IconMapPin size={14} color="var(--mantine-color-dimmed)" />
@@ -201,100 +250,50 @@ export const ProfilePage = async ({
                 </Text>
               </Group>
             )}
-          </Stack>
-
-          {/* Actions */}
-          <Group gap="xs">
-            {!isSelf && (
-              <FavoriteButton
-                isFavorite={isFavorite}
-                targetUserId={photographer.id}
-              />
-            )}
-            {isSelf && (
-              <Button
-                component="a"
-                href="/app/profile?edit=true"
-                variant="light"
-                size="sm"
-                leftSection={<IconPencil size={16} />}
-              >
-                Edit Profile
-              </Button>
-            )}
           </Group>
-        </Group>
-      </Paper>
 
-      {/* Content Grid */}
-      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">
-        {/* Left Column — Bio + Socials */}
-        <Stack gap="lg" style={{ gridColumn: "span 1" }}>
-          {/* Bio */}
           {photographer.bio && (
-            <Paper p="lg" radius="md" withBorder>
-              <Text
-                size="xs"
-                fw={700}
-                c="dimmed"
-                tt="uppercase"
-                mb="sm"
-                style={{ letterSpacing: 1 }}
-              >
-                About
-              </Text>
-              <Text size="sm" style={{ lineHeight: 1.7 }}>
-                {photographer.bio}
-              </Text>
-            </Paper>
+            <Text size="sm" style={{ lineHeight: 1.7 }} mt={4} maw={640}>
+              {photographer.bio}
+            </Text>
           )}
 
-          {/* Social Links */}
           {activeSocials.length > 0 && (
-            <Paper p="lg" radius="md" withBorder>
-              <Text
-                size="xs"
-                fw={700}
-                c="dimmed"
-                tt="uppercase"
-                mb="sm"
-                style={{ letterSpacing: 1 }}
-              >
-                Connect
-              </Text>
-              <Stack gap="xs">
-                {activeSocials.map((social) => {
-                  const handle = photographer[social.key];
-                  if (!handle) return null;
-                  const href = social.toUrl(handle);
-                  if (!href) return null;
-                  const Icon = social.icon;
-                  return (
-                    <Anchor
-                      key={social.key}
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      underline="never"
-                      c="inherit"
-                    >
-                      <Group gap="sm">
-                        <Icon size={18} color="var(--mantine-color-dimmed)" />
-                        <Text size="sm">{social.label}</Text>
-                      </Group>
-                    </Anchor>
-                  );
-                })}
-              </Stack>
-            </Paper>
+            <Group gap="sm" mt={2}>
+              {activeSocials.map((social) => {
+                const handle = photographer[social.key];
+                if (!handle) return null;
+                const href = social.toUrl(handle);
+                if (!href) return null;
+                const Icon = social.icon;
+                return (
+                  <Anchor
+                    key={social.key}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    c="dimmed"
+                    style={{ display: "flex", alignItems: "center" }}
+                    underline="never"
+                    aria-label={social.label}
+                  >
+                    <Icon size={20} />
+                  </Anchor>
+                );
+              })}
+            </Group>
           )}
         </Stack>
+      </Box>
 
-        {/* Right Column — Portfolio */}
-        <Box style={{ gridColumn: resources.length > 0 ? "span 2" : "span 1" }}>
-          {resources.length > 0 ? (
-            <Paper p="lg" radius="md" withBorder>
-              <Group justify="space-between" mb="md">
+      {/* Portfolio — only show section when there are images or it's the owner */}
+      {(sortedResources.length > 0 || isSelf) && (
+        <>
+          <Divider my="xl" />
+
+          <Box>
+            {sortedResources.length > 0 && (
+              <Group justify="space-between" mb="md" px={{ base: "md", sm: "xl" }}>
                 <Text
                   size="xs"
                   fw={700}
@@ -306,52 +305,72 @@ export const ProfilePage = async ({
                 </Text>
                 {isSelf && <PortfolioUpload />}
               </Group>
-              <SimpleGrid
-                cols={{ base: 2, sm: 3 }}
-                spacing="sm"
+            )}
+
+            {sortedResources.length > 0 ? (
+              <>
+                <Box
+                  style={{
+                    columnCount: 3,
+                    columnGap: "var(--mantine-spacing-sm)",
+                  }}
+                  px={{ base: "md", sm: "xl" }}
+                  visibleFrom="sm"
+                >
+                  {sortedResources.map((image) => (
+                    <PortfolioImageCard
+                      key={image.id}
+                      {...image}
+                      isOwner={isSelf}
+                    />
+                  ))}
+                </Box>
+                <Box
+                  style={{
+                    columnCount: 2,
+                    columnGap: "var(--mantine-spacing-xs)",
+                  }}
+                  px={{ base: "md", sm: "xl" }}
+                  hiddenFrom="sm"
+                >
+                  {sortedResources.map((image) => (
+                    <PortfolioImageCard
+                      key={image.id}
+                      {...image}
+                      isOwner={isSelf}
+                    />
+                  ))}
+                </Box>
+              </>
+            ) : (
+              <Paper
+                p="xl"
+                mx={{ base: "md", sm: "xl" }}
+                radius="md"
+                withBorder
+                style={{ borderStyle: "dashed" }}
               >
-                {resources.map((image) => (
-                  <Box
-                    key={image.id}
-                    pos="relative"
-                    style={{
-                      aspectRatio: "1",
-                      borderRadius: "var(--mantine-radius-md)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <PortfolioThumbnail src={image.image} alt={image.title} />
-                  </Box>
-                ))}
-              </SimpleGrid>
-            </Paper>
-          ) : isSelf ? (
-            <Paper
-              p="xl"
-              radius="md"
-              withBorder
-              style={{ borderStyle: "dashed" }}
-            >
-              <Stack align="center" gap="md" py="lg">
-                <IconCamera
-                  size={48}
-                  color="var(--mantine-color-dimmed)"
-                  stroke={1.5}
-                />
-                <Stack align="center" gap={4}>
-                  <Text fw={600} size="sm">
-                    No portfolio images yet
-                  </Text>
-                  <Text size="xs" c="dimmed" ta="center" maw={280}>
-                    Upload photos to showcase your work and attract more clients.
-                  </Text>
+                <Stack align="center" gap="md" py="md">
+                  <IconCamera
+                    size={40}
+                    color="var(--mantine-color-dimmed)"
+                    stroke={1.5}
+                  />
+                  <Stack align="center" gap={4}>
+                    <Text fw={600} size="sm">
+                      Add your first portfolio image
+                    </Text>
+                    <Text size="xs" c="dimmed" ta="center" maw={280}>
+                      Showcase your work to attract clients.
+                    </Text>
+                  </Stack>
+                  <PortfolioUpload />
                 </Stack>
-                <PortfolioUpload />
-              </Stack>
-            </Paper>
-          ) : null}
-        </Box>
-      </SimpleGrid>
+              </Paper>
+            )}
+          </Box>
+        </>
+      )}
     </Stack>
   );
 };

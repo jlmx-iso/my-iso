@@ -26,7 +26,7 @@ This project is built with the [T3 Stack](https://create.t3.gg/):
 Additional integrations:
 - PostgreSQL database
 - Cloudinary for image management
-- Supabase for storage
+- Cloudflare Durable Objects for real-time messaging
 - Stripe for payments
 - Postmark for transactional emails
 - PostHog for analytics

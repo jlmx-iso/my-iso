@@ -281,6 +281,7 @@ async function main() {
         location: "Austin, TX",
         date: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // 1 week out
         duration: 8,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725137168/clwnjqocv0005js82rrztmwwq/events/al9dte2htncqb6rhs5ej.png",
       },
     }),
     db.event.create({
@@ -303,6 +304,7 @@ async function main() {
         location: "Portland, OR",
         date: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000), // 2 weeks
         duration: 10,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725071138/clwnjqocv0005js82rrztmwwq/events/m27zx5mi0vdc8n5fv02z.png",
       },
     }),
     db.event.create({
@@ -314,6 +316,7 @@ async function main() {
         location: "Nashville, TN",
         date: new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000), // 3 weeks
         duration: 12,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725075950/clwnjqocv0005js82rrztmwwq/events/kbcauyn2rldj3l1lx9tm.png",
       },
     }),
     db.event.create({
@@ -382,6 +385,122 @@ async function main() {
         duration: 3,
       },
     }),
+    // --- New events (11–20) ---
+    db.event.create({
+      data: {
+        photographerId: photographers[3]!.id,
+        title: "Street Photography Walk — Downtown Nashville",
+        description:
+          "Casual group photo walk through downtown Nashville hitting Broadway, Printers Alley, and the riverfront. All skill levels welcome. We'll share edits in a group album afterward.",
+        location: "Nashville, TN",
+        date: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000),
+        duration: 3,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725137168/clwnjqocv0005js82rrztmwwq/events/al9dte2htncqb6rhs5ej.png",
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[5]!.id,
+        title: "Tech Startup Launch Party — Full Coverage",
+        description:
+          "High-energy launch party for a Series A startup. 200+ attendees, live DJ, keynote talk. Need a photographer who can capture candids, speaker moments, and branding details.",
+        location: "Chicago, IL",
+        date: new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000),
+        duration: 4,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725075950/clwnjqocv0005js82rrztmwwq/events/kbcauyn2rldj3l1lx9tm.png",
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[0]!.id,
+        title: "Golden Hour Couples Marathon — 6 Sessions",
+        description:
+          "Running back-to-back 20-minute couples sessions at Zilker Park during golden hour. Need a second shooter to alternate setups and keep things flowing smoothly.",
+        location: "Austin, TX",
+        date: new Date(now.getTime() + 12 * 24 * 60 * 60 * 1000),
+        duration: 3,
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[2]!.id,
+        title: "Farmers Market Brand Content Day",
+        description:
+          "Shooting lifestyle content for three vendors at the Portland Saturday Market. Product close-ups, customer interactions, and vibrant market atmosphere. Great for food/lifestyle portfolio.",
+        location: "Portland, OR",
+        date: new Date(now.getTime() + 11 * 24 * 60 * 60 * 1000),
+        duration: 4,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725071138/clwnjqocv0005js82rrztmwwq/events/m27zx5mi0vdc8n5fv02z.png",
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[1]!.id,
+        title: "Ski Resort Lifestyle Shoot — Need Drone Operator",
+        description:
+          "Two-day lifestyle campaign for Breckenridge Resort. Looking for a licensed drone operator to capture aerial powder shots, village scenery, and après-ski vibes.",
+        location: "Estes Park, CO",
+        date: new Date(now.getTime() + 18 * 24 * 60 * 60 * 1000),
+        duration: 8,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725071094/clwnjqocv0005js82rrztmwwq/events/f1avevnszdkjwg0rugme.png",
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[4]!.id,
+        title: "Real Estate Photography — 5 Listings",
+        description:
+          "Shooting 5 residential listings in the Queen Anne neighborhood. Need an assistant for lighting, staging touch-ups, and twilight exterior shots. Fast turnaround required.",
+        location: "Seattle, WA",
+        date: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
+        duration: 6,
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[3]!.id,
+        title: "Charity Gala — Black Tie Event Photography",
+        description:
+          "Annual fundraiser gala at the Country Music Hall of Fame. 400 guests, live auction, musical performances. Need a second photographer comfortable with flash in formal settings.",
+        location: "Nashville, TN",
+        date: new Date(now.getTime() + 25 * 24 * 60 * 60 * 1000),
+        duration: 5,
+        image: "https://res.cloudinary.com/ix0cl0ud060708/image/upload/v1725070735/clwnjqocv0005js82rrztmwwq/events/w3inrg5qb8ph7znkzmup.png",
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[0]!.id,
+        title: "Quinceañera — Full Day Coverage",
+        description:
+          "Quinceañera celebration at a downtown Austin event hall. Church ceremony in the morning, reception with live band in the evening. Need a bilingual second shooter if possible.",
+        location: "Austin, TX",
+        date: new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000),
+        duration: 10,
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[5]!.id,
+        title: "Yoga Retreat — Wellness Brand Content",
+        description:
+          "Capturing a full-day wellness retreat for a Chicago-based yoga studio's rebrand. Outdoor classes, meditation sessions, healthy food prep, and portraits of instructors.",
+        location: "Chicago, IL",
+        date: new Date(now.getTime() + 20 * 24 * 60 * 60 * 1000),
+        duration: 8,
+      },
+    }),
+    db.event.create({
+      data: {
+        photographerId: photographers[2]!.id,
+        title: "Vintage Car Show — Automotive Photography",
+        description:
+          "Annual vintage car show at Portland International Raceway. 150+ classic cars, live music, and vendors. Looking for a photographer who loves automotive detail shots and wide compositions.",
+        location: "Portland, OR",
+        date: new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000),
+        duration: 6,
+      },
+    }),
   ]);
 
   console.log(`Created ${events.length} events`);
@@ -438,9 +557,73 @@ async function main() {
         content: "I have experience with high-volume headshot days. What lighting setup are you planning?",
       },
     }),
+    // Comments on new events (11–20)
+    db.comment.create({
+      data: {
+        eventId: events[10]!.id,
+        userId: users[0]!.id,
+        content: "Love photo walks! I'll bring my 35mm film camera too if that's cool.",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[10]!.id,
+        userId: users[4]!.id,
+        content: "Count me in! Nashville downtown is so photogenic, especially Printers Alley at dusk.",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[11]!.id,
+        userId: users[3]!.id,
+        content: "This sounds like a blast. What's the dress code for photographers? Business casual or all black?",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[13]!.id,
+        userId: users[1]!.id,
+        content: "Farmers markets are my favorite to shoot! The light through the tents is always gorgeous.",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[14]!.id,
+        userId: users[5]!.id,
+        content: "I'm FAA Part 107 certified and have a Mavic 3 Pro. Would love to chat about this!",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[14]!.id,
+        userId: users[0]!.id,
+        content: "Incredible opportunity. What's the turnaround time for deliverables?",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[16]!.id,
+        userId: users[2]!.id,
+        content: "I've shot galas and black-tie events before. Happy to share my portfolio. What flash system are you running?",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[18]!.id,
+        userId: users[4]!.id,
+        content: "This is such a unique shoot concept! Would love to capture the meditation sessions.",
+      },
+    }),
+    db.comment.create({
+      data: {
+        eventId: events[19]!.id,
+        userId: users[3]!.id,
+        content: "Classic cars + photography — name a better combo. I'll be there with my macro lens for the details!",
+      },
+    }),
   ]);
 
-  console.log("Created 7 comments");
+  console.log("Created 16 comments");
 
   console.log("Creating message threads...");
 

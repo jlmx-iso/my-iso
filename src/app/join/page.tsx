@@ -7,6 +7,7 @@ import {
   Divider,
   Group,
   Paper,
+  PinInput,
   Stack,
   Text,
   TextInput,
@@ -16,6 +17,7 @@ import {
   IconAlertCircle,
   IconBrandGoogle,
   IconCheck,
+  IconMail,
   IconTicket,
 } from "@tabler/icons-react";
 import Image from "next/image";
@@ -36,8 +38,10 @@ function JoinContent() {
 
   const [code, setCode] = useState(codeParam);
   const [email, setEmail] = useState("");
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState<"google" | "email" | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
 
   const {
     data: validation,
@@ -59,21 +63,61 @@ function JoinContent() {
   const handleGoogleSignIn = async () => {
     if (!email.trim()) return;
     setSignInError(null);
-    setIsSigningIn(true);
+    setIsSigningIn("google");
     try {
       await prepareRegistration({ code: code.trim(), email: email.trim() });
       await signIn("google", { callbackUrl: "/app/events" });
     } catch (err) {
-      setIsSigningIn(false);
+      setIsSigningIn(null);
       const message =
         err instanceof Error ? err.message : "Something went wrong. Please try again.";
       setSignInError(message);
     }
   };
 
+  const requestOtp = api.auth.requestMobileOtp.useMutation({
+    onSuccess: () => {
+      setOtpStep(true);
+      setIsSigningIn(null);
+    },
+    onError: (err) => {
+      setSignInError(err.message);
+      setIsSigningIn(null);
+    },
+  });
+
+  const handleEmailSignIn = async () => {
+    if (!email.trim()) return;
+    setSignInError(null);
+    setIsSigningIn("email");
+    try {
+      await prepareRegistration({ code: code.trim(), email: email.trim() });
+      requestOtp.mutate({ email: email.trim() });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setSignInError(message);
+      setIsSigningIn(null);
+    }
+  };
+
+  const handleVerifyOtp = async (otpCode: string) => {
+    setOtpError(null);
+    const result = await signIn("otp", {
+      email: email.trim(),
+      code: otpCode,
+      redirect: false,
+    });
+    if (result?.ok) {
+      window.location.href = "/app/events";
+    } else {
+      setOtpError("Invalid or expired code.");
+    }
+  };
+
   // Waitlist-approved users: simplified flow — just sign in with Google
   const handleWaitlistGoogleSignIn = async () => {
-    setIsSigningIn(true);
+    setIsSigningIn("google");
     await signIn("google", { callbackUrl: "/app/events" });
   };
 
@@ -124,7 +168,7 @@ function JoinContent() {
             <Button
               leftSection={<IconBrandGoogle size={20} />}
               onClick={handleWaitlistGoogleSignIn}
-              loading={isSigningIn}
+              loading={isSigningIn === "google"}
               size="md"
               fullWidth
             >
@@ -172,10 +216,12 @@ function JoinContent() {
 
                 <TextInput
                   label="Your email"
-                  description="Use the same email as your Google account"
                   placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.currentTarget.value)}
+                  onChange={(e) => {
+                    setEmail(e.currentTarget.value);
+                    setOtpStep(false);
+                  }}
                 />
 
                 {signInError && (
@@ -184,16 +230,62 @@ function JoinContent() {
                   </Alert>
                 )}
 
-                <Button
-                  leftSection={<IconBrandGoogle size={20} />}
-                  onClick={handleGoogleSignIn}
-                  loading={isSigningIn || isPreparing}
-                  disabled={!email.trim()}
-                  size="md"
-                  fullWidth
-                >
-                  Sign up with Google
-                </Button>
+                {otpStep ? (
+                  <Stack align="center" gap="sm">
+                    <IconMail size={40} color="var(--mantine-color-orange-5)" />
+                    <Text fw={500} ta="center">Enter your code</Text>
+                    <Text c="dimmed" size="sm" ta="center">
+                      We sent a 6-digit code to{" "}
+                      <Text span fw={500}>{email}</Text>
+                    </Text>
+                    <PinInput
+                      length={6}
+                      type="number"
+                      size="md"
+                      onComplete={handleVerifyOtp}
+                    />
+                    {otpError && (
+                      <Text c="red" size="sm" ta="center">
+                        {otpError}
+                      </Text>
+                    )}
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      onClick={() => {
+                        setOtpStep(false);
+                        setOtpError(null);
+                      }}
+                    >
+                      Use a different email
+                    </Button>
+                  </Stack>
+                ) : (
+                  <Stack gap="xs">
+                    <Button
+                      leftSection={<IconBrandGoogle size={20} />}
+                      onClick={handleGoogleSignIn}
+                      loading={isSigningIn === "google" || isPreparing}
+                      disabled={!email.trim() || !!isSigningIn}
+                      size="md"
+                      fullWidth
+                    >
+                      Sign up with Google
+                    </Button>
+                    <Divider label="or" labelPosition="center" />
+                    <Button
+                      variant="light"
+                      leftSection={<IconMail size={20} />}
+                      onClick={handleEmailSignIn}
+                      loading={isSigningIn === "email" || requestOtp.isPending}
+                      disabled={!email.trim() || !!isSigningIn}
+                      size="md"
+                      fullWidth
+                    >
+                      Send sign-in code
+                    </Button>
+                  </Stack>
+                )}
               </>
             )}
 

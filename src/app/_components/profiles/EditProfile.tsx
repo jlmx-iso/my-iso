@@ -5,6 +5,7 @@ import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
 import { IconCheck } from "@tabler/icons-react";
 import { zod4Resolver } from 'mantine-form-zod-resolver';
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { redirect } from 'next/navigation';
 import { z } from "zod";
@@ -42,7 +43,9 @@ const schema = z.object({
     bio: z.string().min(1).max(1000, "Bio must be between 0 and 1000 characters"),
     companyName: z.string().max(100, "Company name must be between 0 and 100 characters"),
     facebook: handleField,
+    firstName: z.string().min(1, "First name is required"),
     instagram: z.string().refine((v) => !v || isValidInstagramHandle(v), "Enter a valid Instagram handle (e.g. yourhandle)").nullable(),
+    lastName: z.string().min(1, "Last name is required"),
     location: z.string().max(100),
     tiktok: handleField,
     twitter: handleField,
@@ -52,15 +55,18 @@ const schema = z.object({
 });
 
 export default function EditProfile({ photographer }: EditProfileProps) {
-    const { isError, error, isPending, mutate, isSuccess } = api.photographer.update.useMutation();
+    const { update: updateSession } = useSession();
+    const { isError, error, isPending, mutateAsync, isSuccess } = api.photographer.update.useMutation();
+    const nameParts = photographer.name.split(" ");
     const form = useForm({
         initialValues: {
             bio: photographer.bio,
             companyName: photographer.companyName,
             facebook: photographer.facebook ? normalizeFacebookHandle(photographer.facebook) : photographer.facebook,
+            firstName: nameParts[0] ?? "",
             instagram: photographer.instagram ? normalizeInstagramHandle(photographer.instagram) : photographer.instagram,
+            lastName: nameParts.slice(1).join(" ") || "",
             location: photographer.location,
-            name: photographer.name,
             tiktok: photographer.tiktok ? normalizeTikTokHandle(photographer.tiktok) : photographer.tiktok,
             twitter: photographer.twitter ? normalizeTwitterHandle(photographer.twitter) : photographer.twitter,
             vimeo: photographer.vimeo ? normalizeVimeoHandle(photographer.vimeo) : photographer.vimeo,
@@ -71,8 +77,8 @@ export default function EditProfile({ photographer }: EditProfileProps) {
         validate: zod4Resolver(schema),
     });
 
-    const submitForm = (values: typeof form.values) => {
-        mutate({
+    const submitForm = async (values: typeof form.values) => {
+        await mutateAsync({
             ...values,
             id: photographer.id,
             facebook: values.facebook ? normalizeFacebookHandle(values.facebook) : values.facebook,
@@ -82,6 +88,7 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             vimeo: values.vimeo ? normalizeVimeoHandle(values.vimeo) : values.vimeo,
             youtube: values.youtube ? normalizeYouTubeHandle(values.youtube) : values.youtube,
         });
+        await updateSession();
     }
 
     if (isPending) return <Loader />;
@@ -102,13 +109,22 @@ export default function EditProfile({ photographer }: EditProfileProps) {
     return (
         <form onSubmit={form.onSubmit(submitForm)}>
             <Stack gap="md">
-                <TextInput
-                    label="Name"
-                    placeholder="Your full name"
-                    required
-                    key={form.key("name")}
-                    {...form.getInputProps("name")}
-                />
+                <Group grow>
+                    <TextInput
+                        label="First Name"
+                        placeholder="First name"
+                        required
+                        key={form.key("firstName")}
+                        {...form.getInputProps("firstName")}
+                    />
+                    <TextInput
+                        label="Last Name"
+                        placeholder="Last name"
+                        required
+                        key={form.key("lastName")}
+                        {...form.getInputProps("lastName")}
+                    />
+                </Group>
                 <TextInput
                     label="Company Name"
                     placeholder="Your business name"

@@ -48,7 +48,7 @@ export default async function ConversationTile({ threadId, recipient, isCurrentC
                     </Group>
                     {lastMessage && (
                         <Text size="xs" c="dimmed" lineClamp={1}>
-                            {lastMessage.content}
+                            {lastMessage.isEncrypted ? "Encrypted message" : lastMessage.content}
                         </Text>
                     )}
                 </Stack>

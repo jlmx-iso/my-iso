@@ -1,17 +1,21 @@
 "use client";
-import { Loader, Stack } from "@mantine/core";
-import { useEffect, useState } from 'react';
+import { Anchor, Group, Loader, Stack, Text } from "@mantine/core";
+import { IconArrowLeft } from "@tabler/icons-react";
+import { use, useEffect, useState } from 'react';
+import Link from "next/link";
 
+import AddCommentForm from "~/app/_components/AddCommentForm";
 import EventCard from "~/app/_components/events/EventCard";
 import EventComment from "~/app/_components/events/EventComment";
 import CommentsRefetchContext from "~/context/CommentsRefetchContext";
 import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
-export default function Page({ params }: { params: { id: string; }; }) {
+export default function Page({ params }: { params: Promise<{ id: string }>; }) {
+    const { id } = use(params);
     const [comments, setComments] = useState<typeof eventComments>([]);
     const { data: eventComments, refetch: refetchComments, isPending } = api.event.getCommentsByEventId.useQuery({
-        eventId: params.id
+        eventId: id
     });
 
     useEffect(() => {
@@ -21,7 +25,7 @@ export default function Page({ params }: { params: { id: string; }; }) {
     }, [eventComments]);
 
     const { data: commentCount, refetch: refetchCommentCount } = api.event.getCommentCountByEventId.useQuery({
-        eventId: params.id
+        eventId: id
     });
 
     const handleRefetchComments = () => {
@@ -38,11 +42,20 @@ export default function Page({ params }: { params: { id: string; }; }) {
 
     return (
         <CommentsRefetchContext.Provider value={{ refetchCommentCount: handleRefetchCommentCount, refetchComments: handleRefetchComments }}>
-            <Stack gap="sm">
-                <EventCard eventId={params.id} isEventPage={true} initialCommentCount={commentCount} />
-                {comments?.map((comment: any) => (
-                    <EventComment key={comment.id} comment={comment} />
-                ))}
+            <Stack gap="md">
+                <Anchor component={Link} href="/app/events" c="dimmed" size="sm">
+                    <Group gap={4}><IconArrowLeft size={14} /> Back to Events</Group>
+                </Anchor>
+                <EventCard eventId={id} isEventPage={true} hideCompose={true} initialCommentCount={commentCount} />
+                <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 1 }}>
+                    Comments{commentCount ? ` (${commentCount})` : ""}
+                </Text>
+                <Stack gap={0}>
+                    {comments?.map((comment: any) => (
+                        <EventComment key={comment.id} comment={comment} />
+                    ))}
+                </Stack>
+                <AddCommentForm eventId={id} />
             </Stack>
         </CommentsRefetchContext.Provider>
     );

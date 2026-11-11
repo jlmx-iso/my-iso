@@ -78,10 +78,11 @@ export const photographerRouter = createTRPCRouter({
       bio: z.string().min(1).max(1000).nullable(),
       companyName: z.string().min(1),
       facebook: socialHandleNullable,
+      firstName: z.string().min(1),
       id: z.string().min(1),
       instagram: instagramHandleNullable,
+      lastName: z.string().min(1),
       location: z.string().min(1),
-      name: z.string().min(1),
       tiktok: socialHandleNullable,
       twitter: socialHandleNullable,
       vimeo: socialHandleNullable,
@@ -89,8 +90,17 @@ export const photographerRouter = createTRPCRouter({
       youtube: socialHandleNullable,
     }))
     .mutation(async ({ ctx, input }) => {
+      const { firstName, lastName, ...photographerData } = input;
+      const name = `${firstName} ${lastName}`;
+
+      // Sync name to User record
+      await ctx.db.user.update({
+        data: { firstName, lastName },
+        where: { id: ctx.session.user.id },
+      });
+
       return ctx.db.photographer.update({
-        data: input,
+        data: { ...photographerData, name },
         where: { id: input.id, userId: ctx.session.user.id },
       }).catch((error: unknown) => {
         logger.error("Failed to update profile", { error: error as Error });
