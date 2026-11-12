@@ -10,11 +10,16 @@ import type { AppRouter } from "~/server/api/root";
 import { api, type RouterOutputs } from "~/trpc/react";
 import type { RouterInputs } from "~/trpc/shared";
 
+import { recordUnhandledTrpcCall } from "./strict";
+
+export { allowConsoleError } from "./strict";
+
 /**
  * Server answers for the procedures a component calls, by router and
  * procedure, typed from the app router. Return the output, or throw (for
  * instance `trpcError("FORBIDDEN", "...")`) to make the call fail. A call to
- * a procedure without a handler fails the test.
+ * a procedure without a handler fails the test (after it ends, even if the
+ * component swallowed the error).
  */
 export type TrpcHandlers = {
   [R in keyof RouterInputs]?: {
@@ -52,7 +57,12 @@ function mockLink(handlers: TrpcHandlers, calls: TrpcCall[]): TRPCLink<AppRouter
         let cancelled = false;
         void (async () => {
           try {
-            if (!handler) throw new Error(`No test handler for tRPC ${op.type} "${op.path}"`);
+            if (!handler) {
+              // Fails the test after it ends (./strict.ts), even if the
+              // component swallows the error.
+              recordUnhandledTrpcCall(`${op.type} ${op.path}`);
+              throw new Error(`No test handler for tRPC ${op.type} "${op.path}"`);
+            }
             const data = await handler(op.input);
             if (cancelled) return;
             observer.next({ result: { data, type: "data" } });
