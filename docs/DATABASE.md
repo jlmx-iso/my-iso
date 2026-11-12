@@ -257,7 +257,7 @@ shared-thread requirement and the per-viewer daily dedupe make that costly,
 and we accept it. A Messages attribution
 needs a shared thread, but it still rests on the `Referer`, so it stays as
 approximate as every other source: at most it hints at where a visitor who
-already talks to the owner came from, never who they are. Sources under
+shares a thread with the owner came from, never who they are. Sources under
 three views are still folded into Other.
 
 **The cookie.** `iso_views`: HttpOnly, SameSite=Lax, Secure on https, path
