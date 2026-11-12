@@ -1,4 +1,4 @@
-import { Box, Card, Group, Paper, SimpleGrid, Skeleton, Stack } from "@mantine/core";
+import { Box, Group, Paper, SimpleGrid, Skeleton, Stack } from "@mantine/core";
 
 import EventCardSkeleton from "./events/EventCardSkeleton";
 
@@ -33,12 +33,14 @@ export function EventsFeedSkeleton() {
     <Busy label="Loading events">
       <Stack gap="lg">
         <PageHeaderSkeleton withAction />
-        <Skeleton height={22} width={200} radius="sm" />
+        <Group gap="lg">
+          <Skeleton height={20} width={90} radius="sm" />
+          <Skeleton height={20} width={60} radius="sm" />
+        </Group>
+        <Skeleton height={18} width={200} radius="sm" />
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
           {[0, 1, 2, 3].map((i) => (
-            <Card key={i} p="md" radius="md" withBorder>
-              <EventCardSkeleton />
-            </Card>
+            <EventCardSkeleton key={i} />
           ))}
         </SimpleGrid>
       </Stack>

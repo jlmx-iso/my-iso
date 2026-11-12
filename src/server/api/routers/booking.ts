@@ -58,6 +58,8 @@ const bookingEventSelect = {
   duration: true,
   id: true,
   location: true,
+  // Booking cards write the start time in the event's own zone.
+  timeZone: true,
   title: true,
 } as const;
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { ErrorReason } from "~/_utils/errorReason";
+import { MessageAction } from "~/app/_components/profiles/MessageAction";
 import ViewBeacon from "~/app/_components/ViewBeacon";
 import { viewSource } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
@@ -42,7 +43,11 @@ export default async function Page({ params }: PageProps) {
         <>
             {/* For the owner's insights; their own visits are not counted. */}
             {!isOwner && <ViewBeacon kind="event" id={event.id} source={source} />}
-            <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />
+            <EventDetail
+                initialEvent={event}
+                currentUserId={session?.user?.id ?? null}
+                messageAction={!isOwner && session?.user ? <MessageAction userId={event.photographer.userId} /> : undefined}
+            />
         </>
     );
 }

@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { isValidTimeZone } from "~/_lib/eventTime";
 import { ErrorReason, logger } from "~/_utils";
 import { EVENT_MAX_AHEAD_MS } from "~/_utils/eventDates";
+import { MAX_EVENT_PAY_CENTS } from "~/_utils/eventPay";
 import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { withProOn } from "~/server/_billing/proStatus";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
@@ -83,6 +85,14 @@ const eventDurationInput = z.number().int().min(1).max(MAX_EVENT_DURATION_HOURS)
 const eventTitleInput = z.string().trim().min(1).max(200);
 const eventDescriptionInput = z.string().trim().min(1).max(5000);
 const eventLocationInput = z.string().trim().min(1).max(200);
+/** Whole US cents for the whole event; null clears it (no listed pay). */
+const eventPayInput = z.number().int().min(0).max(MAX_EVENT_PAY_CENTS).nullable();
+/** The IANA zone the start time was entered in (the poster's browser zone). */
+const eventTimeZoneInput = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidTimeZone, { message: "Unknown time zone." });
 
 const eventPhotographerSelect = {
   avatar: true,
@@ -310,6 +320,8 @@ export const eventRouter = createTRPCRouter({
       duration: eventDurationInput,
       image: base64ImageInput.optional(),
       location: eventLocationInput,
+      payCents: eventPayInput.optional(),
+      timeZone: eventTimeZoneInput.optional(),
       title: eventTitleInput,
     }))
     .mutation(async ({ ctx, input }) => {
@@ -630,6 +642,9 @@ export const eventRouter = createTRPCRouter({
       // A new image to upload (base64), never a URL to store as given.
       image: base64ImageInput.optional(),
       location: eventLocationInput.optional(),
+      // null removes the listed pay.
+      payCents: eventPayInput.optional(),
+      timeZone: eventTimeZoneInput.optional(),
       title: eventTitleInput.optional(),
     }))
     .mutation(async ({ ctx, input }) => {

@@ -151,7 +151,7 @@ describe("EventsFeed", () => {
   it("offers search when nothing is coming up", async () => {
     renderFeed(page([]));
 
-    expect(await screen.findByText("Nothing coming up in Austin")).toBeTruthy();
+    expect(await screen.findByText("No upcoming events in Austin")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Search events" }).getAttribute("href")).toBe("/app/search");
   });
 
@@ -159,7 +159,7 @@ describe("EventsFeed", () => {
     renderFeed(page([]), {}, []);
 
     expect(screen.getByRole("heading", { name: "Upcoming" })).toBeTruthy();
-    expect(await screen.findByText("Nothing coming up yet")).toBeTruthy();
+    expect(await screen.findByText("No upcoming events")).toBeTruthy();
   });
 
   it("loads past events on the Past tab, marked as past", async () => {

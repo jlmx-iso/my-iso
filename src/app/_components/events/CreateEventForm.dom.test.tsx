@@ -87,6 +87,10 @@ describe("creating an event", () => {
         duration: 4,
         image: undefined,
         location: "Austin, TX",
+        // No pay typed: not listed.
+        payCents: null,
+        // The browser's zone, which the picker's times are in (the tests run in UTC).
+        timeZone: "UTC",
         title: "Downtown wedding",
       },
     ]);
@@ -331,5 +335,44 @@ describe("a save that ends after the form is gone", () => {
       ),
     ).toBeTruthy();
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("pay", () => {
+  const payField = (dialog: HTMLElement) => within(dialog).getByRole<HTMLInputElement>("textbox", { name: /^Pay/ });
+
+  it("is optional, says what it is for, and sends dollars as cents", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText(/For the whole event, in US dollars/)).toBeTruthy();
+    await fillRequired(dialog);
+    await userEvent.type(payField(dialog), "1250");
+    // Formatted as it is typed.
+    expect(payField(dialog).value).toBe("$1,250");
+    await submit(dialog);
+
+    await screen.findByText('"Downtown wedding" is live. Photographers nearby can now apply.');
+    expect(view.callsTo("event.create")[0]).toMatchObject({ payCents: 125_000 });
+  });
+
+  it("refuses an amount over the limit, says the limit, and focuses the field", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    await fillRequired(dialog);
+    await userEvent.type(payField(dialog), "250000");
+    await submit(dialog);
+
+    expect(await within(dialog).findByText("Enter an amount up to $100,000")).toBeTruthy();
+    expect(document.activeElement).toBe(payField(dialog));
+    expect(view.callsTo("event.create")).toEqual([]);
+  });
+
+  it("labels the start time with the zone it is in", async () => {
+    renderButton();
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText("Start time, in your time zone (UTC)")).toBeTruthy();
   });
 });

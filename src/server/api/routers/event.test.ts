@@ -336,6 +336,41 @@ describe("events feed", () => {
     });
   });
 
+  describe("pay and time zone", () => {
+    const start = () => new Date(Date.now() + 3 * DAY_MS).toISOString();
+    const base = { description: "Ceremony", duration: 6, location: "Austin, TX", title: "Wedding" };
+
+    it("stores listed pay in cents and the zone the time was entered in, and every read returns them", async () => {
+      const created = await as(owner).create({ ...base, date: start(), payCents: 45_000, timeZone: "America/Chicago" });
+      expect(created).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+
+      expect(await as(viewer).getById({ id: created.id })).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+      expect((await as(viewer).getFeedPage({})).items[0]).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+    });
+
+    it("leaves both empty when not given (older clients), and an edit can set and clear pay", async () => {
+      const created = await as(owner).create({ ...base, date: start() });
+      expect(created).toMatchObject({ payCents: null, timeZone: null });
+
+      expect(await as(owner).update({ id: created.id, payCents: 30_000, timeZone: "America/Denver" })).toMatchObject({
+        payCents: 30_000,
+        timeZone: "America/Denver",
+      });
+      // Not mentioned: kept.
+      expect(await as(owner).update({ id: created.id, title: "Renamed" })).toMatchObject({ payCents: 30_000 });
+      // null: no longer listed.
+      expect(await as(owner).update({ id: created.id, payCents: null })).toMatchObject({ payCents: null });
+    });
+
+    it("refuses negative, fractional-cent and absurd pay, and an unknown zone", async () => {
+      for (const payCents of [-1, 1.5, 100_000_01]) {
+        await expect(as(owner).create({ ...base, date: start(), payCents })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      }
+      await expect(as(owner).create({ ...base, date: start(), timeZone: "Mars/Base" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(as(owner).create({ ...base, date: start(), timeZone: "x".repeat(65) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+  });
+
   it("keeps a stable order for events at the same time", async () => {
     const at = new Date(Date.now() + DAY_MS);
     for (const title of ["a", "b", "c", "d"]) {

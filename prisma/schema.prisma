@@ -360,6 +360,13 @@ model Event {
   location       String
   date           DateTime
   duration       Int          @default(1) // In hours
+  // What the event pays the second shooter, in whole US cents, for the whole
+  // event. Null: not listed (applicants propose a rate).
+  payCents       Int?
+  // IANA zone the start time was entered in (the poster's browser zone),
+  // e.g. "America/Chicago". Times are shown in it, labelled. Null for
+  // events posted before it was recorded: shown in the reader's zone.
+  timeZone       String?
   image          String?
   // LEGACY, neither read nor written: whether an event is filled is
   // derived from its bookings (withDerivedFulfilled). Kept until a drop

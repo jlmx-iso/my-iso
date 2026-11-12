@@ -12,6 +12,7 @@ import AddCommentForm from "../AddCommentForm";
 import Timemarker from "../Timemarker";
 import UserBadge from "../UserBadge";
 import ApplyAction from "./ApplyAction";
+import DateTile from "./DateTile";
 import EventCover from "./EventCover";
 import EventMeta from "./EventMeta";
 
@@ -27,7 +28,12 @@ type EventCardProps = {
     now: Date;
 };
 
-/** One event in the feed. Renders from the feed row: no request of its own. */
+/**
+ * One event in the feed, read top to bottom in the order people decide:
+ * when (the date tile) and what (the title), then the time, place, length
+ * and pay, a line of the description, who posted it, and what to do.
+ * Renders from the feed row: no request of its own.
+ */
 export default function EventCard({ event, application, currentUserId, now }: EventCardProps) {
     const [isCommentFormOpen, setIsCommentFormOpen] = useState(false);
     // Comments posted from this card since the feed row was loaded.
@@ -45,38 +51,54 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
             radius="md"
             withBorder
             h="100%"
-            style={{ borderLeft: "3px solid var(--mantine-color-orange-3)" }}
             data-testid="event-card"
         >
             {event.image && (
                 // The title below links to the same page; this link is a
                 // bigger pointer target only.
                 <Link href={href} tabIndex={-1} aria-hidden="true">
-                    <EventCover src={event.image} h={180} />
+                    <EventCover src={event.image} h={160} />
                 </Link>
             )}
 
-            <Stack gap="xs" p="md" style={{ flex: 1 }}>
-                <Group justify="space-between" align="center" wrap="nowrap">
+            <Stack gap="sm" p="md" style={{ flex: 1 }}>
+                <Group gap="md" align="flex-start" wrap="nowrap">
+                    <DateTile date={event.date} timeZone={event.timeZone} isPast={isPast} />
+                    <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+                        <Title order={3} size="h4" lh={1.3} style={{ overflowWrap: "anywhere" }}>
+                            <Link href={href}>{event.title}</Link>
+                        </Title>
+                        <EventMeta
+                            date={event.date}
+                            timeZone={event.timeZone}
+                            duration={event.duration}
+                            location={event.location}
+                            payCents={event.payCents}
+                            timeFormat="time"
+                        />
+                        {isPast && <Badge variant="light" color="gray" w="fit-content">Past event</Badge>}
+                    </Stack>
+                </Group>
+
+                {event.description && (
+                    <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
+                )}
+
+                <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
                     <UserBadge user={event.photographer} />
-                    <Timemarker date={event.createdAt} />
+                    <Box style={{ flexShrink: 0 }}>
+                        <Timemarker date={event.createdAt} prefix="Posted" />
+                    </Box>
                 </Group>
 
-                <Box>
-                    <Title order={3} size="h4" mb={2} style={{ overflowWrap: "anywhere" }}>
-                        <Link href={href}>{event.title}</Link>
-                    </Title>
-                    {event.description && (
-                        <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
-                    )}
-                </Box>
-
-                <Group gap="xs">
-                    <EventMeta date={event.date} duration={event.duration} location={event.location} />
-                    {isPast && <Badge variant="light" color="gray">Past event</Badge>}
-                </Group>
-
-                <Group gap="xs" justify="space-between" align="center" mt="auto" pt={4}>
+                <Group
+                    gap="xs"
+                    justify="space-between"
+                    align="center"
+                    mt="auto"
+                    pt="sm"
+                    style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+                >
                     <Button
                         variant="subtle"
                         color="gray"
