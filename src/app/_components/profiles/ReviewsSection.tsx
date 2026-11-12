@@ -30,7 +30,7 @@ import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 import { Avatar } from "../Avatar";
-import { reviewGate } from "./reviewGate";
+import { memberReviewView } from "./reviewGate";
 import { StarRating } from "./StarRating";
 
 /**
@@ -193,7 +193,7 @@ export default function ReviewsSection({
     { photographerId },
     { enabled: viewer === "member" },
   );
-  const gate = viewer === "member" && myState.data ? reviewGate(myState.data, photographerName) : null;
+  const gate = viewer === "member" ? memberReviewView(myState, photographerName) : null;
   const loaded = mergePages(reviews.data?.pages);
   // The header shows the real total; the list says when it shows fewer.
   const reviewCount = Math.max(rating.data?.count ?? 0, loaded.length);
@@ -334,6 +334,17 @@ export default function ReviewsSection({
           photographerName={photographerName}
           onSubmitted={refresh}
         />
+      )}
+      {gate?.kind === "error" && (
+        // Mantine's Alert is role="alert": announced when it appears.
+        <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="review-state-error">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">We could not check whether you can review this photographer.</Text>
+            <Button size="xs" variant="default" loading={myState.isFetching} onClick={() => void myState.refetch()}>
+              Try again
+            </Button>
+          </Stack>
+        </Alert>
       )}
       {gate?.kind === "blocked" && (
         <Text size="sm" c="dimmed" data-testid="review-blocked">
