@@ -68,7 +68,7 @@ Workers Builds the same values are set as Build variables instead.
 
 | Variable | What it is for | Where to get it |
 | --- | --- | --- |
-| `NEXT_PUBLIC_BASE_URL` | The deployment's public origin. The single source of truth for absolute URLs (metadata, sitemap, emails, Stripe return URLs, the WebSocket origin in the CSP). | Your domain, e.g. `https://myiso.app` |
+| `NEXT_PUBLIC_BASE_URL` | The deployment's public origin. The single source of truth for absolute URLs (metadata, sitemap, emails, Stripe return URLs, the WebSocket origin in the CSP). Profile and event views are counted only on this host, so the apex/www redirect must send visitors here ([DATABASE.md](DATABASE.md), "View counters"). | Your domain, e.g. `https://myiso.app` |
 | `NEXT_PUBLIC_APP_ENV` | Tags browser analytics with `production` / `staging`. | Set by the deploy script; do not put it in the file |
 | `NEXT_PUBLIC_STRIPE_PUBLIC_KEY` | Stripe.js in the browser. | Stripe > Developers > API keys (publishable key) |
 | `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` | Location autocomplete in the browser. | Google Cloud > Credentials; restrict it to the origin |

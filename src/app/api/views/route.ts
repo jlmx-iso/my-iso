@@ -33,18 +33,65 @@ const fallbackLimiters = memoryViewLimiters();
 
 type LimiterBindings = { VIEW_ANON_LIMIT?: ViewLimiter; VIEW_COUNT_LIMIT?: ViewLimiter };
 
-/** Cloudflare's Rate Limiting bindings (wrangler.toml `ratelimits`), else the in-process ones. */
-function viewLimiters(): ViewLimiters {
-  let bindings: LimiterBindings = {};
+let reportedMissingBinding = false;
+
+/**
+ * Cloudflare's Rate Limiting bindings (wrangler.toml `ratelimits`); the
+ * in-process limiters only off Cloudflare. On Cloudflare without both
+ * bindings (a deploy that lost them) nothing is counted: a per-isolate
+ * limiter would bound nothing, since every isolate starts afresh. Logged
+ * once per isolate.
+ */
+function viewLimiters(): ViewLimiters | null {
+  let bindings: LimiterBindings;
   try {
     bindings = getCloudflareContext().env as LimiterBindings;
   } catch {
     // Not running on Cloudflare.
+    return fallbackLimiters;
   }
-  return {
-    anonymous: bindings.VIEW_ANON_LIMIT ?? fallbackLimiters.anonymous,
-    perClient: bindings.VIEW_COUNT_LIMIT ?? fallbackLimiters.perClient,
-  };
+  if (bindings.VIEW_ANON_LIMIT && bindings.VIEW_COUNT_LIMIT) {
+    return { anonymous: bindings.VIEW_ANON_LIMIT, perClient: bindings.VIEW_COUNT_LIMIT };
+  }
+  if (!reportedMissingBinding) {
+    reportedMissingBinding = true;
+    logger.error("View counting is off: a Rate Limiting binding is missing", {
+      VIEW_ANON_LIMIT: Boolean(bindings.VIEW_ANON_LIMIT),
+      VIEW_COUNT_LIMIT: Boolean(bindings.VIEW_COUNT_LIMIT),
+    });
+  }
+  return null;
+}
+
+/**
+ * The body as text, or null when it is larger than MAX_BODY_BYTES: refused
+ * by its declared length before reading, and otherwise read only up to the
+ * cap (a body without a length, or one longer than it says, is cut off).
+ */
+async function readCappedBody(request: Request): Promise<string | null> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (!Number.isFinite(declared) || declared > MAX_BODY_BYTES) return null;
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 function noContent(cookie?: string | null): Response {
@@ -73,13 +120,18 @@ function cookieValue(header: string | null): string | null {
  * 204 and says nothing about the outcome: whether a view was counted is
  * nobody's business but the counter's. The rules are in
  * src/server/_lib/viewCounter.ts.
+ *
+ * Views count only when the page is served from the canonical host
+ * (NEXT_PUBLIC_BASE_URL's origin): the beacon's Origin must equal it. The
+ * apex/www redirect must make that one host canonical, or views on the
+ * other are never counted.
  */
 export async function POST(request: Request): Promise<Response> {
   // Same-origin only: a page elsewhere cannot spend this site's counts.
   if (request.headers.get("origin") !== new URL(SITE_URL).origin) return new Response(null, { status: 403 });
 
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return new Response(null, { status: 413 });
+  const text = await readCappedBody(request);
+  if (text === null) return new Response(null, { status: 413 });
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -89,9 +141,12 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) return new Response(null, { status: 400 });
 
+  const limiters = viewLimiters();
+  if (!limiters) return noContent();
+
   try {
     const session = await auth();
-    const result = await countView(db, viewLimiters(), {
+    const result = await countView(db, limiters, {
       clientIp: getClientIp(request.headers),
       cookie: cookieValue(request.headers.get("cookie")),
       source: parsed.data.source,

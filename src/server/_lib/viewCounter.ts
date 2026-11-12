@@ -17,16 +17,17 @@ import { keyedHash } from "~/server/_utils/hash";
  *   holds the UTC day and short keyed hashes of what that browser has
  *   already been counted for today, signed so it cannot be forged. No
  *   identity, no profile ids in the clear; it expires at the end of the day.
- * - For a signed-in viewer, "ViewSeen" holds one opaque keyed hash of
- *   (viewer, target, day) until the day is over (purge-expired deletes it):
- *   it can confirm a guess with the server's secret, never list who looked.
+ * - "ViewSeen" holds one opaque keyed hash of (viewer, target, day) until
+ *   the day is over (purge-expired deletes it), the viewer being the
+ *   signed-in member or, signed out, the client address (an IPv6 /64): it
+ *   can confirm a guess with the server's secret, never list who looked.
  *
  * Counting, bounded:
  * - A view is counted by a request the page makes once it is on screen
  *   (POST /api/views), so crawlers that do not run JavaScript never count.
  * - At most once per viewer, per target, per UTC day: per signed-in member
- *   (ViewSeen, on any device), and per browser (the cookie, which also
- *   covers signed-out visits).
+ *   on any device, per client address when signed out (both ViewSeen), and
+ *   per browser (the cookie, which answers repeats without the database).
  * - Never the owner's own (signed in), never a bot user agent.
  * - Every write is first admitted by rate limiters that write nothing to
  *   the database (Cloudflare's Rate Limiting binding; in memory off
@@ -243,12 +244,13 @@ export type ViewResult = {
 };
 
 /**
- * Whether `viewerId` is seen for `target` on `day` for the first time:
- * inserts the opaque (viewer, target, day) key and says whether it was new.
- * One statement, so two devices racing insert it once.
+ * Whether `viewer` ("member:<id>" or "ip:<address>") is seen for `target` on
+ * `day` for the first time: inserts the opaque (viewer, target, day) key and
+ * says whether it was new. One statement, so two devices racing insert it
+ * once.
  */
-async function firstSeenToday(db: ViewCounterDb, viewerId: string, target: ViewTarget, day: string): Promise<boolean> {
-  const key = await keyedHash("view-seen", `${viewerId}|${target.kind}:${target.id}|${day}`);
+async function firstSeenToday(db: ViewCounterDb, viewer: string, target: ViewTarget, day: string): Promise<boolean> {
+  const key = await keyedHash("view-seen", `${viewer}|${target.kind}:${target.id}|${day}`);
   const inserted = await db.$executeRaw(Prisma.sql`
     INSERT INTO "ViewSeen" ("key", "day") VALUES (${key}, ${day}) ON CONFLICT ("key") DO NOTHING`);
   return inserted > 0;
@@ -271,7 +273,9 @@ export async function countView(db: ViewCounterDb, limiters: ViewLimiters, reque
   const tokens = await decodeViewCookie(request.cookie, day);
   const token = await targetToken(request.target);
   if (tokens.includes(token)) return unchanged("already_counted");
-  if (tokens.length >= VIEW_COOKIE_MAX_TARGETS) return unchanged("cookie_full");
+  // A full list stops a signed-out browser for the day; members are deduped
+  // by ViewSeen instead, so they keep counting past it.
+  if (!request.viewerId && tokens.length >= VIEW_COOKIE_MAX_TARGETS) return unchanged("cookie_full");
 
   // Before any database access: a refused request costs nothing.
   const clientKey = request.viewerId ? `member:${request.viewerId}` : `ip:${await keyedHash("view-ip", request.clientIp)}`;
@@ -287,12 +291,13 @@ export async function countView(db: ViewCounterDb, limiters: ViewLimiters, reque
           ?.photographer.userId;
   if (!ownerId) return unchanged("not_found");
 
-  const cookie = await encodeViewCookie(day, [...tokens, token]);
+  // The newest targets, at most the cookie's maximum (a member can pass it).
+  const cookie = await encodeViewCookie(day, [...tokens, token].slice(-VIEW_COOKIE_MAX_TARGETS));
   if (ownerId === request.viewerId) return { cookie, outcome: "self" };
-  // A member counts once a day per target on any device, not once per browser.
-  if (request.viewerId && !(await firstSeenToday(db, request.viewerId, request.target, day))) {
-    return { cookie, outcome: "already_counted" };
-  }
+  // Once a day per target: a member on any device; signed out, an address,
+  // whatever its cookie says (a script that drops cookies counts once).
+  const viewer = request.viewerId ? `member:${request.viewerId}` : `ip:${request.clientIp}`;
+  if (!(await firstSeenToday(db, viewer, request.target, day))) return { cookie, outcome: "already_counted" };
 
   if (request.target.kind === "profile") {
     await db.$executeRaw(Prisma.sql`

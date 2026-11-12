@@ -211,17 +211,34 @@ describe("countView against SQLite", () => {
     expect(await testDb.db.profileView.count()).toBe(2);
   });
 
-  it("a cookie-less loop from one address writes at most the rate limit", async () => {
+  it("a cookie-less loop from one address counts once, and reaches the database at most the rate limit", async () => {
     const limiter = memoryViewLimiters();
     const execute = vi.spyOn(testDb.db, "$executeRaw");
-    const outcomes = [];
+    const outcomes: string[] = [];
     for (let index = 0; index < 100; index += 1) {
       outcomes.push((await countView(testDb.db, limiter, profileView({ viewerId: null }))).outcome);
     }
-    expect(outcomes.filter((outcome) => outcome === "counted")).toHaveLength(VIEW_RATE_LIMIT.limit);
+    expect(outcomes.filter((outcome) => outcome === "counted")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome === "already_counted")).toHaveLength(VIEW_RATE_LIMIT.limit - 1);
     expect(outcomes.filter((outcome) => outcome === "rate_limited")).toHaveLength(100 - VIEW_RATE_LIMIT.limit);
-    expect(execute).toHaveBeenCalledTimes(VIEW_RATE_LIMIT.limit);
-    expect(await total()).toBe(VIEW_RATE_LIMIT.limit);
+    // One "seen" insert per admitted request, and one count.
+    expect(execute).toHaveBeenCalledTimes(VIEW_RATE_LIMIT.limit + 1);
+    expect(await total()).toBe(1);
+  });
+
+  it("signed out, an address counts once a day per target whatever its cookie, and the key names no address", async () => {
+    const limiter = memoryViewLimiters();
+    const anonymous = (overrides: Partial<ViewRequest> = {}) => profileView({ viewerId: null, ...overrides });
+    expect((await countView(testDb.db, limiter, anonymous())).outcome).toBe("counted");
+    // Cookie dropped: the same address is not counted again today.
+    expect((await countView(testDb.db, limiter, anonymous({ cookie: null }))).outcome).toBe("already_counted");
+    // Another address is; so is the same one tomorrow.
+    expect((await countView(testDb.db, limiter, anonymous({ clientIp: "198.51.100.77" }))).outcome).toBe("counted");
+    expect((await countView(testDb.db, limiter, anonymous({ now: new Date("2030-06-16T01:00:00Z") }))).outcome).toBe("counted");
+    expect(await total()).toBe(3);
+    const seen = JSON.stringify(await testDb.raw.viewSeen.findMany());
+    expect(seen).not.toContain("203.0.113.7");
+    expect(seen).not.toContain("198.51.100.77");
   });
 
   it("a member counts once a day per target on any device, and the database learns no name", async () => {
@@ -259,7 +276,8 @@ describe("countView against SQLite", () => {
       if (result.outcome === "counted") counted += 1;
     }
     expect(counted).toBe(VIEW_ANON_LIMIT.limit);
-    expect(execute).toHaveBeenCalledTimes(VIEW_ANON_LIMIT.limit);
+    // Each admitted view: one "seen" insert and one count.
+    expect(execute).toHaveBeenCalledTimes(2 * VIEW_ANON_LIMIT.limit);
     // Members are not held back by it.
     expect((await countView(testDb.db, limiter, profileView())).outcome).toBe("counted");
   });
@@ -297,12 +315,20 @@ describe("countView against SQLite", () => {
     expect(await total()).toBe(0);
   });
 
-  it("stops counting a browser that has been counted for the day's maximum", async () => {
+  it("stops counting a signed-out browser that has been counted for the day's maximum, not a member", async () => {
     const tokens = await Promise.all(
       Array.from({ length: VIEW_COOKIE_MAX_TARGETS }, (_, index) => targetToken({ id: `p${index}`, kind: "profile" })),
     );
     const full = await encodeViewCookie(DAY, tokens);
-    expect((await countView(testDb.db, memoryViewLimiters(), profileView({ cookie: full }))).outcome).toBe("cookie_full");
+    const limiter = memoryViewLimiters();
+    expect((await countView(testDb.db, limiter, profileView({ cookie: full, viewerId: null }))).outcome).toBe("cookie_full");
+    // A member is deduped by ViewSeen, so a full cookie does not stop them;
+    // the cookie keeps the newest targets, at most the maximum.
+    const member = await countView(testDb.db, limiter, profileView({ cookie: full }));
+    expect(member.outcome).toBe("counted");
+    const kept = await decodeViewCookie(member.cookie, DAY);
+    expect(kept).toHaveLength(VIEW_COOKIE_MAX_TARGETS);
+    expect(kept.at(-1)).toBe(await targetToken({ id: owner.id, kind: "profile" }));
   });
 
   it("counts event views per (event, day) for signed-in members only", async () => {

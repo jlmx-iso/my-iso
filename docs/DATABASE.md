@@ -177,14 +177,21 @@ A profile or event page renders `ViewBeacon`, which, once the page is on
 screen, sends `POST /api/views` with the target and the source (the server
 worked the source out from the page request's `Referer`, compared with
 `NEXT_PUBLIC_BASE_URL`'s origin only, never a forwarded host). The endpoint
-accepts only requests whose `Origin` is that origin. `countView` then
-decides, in this order, and touches the database only at the end:
+accepts only requests whose `Origin` is that origin, with a body of at most
+512 bytes (refused by `Content-Length` before reading, and cut off while
+reading one without). **Views therefore count only on the canonical host**:
+a page served from another host (`www.` when the apex is canonical, or the
+reverse) sends a different `Origin` and is never counted, so the apex/www
+redirect must send every visitor to the host in `NEXT_PUBLIC_BASE_URL`.
+`countView` then decides, in this order, and touches the database only at
+the end:
 
 1. A bot user agent, or an event view by someone signed out: not counted.
 2. **Once per browser, per target, per UTC day.** The `iso_views` cookie
    (below) lists what this browser has been counted for today. A target
-   already listed is not counted and nothing is read or written; a full
-   list (40) stops counting for the day.
+   already listed is not counted and nothing is read or written. A full
+   list (40) stops a signed-out browser for the day; a member keeps
+   counting (step 5 dedupes them) and the list keeps the newest 40.
 3. **Limiters that write nothing to D1**: Cloudflare's Rate Limiting
    bindings (`wrangler.toml` `[[ratelimits]]`). `VIEW_COUNT_LIMIT`, 20 a
    minute, keyed by the signed-in member's id or, signed out, a keyed hash
@@ -192,17 +199,21 @@ decides, in this order, and touches the database only at the end:
    `VIEW_ANON_LIMIT`, 120 a minute shared by every signed-out view. Off
    Cloudflare (`next dev`, tests) in-memory limiters with the same limits
    stand in (`memoryViewLimiters`; a test checks the numbers against
-   `wrangler.toml`).
+   `wrangler.toml`). On Cloudflare without both bindings nothing is counted
+   and an error is logged once per isolate: an in-memory limiter there
+   would bound nothing, as every isolate starts with an empty one.
 4. The target must exist (a read), and is not the signed-in viewer's own.
-5. **Once per member, per target, per UTC day, on any device**: for a
-   signed-in viewer, `INSERT ... ON CONFLICT DO NOTHING` into `ViewSeen` of
-   an HMAC (`AUTH_SECRET`) of viewer, target and day; a row that already
-   existed means "already counted".
+5. **Once per viewer, per target, per UTC day**, whatever the cookie says:
+   `INSERT ... ON CONFLICT DO NOTHING` into `ViewSeen` of an HMAC
+   (`AUTH_SECRET`) of viewer, target and day, the viewer being the
+   signed-in member (so on any device) or, signed out, the client address
+   (an IPv6 /64). A row that already existed means "already counted".
 6. One upsert of the count.
 
-So a client that ignores or replays the cookie (curl in a loop) is held to
-20 counted views a minute per address, and all signed-out traffic together
-to 120 a minute, per Cloudflare location; a refused request costs no
+So a client that ignores or replays the cookie (curl in a loop) counts at
+most once per address per target per day, reaches the database at most 20
+times a minute per address, and all signed-out traffic together at most 120
+times a minute, per Cloudflare location; a refused request costs no
 database access at all. A signed-in member can cause at most 20 writes of
 each kind a minute. Reloads, back-navigation and a second visit the same
 day are not counted again.
@@ -217,10 +228,11 @@ is set only by a page view, and only to stop that same view counting twice:
 a strictly necessary cookie, not tracking, so it needs no consent and is set
 whatever the analytics consent says.
 
-**`ViewSeen`.** `key` (HMAC of viewer id, target and day) and `day`. With
-the server's secret a row can confirm a guess ("did member X look at Y
-today?"); it cannot be listed back into names, and nothing joins it to the
-counts. It is needed only for the current day: the daily `purge-expired` job deletes
+**`ViewSeen`.** `key` (HMAC of member id or client address, target and
+day) and `day`; neither the id nor the address is stored. With the server's
+secret a row can confirm a guess ("did member X, or address A, look at Y
+today?"); it cannot be listed back into names or addresses, and nothing
+joins it to the counts. It is needed only for the current day: the daily `purge-expired` job deletes
 rows of earlier days.
 
 Limits, accepted:
@@ -228,10 +240,16 @@ Limits, accepted:
 - The bindings are per Cloudflare location and eventually consistent, and
   their period is 10 or 60 seconds: a client spread over many locations
   can add up to 120 signed-out views a minute in each. These are insight
-  numbers, not money. When the anonymous cap is spent, real signed-out
-  views in that minute and location are not counted either.
-- Signed out, dedupe is per browser: someone clearing cookies, or a
-  cookie-less client within the limits, counts again.
+  numbers, not money.
+- The anonymous cap is shared: **one sender can spend it**. A client with
+  many addresses (or a botnet) sending signed-out views to a location can
+  use up its 120 a minute there, and real signed-out views in that minute
+  and location are then not counted. Accepted: it costs the attacker more
+  than it costs us (no writes), it loses signed-out counts only, never
+  members', and it ends with the minute.
+- Signed out, dedupe is per address: people behind one address (an office,
+  a phone carrier's NAT) count once between them per profile per day, and
+  one person on two networks counts twice.
 - The owner viewing their own profile while signed out, in a browser where
   they never visited it signed in that day, cannot be told apart from
   anyone else, nor can a second account. Signed in, they are never counted.

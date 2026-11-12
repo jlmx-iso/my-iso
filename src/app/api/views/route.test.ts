@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { logger } from "~/_utils";
 import { VIEW_ANON_LIMIT, VIEW_RATE_LIMIT } from "~/server/_lib/viewCounter";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
@@ -78,15 +79,31 @@ describe("POST /api/views", () => {
     expect(await count()).toBe(1);
   });
 
-  it("a cookie-less loop from one address writes at most the per-address limit", async () => {
+  it("a cookie-less loop from one address counts once, and writes at most the per-address limit", async () => {
     const execute = vi.spyOn(testDb.db, "$executeRaw");
     const headers = { "cf-connecting-ip": "192.0.2.44" };
     for (let index = 0; index < 60; index += 1) {
       expect((await POST(view(profile(), headers))).status).toBe(204);
     }
-    expect(await count()).toBeLessThanOrEqual(VIEW_RATE_LIMIT.limit);
-    expect(execute.mock.calls.length).toBeLessThanOrEqual(VIEW_RATE_LIMIT.limit);
+    expect(await count()).toBe(1);
+    // A "seen" insert per admitted request, and the one count.
+    expect(execute.mock.calls.length).toBeLessThanOrEqual(VIEW_RATE_LIMIT.limit + 1);
     expect(VIEW_RATE_LIMIT.limit).toBeLessThan(VIEW_ANON_LIMIT.limit);
+  });
+
+  it("on Cloudflare without a binding, counts nothing (no per-isolate fallback) and logs it once", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const admit = { limit: async () => ({ success: true }) };
+    for (const env of [{ VIEW_COUNT_LIMIT: admit }, { VIEW_ANON_LIMIT: admit }, {}]) {
+      holder.env = env;
+      expect((await POST(view(profile(), { "cf-connecting-ip": "192.0.2.46" }))).status).toBe(204);
+    }
+    expect(await count()).toBe(0);
+    expect(error.mock.calls.filter(([message]) => String(message).includes("binding is missing"))).toHaveLength(1);
+    // With both, it counts.
+    holder.env = { VIEW_ANON_LIMIT: admit, VIEW_COUNT_LIMIT: admit };
+    expect((await POST(view(profile(), { "cf-connecting-ip": "192.0.2.46" }))).status).toBe(204);
+    expect(await count()).toBe(1);
   });
 
   it("uses Cloudflare's Rate Limiting bindings when the Worker has them", async () => {
@@ -113,6 +130,32 @@ describe("POST /api/views", () => {
     expect((await POST(view("{not json"))).status).toBe(400);
     expect((await POST(view({ ...profile(), source: "https://somewhere" }))).status).toBe(400);
     expect((await POST(view({ ...profile(), id: "x".repeat(600) }))).status).toBe(413);
+    expect(await count()).toBe(0);
+  });
+
+  it("caps the body in bytes: by its declared length before reading, and while reading one without", async () => {
+    // Declared too long: refused without reading a byte.
+    const declared = view(profile(), { "content-length": "100000" });
+    expect((await POST(declared)).status).toBe(413);
+    expect(declared.bodyUsed).toBe(false);
+    // 300 characters, 600 bytes.
+    expect((await POST(view({ ...profile(), id: "é".repeat(300) }))).status).toBe(413);
+    // A stream with no length that never ends is cut off at the cap.
+    let pulls = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(256).fill(32));
+      },
+    });
+    const streamed = new Request("https://myiso.app/api/views", {
+      body: endless,
+      duplex: "half",
+      headers: { "origin": "https://myiso.app", "user-agent": BROWSER },
+      method: "POST",
+    } as RequestInit);
+    expect((await POST(streamed)).status).toBe(413);
+    expect(pulls).toBeLessThan(10);
     expect(await count()).toBe(0);
   });
 
