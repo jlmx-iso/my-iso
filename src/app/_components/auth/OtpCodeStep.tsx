@@ -1,10 +1,12 @@
 "use client";
 
 import { Button, Group, PinInput, Stack, Text } from "@mantine/core";
-import { IconMail } from "@tabler/icons-react";
+import { IconMail, IconRefresh } from "@tabler/icons-react";
 import { signIn } from "next-auth/react";
 import { useEffect, useId, useState } from "react";
 
+import { OTP_TTL_MINUTES } from "~/_utils/limits";
+import { type OtpOutcome, interpretOtpSignIn, otpOutcomeMessage } from "~/_utils/otp";
 import { NETWORK_ERROR_MESSAGE } from "~/_utils/userError";
 import { useCooldown } from "~/app/_hooks/useCooldown";
 
@@ -18,28 +20,29 @@ type OtpCodeStepProps = {
   /** Requests a fresh code; resolves to an error message, or null on success. */
   onResend: () => Promise<string | null>;
   onChangeEmail: () => void;
+  /**
+   * Called when a code is refused, for a reason only the caller can find out
+   * (on /join: the invite ran out meanwhile). Resolves to a message that
+   * replaces the usual "wrong code" one, or null.
+   */
+  explainRejection?: () => Promise<string | null>;
 };
 
 /**
- * Exchanges an emailed one-time code for a session.
- * Resolves to an error message for the user, or null when signed in.
+ * Exchanges an emailed one-time code for a session. Resolves to what
+ * happened, or to "network" when the request itself failed.
  */
-async function verifyCode(email: string, code: string): Promise<string | null> {
+async function verifyCode(email: string, code: string, wrongAttempts: number): Promise<OtpOutcome | "network"> {
   try {
-    const result = await signIn("otp", { code, email, redirect: false });
-    if (result?.ok && !result.error) return null;
-    if (result?.error === "CredentialsSignin") {
-      return "That code is incorrect or has expired. Check it and try again, or request a new one.";
-    }
-    return "We couldn't sign you in. Please try again.";
+    return interpretOtpSignIn(await signIn("otp", { code, email, redirect: false }), wrongAttempts);
   } catch {
     // signIn() only throws when the request itself fails.
-    return NETWORK_ERROR_MESSAGE;
+    return "network";
   }
 }
 
 /** Second step of email sign-in: enter the emailed code, or ask for another. */
-export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: OtpCodeStepProps) {
+export function OtpCodeStep({ email, destination, onResend, onChangeEmail, explainRejection }: OtpCodeStepProps) {
   const labelId = useId();
   const statusId = useId();
   const [code, setCode] = useState("");
@@ -47,6 +50,10 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
   const [notice, setNotice] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  // Wrong codes entered since the last code was sent: a code stops working
+  // after OTP_MAX_ATTEMPTS of them, and only a new code helps then.
+  const [wrongAttempts, setWrongAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
   const { remaining, start } = useCooldown(OTP_RESEND_COOLDOWN_SECONDS);
 
   // The first code was sent just before this step rendered.
@@ -55,20 +62,34 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
   }, [start]);
 
   const verify = async (value: string) => {
-    if (value.length !== OTP_LENGTH || isVerifying) return;
+    if (value.length !== OTP_LENGTH || isVerifying || isLocked) return;
     setError(null);
     setNotice(null);
     setIsVerifying(true);
-    const failure = await verifyCode(email, value);
-    if (failure === null) {
+    const outcome = await verifyCode(email, value, wrongAttempts);
+    if (outcome !== "network" && outcome.kind === "signed_in") {
       // Full page load (not router.push) so the server-rendered layout picks
       // up the session cookie that signIn() just set.
       window.location.assign(destination);
       return;
     }
+    const explanation =
+      outcome !== "network" && (outcome.kind === "wrong_code" || outcome.kind === "locked")
+        ? await explainRejection?.().catch(() => null)
+        : null;
     setIsVerifying(false);
     setCode("");
-    setError(failure);
+    if (explanation) {
+      setError(explanation);
+      return;
+    }
+    if (outcome === "network") {
+      setError(NETWORK_ERROR_MESSAGE);
+      return;
+    }
+    if (outcome.kind === "wrong_code") setWrongAttempts((count) => count + 1);
+    if (outcome.kind === "locked") setIsLocked(true);
+    setError(otpOutcomeMessage(outcome));
   };
 
   const resend = async () => {
@@ -82,6 +103,8 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
       return;
     }
     setCode("");
+    setWrongAttempts(0);
+    setIsLocked(false);
     setNotice("A new code is on its way. Earlier codes no longer work.");
     start();
   };
@@ -104,7 +127,7 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
           <Text span fw={600} c="var(--mantine-color-text)" style={{ wordBreak: "break-all" }}>
             {email}
           </Text>
-          . It expires in 10 minutes.
+          . It expires in {OTP_TTL_MINUTES} minutes.
         </Text>
         <Group role="group" aria-labelledby={labelId} aria-describedby={statusId} justify="center">
           <PinInput
@@ -116,7 +139,7 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
             value={code}
             onChange={setCode}
             onComplete={(value) => void verify(value)}
-            disabled={isVerifying}
+            disabled={isVerifying || isLocked}
             error={!!error}
             ariaLabel="Digit of your 6-digit sign-in code"
             autoFocus
@@ -138,19 +161,36 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail }: Otp
             </Text>
           ) : null}
         </div>
-        <Button type="submit" fullWidth loading={isVerifying} disabled={code.length !== OTP_LENGTH}>
-          Verify and sign in
-        </Button>
-        <Group gap="xs" justify="center">
+        {isLocked ? (
+          // The code is dead: sending a new one is the only way forward.
           <Button
-            variant="subtle"
-            size="sm"
+            fullWidth
+            leftSection={<IconRefresh size={18} />}
             onClick={() => void resend()}
             loading={isResending}
-            disabled={remaining > 0 || isVerifying}
+            disabled={remaining > 0}
+            data-testid="otp-send-new"
           >
-            {remaining > 0 ? `Resend code in ${remaining}s` : "Resend code"}
+            {remaining > 0 ? `Send a new code in ${remaining}s` : "Send a new code"}
           </Button>
+        ) : (
+          <Button type="submit" fullWidth loading={isVerifying} disabled={code.length !== OTP_LENGTH}>
+            Verify and sign in
+          </Button>
+        )}
+        <Group gap="xs" justify="center">
+          {!isLocked && (
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={() => void resend()}
+              loading={isResending}
+              disabled={remaining > 0 || isVerifying}
+              data-testid="otp-send-new"
+            >
+              {remaining > 0 ? `Send a new code in ${remaining}s` : "Send a new code"}
+            </Button>
+          )}
           <Button variant="subtle" color="gray" size="sm" onClick={onChangeEmail} disabled={isVerifying}>
             Use a different email
           </Button>

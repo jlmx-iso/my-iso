@@ -26,7 +26,7 @@ import { signIn } from "next-auth/react";
 import { type FormEvent, Suspense, useState } from "react";
 
 import { DEFAULT_SIGNED_IN_PATH } from "~/_utils/callbackUrl";
-import { NETWORK_ERROR_MESSAGE, userFacingError } from "~/_utils/userError";
+import { NETWORK_ERROR_MESSAGE, trpcErrorCode, userFacingError } from "~/_utils/userError";
 import { OtpCodeStep } from "~/app/_components/auth/OtpCodeStep";
 import { api } from "~/trpc/react";
 
@@ -34,6 +34,12 @@ import logo from "../../../public/img/logo.webp";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SIGN_UP_FALLBACK = "We couldn't start your sign-up. Please try again.";
+// The server answers the same for a code that does not exist and one whose
+// invites are all used (so codes cannot be probed); the copy covers both.
+const CODE_NOT_USABLE =
+  "That code isn't valid, or all of its invites have been used. Check it for typos, or ask the person who invited you for a new code.";
+const INVITE_GONE =
+  "This invite is no longer available: its last spot was taken, or the code was replaced, while you were signing up. Ask the person who invited you for a new code, or request an invite below.";
 
 function JoinContent() {
   const searchParams = useSearchParams();
@@ -77,8 +83,24 @@ function JoinContent() {
     if (result.error) {
       setCodeError(userFacingError(result.error, "We couldn't check that code. Please try again."));
     } else if (!result.data?.valid) {
-      setCodeError("That invite code isn't valid or has already been used.");
+      setCodeError(CODE_NOT_USABLE);
     }
+  };
+
+  /** True when the code that was valid a moment ago no longer is. */
+  const isInviteGone = async (): Promise<boolean> => {
+    const result = await validateCode();
+    return !result.error && result.data?.valid === false;
+  };
+
+  /** Message for a failed sign-up step: the invite ran out, or whatever the server said. */
+  const describeSignUpFailure = async (error: unknown): Promise<string> => {
+    if (trpcErrorCode(error) === "BAD_REQUEST" && (await isInviteGone())) {
+      setOtpStep(false);
+      setCodeError(INVITE_GONE);
+      return INVITE_GONE;
+    }
+    return userFacingError(error, SIGN_UP_FALLBACK);
   };
 
   const validateEmail = () => {
@@ -101,7 +123,7 @@ function JoinContent() {
     try {
       await prepareRegistration({ code: trimmedCode, email: trimmedEmail });
     } catch (error) {
-      setSignInError(userFacingError(error, SIGN_UP_FALLBACK));
+      setSignInError(await describeSignUpFailure(error));
       setIsSigningIn(null);
       return;
     }
@@ -121,7 +143,7 @@ function JoinContent() {
       await requestOtp({ email: trimmedEmail });
       return null;
     } catch (error) {
-      return userFacingError(error, SIGN_UP_FALLBACK);
+      return describeSignUpFailure(error);
     }
   };
 
@@ -228,7 +250,7 @@ function JoinContent() {
               <Group align="flex-start" gap="xs" wrap="nowrap">
                 <TextInput
                   label="Invite code"
-                  placeholder="ISO-PENNY-7X2K"
+                  placeholder="ISO-PENNY-7X2KQ9AB"
                   name="invite-code"
                   autoComplete="off"
                   autoCapitalize="characters"
@@ -264,6 +286,14 @@ function JoinContent() {
                     onChangeEmail={() => {
                       setOtpStep(false);
                       setSignInError(null);
+                    }}
+                    // A correct code is also refused when the invite filled
+                    // up after it was validated: say that, not "wrong code".
+                    explainRejection={async () => {
+                      if (!(await isInviteGone())) return null;
+                      setOtpStep(false);
+                      setCodeError(INVITE_GONE);
+                      return INVITE_GONE;
                     }}
                   />
                 ) : (
