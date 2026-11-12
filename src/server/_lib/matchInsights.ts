@@ -11,8 +11,6 @@
 
 import { logger } from "~/_utils";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
-import { checkRateLimit, type RateLimitDb, type RateLimitPolicy } from "~/server/_utils/rateLimit";
-
 import {
   type AiFailure,
   generateIcebreakers,
@@ -20,7 +18,9 @@ import {
   isAiEnabled,
   parseStoredIcebreakers,
   type UserProfile,
-} from "./ai";
+} from "~/server/_lib/ai";
+import { checkRateLimit, type RateLimitDb, type RateLimitPolicy } from "~/server/_utils/rateLimit";
+
 
 type InsightsDb = Pick<ExtendedPrismaClient, "match" | "user"> & RateLimitDb;
 
@@ -192,10 +192,16 @@ export async function generateMatchInsights(
   db: InsightsDb,
   params: { matchId: string; requestedBy: string },
 ): Promise<{ icebreakers: GenerationOutcome; summary: GenerationOutcome }> {
-  const [summary, icebreakers] = await Promise.all([
+  // Both settle before anything is thrown: the caller's waitUntil keeps the
+  // Worker alive only for this promise, so a generation still writing when
+  // the other fails would otherwise be cut off.
+  const [summary, icebreakers] = await Promise.allSettled([
     ensureMatchSummary(db, params),
     ensureIcebreakers(db, params),
   ]);
-  logger.info("Match insights generated", { icebreakers, matchId: params.matchId, summary });
-  return { icebreakers, summary };
+  if (summary.status === "rejected") throw summary.reason;
+  if (icebreakers.status === "rejected") throw icebreakers.reason;
+  const outcomes = { icebreakers: icebreakers.value, summary: summary.value };
+  logger.info("Match insights generated", { ...outcomes, matchId: params.matchId });
+  return outcomes;
 }

@@ -477,9 +477,9 @@ model InviteCode {
   // used, also after the invited member's account (and with it the
   // redemption row) is deleted.
   redeemedCount      Int                @default(0)
-  // Last time a slot was claimed or released. The reconcile job recomputes
-  // `currentRedemptions` only for codes touched recently
-  // (src/server/_jobs/reconcileInviteSlots.ts).
+  // Set when a slot is claimed or released, cleared by the reconcile job
+  // once it has checked `currentRedemptions` against `redeemedCount`: the
+  // queue of codes to check (src/server/_jobs/reconcileInviteSlots.ts).
   slotsChangedAt     DateTime?
   createdAt          DateTime           @default(now())
   regeneratedAt      DateTime?

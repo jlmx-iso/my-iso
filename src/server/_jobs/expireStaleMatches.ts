@@ -35,6 +35,32 @@ export function liveMatchFilter(now: Date = new Date()) {
 }
 
 /**
+ * Records that the match whose conversation is `threadId` has been
+ * messaged, which takes it out of expiry for good. Called after a message
+ * is stored in that thread.
+ *
+ * One conditional UPDATE: only a "matched" match whose window is still
+ * open moves, so a message sent after the deadline does not revive an
+ * expired match (whether or not the job has stored "expired" yet), and a
+ * repeat changes nothing. Returns whether a match moved.
+ */
+export async function markMatchMessaged(
+  db: MatchDb,
+  threadId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const result = await db.match.updateMany({
+    data: { status: "messaged" },
+    where: {
+      messageThreadId: threadId,
+      OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+      status: "matched",
+    },
+  });
+  return result.count > 0;
+}
+
+/**
  * Marks matches whose window has passed as expired.
  *
  * Idempotent: one conditional UPDATE (two bound parameters); a second run

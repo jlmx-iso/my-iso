@@ -10,6 +10,7 @@ import {
   markThreadReadAt,
   threadParticipantKey,
 } from "~/server/_db/messaging";
+import { expireStaleMatches, liveMatchFilter } from "~/server/_jobs/expireStaleMatches";
 import { MAX_NEW_CONVERSATIONS_PER_DAY, RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
@@ -500,6 +501,70 @@ describe("messageRouter against SQLite", () => {
       ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
       // Alice has her own allowance.
       await expect(as(alice).create({ content: "ok", threadId: thread.id })).resolves.toBeDefined();
+    });
+  });
+
+  describe("a message keeps its match from expiring", () => {
+    const HOUR = 60 * 60 * 1000;
+
+    /** A Discover match between `a` and `b` with its conversation, expiring at `expiresAt`. */
+    async function matchWithThread(a: TestUser, b: TestUser, expiresAt: Date) {
+      const thread = await findOrCreateThread(testDb.db, [a.id, b.id]);
+      const [user1Id, user2Id] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+      const created = await testDb.db.match.create({
+        data: { expiresAt, messageThreadId: thread.id, user1Id, user2Id },
+      });
+      return { matchId: created.id, threadId: thread.id };
+    }
+
+    async function liveMatchIds(now: Date) {
+      const rows = await testDb.db.match.findMany({ select: { id: true }, where: liveMatchFilter(now) });
+      return rows.map((row) => row.id);
+    }
+
+    it("a message before the deadline survives the expiry job", async () => {
+      const deadline = new Date(Date.now() + HOUR);
+      const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+
+      await as(bob).create({ content: "hello", threadId });
+
+      const later = new Date(deadline.getTime() + HOUR);
+      await expect(expireStaleMatches(testDb.db, later)).resolves.toEqual({ expired: 0 });
+      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
+      expect(stored.status).toBe("messaged");
+      expect(await liveMatchIds(later)).toContain(matchId);
+    });
+
+    it("also through createThread, which lands in the match's conversation", async () => {
+      const deadline = new Date(Date.now() + HOUR);
+      const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+
+      const thread = await as(alice).createThread({ initialMessage: "hi", participants: [bob.id] });
+      expect(thread.id).toBe(threadId);
+
+      await expireStaleMatches(testDb.db, new Date(deadline.getTime() + HOUR));
+      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
+      expect(stored.status).toBe("messaged");
+    });
+
+    it("a message after the deadline does not revive the match", async () => {
+      const deadline = new Date(Date.now() - HOUR);
+      const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+
+      await as(bob).create({ content: "too late", threadId });
+
+      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
+      expect(stored.status).toBe("matched");
+      await expect(expireStaleMatches(testDb.db)).resolves.toEqual({ expired: 1 });
+      expect(await liveMatchIds(new Date())).not.toContain(matchId);
+    });
+
+    it("an unmessaged match still expires", async () => {
+      const deadline = new Date(Date.now() + HOUR);
+      const { matchId } = await matchWithThread(alice, bob, deadline);
+      const later = new Date(deadline.getTime() + HOUR);
+      await expect(expireStaleMatches(testDb.db, later)).resolves.toEqual({ expired: 1 });
+      expect(await liveMatchIds(later)).not.toContain(matchId);
     });
   });
 

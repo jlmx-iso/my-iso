@@ -484,8 +484,13 @@ export const discoverRouter = createTRPCRouter({
         // before that existed (or whose generation failed) gets them now,
         // after this response; until then the list is empty and
         // `icebreakersStatus` says "pending".
-        const stored = readIcebreakers(match.icebreakers);
-        if (stored.icebreakersStatus === "pending" && !expired) {
+        const read = readIcebreakers(match.icebreakers);
+        // Nothing is generated for an expired match, so it is never pending.
+        const stored =
+          expired && read.icebreakersStatus === "pending"
+            ? { ...read, icebreakersStatus: "unavailable" as const }
+            : read;
+        if (stored.icebreakersStatus === "pending") {
           runAfterResponse("match-icebreakers", () =>
             ensureIcebreakers(prismaDb, { matchId: match.id, requestedBy: userId }),
           );

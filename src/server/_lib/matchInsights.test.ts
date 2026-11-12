@@ -6,16 +6,15 @@ const mocks = vi.hoisted(() => ({
   generateMatchSummary: vi.fn(),
 }));
 
-vi.mock("./ai", async (importOriginal) => ({
+vi.mock("~/server/_lib/ai", async (importOriginal) => ({
   ...(await importOriginal<typeof Ai>()),
   generateIcebreakers: mocks.generateIcebreakers,
   generateMatchSummary: mocks.generateMatchSummary,
   isAiEnabled: () => mocks.enabled,
 }));
 
-import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
-import type * as Ai from "./ai";
+import type * as Ai from "~/server/_lib/ai";
 import {
   AI_GENERATION_DAILY,
   ensureIcebreakers,
@@ -23,7 +22,8 @@ import {
   generateMatchInsights,
   readIcebreakers,
   RETRY_AFTER_MS,
-} from "./matchInsights";
+} from "~/server/_lib/matchInsights";
+import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
 const LINES = ["Loved your film work!", "Fellow Texan here.", "What gear do you bring?"];
 const NOW = new Date("2026-11-12T12:00:00.000Z");
@@ -176,6 +176,20 @@ describe("generateMatchInsights", () => {
     const stored = await match();
     expect(stored.aiSummary).toBeNull();
     expect(JSON.parse(stored.icebreakers ?? "null")).toEqual(LINES);
+  });
+
+  it("lets the other generation finish its write before a thrown error propagates", async () => {
+    mocks.generateMatchSummary.mockRejectedValue(new Error("database is down"));
+    // The icebreakers take longer than the summary takes to fail.
+    mocks.generateIcebreakers.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, value: LINES }), 50)),
+    );
+
+    await expect(generateMatchInsights(testDb.db, { matchId, requestedBy: userId })).rejects.toThrow(
+      "database is down",
+    );
+    // By the time the promise rejected, the icebreakers were stored.
+    expect(JSON.parse((await match()).icebreakers ?? "null")).toEqual(LINES);
   });
 });
 

@@ -19,7 +19,7 @@ import type { ExtendedPrismaClient } from "./softDelete";
  *
  * If the Worker dies between the claim and that release, the counter stays
  * one too high. Claims and releases stamp `slotsChangedAt`, and a scheduled
- * job sets the counter of recently stamped codes back to the number of
+ * job sets the counter of every stamped code back to the number of
  * redemptions actually recorded (`redeemedCount`, raised by a database
  * trigger with each redemption; ~/server/_jobs/reconcileInviteSlots).
  */

@@ -16,7 +16,7 @@ import { CRON_JOBS, runScheduledJobs } from "~/worker/scheduled";
 import { isJobName, JOBS, runJob } from ".";
 import { expireStaleMatches, isMatchExpired, liveMatchFilter } from "./expireStaleMatches";
 import { purgeExpired } from "./purgeExpired";
-import { LOOKBACK_MS, reconcileInviteSlots, SETTLE_MS } from "./reconcileInviteSlots";
+import { reconcileInviteSlots, SETTLE_MS } from "./reconcileInviteSlots";
 
 
 const NOW = new Date("2026-11-12T12:00:00.000Z");
@@ -195,10 +195,16 @@ describe("reconcileInviteSlots", () => {
     expect(await count(correct.id)).toBe(1);
   });
 
-  it("is idempotent", async () => {
-    await createCode({ code: "LEAKED", currentRedemptions: 2, redemptions: 0, slotsChangedAt: ago(HOUR) });
-    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1, corrected: 1 });
-    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1, corrected: 0 });
+  it("is idempotent: an examined code leaves the queue", async () => {
+    const leaked = await createCode({ code: "LEAKED", currentRedemptions: 2, redemptions: 0, slotsChangedAt: ago(HOUR) });
+    const right = await createCode({ code: "RIGHT", currentRedemptions: 0, redemptions: 0, slotsChangedAt: ago(HOUR) });
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 2, corrected: 1 });
+    for (const id of [leaked.id, right.id]) {
+      const stored = await testDb.raw.inviteCode.findUniqueOrThrow({ where: { id } });
+      expect(stored.slotsChangedAt).toBeNull();
+    }
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 0, corrected: 0 });
+    expect(await count(leaked.id)).toBe(0);
   });
 
   it("leaves a code alone while a sign-up may still be in flight", async () => {
@@ -255,16 +261,16 @@ describe("reconcileInviteSlots", () => {
     expect(await count(invite.id)).toBe(2);
   });
 
-  it("only looks at codes touched recently", async () => {
+  it("looks only at codes whose slots changed, however long ago (a job outage loses nothing)", async () => {
     const never = await createCode({ code: "NEVER", currentRedemptions: 1, slotsChangedAt: null });
     const longAgo = await createCode({
       code: "LONGAGO",
       currentRedemptions: 1,
-      slotsChangedAt: ago(LOOKBACK_MS + HOUR),
+      slotsChangedAt: ago(90 * 24 * HOUR),
     });
-    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 0, corrected: 0 });
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1, corrected: 1 });
     expect(await count(never.id)).toBe(1);
-    expect(await count(longAgo.id)).toBe(1);
+    expect(await count(longAgo.id)).toBe(0);
   });
 
   it("sees the stamp that claiming and releasing a slot leave", async () => {
@@ -317,6 +323,41 @@ describe("reconcileInviteSlots", () => {
 
     await expect(reconcileInviteSlots(racing, NOW)).resolves.toEqual({ checked: 1, corrected: 0 });
     expect(await count(invite.id)).toBe(3);
+  });
+
+  it("works through a backlog larger than one run over the following runs, oldest first", async () => {
+    const total = 1_050; // One run examines at most 1,000.
+    const users = Array.from({ length: total }, (_, i) => ({
+      email: `backlog${i}@example.com`,
+      firstName: "B",
+      id: `backlog-user-${String(i).padStart(4, "0")}`,
+      lastName: "L",
+    }));
+    await testDb.raw.user.createMany({ data: users });
+    await testDb.raw.inviteCode.createMany({
+      data: users.map((user, i) => ({
+        code: `BACKLOG${i}`,
+        creatorId: user.id,
+        currentRedemptions: 1,
+        // All within one hour of each other, the newest last.
+        slotsChangedAt: ago(2 * HOUR - i * 1000),
+      })),
+    });
+
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1_000, corrected: 1_000 });
+    const left = await testDb.raw.inviteCode.findMany({
+      select: { code: true },
+      where: { slotsChangedAt: { not: null } },
+    });
+    expect(left).toHaveLength(50);
+    // The oldest were taken first.
+    expect(left.map((row) => row.code)).toContain("BACKLOG1049");
+    expect(left.map((row) => row.code)).not.toContain("BACKLOG0");
+
+    // Even long after: nothing ages out.
+    const muchLater = new Date(NOW.getTime() + 30 * 24 * HOUR);
+    await expect(reconcileInviteSlots(testDb.db, muchLater)).resolves.toEqual({ checked: 50, corrected: 50 });
+    expect(await testDb.raw.inviteCode.count({ where: { currentRedemptions: { gt: 0 } } })).toBe(0);
   });
 
   it("works through more codes than one batch, within the bound-parameter limit", async () => {

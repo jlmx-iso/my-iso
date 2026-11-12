@@ -12,6 +12,8 @@ vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
 vi.mock("~/server/_lib/ai", () => ({
   generateIcebreakers: vi.fn(async () => []),
   generateMatchSummary: vi.fn(async () => null),
+  isAiEnabled: () => true,
+  parseStoredIcebreakers: (value: string | null) => (value ? (JSON.parse(value) as string[]) : null),
 }));
 
 import { discoverRouter } from "./discover";
@@ -201,5 +203,33 @@ describe("discoverRouter.swipe against SQLite", () => {
     for (const target of swiped) {
       expect(ids).not.toContain(target.id);
     }
+  });
+});
+
+describe("discoverRouter.getMatchById: icebreakers of an expired match", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  afterAll(async () => {
+    await testDb.close();
+  });
+
+  it("says unavailable, not pending, since nothing will generate them", async () => {
+    const alice = await createTestUser(testDb.db, { firstName: "Alice" });
+    const bob = await createTestUser(testDb.db, { firstName: "Bob" });
+    const [user1Id, user2Id] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
+    const expired = await testDb.db.match.create({
+      data: { expiresAt: new Date(Date.now() - 60_000), user1Id, user2Id },
+    });
+
+    const result = await createDbCaller(discoverRouter, testDb.db, { user: alice }).getMatchById({
+      matchId: expired.id,
+    });
+    expect(result.status).toBe("expired");
+    expect(result.icebreakers).toEqual([]);
+    expect(result.icebreakersStatus).toBe("unavailable");
   });
 });
