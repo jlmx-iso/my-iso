@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
@@ -128,7 +129,7 @@ export const searchRouter = createTRPCRouter({
 
       return {
         photographers,
-        events,
+        events: await withDerivedFulfilled(ctx.db, events),
       };
     }),
 });

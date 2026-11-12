@@ -25,6 +25,8 @@ export type StubSubscriptionInput = {
   endedAt?: number | null;
   id: string;
   interval?: "month" | "year";
+  /** Id of the latest invoice; defaults to `in_<subscription id>`. */
+  latestInvoice?: string;
   metadata?: Record<string, string>;
   periodEnd?: number;
   periodStart?: number;
@@ -82,7 +84,7 @@ export function buildSubscription(input: StubSubscriptionInput): Json {
       object: "list",
       url: `/v1/subscription_items?subscription=${input.id}`,
     },
-    latest_invoice: `in_${input.id}`,
+    latest_invoice: input.latestInvoice ?? `in_${input.id}`,
     livemode: false,
     metadata: input.metadata ?? {},
     object: "subscription",
@@ -96,15 +98,21 @@ export function buildSubscription(input: StubSubscriptionInput): Json {
 
 /** An invoice of `subscriptionId`, pointing at it the way this API version does. */
 export function buildInvoice(input: {
+  /** What was actually collected; defaults to the full amount when `paid`. */
+  amountPaid?: number;
   attemptCount?: number;
+  created?: number;
   customer: string;
   id: string;
-  status: "open" | "paid";
+  status: "draft" | "open" | "paid" | "uncollectible" | "void";
   subscriptionId: string | null;
 }): Json {
   return {
+    amount_due: 1900,
+    amount_paid: input.amountPaid ?? (input.status === "paid" ? 1900 : 0),
     attempt_count: input.attemptCount ?? 1,
     billing_reason: "subscription_cycle",
+    created: input.created ?? 1_800_000_000,
     customer: input.customer,
     id: input.id,
     livemode: false,
@@ -117,6 +125,109 @@ export function buildInvoice(input: {
         }
       : null,
     status: input.status,
+  };
+}
+
+/**
+ * A charge as this API version returns it: it names its payment intent, and
+ * NOT an invoice or a subscription (that link is the InvoicePayment).
+ */
+export function buildCharge(input: {
+  amount?: number;
+  amountRefunded?: number;
+  created?: number;
+  customer: string;
+  disputed?: boolean;
+  id: string;
+  paymentIntent: string | null;
+  refunded?: boolean;
+}): Json {
+  const amount = input.amount ?? 1900;
+  return {
+    amount,
+    amount_captured: amount,
+    amount_refunded: input.amountRefunded ?? (input.refunded ? amount : 0),
+    captured: true,
+    created: input.created ?? 1_800_000_000,
+    currency: "usd",
+    customer: input.customer,
+    disputed: input.disputed ?? false,
+    id: input.id,
+    livemode: false,
+    object: "charge",
+    paid: true,
+    payment_intent: input.paymentIntent,
+    refunded: input.refunded ?? false,
+    status: "succeeded",
+  };
+}
+
+/** A dispute (chargeback or inquiry) on `charge`. */
+export function buildDispute(input: {
+  amount?: number;
+  charge: string;
+  created?: number;
+  id: string;
+  paymentIntent: string | null;
+  status: string;
+}): Json {
+  return {
+    amount: input.amount ?? 1900,
+    charge: input.charge,
+    created: input.created ?? 1_800_000_000,
+    currency: "usd",
+    id: input.id,
+    is_charge_refundable: false,
+    livemode: false,
+    metadata: {},
+    object: "dispute",
+    payment_intent: input.paymentIntent,
+    reason: "fraudulent",
+    status: input.status,
+  };
+}
+
+/** A refund of `charge`, as `refund.updated` / `refund.failed` carry it. */
+export function buildRefund(input: {
+  amount?: number;
+  charge: string;
+  id: string;
+  paymentIntent: string | null;
+  status: "pending" | "succeeded" | "failed" | "canceled";
+}): Json {
+  return {
+    amount: input.amount ?? 1900,
+    charge: input.charge,
+    created: 1_800_000_000,
+    currency: "usd",
+    id: input.id,
+    metadata: {},
+    object: "refund",
+    payment_intent: input.paymentIntent,
+    status: input.status,
+  };
+}
+
+/** The object that links a payment intent to the invoice it paid. */
+export function buildInvoicePayment(input: {
+  id: string;
+  invoice: string;
+  paymentIntent: string;
+  status?: "open" | "paid" | "canceled";
+}): Json {
+  return {
+    amount_paid: 1900,
+    amount_requested: 1900,
+    created: 1_800_000_000,
+    currency: "usd",
+    id: input.id,
+    invoice: input.invoice,
+    is_default: true,
+    livemode: false,
+    object: "invoice_payment",
+    payment: { payment_intent: input.paymentIntent, type: "payment_intent" },
+    status: input.status ?? "paid",
+    status_transitions: { canceled_at: null, paid_at: 1_800_000_000 },
   };
 }
 
@@ -168,12 +279,27 @@ export type StubRequest = {
 export type StripeStub = {
   /** A real Stripe SDK client pointed at this server (no automatic retries). */
   client: Stripe;
+  charges: Map<string, Json>;
   close: () => Promise<void>;
   customers: Map<string, Json>;
+  disputes: Map<string, Json>;
   /** The next `count` requests fail with HTTP `status` (a Stripe outage). */
   failNext: (count: number, status?: number) => void;
+  /** Requests matching `when` fail with HTTP `status` until `failWhen(null)`. */
+  failWhen: (when: ((request: StubRequest) => boolean) | null, status?: number) => void;
+  invoicePayments: Map<string, Json>;
+  /**
+   * Invoices by id. A subscription's latest invoice that is not in here is
+   * made up when expanded: paid, unless the subscription's status says the
+   * payment is outstanding.
+   */
+  invoices: Map<string, Json>;
+  /** Called (and awaited) before each request is answered; for ordering concurrent calls. */
+  onRequest: (hook: ((request: StubRequest) => Promise<void> | void) | null) => void;
   port: number;
   portalSessions: Json[];
+  /** Forgets all stored objects, recorded requests, hooks and injected failures. */
+  reset: () => void;
   /** Every request received, in order. */
   requests: StubRequest[];
   sessions: Map<string, Json>;
@@ -191,8 +317,6 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("error", reject);
   });
 }
-
-const list = (data: Json[], url: string): Json => ({ data, has_more: false, object: "list", url });
 
 class StubError extends Error {
   constructor(
@@ -217,7 +341,13 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
   const customers = new Map<string, Json>();
   const subscriptions = new Map<string, Json>();
   const sessions = new Map<string, Json>();
+  const invoices = new Map<string, Json>();
+  const charges = new Map<string, Json>();
+  const disputes = new Map<string, Json>();
+  const invoicePayments = new Map<string, Json>();
   const portalSessions: Json[] = [];
+  let failing: { status: number; when: (request: StubRequest) => boolean } | null = null;
+  let requestHook: ((request: StubRequest) => Promise<void> | void) | null = null;
   const requests: StubRequest[] = [];
   const idempotent = new Map<string, Json>();
   let failures = { count: 0, status: 500 };
@@ -229,6 +359,35 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
     const customer = customers.get(id);
     if (!customer || customer.deleted === true) throw missing("customer", id, param);
     return customer;
+  };
+
+  const UNPAID_STATUSES = new Set(["incomplete", "incomplete_expired", "past_due", "unpaid"]);
+
+  /** Whether `expand[]` asks for `field`. */
+  const expands = (params: Record<string, string>, field: string) =>
+    Object.entries(params).some(([key, value]) => key.startsWith("expand[") && value === field);
+
+  /** The subscription with `latest_invoice` as the invoice object. */
+  const withLatestInvoice = (subscription: Json): Json => {
+    const invoiceId = subscription.latest_invoice;
+    if (typeof invoiceId !== "string") return subscription;
+    const invoice =
+      invoices.get(invoiceId) ??
+      buildInvoice({
+        customer: String(subscription.customer),
+        id: invoiceId,
+        status: UNPAID_STATUSES.has(String(subscription.status)) ? "open" : "paid",
+        subscriptionId: String(subscription.id),
+      });
+    return { ...subscription, latest_invoice: invoice };
+  };
+
+  /** One page of `data`, the way Stripe pages: `limit` and `starting_after`. */
+  const page = (data: Json[], params: Record<string, string>, url: string): Json => {
+    const after = params.starting_after;
+    const from = after ? data.findIndex((item) => item.id === after) + 1 : 0;
+    const limit = Number(params.limit ?? 10);
+    return { data: data.slice(from, from + limit), has_more: data.length > from + limit, object: "list", url };
   };
 
   function route(method: string, path: string, params: Record<string, string>): Json {
@@ -260,17 +419,87 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
       if (method === "GET" && second) {
         const subscription = subscriptions.get(second);
         if (!subscription) throw missing("subscription", second, "id");
-        return subscription;
+        return expands(params, "latest_invoice") ? withLatestInvoice(subscription) : subscription;
       }
       if (method === "GET") {
         const customerId = params.customer ?? "";
         liveCustomer(customerId, "customer");
+        // No status: everything that is not cancelled. Newest first.
+        const wanted = (status: unknown) =>
+          params.status === "all" ||
+          (params.status === undefined ? status !== "canceled" : status === params.status);
         const data = [...subscriptions.values()]
           .filter((sub) => sub.customer === customerId)
-          .filter((sub) => params.status === "all" || sub.status !== "canceled")
-          .sort((a, b) => Number(b.created) - Number(a.created));
-        return list(data, "/v1/subscriptions");
+          .filter((sub) => wanted(sub.status))
+          .sort((a, b) => Number(b.created) - Number(a.created))
+          .map((sub) => (expands(params, "data.latest_invoice") ? withLatestInvoice(sub) : sub));
+        return page(data, params, "/v1/subscriptions");
       }
+    }
+
+    if (resource === "invoices" && method === "GET" && !second) {
+      // Newest first, like Stripe.
+      const data = [...invoices.values()]
+        .filter((invoice) => {
+          const parent = invoice.parent as { subscription_details?: { subscription?: string } } | null;
+          return parent?.subscription_details?.subscription === params.subscription;
+        })
+        .filter((invoice) => params.status === undefined || invoice.status === params.status)
+        .sort((a, b) => Number(b.created) - Number(a.created));
+      return page(data, params, "/v1/invoices");
+    }
+
+    if (resource === "invoices" && method === "GET" && second) {
+      const invoice = invoices.get(second);
+      if (!invoice) throw missing("invoice", second, "id");
+      return invoice;
+    }
+
+    if (resource === "charges" && method === "GET" && !second) {
+      if (params.payment_intent === undefined) liveCustomer(params.customer ?? "", "customer");
+      const data = [...charges.values()]
+        .filter((charge) => params.customer === undefined || charge.customer === params.customer)
+        .filter((charge) => params.payment_intent === undefined || charge.payment_intent === params.payment_intent)
+        // Like Stripe: a charge says so once a dispute exists on it.
+        .map((charge): Json => ({
+          ...charge,
+          disputed: charge.disputed === true || [...disputes.values()].some((dispute) => dispute.charge === charge.id),
+        }))
+        .sort((a, b) => Number(b.created) - Number(a.created));
+      return page(data, params, "/v1/charges");
+    }
+
+    if (resource === "charges" && method === "GET" && second) {
+      const charge = charges.get(second);
+      if (!charge) throw missing("charge", second, "id");
+      return charge;
+    }
+
+    if (resource === "disputes" && method === "GET" && !second) {
+      const data = [...disputes.values()].filter((dispute) => dispute.charge === params.charge);
+      return page(data, params, "/v1/disputes");
+    }
+
+    if (resource === "disputes" && method === "GET" && second) {
+      const dispute = disputes.get(second);
+      if (!dispute) throw missing("dispute", second, "id");
+      return dispute;
+    }
+
+    if (resource === "invoice_payments" && method === "GET" && !second) {
+      const paymentIntent = params["payment[payment_intent]"];
+      const data = [...invoicePayments.values()]
+        .filter((payment) => {
+          const paid = payment.payment as { payment_intent?: string } | undefined;
+          return paymentIntent === undefined || paid?.payment_intent === paymentIntent;
+        })
+        .filter((payment) => params.invoice === undefined || payment.invoice === params.invoice)
+        .filter((payment) => params.status === undefined || payment.status === params.status)
+        .map((payment) => {
+          const invoice = expands(params, "data.invoice") ? invoices.get(String(payment.invoice)) : undefined;
+          return invoice ? { ...payment, invoice } : payment;
+        });
+      return page(data, params, "/v1/invoice_payments");
     }
 
     if (resource === "checkout" && second === "sessions") {
@@ -281,19 +510,28 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
         const data = [...sessions.values()].filter(
           (session) => session.customer === customerId && session.status === (params.status ?? session.status),
         );
-        return list(data, "/v1/checkout/sessions");
+        return page(data, params, "/v1/checkout/sessions");
       }
       if (method === "POST" && !sessionId) {
         liveCustomer(params.customer ?? "", "customer");
         const id = nextId("cs_test");
+        const metadata: Record<string, string> = {};
+        for (const [key, value] of Object.entries(params)) {
+          const name = /^metadata\[(\w+)\]$/.exec(key)?.[1];
+          if (name) metadata[name] = value;
+        }
+        const created = Math.floor(now().getTime() / 1000);
         const session: Json = {
           cancel_url: params.cancel_url,
           client_reference_id: params.client_reference_id ?? null,
+          created,
           customer: params.customer,
+          // Stripe's default: a session can be paid for 24 hours.
+          expires_at: created + 24 * 60 * 60,
           id,
           line_items_price: params["line_items[0][price]"],
           livemode: false,
-          metadata: params["metadata[userId]"] ? { userId: params["metadata[userId]"] } : {},
+          metadata,
           mode: params.mode,
           object: "checkout.session",
           status: "open",
@@ -303,6 +541,11 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
           url: `https://checkout.stripe.test/c/pay/${id}`,
         };
         sessions.set(id, session);
+        return session;
+      }
+      if (method === "GET" && sessionId) {
+        const session = sessions.get(sessionId);
+        if (!session) throw missing("checkout.session", sessionId, "session");
         return session;
       }
       if (method === "POST" && sessionId && action === "expire") {
@@ -345,7 +588,9 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
     );
     const header = req.headers["idempotency-key"];
     const idempotencyKey = typeof header === "string" ? header : null;
-    requests.push({ idempotencyKey, method, params, path: url.pathname });
+    const request: StubRequest = { idempotencyKey, method, params, path: url.pathname };
+    requests.push(request);
+    if (requestHook) await requestHook(request);
 
     const send = (status: number, json: Json) => {
       res.writeHead(status, {
@@ -356,6 +601,10 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
       res.end(JSON.stringify(json));
     };
 
+    if (failing?.when(request)) {
+      send(failing.status, { error: { message: "Stripe stub: injected failure", type: "api_error" } });
+      return;
+    }
     if (failures.count > 0) {
       failures.count -= 1;
       send(failures.status, { error: { message: "Stripe stub: injected failure", type: "api_error" } });
@@ -397,13 +646,34 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
         server.closeAllConnections();
         server.close((error) => (error ? reject(error) : resolve()));
       }),
+    charges,
     customers,
+    disputes,
     failNext: (count, status = 500) => {
       failures = { count, status };
+    },
+    failWhen: (when, status = 500) => {
+      failing = when ? { status, when } : null;
+    },
+    invoicePayments,
+    invoices,
+    onRequest: (hook) => {
+      requestHook = hook;
     },
     port,
     portalSessions,
     requests,
+    reset: () => {
+      for (const store of [charges, customers, disputes, invoicePayments, invoices, sessions, subscriptions, idempotent]) {
+        store.clear();
+      }
+      portalSessions.length = 0;
+      requests.length = 0;
+      failures = { count: 0, status: 500 };
+      failing = null;
+      requestHook = null;
+      now = () => new Date();
+    },
     sessions,
     setNow: (clock) => {
       now = clock;

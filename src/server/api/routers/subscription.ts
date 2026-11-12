@@ -10,14 +10,21 @@ import {
   refreshBillingState,
   startCheckout,
 } from "~/server/_billing/checkout";
-import { entitlementsFor, isTerminalStatus } from "~/server/_billing/entitlements";
+import {
+  entitlementsFor,
+  isSubscriptionStatus,
+  isTerminalStatus,
+} from "~/server/_billing/entitlements";
+import { loadSubscriptionForAccess } from "~/server/_billing/lazySync";
+import { LeaseBusyError } from "~/server/_billing/lease";
 import { reportBillingError } from "~/server/_billing/report";
-import { getStripe } from "~/server/_billing/stripe";
+import { RESYNC_MAX_BATCH, resyncSubscriptionBatch } from "~/server/_billing/resync";
+import { getAccessCheckStripe, getStripe } from "~/server/_billing/stripe";
 import { captureEvent } from "~/server/_lib/posthog";
 import { getPricingForRole, PriceNotConfiguredError } from "~/server/_utils/pricing";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonedError } from "~/server/api/reasonedError";
-import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
+import { createTRPCRouter, founderProcedure, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 /**
  * What the client is told about the caller's subscription.
@@ -31,13 +38,27 @@ export type SubscriptionView = {
   /** The subscription is set to end at `cancelAt` and will not renew. */
   cancelAtPeriodEnd: boolean;
   cancelAt: Date | null;
-  /** A new checkout may be started (no running subscription). */
+  /**
+   * Why there is a subscription but no (or soon no) access, for a line of
+   * guidance next to the "manage billing" action; null when nothing is
+   * wrong. "unknown_status": Stripe reports a status this release does not
+   * know; it is managed in the billing portal like the others.
+   */
+  billingIssue: BillingIssue | null;
+  /**
+   * A new checkout may be started (no running subscription). When false and
+   * a subscription exists, offer `createPortalSession` instead: that is
+   * where a failed payment is fixed and a paused or unfinished subscription
+   * is resumed or ended.
+   */
   canStartCheckout: boolean;
   currentPeriodEnd: Date | null;
   hasProAccess: boolean;
   /** "month" | "year" | null */
   interval: string | null;
   isLifetime: boolean;
+  /** Access is withheld because of a dispute (chargeback) on a payment. */
+  isDisputed: boolean;
   /** A payment failed and has not been recovered: ask them to update their card. */
   isPastDue: boolean;
   /** "founding" | "standard" | null */
@@ -54,12 +75,29 @@ export type SubscriptionView = {
   expiresAt: Date | null;
 };
 
+export type BillingIssue =
+  | "payment_failed"
+  | "disputed"
+  | "paused"
+  | "incomplete"
+  | "unknown_status";
+
+function billingIssueOf(row: Subscription, entitlements: ReturnType<typeof entitlementsFor>): BillingIssue | null {
+  if (row.isLifetime) return null;
+  if (entitlements.isDisputed) return "disputed";
+  if (entitlements.isPastDue) return "payment_failed";
+  if (row.status === "paused") return "paused";
+  if (row.status === "incomplete") return "incomplete";
+  return isSubscriptionStatus(row.status) ? null : "unknown_status";
+}
+
 export function toSubscriptionView(row: Subscription, now: Date): SubscriptionView {
   const entitlements = entitlementsFor(row, now);
   const renews =
     (row.status === "active" || row.status === "trialing") && !row.cancelAtPeriodEnd;
   return {
     accessEndsAt: entitlements.accessEndsAt,
+    billingIssue: billingIssueOf(row, entitlements),
     cancelAt: row.cancelAt,
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     canStartCheckout: !row.isLifetime && isTerminalStatus(row.status),
@@ -69,6 +107,7 @@ export function toSubscriptionView(row: Subscription, now: Date): SubscriptionVi
     interval: row.interval,
     isActive: entitlements.hasProAccess,
     isCanceled: row.cancelAtPeriodEnd || row.status === "canceled",
+    isDisputed: entitlements.isDisputed,
     isLifetime: row.isLifetime,
     isPastDue: entitlements.isPastDue,
     plan: row.plan,
@@ -77,13 +116,27 @@ export function toSubscriptionView(row: Subscription, now: Date): SubscriptionVi
   };
 }
 
-/** Stripe (or its configuration here) failed: nothing was charged. */
-function billingUnavailable(message: string, context: Record<string, unknown>): TRPCError {
+/**
+ * Stripe (or its configuration here) failed.
+ *
+ * `nothingCharged`: only for a failure to START checkout, where it is true
+ * by construction (no session was created, so there was nothing to pay).
+ * Everywhere else the message makes no claim about charges: a refresh, the
+ * portal or a re-sync failing says nothing about what Stripe has or has not
+ * collected.
+ */
+function billingUnavailable(
+  message: string,
+  context: Record<string, unknown>,
+  options: { nothingCharged?: boolean } = {},
+): TRPCError {
   reportBillingError(message, context);
   return reasonedError(
     "SERVICE_UNAVAILABLE",
     ErrorReason.BILLING_UNAVAILABLE,
-    "Billing is temporarily unavailable. You have not been charged. Please try again in a few minutes.",
+    options.nothingCharged
+      ? "Billing is temporarily unavailable. You have not been charged. Please try again in a few minutes."
+      : "Billing is temporarily unavailable. Please try again in a few minutes.",
   );
 }
 
@@ -103,12 +156,11 @@ export const subscriptionRouter = createTRPCRouter({
 
   /**
    * The caller's subscription as stored (kept current by Stripe webhooks),
-   * or null when they have never had one. See SubscriptionView.
+   * or null when they have never had one. See SubscriptionView. A row that
+   * was never read from Stripe is synced first (see _billing/lazySync.ts).
    */
   getStatus: protectedProcedure.query(async ({ ctx }): Promise<SubscriptionView | null> => {
-    const row = await ctx.db.subscription.findUnique({
-      where: { userId: ctx.session.user.id },
-    });
+    const row = await loadSubscriptionForAccess(ctx.db, getAccessCheckStripe, ctx.session.user.id);
     return row ? toSubscriptionView(row, new Date()) : null;
   }),
 
@@ -145,11 +197,20 @@ export const subscriptionRouter = createTRPCRouter({
           userId,
         });
       } catch (error) {
+        if (error instanceof LeaseBusyError) {
+          // Another request of this user is starting checkout right now (a
+          // double click, a second tab). Nothing was created by this one.
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Checkout is already being opened. Please try again in a moment.",
+          });
+        }
         throw billingUnavailable(
           error instanceof PriceNotConfiguredError
             ? "Checkout is not available: a Stripe price id is not configured"
             : "Error creating Stripe checkout session",
           { error, userId },
+          { nothingCharged: true },
         );
       }
 
@@ -220,11 +281,50 @@ export const subscriptionRouter = createTRPCRouter({
     .mutation(async ({ ctx }): Promise<SubscriptionView | null> => {
       const userId = ctx.session.user.id;
       try {
-        await refreshBillingState(ctx.db, getStripe(), userId);
+        // With the payment standing: someone held back by a lost dispute
+        // who has paid since must be able to put that right from here if
+        // the `invoice.paid` event is late.
+        await refreshBillingState(ctx.db, getStripe(), userId, { standing: true });
       } catch (error) {
         throw billingUnavailable("Error syncing subscription from Stripe", { error, userId });
       }
       const row = await ctx.db.subscription.findUnique({ where: { userId } });
       return row ? toSubscriptionView(row, new Date()) : null;
+    }),
+
+  /**
+   * ADMIN (founder/ambassador): re-derives stored subscription rows from
+   * Stripe, one bounded batch per call. Call it again with the returned
+   * `nextCursor` until that is null. Safe to repeat and to interrupt.
+   *
+   * `scope` "pending" (default): rows never read from Stripe, or whose
+   * legacy flags disagree with their status. "all": every row with a
+   * Stripe subscription or customer. See docs/BILLING.md.
+   *
+   * `unresolved` lists the rows of the batch that are not settled, by
+   * Subscription id with the outcome that left them so.
+   *
+   * Errors: SERVICE_UNAVAILABLE, reason `billing_unavailable`.
+   */
+  resyncFromStripe: founderProcedure
+    .use(rateLimit(RateLimits.BILLING_RESYNC))
+    .input(
+      z.object({
+        cursor: z.string().min(1).max(64).nullish(),
+        limit: z.number().int().min(1).max(RESYNC_MAX_BATCH).optional(),
+        scope: z.enum(["pending", "all"]).default("pending"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await resyncSubscriptionBatch(ctx.db, getStripe(), input);
+        logger.info("Subscription re-sync batch", { ...result, scope: input.scope });
+        return result;
+      } catch (error) {
+        throw billingUnavailable("Error re-syncing subscriptions from Stripe", {
+          error,
+          userId: ctx.session.user.id,
+        });
+      }
     }),
 });

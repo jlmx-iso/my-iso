@@ -285,8 +285,20 @@ export const MAX_NEW_CONVERSATIONS_PER_DAY = 20;
 export const RateLimits = {
   // Sign-in codes. Per-email limits bound guessing against one account and
   // mail sent to one inbox; per-IP limits bound one client spraying many.
-  OTP_REQUEST_EMAIL: { limit: 5, name: "otp-request-email", onError: "deny", windowSeconds: 15 * MINUTE },
   OTP_REQUEST_IP: { limit: 20, name: "otp-request-ip", onError: "deny", windowSeconds: 15 * MINUTE },
+  // Codes one client may request for one address: the limits a person
+  // asking for a new code can actually meet. Keyed on address AND client
+  // for the same reason as the verify limits below: someone else requesting
+  // codes for an address must not use up its owner's requests (the owner
+  // could then not sign in by email for the rest of the window, or day).
+  OTP_REQUEST_EMAIL_IP: { limit: 5, name: "otp-request-email-ip", onError: "deny", windowSeconds: 15 * MINUTE },
+  OTP_REQUEST_EMAIL_IP_DAILY: { limit: 20, name: "otp-request-email-ip-daily", onError: "deny", windowSeconds: DAY },
+  // Ceilings on codes requested for one address by ALL clients together:
+  // what bounds the mail one inbox can be sent, and how often a distributed
+  // guesser can get a fresh code. Three times the per-client limits, so one
+  // client cannot reach them alone.
+  OTP_REQUEST_EMAIL: { limit: 15, name: "otp-request-email", onError: "deny", windowSeconds: 15 * MINUTE },
+  OTP_REQUEST_EMAIL_DAILY: { limit: 60, name: "otp-request-email-daily", onError: "deny", windowSeconds: DAY },
   OTP_VERIFY_IP: { limit: 30, name: "otp-verify-ip", onError: "deny", windowSeconds: 15 * MINUTE },
   // Guesses one client may make against one address: the limits a person
   // mistyping their code can actually meet. Keyed on address AND client, so
@@ -300,7 +312,6 @@ export const RateLimits = {
   // client is stopped by its own limits long before it can fill these.
   OTP_VERIFY_EMAIL: { limit: 30, name: "otp-verify-email", onError: "deny", windowSeconds: 15 * MINUTE },
   OTP_VERIFY_EMAIL_DAILY: { limit: 100, name: "otp-verify-email-daily", onError: "deny", windowSeconds: DAY },
-  OTP_REQUEST_EMAIL_DAILY: { limit: 20, name: "otp-request-email-daily", onError: "deny", windowSeconds: DAY },
   MOBILE_TOKEN_EXCHANGE: { limit: 20, name: "mobile-token-exchange", onError: "deny", windowSeconds: 15 * MINUTE },
 
   // Invite codes and the waitlist (public, per IP).
@@ -332,23 +343,33 @@ export const RateLimits = {
   RECIPIENT_SEARCH: { limit: 120, name: "recipient-search", onError: "allow", windowSeconds: MINUTE },
   // Opening a match (asks the AI provider for icebreakers).
   MATCH_DETAIL: { limit: 60, name: "match-detail", onError: "allow", windowSeconds: MINUTE },
-  /** @deprecated Shared bucket; use one of the specific policies above. */
-  SEARCH: { limit: 60, name: "search", onError: "allow", windowSeconds: MINUTE },
   // Billing: each call talks to Stripe.
   BILLING_CHECKOUT: { limit: 10, name: "billing-checkout", onError: "allow", windowSeconds: HOUR },
   BILLING_PORTAL: { limit: 20, name: "billing-portal", onError: "allow", windowSeconds: HOUR },
   BILLING_SYNC: { limit: 6, name: "billing-sync", onError: "allow", windowSeconds: 5 * MINUTE },
+  // Admin re-sync batches: up to RESYNC_MAX_BATCH rows each; what a batch
+  // may cost in Stripe requests is bounded in _billing/resync.ts.
+  BILLING_RESYNC: { limit: 120, name: "billing-resync", onError: "allow", windowSeconds: 5 * MINUTE },
   BOOKING_UPDATE: { limit: 60, name: "booking-update", onError: "allow", windowSeconds: HOUR },
   PLACES_AUTOCOMPLETE: { limit: 60, name: "places-autocomplete", onError: "allow", windowSeconds: MINUTE },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 /**
  * Limits on asking for a sign-in code, in the order they must be checked:
- * the requesting client first, then the address it names.
+ *
+ * 1. the client (IP) across all addresses,
+ * 2. this client for this address (15 minutes, then per day),
+ * 3. the address across all clients (15 minutes, then per day).
+ *
+ * A refusal stops the chain, so a client that is over any of its own limits
+ * never adds to the counters shared with the address's owner.
  */
 export function otpRequestLimits(clientIp: string, email: string): RateLimitCheck[] {
+  const emailAndIp = `email:${email}|ip:${clientIp}`;
   return [
     { identifier: `ip:${clientIp}`, policy: RateLimits.OTP_REQUEST_IP },
+    { identifier: emailAndIp, policy: RateLimits.OTP_REQUEST_EMAIL_IP },
+    { identifier: emailAndIp, policy: RateLimits.OTP_REQUEST_EMAIL_IP_DAILY },
     { identifier: `email:${email}`, policy: RateLimits.OTP_REQUEST_EMAIL },
     { identifier: `email:${email}`, policy: RateLimits.OTP_REQUEST_EMAIL_DAILY },
   ];

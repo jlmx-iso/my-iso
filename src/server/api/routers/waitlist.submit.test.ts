@@ -1,8 +1,9 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
 const mockSendTemplateEmail = vi.hoisted(() => vi.fn());
@@ -127,6 +128,50 @@ describe("waitlist.submit against SQLite", () => {
     expect(await testDb.db.waitlist.count()).toBe(1);
   });
 
+  describe("losing the race for an address (the other submission's insert got in first)", () => {
+    /** The next submission's first look finds nothing, as it would mid-race. */
+    const loseTheRace = () => vi.spyOn(testDb.db.waitlist, "findUnique").mockResolvedValueOnce(null);
+
+    it("confirms with the name that was stored, not the one this request submitted", async () => {
+      await visitor().submit(application);
+      mockSendTemplateEmail.mockClear();
+      loseTheRace();
+
+      const result = await visitor().submit({ ...application, name: "Someone Else" });
+
+      expect(result).toEqual({ position: null, success: true });
+      expect(await testDb.db.waitlist.count()).toBe(1);
+      expect(mockSendTemplateEmail).toHaveBeenCalledTimes(1);
+      expect(mockSendTemplateEmail.mock.calls[0]?.[0]).toMatchObject({ props: { name: "Jane Smith" } });
+      // A repeat, so not reported as a new application.
+      expect(mockCaptureEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses the stored status: no confirmation for an entry that is no longer pending", async () => {
+      await visitor().submit(application);
+      await testDb.db.waitlist.update({ data: { status: "approved" }, where: { email: application.email } });
+      mockSendTemplateEmail.mockClear();
+      loseTheRace();
+
+      await visitor().submit({ ...application, name: "Someone Else" });
+
+      expect(mockSendTemplateEmail).not.toHaveBeenCalled();
+    });
+
+    it("fails instead of pretending when the insert was refused but no entry exists", async () => {
+      const conflict = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        clientVersion: "test",
+        code: "P2002",
+      });
+      vi.spyOn(testDb.db.waitlist, "create").mockRejectedValueOnce(conflict);
+
+      await expect(visitor().submit(application)).rejects.toBeDefined();
+
+      expect(await testDb.db.waitlist.count()).toBe(0);
+      expect(mockSendTemplateEmail).not.toHaveBeenCalled();
+    });
+  });
+
   it("reports a new application to analytics by hash, and not a repeat", async () => {
     await visitor().submit(application);
     await visitor().submit(application);
@@ -145,9 +190,8 @@ describe("waitlist.submit against SQLite", () => {
 
   it("is rate limited per IP address", async () => {
     const caller = visitor();
-    for (let i = 0; i < RateLimits.WAITLIST_SUBMIT.limit; i++) {
-      await caller.submit({ ...application, email: `person${i}@example.com` });
-    }
+    await spendRateLimit(testDb.db, RateLimits.WAITLIST_SUBMIT, `ip:198.51.100.${ipCounter}`, RateLimits.WAITLIST_SUBMIT.limit - 1);
+    await caller.submit({ ...application, email: "last-allowed@example.com" });
 
     await expect(caller.submit({ ...application, email: "onemore@example.com" })).rejects.toMatchObject({
       code: "TOO_MANY_REQUESTS",

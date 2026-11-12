@@ -25,6 +25,12 @@ Migrations go first because they are written to be safe for the code that is
 already deployed, while new code may not work without them
 ([DATABASE.md](DATABASE.md)). CI never deploys.
 
+**Plan.** The app assumes the **Workers Paid** plan: the bundle is over the
+Free plan's size limit, and the billing code is sized for the Paid plan's
+subrequest and `waitUntil` limits. The figures and what depends on them are
+in [BILLING.md](BILLING.md), "Platform limits this is sized for"; this is
+the only place this document relies on it.
+
 ## Configuration
 
 There are three places a value can live. Which one is decided by when it is
@@ -95,10 +101,15 @@ Never set on a deployment:
 
 - `DATABASE_URL`: the Worker uses the D1 binding.
 - `ANTHROPIC_BASE_URL`: points the Anthropic SDK at a local stub.
-- `STRIPE_API_BASE_URL`: test-only stand-in for the Stripe API. The app
-  refuses any value that is not a loopback address
-  (`src/server/_billing/stripe.ts`), so it cannot redirect real payments,
-  but it has no use outside end-to-end runs.
+- `STRIPE_API_BASE_URL`: sends every Stripe API call to a local stand-in
+  (the stub in `src/test/helpers/stripeStub.ts`, or `stripe-mock`) instead
+  of Stripe, for tests and for trying billing locally
+  ([BILLING.md](BILLING.md), "Testing locally with the stub"). It must be
+  unset in staging and production. The app accepts only a loopback address
+  and, in a production deployment (a live-mode key, or a
+  `NEXT_PUBLIC_BASE_URL` that is not this machine), refuses to build a
+  Stripe client at all while it is set (`src/server/_billing/stripe.ts`):
+  it cannot redirect real payments, but leaving it set breaks billing.
 
 The app validates all of this when the Worker starts (`src/env.js`). With a
 required value missing, requests fail and `wrangler tail` shows
@@ -201,9 +212,14 @@ Do staging completely, then production.
    `https://<domain>` for each environment.
 5. **Resend.** Verify the sending domain (DNS records), then use an address
    on it for `EMAIL_FROM`.
-6. **Stripe.** Create the products and prices. Add a webhook endpoint
-   `https://<domain>/webhooks/stripe` and copy its signing secret. Use test
-   mode keys for staging.
+6. **Stripe.** Follow "Stripe dashboard setup" in [BILLING.md](BILLING.md):
+   the product and its four prices, the webhook endpoint
+   `https://<domain>/webhooks/stripe` with its pinned API version and the
+   event types to subscribe it to (listed there, under "Events handled",
+   and nowhere else), the customer portal and the retry settings. Copy the
+   endpoint's signing secret. Use test mode keys for staging. A database
+   that held subscriptions before this release also needs the one-time
+   re-sync described there.
 7. **Edge rate limit.** Add the WAF rate limiting rule for `/lens/`
    described under "Rate limiting the proxy".
 8. **PostHog.** Create a project (one per environment, or one project and
@@ -238,7 +254,17 @@ in `src/worker/scheduled.ts`):
 | `17 3 * * *` | `purge-expired`, `reconcile-invites` |
 
 Each logs a `Scheduled job finished` summary and reports failures to PostHog
-error tracking. Locally: `npx wrangler dev --test-scheduled`, then
+error tracking.
+
+The billing tables need no job. `StripeEvent` (webhook de-duplication, kept
+30 days) and `BillingLease` are purged by the billing code itself, on a
+small share of the writes to each (`purgeOldStripeEvents` in
+`src/server/_billing/eventLog.ts`, `purgeExpiredLeases` in
+`src/server/_billing/lease.ts`); `purge-expired` deliberately leaves them
+alone. An expired lease or claim is never honoured, purged or not. Rows
+whose subscription state was never read from Stripe are brought up to date
+by the re-sync script and the lazy first sync ([BILLING.md](BILLING.md)),
+not by a scheduled job. Locally: `npx wrangler dev --test-scheduled`, then
 `npm run jobs:local`.
 
 ## Rollback

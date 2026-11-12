@@ -4,20 +4,37 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { ErrorReason, getErrorReason } from "~/_utils";
+import LocalDate from "~/app/_components/LocalDate";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
+import type { BillingMode } from "./billingMode";
+
 type BillingActionsProps = {
-  isProUser: boolean;
+  /**
+   * "portal": there is a subscription that is managed in the Stripe billing
+   * portal (running, or lapsed: unpaid, paused, incomplete). "checkout":
+   * a new subscription can be started. "resubscribe": the same checkout,
+   * for someone whose cancelled subscription still gives Pro (see
+   * billingModeFor). "none": a comped account.
+   */
+  mode: BillingMode;
+  /** With "resubscribe": until when the period already paid for lasts (ISO). */
+  paidUntil?: string | null;
   pricing: PricingInfo;
 };
 
-export default function BillingActions({ isProUser, pricing }: BillingActionsProps) {
+export default function BillingActions({ mode, paidUntil, pricing }: BillingActionsProps) {
   const [error, setError] = useState<string | null>(null);
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
+  // The server found a subscription this page did not know about (it
+  // refreshes from Stripe when checkout starts): offer the portal instead.
+  const [subscriptionExists, setSubscriptionExists] = useState(false);
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
     onError: (err) => {
+      if (getErrorReason(err) === ErrorReason.SUBSCRIPTION_EXISTS) setSubscriptionExists(true);
       setError(err.message ?? "Failed to create checkout session");
     },
     onSuccess: (data) => {
@@ -44,7 +61,9 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
 
   const annualSavings = pricing.monthlyPrice * 12 - pricing.annualPrice;
 
-  if (isProUser) {
+  if (mode === "none") return null;
+
+  if (mode === "portal" || subscriptionExists) {
     return (
       <Stack gap="xs">
         <Button
@@ -85,8 +104,20 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
         color="orange"
         size="md"
       >
-        Upgrade to Pro - ${monthlyEquivalent}/mo
+        {mode === "resubscribe" ? "Resubscribe" : "Upgrade to Pro"} - ${monthlyEquivalent}/mo
       </Button>
+      {mode === "resubscribe" && (
+        <Text size="xs" c="dimmed" ta="right" maw={320}>
+          This starts a new subscription and you are charged today.
+          {paidUntil ? (
+            <>
+              {" "}You already have Pro until <LocalDate date={paidUntil} />; that time is not added on.
+            </>
+          ) : (
+            " The time left on your canceled subscription is not added on."
+          )}
+        </Text>
+      )}
       {billingInterval === "annual" && annualSavings > 0 && (
         <Text size="xs" c="green">
           ${pricing.annualPrice}/yr — save ${annualSavings} vs monthly

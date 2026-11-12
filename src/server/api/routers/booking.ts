@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -5,9 +6,11 @@ import { ErrorReason, logger } from "~/_utils";
 import {
   actionFor,
   applyTransition,
+  canReapply,
   checkTransition,
   isSlotTaken,
-  syncEventFulfilled,
+  REAPPLIABLE_CANCEL_ORIGIN,
+  SLOT_HOLDING_STATUSES,
   type BookingAction,
   type TransitionRefusal,
 } from "~/server/_db/bookingTransitions";
@@ -50,6 +53,8 @@ const onLiveEvent = { event: { isDeleted: false } } as const;
 
 const bookingEventSelect = {
   date: true,
+  // With `date`, lets the client tell whether the event has ended.
+  duration: true,
   id: true,
   location: true,
   title: true,
@@ -100,6 +105,9 @@ function findReceivedApplications(
 
 /** An event stops accepting applications at its start time. */
 const isInThePast = (date: Date) => date.getTime() < Date.now();
+
+/** Why an event takes no applications right now (booking.hasApplied's `applyBlockedBy`). */
+export type ApplyBlocker = "event_not_found" | "event_started" | "event_filled";
 
 const ALREADY_APPLIED = "You have already applied to this event";
 
@@ -259,47 +267,86 @@ export const bookingRouter = createTRPCRouter({
         });
       }
 
+      // The early answer for the usual case. The write below makes the same
+      // check again IN ITS OWN STATEMENT, so an application cannot slip in
+      // between this read and that write while someone else is accepted.
       if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
 
       const applicationKey = { applicantId: userId, eventId: input.eventId };
+      const slotIsOpen = {
+        bookings: { none: { isDeleted: false, status: { in: [...SLOT_HOLDING_STATUSES] } } },
+        isDeleted: false,
+      };
 
-      // Someone who withdrew may apply again: the same row goes back to
-      // "applied" (one conditional statement, so a double submit applies
-      // once). Any other existing application stays as it is.
+      // Someone who WITHDREW their application may apply again: the same
+      // row goes back to "applied" (one conditional statement, so a double
+      // submit applies once). Nothing else is reopened: not an application
+      // the owner declined, and not a booking that was accepted and then
+      // cancelled by either side (cancelOrigin says which it was). Only the
+      // applicant's own fields are rewritten; what the owner wrote stays.
+      //
+      // `createdAt` becomes now: it is "applied at", the time the lists sort
+      // by (newest first) and the card shows. A new application must stand
+      // among the new ones, where the owner who has just been notified
+      // looks for it, not where the withdrawn one was months ago.
       const reapplied = await ctx.db.booking.updateMany({
-        data: { notes: input.notes ?? null, ownerNotes: null, rate: input.rate ?? null, status: "applied" },
-        where: { ...applicationKey, isDeleted: false, status: "canceled" },
+        data: {
+          cancelOrigin: null,
+          createdAt: new Date(),
+          notes: input.notes ?? null,
+          rate: input.rate ?? null,
+          status: "applied",
+        },
+        where: {
+          ...applicationKey,
+          cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
+          event: slotIsOpen,
+          isDeleted: false,
+          status: "canceled",
+        },
       });
 
-      let booking;
-      if (reapplied.count > 0) {
-        booking = await ctx.db.booking.findUniqueOrThrow({
-          where: { eventId_applicantId: applicationKey },
-        });
-      } else {
-        booking = await ctx.db.booking
-          .create({
-            data: {
-              ...applicationKey,
-              notes: input.notes,
-              ownerId,
-              rate: input.rate,
-            },
-          })
+      if (reapplied.count === 0) {
+        // A first application: inserted only if the slot is still open, in
+        // one statement (INSERT ... SELECT ... WHERE NOT EXISTS). An
+        // application that exists already makes it insert nothing too (the
+        // unique (eventId, applicantId)); the two are told apart below.
+        const now = new Date();
+        const inserted = await ctx.db
+          .$queryRaw<Array<{ id: string }>>(
+            Prisma.sql`
+            INSERT INTO "Booking"
+              ("id", "createdAt", "updatedAt", "eventId", "applicantId", "ownerId", "status", "rate", "notes", "isDeleted")
+            SELECT ${crypto.randomUUID()}, ${now}, ${now}, ${event.id}, ${userId}, ${ownerId}, 'applied',
+              ${input.rate ?? null}, ${input.notes ?? null}, false
+            WHERE NOT EXISTS (
+              SELECT 1 FROM "Booking" held
+              WHERE held."eventId" = ${event.id} AND NOT held."isDeleted"
+                AND held."status" IN (${Prisma.join([...SLOT_HOLDING_STATUSES])})
+            )
+            ON CONFLICT ("eventId", "applicantId") DO NOTHING
+            RETURNING "id"`,
+          )
           .catch((error: unknown) => {
-            // An application already exists (or two submits raced): the
-            // unique (eventId, applicantId) rejects it, which is a conflict
-            // rather than a server fault.
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
-            }
+            if (isUniqueViolation(error)) return [];
             logger.error("Error creating booking", { error });
             throw new TRPCError({
               code: "INTERNAL_SERVER_ERROR",
               message: "Failed to create booking",
             });
           });
+
+        if (inserted.length === 0) {
+          // Nothing was written, by this statement or the re-open above.
+          // Either the slot went to someone else in the meantime, or an
+          // application is on record that cannot be sent again.
+          if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
+          throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
+        }
       }
+      const booking = await ctx.db.booking.findUniqueOrThrow({
+        where: { eventId_applicantId: applicationKey },
+      });
 
       const applicant = await ctx.db.user.findUnique({
         select: { firstName: true, lastName: true },
@@ -408,7 +455,28 @@ export const bookingRouter = createTRPCRouter({
         },
       });
 
-      return { hasApplied: !!booking, status: booking?.status ?? null };
+      // What `applyToEvent` would say about the EVENT right now, whoever
+      // asks: it has started, or its slot is taken. An application (first
+      // or again) is only worth offering when this is null.
+      const event = await ctx.db.event.findUnique({ select: { date: true, id: true }, where: { id: input.eventId } });
+      const applyBlockedBy: ApplyBlocker | null = !event
+        ? "event_not_found"
+        : isInThePast(event.date)
+          ? "event_started"
+          : (await isSlotTaken(ctx.db, event.id))
+            ? "event_filled"
+            : null;
+
+      // `hasApplied` is true for any application on record, whatever became
+      // of it. `canReapply`: it was withdrawn, so the booking itself allows
+      // a new application (show "Apply again", not a disabled "Applied"),
+      // provided the event still takes applications (`applyBlockedBy`).
+      return {
+        applyBlockedBy,
+        canReapply: booking ? canReapply(booking) : false,
+        hasApplied: !!booking,
+        status: booking?.status ?? null,
+      };
     }),
 
   /**
@@ -418,7 +486,8 @@ export const bookingRouter = createTRPCRouter({
    * - `accepted`, `declined`: the event owner, on an application.
    * - `canceled`: the applicant withdrawing an application, or either party
    *   cancelling an accepted booking before the event.
-   * - `completed`: either party, on an accepted booking, after the event.
+   * - `completed`: either party, on an accepted booking, once the event has
+   *   ended (its start plus its duration).
    *
    * `ownerNotes` may only be sent by the event owner.
    *
@@ -448,7 +517,7 @@ export const bookingRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       const booking = await ctx.db.booking.findFirst({
-        include: { event: { select: { date: true, id: true, title: true } } },
+        include: { event: { select: { date: true, duration: true, id: true, title: true } } },
         where: { id: input.bookingId, ...onLiveEvent },
       });
 
@@ -466,10 +535,10 @@ export const bookingRouter = createTRPCRouter({
       // The owner's reply is the owner's to write.
       if (input.ownerNotes !== undefined && role !== "owner") throw REFUSALS.not_allowed();
 
-      const refusal = checkTransition(action, role, booking, booking.event.date, new Date());
+      const refusal = checkTransition(action, role, booking, booking.event, new Date());
       if (refusal) throw REFUSALS[refusal]();
 
-      const applied = await applyTransition(ctx.db, booking.id, action, {
+      const applied = await applyTransition(ctx.db, booking.id, action, role, {
         ownerNotes: input.ownerNotes,
       }).catch((error: unknown) => {
         logger.error("Error updating booking status", { error });
@@ -487,8 +556,6 @@ export const bookingRouter = createTRPCRouter({
         }
         throw REFUSALS.invalid_transition();
       }
-
-      await syncEventFulfilled(ctx.db, booking.eventId);
 
       const actor = await ctx.db.user.findUnique({
         select: { firstName: true, lastName: true },
