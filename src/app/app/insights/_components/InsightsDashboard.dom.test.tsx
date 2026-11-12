@@ -81,7 +81,9 @@ describe("InsightsDashboard", () => {
     const sources = screen.getByTestId("view-sources");
     expect(within(sources).getByText("Search")).toBeTruthy();
     expect(within(sources).getByText("Other")).toBeTruthy();
-    expect(screen.getByText(/12 views, by the part of ISO/)).toBeTruthy();
+    expect(screen.getByText(/12 views, by the page they came from/)).toBeTruthy();
+    // Sources come from the Referer the browser sends: said plainly.
+    expect(screen.getByTestId("sources-approximate").textContent).toBe("Approximate.");
     // There is an Other row, so the folding is explained.
     expect(screen.getByTestId("sources-other-note").textContent).toContain("fewer than 3 views are counted under");
 
@@ -128,7 +130,7 @@ describe("InsightsDashboard", () => {
     expect(screen.queryByTestId("daily-views-chart")).toBeNull();
     // No "0 views, by ..." breakdown.
     expect(screen.queryByTestId("view-sources")).toBeNull();
-    expect(screen.queryByText(/views?, by the part of ISO/)).toBeNull();
+    expect(screen.queryByText(/views?, by the page they came from/)).toBeNull();
 
     await userEvent.click(within(empty).getByRole("button", { name: "Copy your profile link" }));
     expect(await within(empty).findByRole("button", { name: "Link copied" })).toBeTruthy();

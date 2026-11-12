@@ -36,7 +36,10 @@ export default async function Page({ params }: PageProps) {
     const [session, event] = await Promise.all([auth(), findEvent(id)]);
     if (!event) notFound();
     const isOwner = session?.user?.id === event.photographer.userId;
-    const beacon = await viewBeaconProps({ id: event.id, kind: "event" });
+    const beacon = await viewBeaconProps(
+        { id: event.id, kind: "event" },
+        { ownerId: event.photographer.userId, viewerId: session?.user?.id ?? null },
+    );
 
     return (
         <>

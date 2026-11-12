@@ -22,6 +22,7 @@ import {
   verifiedViewSource,
   VIEW_SOURCE_TOKEN_GRACE_MS,
   viewSourceFromReferer,
+  viewerKey,
   viewSourceToken,
   type ViewRequest,
 } from "./viewCounter";
@@ -181,7 +182,7 @@ describe("countView against SQLite", () => {
         data: { date: new Date("2031-01-01T00:00:00Z"), location: "Austin", photographerId: photographer.id, title: "Wedding" },
       })
     ).id;
-    searchToken = await viewSourceToken({ id: owner.id, kind: "profile" }, "search", DAY);
+    searchToken = await viewSourceToken({ id: owner.id, kind: "profile" }, "search", DAY, `member:${viewer.id}`);
   });
 
   afterEach(async () => {
@@ -308,21 +309,41 @@ describe("countView against SQLite", () => {
 
   it("verifiedViewSource binds the token to the target, the source and the UTC day", async () => {
     const target = { id: owner.id, kind: "profile" } as const;
-    const token = await viewSourceToken(target, "search", DAY);
-    expect(await verifiedViewSource(target, "search", token, NOW)).toBe("search");
+    const me = `member:${viewer.id}`;
+    const token = await viewSourceToken(target, "search", DAY, me);
+    expect(await verifiedViewSource(target, "search", token, me, NOW)).toBe("search");
     // Another target, or the same id as an event.
-    expect(await verifiedViewSource({ id: viewer.id, kind: "profile" }, "search", token, NOW)).toBe("other");
-    expect(await verifiedViewSource({ id: owner.id, kind: "event" }, "search", token, NOW)).toBe("other");
-    expect(await verifiedViewSource(target, "event", token, NOW)).toBe("other");
-    expect(await verifiedViewSource(target, "search", undefined, NOW)).toBe("other");
+    expect(await verifiedViewSource({ id: viewer.id, kind: "profile" }, "search", token, me, NOW)).toBe("other");
+    expect(await verifiedViewSource({ id: owner.id, kind: "event" }, "search", token, me, NOW)).toBe("other");
+    expect(await verifiedViewSource(target, "event", token, me, NOW)).toBe("other");
+    expect(await verifiedViewSource(target, "search", undefined, me, NOW)).toBe("other");
     // Rendered just before midnight, reported just after: still accepted.
     const justAfter = new Date(Date.parse("2030-06-16T00:00:00Z") + VIEW_SOURCE_TOKEN_GRACE_MS - 1000);
-    expect(await verifiedViewSource(target, "search", token, justAfter)).toBe("search");
+    expect(await verifiedViewSource(target, "search", token, me, justAfter)).toBe("search");
     // A stale day: past the grace, or two days on.
-    expect(await verifiedViewSource(target, "search", token, new Date(Date.parse("2030-06-16T00:00:00Z") + VIEW_SOURCE_TOKEN_GRACE_MS))).toBe("other");
-    expect(await verifiedViewSource(target, "search", token, new Date("2030-06-17T00:01:00Z"))).toBe("other");
+    expect(await verifiedViewSource(target, "search", token, me, new Date(Date.parse("2030-06-16T00:00:00Z") + VIEW_SOURCE_TOKEN_GRACE_MS))).toBe("other");
+    expect(await verifiedViewSource(target, "search", token, me, new Date("2030-06-17T00:01:00Z"))).toBe("other");
     // A token for tomorrow is not accepted today either.
-    expect(await verifiedViewSource(target, "search", await viewSourceToken(target, "search", "2030-06-16"), NOW)).toBe("other");
+    expect(await verifiedViewSource(target, "search", await viewSourceToken(target, "search", "2030-06-16", me), me, NOW)).toBe("other");
+  });
+
+  it("binds the token to the viewer: another account or network replaying it lands in Other", async () => {
+    const target = { id: owner.id, kind: "profile" } as const;
+    const limiter = memoryViewLimiters();
+    const someoneElse = await createTestUser(testDb.db);
+    // The same viewer keeps its source.
+    expect((await countView(testDb.db, limiter, profileView())).outcome).toBe("counted");
+    // Another signed-in member presenting that member's token.
+    expect((await countView(testDb.db, limiter, profileView({ viewerId: someoneElse.id }))).outcome).toBe("counted");
+    expect(await sources()).toEqual([["other", 1], ["search", 1]]);
+
+    // Signed out, the token is bound to the address (as the dedupe keys it).
+    const fromHome = await viewSourceToken(target, "search", DAY, viewerKey(null, "203.0.113.7"));
+    expect(await verifiedViewSource(target, "search", fromHome, viewerKey(null, "203.0.113.7"), NOW)).toBe("search");
+    expect(await verifiedViewSource(target, "search", fromHome, viewerKey(null, "198.51.100.1"), NOW)).toBe("other");
+    // Nor does a member's token pass for that member's address, or the reverse.
+    expect(await verifiedViewSource(target, "search", searchToken, viewerKey(null, "203.0.113.7"), NOW)).toBe("other");
+    expect(await verifiedViewSource(target, "search", fromHome, viewerKey(viewer.id, "203.0.113.7"), NOW)).toBe("other");
   });
 
   it("a refused request touches no table at all", async () => {
