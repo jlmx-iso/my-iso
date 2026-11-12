@@ -258,7 +258,9 @@ describe("content routers against SQLite", () => {
       const profile = await photographersAs().getByUsername({ username: "@Olive" });
 
       expect(Object.keys(profile ?? {}).sort()).toEqual([
-        "avatar", "bio", "companyName", "facebook", "id", "instagram", "location",
+        "avatar", "bio", "companyName", "facebook", "id", "instagram",
+        // Public by design: it is the Pro badge on the page.
+        "isPro", "location",
         "name", "tiktok", "twitter", "userId", "vimeo", "website", "youtube",
       ]);
       const serialized = JSON.stringify(profile);

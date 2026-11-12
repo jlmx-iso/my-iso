@@ -2,23 +2,29 @@ import { Group, Text } from "@mantine/core";
 import Link from "next/link";
 
 import { Avatar } from "./Avatar";
+import { ProBadge } from "./ProBadge";
 
 type UserBadgeProps = {
     user: {
         userId: string;
         name: string;
         avatar?: string | null;
+        /** From the server: shows the Pro badge after the name. */
+        isPro?: boolean;
     };
 };
 
 /** Avatar and name linking to the person's in-app profile. */
-export default function UserBadge({ user: { userId, name, avatar } }: UserBadgeProps) {
+export default function UserBadge({ user: { userId, name, avatar, isPro = false } }: UserBadgeProps) {
     return (
-        <Link href={`/app/photographer/${userId}`} style={{ minWidth: 0 }} className="tap-link">
-            <Group gap="sm" align="center" wrap="nowrap">
-                <Avatar src={avatar} name={name} alt="" size="md" />
-                <Text fw={600} truncate>{name}</Text>
-            </Group>
-        </Link>
+        <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+            <Link href={`/app/photographer/${userId}`} style={{ minWidth: 0 }} className="tap-link">
+                <Group gap="sm" align="center" wrap="nowrap">
+                    <Avatar src={avatar} name={name} alt="" size="md" />
+                    <Text fw={600} truncate>{name}</Text>
+                </Group>
+            </Link>
+            {isPro && <ProBadge />}
+        </Group>
     );
 }

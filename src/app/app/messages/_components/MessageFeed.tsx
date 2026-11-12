@@ -9,6 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { fullName } from "~/_utils/names";
 import { hasEarlierMessages, mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
 import { Avatar } from "~/app/_components/Avatar";
+import { ProBadge } from "~/app/_components/ProBadge";
 import { useMarkThreadRead } from "~/app/_hooks/useMarkThreadRead";
 import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
 import { type RouterOutputs, api } from "~/trpc/react";
@@ -223,13 +224,15 @@ export default function MessageFeed({ threadId, initialThread }: MessageFeedProp
                 )}
                 {/* One line, cut with an ellipsis by the link (or text) itself: a
                     clamped heading would clip the link's enlarged hit area. */}
-                <Title order={2} size="h5" style={{ flex: 1, minWidth: 0 }}>
+                <Title order={2} size="h5" style={{ flex: "0 1 auto", minWidth: 0 }}>
                     {firstOther && others.length === 1 ? (
                         <Link href={`/app/photographer/${firstOther.id}`} className="ellipsis">{title}</Link>
                     ) : (
                         <span className="ellipsis">{title || "Conversation"}</span>
                     )}
                 </Title>
+                {/* Only in a one-to-one thread: there it is unambiguous whose it is. */}
+                {firstOther && others.length === 1 && firstOther.isPro && <ProBadge />}
             </Group>
 
             <Box pos="relative" style={{ flex: 1, minHeight: 0 }}>

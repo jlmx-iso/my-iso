@@ -1,12 +1,15 @@
 import { Badge, Box, Group, Stack, Text, Title } from "@mantine/core";
 import { IconCamera, IconMapPin } from "@tabler/icons-react";
 
+import { ProBadge } from "../ProBadge";
 import ProfileAvatar from "./ProfileAvatar";
 import { SocialLinks } from "./SocialLinks";
 import { PortfolioThumbnail } from "../portfolio/PortfolioThumbnail";
 
 type ProfileHeaderProps = {
   photographer: {
+    /** From the server (the member's subscription): shows the Pro badge. */
+    isPro?: boolean;
     name: string;
     companyName: string;
     location: string;
@@ -77,6 +80,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
               <Badge variant="light" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
                 Photographer
               </Badge>
+              {photographer.isPro && <ProBadge size="sm" />}
             </Group>
             {actions && (
               <Group gap="xs" wrap="nowrap" align="flex-start">

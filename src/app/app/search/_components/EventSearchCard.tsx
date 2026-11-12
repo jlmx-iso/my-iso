@@ -57,6 +57,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
             userId: event.photographer.user.id,
             name: photographerName,
             avatar: event.photographer.user.profilePic,
+            isPro: event.photographer.isPro,
           }}
         />
 

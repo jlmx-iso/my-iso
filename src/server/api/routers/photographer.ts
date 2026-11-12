@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { ErrorReason, instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
 import { MAX_PORTFOLIO_IMAGES } from "~/_utils/limits";
+import { withPro } from "~/server/_billing/proStatus";
 import { isRecordNotFound, isUniqueViolation } from "~/server/_db/errors";
 import {
   base64ImageInput,
@@ -97,26 +98,34 @@ export const photographerRouter = createTRPCRouter({
       });
     }),
 
+  /** A member's profile, with `isPro` for the Pro badge. */
   getByUserId: protectedProcedure
     .input(z.object({ userId: idInput }))
-    .query(({ ctx, input }) => {
-      return ctx.db.photographer.findFirst({
+    .query(async ({ ctx, input }) => {
+      const photographer = await ctx.db.photographer.findFirst({
         where: { userId: input.userId },
       });
+      if (!photographer) return null;
+      const [withBadge] = await withPro(ctx.db, [photographer], (row) => row.userId);
+      return withBadge ?? { ...photographer, isPro: false };
     }),
 
   /** Public profile lookup by handle (the shareable /photographer/<handle> page). */
   getByUsername: publicProcedure
     .input(z.object({ username: z.string().trim().min(1).max(64) }))
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       // Tolerate "@name" and capitals in the URL; stored handles are
       // lowercase without "@" (older ones are matched as typed).
       const bare = input.username.replace(/^@/, "");
       const handles = [...new Set([input.username, bare, bare.toLowerCase()])];
-      return ctx.db.photographer.findFirst({
+      const photographer = await ctx.db.photographer.findFirst({
         select: publicPhotographerSelect,
         where: { user: { handle: { in: handles } } },
       });
+      if (!photographer) return null;
+      // Whether they are Pro is public: it is the badge on the page.
+      const [withBadge] = await withPro(ctx.db, [photographer], (row) => row.userId);
+      return withBadge ?? { ...photographer, isPro: false };
     }),
 
   update: protectedProcedure
