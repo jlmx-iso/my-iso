@@ -19,7 +19,9 @@ The app's domain is `myiso.app`; it is operated by MyISO, LLC
 | Payments | Stripe |
 | AI | Claude (match summaries and icebreakers), optional |
 
-Package manager: npm. Node 22 (`.nvmrc`).
+Package manager: npm 11 (`packageManager`). Node 26 (`.nvmrc`). npm runs a
+dependency's install scripts only when `allowScripts` in `package.json`
+lists it (`npm install-scripts ls` shows any it skipped).
 
 ## Run it locally
 

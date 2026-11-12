@@ -1,11 +1,11 @@
+import { render } from "@react-email/render";
 import {
   Button,
   Heading,
   Section,
   Text,
   Hr,
-} from "@react-email/components";
-import { render } from "@react-email/render";
+} from "react-email";
 
 import { Layout } from "./components/Layout";
 import {

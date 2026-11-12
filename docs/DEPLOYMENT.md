@@ -40,6 +40,8 @@ Workers Builds, so every push to `main` deploys production. Its settings
 | Build variables | The build-time values below (`NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY`, `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY`, …) | On Workers Builds (`WORKERS_CI=1`) the deploy script reads them from the build environment instead of `.env.deploy.production`. A missing one stops the deploy before anything changes. |
 | API token | One with **Workers Scripts: Edit** and **D1: Edit** on the account | The script queries the database and applies migrations with it. Without D1 access the deploy stops at step 1. |
 | Preview builds (non-production branches) | Off, until staging is wired | A preview version uses the production bindings, including the production database. |
+| Node.js version | *(nothing to set)*; do **not** set `NODE_VERSION` | The build image reads `.nvmrc` (`26`) and installs that release; it only preinstalls 22 and 24, and its default is 24. A `NODE_VERSION` build variable would override `.nvmrc`; if one is set from earlier, delete it or set it to `26`. |
+| npm version | *(nothing to set)* | Taken from `packageManager` in `package.json` (`npm@11.20.0`), the only way the build image changes npm. npm 11.20 runs a dependency's install scripts only when `allowScripts` in `package.json` lists it: Prisma's engines, workerd, esbuild, better-sqlite3 and the PostHog CLI are listed. A dependency that newly needs its install script must be added there (`npm install-scripts approve <pkg>`), or the build fails in odd ways. |
 
 Staging is deployed by hand with `npm run deploy:staging`.
 

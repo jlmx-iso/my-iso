@@ -1,13 +1,13 @@
+import { render } from "@react-email/render";
+import { Fragment } from "react";
+import type * as React from "react";
 import {
   Button,
   Heading,
   Section,
   Text,
   Hr,
-} from "@react-email/components";
-import { render } from "@react-email/render";
-import { Fragment } from "react";
-import type * as React from "react";
+} from "react-email";
 
 import { PRO_PLAN, proFeaturesFor } from "~/_utils/plans";
 
