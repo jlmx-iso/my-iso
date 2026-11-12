@@ -29,7 +29,6 @@ vi.mock("~/_utils", () => ({
 }));
 
 import { logger } from "~/_utils";
-
 import {
   acceptModelText,
   DEFAULT_AI_MODEL,
@@ -40,7 +39,7 @@ import {
   MAX_ICEBREAKER_LENGTH,
   parseStoredIcebreakers,
   type UserProfile,
-} from "./ai";
+} from "~/server/_lib/ai";
 
 const lead: UserProfile = {
   city: "Austin",
@@ -122,12 +121,12 @@ describe("request shape", () => {
   });
 
   it("takes the model and API origin from the environment when set", async () => {
-    mocks.env.ANTHROPIC_MODEL = "claude-haiku-next";
+    mocks.env.ANTHROPIC_MODEL = "claude-opus-5";
     mocks.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:3801";
     mocks.create.mockResolvedValue(reply(JSON.stringify({ summary: "They both shoot weddings." })));
     await generateMatchSummary(lead, second);
 
-    expect(sentParams().model).toBe("claude-haiku-next");
+    expect(sentParams().model).toBe("claude-opus-5");
     expect(mocks.clientOptions[0]?.baseURL).toBe("http://127.0.0.1:3801");
   });
 
@@ -399,6 +398,9 @@ describe("acceptModelText", () => {
     ["a handle", "Follow @someone"],
     ["a phone number", "Text 512 555 0199"],
     ["an international number", "+44 20 7946 0958"],
+    ["a number in Arabic-Indic digits", "Call me at ٥١٢ ٥٥٥ ٠١٩٩"],
+    ["a number in Devanagari digits", "मुझे ९८७ ६५४ ३२१० पर फ़ोन करें"],
+    ["a number in full-width digits", "Call ５１２５５５０１９９"],
     ["HTML", "<img src=x onerror=alert(1)>"],
     ["markdown emphasis", "This is *great*"],
     ["a markdown link", "[here](there)"],

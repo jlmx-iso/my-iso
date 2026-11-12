@@ -1,11 +1,18 @@
 import { logger, type LogMetadata } from "~/_utils";
 import { captureServerException } from "~/server/_lib/posthog";
 
+/**
+ * Context keys that name or identify a person. They stay in the log line
+ * but never go to error tracking, which must not tie a report to a member
+ * (the report carries no user id, whatever the visitor's consent).
+ */
+const PERSONAL_KEY = /user|email|name|phone/i;
+
 /** Context values simple enough to attach to an error report as they are. */
 function scalarsOf(context: LogMetadata): Record<string, string | number | boolean | null> {
   const scalars: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(context)) {
-    if (key === "error") continue;
+    if (key === "error" || PERSONAL_KEY.test(key)) continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       scalars[key] = value;
     } else if (value === null) {

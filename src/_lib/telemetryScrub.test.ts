@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { scrubPersonProperties, scrubProperties, scrubText, stripUrlQuery } from "./telemetryScrub";
+import {
+  REDACTED_TOO_DEEP,
+  scrubErrorForLog,
+  scrubPersonProperties,
+  scrubProperties,
+  scrubText,
+  stripUrlQuery,
+} from "~/_lib/telemetryScrub";
 
 const WAITLIST = "https://myiso.app/join?waitlist=approved&email=a%40b.co";
 const WAITLIST_RAW = "https://myiso.app/join?waitlist=approved&email=a@b.co";
@@ -22,6 +29,14 @@ describe("scrubText", () => {
     expect(scrubText(`GET "/join?code=ISO-TEST-ABCDEFGH" failed`)).toBe('GET "/join" failed');
     expect(scrubText("/join?waitlist=approved&email=a@b.co")).toBe("/join");
     expect(scrubText("wss://myiso.app/api/messages/ws?threadId=abc")).toBe("wss://myiso.app/api/messages/ws");
+  });
+
+  it("removes a query whole even when it contains parentheses", () => {
+    expect(scrubText("https://myiso.app/join?token=(secret-value)")).toBe("https://myiso.app/join");
+    expect(scrubText("see /join?token=(secret-value) now")).toBe("see /join now");
+    expect(scrubText("x https://h/p?a=1(b)c&d=(e) y")).toBe("x https://h/p y");
+    // A URL in parentheses: the closing one may go with the query, nothing else.
+    expect(scrubText("(https://h/p?a=secret)")).toBe("(https://h/p");
   });
 
   it("removes email addresses, plain or URL-encoded", () => {
@@ -178,10 +193,18 @@ describe("scrubProperties", () => {
     expect(input).toEqual({ $current_url: INVITE, nested: { url: INVITE } });
   });
 
-  it("copes with very deep structures", () => {
+  it("copes with very deep structures, and never passes the deep part on unscrubbed", () => {
     let deep: Record<string, unknown> = { url: INVITE };
     for (let i = 0; i < 50; i++) deep = { deep };
     expect(() => scrubProperties(deep)).not.toThrow();
+    const serialized = JSON.stringify(scrubProperties(deep));
+    expect(serialized).not.toContain("code=");
+    expect(serialized).toContain(REDACTED_TOO_DEEP);
+
+    // Just past the limit, and arrays count as levels too.
+    let nested: unknown = { url: "/join?token=secret-value" };
+    for (let i = 0; i < 8; i++) nested = i % 2 ? { nested } : [nested];
+    expect(JSON.stringify(scrubProperties({ prop: nested }))).not.toContain("secret-value");
   });
 });
 
@@ -213,5 +236,21 @@ describe("scrubPersonProperties", () => {
       $set: { email: "sarah@example.com", last_url: "https://myiso.app/join" },
       $set_once: { $initial_current_url: "https://myiso.app/join" },
     });
+  });
+});
+
+describe("scrubErrorForLog", () => {
+  it("keeps the name and scrubs the message and the stack", () => {
+    const error = new TypeError(`Sign-in for sarah@example.com with 123456 failed at ${INVITE}`);
+    const logged = scrubErrorForLog(error);
+    expect(logged.name).toBe("TypeError");
+    const text = JSON.stringify(logged);
+    for (const secret of ["sarah@example.com", "123456", "code="]) expect(text).not.toContain(secret);
+    expect(logged.message).toContain("https://myiso.app/join");
+    expect(logged.stack).toContain("TypeError");
+  });
+
+  it("reduces anything else to scrubbed text", () => {
+    expect(scrubErrorForLog("bad /join?code=x for a@b.co")).toEqual({ message: "bad /join for [email]", name: "NonError" });
   });
 });

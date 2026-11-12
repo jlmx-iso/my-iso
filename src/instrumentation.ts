@@ -71,16 +71,19 @@ export const onRequestError: Instrumentation.onRequestError = async (error, requ
     globalPrivacyControl: headerValue(request.headers["sec-gpc"], ",")?.trim() === "1",
   });
 
+  const identified = consentCapabilities(consent).capture;
   captureServerException(
     error,
     {
-      distinctId: consentCapabilities(consent).capture ? await sessionUserIdFromCookie(cookie) : undefined,
+      distinctId: identified ? await sessionUserIdFromCookie(cookie) : undefined,
       extra: {
         method: request.method,
         routePath: context.routePath,
         routeType: context.routeType,
       },
-      path: request.path,
+      // A refusal also keeps out what the path says about the visitor (a
+      // conversation id, a handle): only the route pattern is sent.
+      path: identified ? request.path : context.routePath,
       source: "next",
     },
     { consent },

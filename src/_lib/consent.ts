@@ -73,8 +73,10 @@ export function resolveConsent(input: {
  *   on the server is reported for operational monitoring, anonymously (no
  *   user id, nothing derived from the visitor, no IP address, no query
  *   string). See `captureServerException` in ~/server/_lib/posthog.
- * - unknown (no banner has asked yet): anonymous product analytics and
- *   error reports only, with nothing stored in the browser. Session
+ * - unknown (no banner has asked yet): product analytics and error
+ *   reports, with nothing stored in the browser. A signed-in member's
+ *   events carry their user id (pseudonymous: never email or name); a
+ *   visitor who is not signed in is anonymous. Session
  *   replay, person properties and browser storage need an explicit yes.
  * - granted: everything.
  */

@@ -22,10 +22,15 @@ const INVITE_CODE = /\bISO-[A-Za-z0-9]{3,5}-[A-Za-z0-9]{8}\b/gi;
  * file name, version or id (those would break stack-frame file names).
  */
 const OTP = /(?<![\w./-])\d{6}(?![\w-]|\.\w)/g;
-/** An absolute URL's query string and fragment. */
-const ABSOLUTE_URL_TAIL = /((?:https?|wss?):\/\/[^\s"'<>()?#]+)[?#][^\s"'<>()]*/gi;
+/**
+ * An absolute URL's query string and fragment: everything from "?" or "#" up
+ * to whitespace, a quote or an angle bracket. Parentheses do not end it, so
+ * `?token=(secret)` goes whole; a closing parenthesis around the URL may go
+ * with it, which loses nothing.
+ */
+const ABSOLUTE_URL_TAIL = /((?:https?|wss?):\/\/[^\s"'<>()?#]+)[?#][^\s"'<>]*/gi;
 /** The same for a path that starts at the root ("/join?code=..."). */
-const RELATIVE_URL_TAIL = /((?:^|[\s"'=(])\/[^\s"'<>()?#]*)[?#][^\s"'<>()]*/g;
+const RELATIVE_URL_TAIL = /((?:^|[\s"'=(])\/[^\s"'<>()?#]*)[?#][^\s"'<>]*/g;
 
 export const REDACTED_EMAIL = "[email]";
 export const REDACTED_INVITE_CODE = "[invite-code]";
@@ -53,12 +58,17 @@ export function scrubText(text: string, options: { codes?: boolean } = {}): stri
   return result;
 }
 
-/** Deep enough for exception lists and autocapture elements; then it stops. */
+/**
+ * Deep enough for exception lists and autocapture elements. An object or
+ * array nested deeper is replaced, never passed on unscrubbed.
+ */
 const MAX_DEPTH = 8;
+export const REDACTED_TOO_DEEP = "[too deep]";
 
 function scrubValue(value: unknown, codes: boolean, depth: number): unknown {
   if (typeof value === "string") return scrubText(value, { codes });
-  if (depth >= MAX_DEPTH || typeof value !== "object" || value === null) return value;
+  if (typeof value !== "object" || value === null) return value;
+  if (depth >= MAX_DEPTH) return REDACTED_TOO_DEEP;
   if (Array.isArray(value)) return value.map((item) => scrubValue(item, codes, depth + 1));
 
   const result: Record<string, unknown> = {};
@@ -111,4 +121,22 @@ export function scrubProperties(properties: Record<string, unknown>): Record<str
     else result[key] = scrubValue(value, key.startsWith("$exception"), 0);
   }
   return result;
+}
+
+/**
+ * An error as it may be written to a log that is kept (Workers Logs): its
+ * name, and its message and stack scrubbed like an exception event, so an
+ * email address, a sign-in code or a URL's query string in the error does
+ * not end up in the log. Anything that is not an Error is reduced to its
+ * scrubbed text.
+ */
+export function scrubErrorForLog(error: unknown): { message: string; name: string; stack?: string } {
+  if (error instanceof Error) {
+    return {
+      message: scrubText(error.message, { codes: true }),
+      name: error.name,
+      ...(error.stack ? { stack: scrubText(error.stack, { codes: true }) } : {}),
+    };
+  }
+  return { message: scrubText(String(error), { codes: true }), name: "NonError" };
 }

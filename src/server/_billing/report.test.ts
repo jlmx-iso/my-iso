@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~/server/_lib/posthog", () => ({ captureServerException: mocks.captureServerException }));
 vi.mock("~/_utils", () => ({ logger: mocks.logger }));
 
-import { reportBillingError } from "./report";
+import { reportBillingError } from "~/server/_billing/report";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -24,7 +24,7 @@ describe("reportBillingError", () => {
       eventType: "invoice.paid",
       livemode: false,
       payload: { customer_email: "a@b.co" },
-      userId: null,
+      userId: "user_123",
     });
 
     expect(mocks.logger.error).toHaveBeenCalledWith(
@@ -38,12 +38,18 @@ describe("reportBillingError", () => {
         eventType: "invoice.paid",
         livemode: false,
         message: "Stripe webhook could not be processed",
-        userId: null,
       },
       source: "billing",
     });
-    // Nested objects (possible payloads) are not attached.
-    expect(JSON.stringify(mocks.captureServerException.mock.calls)).not.toContain("a@b.co");
+    // Nested objects (possible payloads) and identifiers of a person are not attached.
+    const sent = JSON.stringify(mocks.captureServerException.mock.calls);
+    expect(sent).not.toContain("a@b.co");
+    expect(sent).not.toContain("user_123");
+    // The log line keeps the user id for whoever investigates.
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "Stripe webhook could not be processed",
+      expect.objectContaining({ userId: "user_123" }),
+    );
   });
 
   it("reports the message itself when there is no error object", () => {

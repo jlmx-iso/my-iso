@@ -3,8 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 import { sendException } from "~/_lib/posthogServer";
 import { logger } from "~/_utils";
-
-import { getPostHogSettings } from "./posthogSettings";
+import { getPostHogSettings } from "~/server/_lib/posthogSettings";
 
 /** Tasks that report to PostHog themselves; their failures are only logged. */
 const TELEMETRY_TASK_PREFIX = "posthog:";

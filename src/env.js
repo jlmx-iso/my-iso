@@ -1,6 +1,8 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+import { AI_MODELS } from "./aiModels.js";
+
 // Every variable the app reads. docs/DEPLOYMENT.md says what each one is for
 // and where it is set; .env.example and .dev.vars.example must list exactly
 // these names (src/env.test.ts fails when they drift).
@@ -77,11 +79,8 @@ export const env = createEnv({
     // Override the Anthropic API origin (local stubs, gateways).
     ANTHROPIC_BASE_URL: z.string().url().optional(),
     // Override the Claude model used for match summaries and icebreakers.
-    // A Claude model id such as claude-haiku-5-5, nothing else.
-    ANTHROPIC_MODEL: z
-      .string()
-      .regex(/^claude-[a-z0-9]+(?:-[a-z0-9]+)*$/, "ANTHROPIC_MODEL must be a Claude model id")
-      .optional(),
+    // Only models that accept the request the app sends (src/aiModels.js).
+    ANTHROPIC_MODEL: z.enum(AI_MODELS).optional(),
     // Which deployment is running (wrangler.toml sets it per environment).
     APP_ENV: appEnvironment.default("development"),
     // Signs session JWTs. Generate with: openssl rand -base64 32

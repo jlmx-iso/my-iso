@@ -15,14 +15,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { DEFAULT_AI_MODEL } from "~/aiModels.js";
 import { env } from "~/env";
 
 /**
- * The current Haiku-tier model. ANTHROPIC_MODEL overrides it; requests turn
- * thinking off to keep the output budget small, so an override must be a
- * model that accepts that (Haiku 5.5 does at low effort).
+ * The current Haiku-tier model. ANTHROPIC_MODEL overrides it with one of
+ * AI_MODELS (src/aiModels.js): requests turn thinking off to keep the output
+ * budget small, which not every model accepts.
  */
-export const DEFAULT_AI_MODEL = "claude-haiku-5-5";
+export { DEFAULT_AI_MODEL };
 
 /** One request may take this long, and is retried at most once. */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -181,8 +182,12 @@ const MARKUP = /<[^>]*>|[`*_#~|[\]{}\\]/;
 const LINK = /(?:https?:|ftp:|mailto:|www\.)|[a-z0-9-]+\.[a-z]{2,}/i;
 const EMAIL = /[^\s@]+@[^\s@]+/;
 const HANDLE = /(?:^|\s)@\w+/;
-/** Seven or more digits, allowing the usual separators between them. */
-const PHONE = /(?:\d[\s().+-]*){7,}/;
+/**
+ * Seven or more digits, allowing the usual separators between them. Any
+ * script's decimal digits count (`\p{Nd}`), not only 0-9: "٥١٢ ٥٥٥ ٠١٩٩" is a
+ * phone number too.
+ */
+const PHONE = /(?:\p{Nd}[\s().+-]*){7,}/u;
 
 /**
  * Returns `text` as one clean line if it is acceptable to show another

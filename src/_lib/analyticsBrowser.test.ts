@@ -25,7 +25,7 @@ import {
   setAnalyticsConsent,
   startAnalytics,
   syncAnalyticsUser,
-} from "./analyticsBrowser";
+} from "~/_lib/analyticsBrowser";
 
 /** A minimal browser: a cookie jar, localStorage and a navigator. */
 function installBrowser(options: { cookie?: string; gpc?: boolean } = {}) {
@@ -173,6 +173,29 @@ describe("buildPostHogConfig", () => {
     const mask = config.session_recording?.maskCapturedNetworkRequestFn;
     const entry = { duration: 1, entryType: "navigation", name: "https://myiso.app/join?code=ISO-TEST-ABCDEFGH", startTime: 0 };
     expect(mask?.(entry)).toEqual({ ...entry, name: "https://myiso.app/join" });
+  });
+
+  it("never keeps network headers or bodies in replay, whatever the project enables", () => {
+    expect(config.session_recording?.recordBody).toBe(false);
+    expect(config.session_recording?.recordHeaders).toBe(false);
+    const mask = config.session_recording?.maskCapturedNetworkRequestFn;
+    const entry = {
+      duration: 1,
+      entryType: "resource",
+      name: "https://myiso.app/api/trpc/message.create?batch=1",
+      requestBody: '{"content":"my private message"}',
+      requestHeaders: { cookie: "session=secret" },
+      responseBody: '{"email":"sarah@example.com"}',
+      responseHeaders: { "set-cookie": "x" },
+      startTime: 0,
+    };
+    const masked = mask?.(entry);
+    expect(masked).toEqual({
+      duration: 1,
+      entryType: "resource",
+      name: "https://myiso.app/api/trpc/message.create",
+      startTime: 0,
+    });
   });
 
   it("tags events with the environment once loaded", () => {

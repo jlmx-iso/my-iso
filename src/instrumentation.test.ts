@@ -95,6 +95,13 @@ describe("onRequestError", () => {
     expect(options).toEqual({ consent: "denied" });
   });
 
+  it("sends only the route pattern for a visitor who refused, not their path", async () => {
+    const { context } = await report({ cookie: "iso_consent=denied" });
+    expect(context.path).toBe("/app/messages/[id]");
+    const gpc = (vi.clearAllMocks(), await report({ "sec-gpc": "1" }));
+    expect(gpc.context.path).toBe("/app/messages/[id]");
+  });
+
   it("resolves consent from the headers it is given, in whatever shape", async () => {
     const granted = await report({ cookie: ["iso_consent=granted", IDENTIFIED] });
     expect(granted.options).toEqual({ consent: "granted" });

@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   actionableViolations,
   type CspViolation,
+  genericPath,
   isFirstPartyEvalProbe,
   MAX_CSP_REPORT_BYTES,
   MAX_REPORTS_PER_REQUEST,
   parseCspReports,
   readBodyCapped,
-} from "./cspReport";
+} from "~/server/_lib/cspReport";
 
 const legacy = {
   "csp-report": {
@@ -106,6 +107,24 @@ describe("parseCspReports", () => {
     ["wrong types throughout", { "csp-report": { "effective-directive": 5, "line-number": "12" } }],
   ])("yields nothing for %s", (_name, payload) => {
     expect(parseCspReports(payload)).toEqual([]);
+  });
+});
+
+describe("identifying path segments", () => {
+  it("are replaced in the document path and the blocked URL, route names kept", () => {
+    const [parsed] = parseCspReports({
+      "csp-report": {
+        "blocked-uri": "https://cdn.example/download/private-token-a1b2c3/x.js",
+        "document-uri": "https://myiso.app/app/messages/cm9x2k7q10000abcdxyz",
+        "effective-directive": "script-src-elem",
+        "source-file": "https://myiso.app/_next/static/chunks/1234-abcd.js",
+      },
+    });
+    expect(parsed?.documentPath).toBe("/app/messages/:id");
+    expect(parsed?.blocked).toBe("https://cdn.example/download/:id/x.js");
+    // The script that caused it stays exact: it is the app's own file.
+    expect(parsed?.sourceFile).toBe("https://myiso.app/_next/static/chunks/1234-abcd.js");
+    expect(genericPath("/download/averyveryveryverylongopaquetoken")).toBe("/download/:id");
   });
 });
 

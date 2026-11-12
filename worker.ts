@@ -12,6 +12,7 @@ import type { CloudflareEnv } from "./cloudflare-env";
 import { isJobsRoutePath } from "./src/_lib/jobToken";
 import { type PostHogSettings, sendException } from "./src/_lib/posthogServer";
 import { handleTelemetryProxy, isTelemetryProxyPath } from "./src/_lib/telemetryProxy";
+import { scrubErrorForLog } from "./src/_lib/telemetryScrub";
 import { handleRealtimeRequest, REALTIME_PATH, type RealtimeIdentity } from "./src/do/realtimeGateway";
 import { resolvePostHogHosts } from "./src/telemetryConfig.js";
 import { runScheduledJobs } from "./src/worker/scheduled";
@@ -54,7 +55,7 @@ async function getRealtimeIdentity(
     }
     return { expiresAt, userId: id };
   } catch (error) {
-    console.error("Realtime session lookup failed", error);
+    console.error("Realtime session lookup failed", scrubErrorForLog(error));
     return null;
   }
 }
@@ -82,12 +83,14 @@ function reportError(
   error: unknown,
   context: { path?: string; source: string },
 ): void {
-  console.error(`Unhandled error in ${context.source}`, error);
+  // Workers Logs keep what is written here: only the scrubbed error. The
+  // original goes to sendException, which scrubs it on the way out.
+  console.error(`Unhandled error in ${context.source}`, scrubErrorForLog(error));
   const settings = postHogSettings(env);
   if (!settings) return;
   ctx.waitUntil(
     sendException(settings, error, context).catch((reportingError: unknown) => {
-      console.error("Could not report error", reportingError);
+      console.error("Could not report error", scrubErrorForLog(reportingError));
     }),
   );
 }

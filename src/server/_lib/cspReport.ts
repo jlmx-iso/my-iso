@@ -39,11 +39,24 @@ function text(value: unknown): string | null {
 }
 
 /**
- * A URL without its query string and fragment, which can carry tokens and
- * email addresses. Keywords browsers report instead of a URL ("inline",
- * "eval", "data") pass through; anything else unparseable is dropped.
+ * A path with every segment that may identify something replaced by ":id":
+ * any segment with a digit (record ids, tokens, dates) or longer than 24
+ * characters. Route names ("app", "messages", "_next") stay readable.
  */
-function safeUrl(value: unknown): string | null {
+export function genericPath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((segment) => (/\d/.test(segment) || segment.length > 24 ? ":id" : segment))
+    .join("/");
+}
+
+/**
+ * A URL without its query string and fragment, which can carry tokens and
+ * email addresses; with `generic`, also without identifying path segments.
+ * Keywords browsers report instead of a URL ("inline", "eval", "data") pass
+ * through; anything else unparseable is dropped.
+ */
+function safeUrl(value: unknown, options: { generic?: boolean } = {}): string | null {
   const raw = text(value);
   if (!raw) return null;
   if (/^[a-z-]+$/i.test(raw)) return raw.toLowerCase();
@@ -52,7 +65,8 @@ function safeUrl(value: unknown): string | null {
     if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "wss:") {
       return url.protocol.replace(":", "");
     }
-    return `${url.origin}${url.pathname}`.slice(0, MAX_FIELD_LENGTH);
+    const path = options.generic ? genericPath(url.pathname) : url.pathname;
+    return `${url.origin}${path}`.slice(0, MAX_FIELD_LENGTH);
   } catch {
     return null;
   }
@@ -62,7 +76,7 @@ function pathOf(value: unknown): string | null {
   const raw = text(value);
   if (!raw) return null;
   try {
-    return new URL(raw).pathname.slice(0, MAX_FIELD_LENGTH);
+    return genericPath(new URL(raw).pathname).slice(0, MAX_FIELD_LENGTH);
   } catch {
     return null;
   }
@@ -79,7 +93,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function fromBody(body: Record<string, unknown>): CspViolation | null {
   // `report-uri` uses kebab-case keys, the Reporting API camelCase.
   const violation: CspViolation = {
-    blocked: safeUrl(body["blocked-uri"] ?? body.blockedURL),
+    blocked: safeUrl(body["blocked-uri"] ?? body.blockedURL, { generic: true }),
     directive: text(body["effective-directive"] ?? body.effectiveDirective ?? body["violated-directive"]),
     disposition: text(body.disposition),
     documentPath: pathOf(body["document-uri"] ?? body.documentURL),

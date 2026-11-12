@@ -52,6 +52,9 @@ if (!existsSync(envFile)) {
 }
 // Does not override variables already set in the shell.
 process.loadEnvFile(envFile);
+// The template leaves the optional PostHog CLI host empty; an empty value
+// is not "unset" to the CLI, which then refuses it as an invalid host.
+if (!process.env.POSTHOG_CLI_HOST) delete process.env.POSTHOG_CLI_HOST;
 process.env.NEXT_PUBLIC_APP_ENV = name;
 
 // The build validates nothing itself (see below), so check what it inlines.

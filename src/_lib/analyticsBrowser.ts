@@ -11,15 +11,15 @@
 import type { CaptureResult, PostHogConfig } from "posthog-js";
 import posthog from "posthog-js";
 
-import { DEFAULT_POSTHOG_UI_HOST, TELEMETRY_PROXY_PATH } from "../telemetryConfig.js";
 import {
   consentCapabilities,
   type ConsentState,
   parseConsentCookie,
   resolveConsent,
   serializeConsentCookie,
-} from "./consent";
-import { scrubPersonProperties, scrubProperties, stripUrlQuery } from "./telemetryScrub";
+} from "~/_lib/consent";
+import { scrubPersonProperties, scrubProperties, stripUrlQuery } from "~/_lib/telemetryScrub";
+import { DEFAULT_POSTHOG_UI_HOST, TELEMETRY_PROXY_PATH } from "~/telemetryConfig.js";
 
 /** Consent in the browser. "unknown" when there is no document (SSR). */
 export function readBrowserConsent(): ConsentState {
@@ -114,11 +114,23 @@ export function buildPostHogConfig(options: {
     session_recording: {
       blockSelector: REPLAY_BLOCK_SELECTOR,
       maskAllInputs: true,
+      // Network entries keep timing and a URL without its query, never
+      // headers or bodies (message text, tokens, cookies), whatever the
+      // project's remote settings ask for. Replay data is compressed before
+      // `before_send` sees it, so this is the only place to remove them.
+      recordBody: false,
+      recordHeaders: false,
       // Also applied by the recorder to the page URL of every snapshot.
-      maskCapturedNetworkRequestFn: (request) => ({
-        ...request,
-        name: stripUrlQuery(request.name),
-      }),
+      maskCapturedNetworkRequestFn: (request) => {
+        const {
+          requestBody: _requestBody,
+          requestHeaders: _requestHeaders,
+          responseBody: _responseBody,
+          responseHeaders: _responseHeaders,
+          ...rest
+        } = request;
+        return { ...rest, name: stripUrlQuery(request.name) };
+      },
       maskTextSelector: REPLAY_MASK_ALL_TEXT,
     },
 
@@ -164,8 +176,9 @@ export function startAnalytics(): boolean {
  * - "granted": analytics start (if they were not running), replay may
  *   record, and PostHog moves its state from memory to the browser's
  *   storage.
- * - "unknown": the choice is forgotten; anonymous analytics only, with
- *   PostHog's state back in memory and nothing left in the browser's
+ * - "unknown": the choice is forgotten; analytics without replay or person
+ *   properties (a signed-in member by user id only), with PostHog's state
+ *   back in memory and nothing left in the browser's
  *   storage.
  *
  * A Global Privacy Control signal still overrides a "granted" choice.

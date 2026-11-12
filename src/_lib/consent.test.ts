@@ -7,7 +7,7 @@ import {
   parseConsentCookie,
   resolveConsent,
   serializeConsentCookie,
-} from "./consent";
+} from "~/_lib/consent";
 
 describe("parseConsentCookie", () => {
   it("returns null without a cookie header or without the cookie", () => {

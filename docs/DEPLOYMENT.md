@@ -77,7 +77,7 @@ secret, but they are yours to choose):
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
 | `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
-| `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`); must look like a Claude model id. | Anthropic model ids |
+| `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
 
 ### 3. Secrets: `wrangler secret put`
 
@@ -157,10 +157,11 @@ Stack traces of server-side errors are not source-mapped.
     sent. The one exception is operational: an exception on the server is
     still reported, anonymously, with no user id, nothing derived from the
     visitor, no IP address and no query string.
-  - *unknown* (until a banner asks): anonymous product analytics and error
-    reports. No session replay, no person properties, and nothing stored in
-    the browser: PostHog keeps its state in memory, so the anonymous id
-    lasts one page load.
+  - *unknown* (until a banner asks): product analytics and error reports,
+    attributed to a signed-in member by user id (pseudonymous: no email or
+    name), anonymous otherwise. No session replay, no person properties,
+    and nothing stored in the browser: PostHog keeps its state in memory,
+    so an anonymous id lasts one page load.
   - *granted*: all of the above plus session replay, person properties and
     PostHog's cookie and localStorage. Granting mid-session moves the
     running SDK's state into storage; withdrawing it moves it back.

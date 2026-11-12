@@ -6,6 +6,7 @@
 // to the app it wraps, so nothing is bundled twice.
 
 import { JOBS_ROUTE_PREFIX, jobToken } from "../_lib/jobToken";
+import { scrubErrorForLog } from "../_lib/telemetryScrub";
 
 /**
  * Which jobs each Cron Trigger runs. The expressions must match `crons` in
@@ -53,7 +54,7 @@ export async function runScheduledJobs(
       await response.arrayBuffer();
       runs.push({ job, ok: response.ok, status: response.status });
     } catch (error) {
-      console.error(`Scheduled job ${job} could not be started`, error);
+      console.error(`Scheduled job ${job} could not be started`, scrubErrorForLog(error));
       runs.push({ job, ok: false, status: 0 });
     }
   }
