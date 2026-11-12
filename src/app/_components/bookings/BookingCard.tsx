@@ -17,13 +17,15 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo } from "react";
 
 import { formatLocalDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
+import { eventEndsAt } from "~/server/_db/bookingTransitions";
 import { api } from "~/trpc/react";
 
 import { bookingCardActions } from "./bookingActions";
+import { useNowAtBoundaries } from "./boundaryClock";
 
 const STATUS_COLORS: Record<string, string> = {
   accepted: "teal",
@@ -72,19 +74,33 @@ export default function BookingCard({
   variant,
 }: BookingCardProps) {
   const utils = api.useUtils();
-  // Read once per mount; the server checks again when a button is used.
-  const [now] = useState(() => new Date());
+  // What the card offers changes when the event starts (no more accepting
+  // or cancelling) and when it ends (it can be completed). A card left open
+  // across either moment moves its clock then, with one timeout to the
+  // nearer of the two; the server checks again when a button is used.
+  const eventStart = event.date.getTime();
+  const boundaries = useMemo(
+    () => [new Date(eventStart), eventEndsAt({ date: new Date(eventStart), duration: event.duration })],
+    [eventStart, event.duration],
+  );
+  const now = useNowAtBoundaries(boundaries);
   const actions = bookingCardActions({ event, now, status: booking.status, variant });
 
   const { mutate: updateStatus, isPending } =
     api.booking.updateStatus.useMutation({
       onError: (error) => {
         logger.error("Error updating booking status", { error });
+        // The server's own words ("This event has already taken place",
+        // "Another applicant was accepted", ...), never a silent failure.
         notifications.show({
           color: "red",
-          message: error.message ?? "Something went wrong.",
+          message: error.message || "Something went wrong.",
           title: "Update Failed",
         });
+        // A refusal means the card was out of date (the other party acted,
+        // or a boundary passed): show the booking as it is now.
+        void utils.booking.getMyApplications.invalidate();
+        void utils.booking.getReceivedApplications.invalidate();
       },
       onSuccess: () => {
         notifications.show({

@@ -28,6 +28,7 @@ import type { BillingIssue } from "~/server/api/routers/subscription";
 import { api } from "~/trpc/server";
 
 import BillingActions from "./_components/BillingActions";
+import { billingModeFor } from "./_components/billingMode";
 
 const PRO_FEATURES = [
   {
@@ -107,13 +108,14 @@ export default async function SettingsPage() {
   // billing portal, WHETHER OR NOT it currently gives Pro access: that is
   // where a failed payment is fixed and a paused or unfinished subscription
   // is resumed or ended. (Offering "Upgrade" there would only be refused.)
-  const billingMode = !subscription
-    ? "checkout"
-    : subscription.isLifetime
-      ? "none"
-      : subscription.canStartCheckout
-        ? "checkout"
-        : "portal";
+  // One that was cancelled outright and still has paid time is offered a
+  // new subscription under its real name: see billingModeFor.
+  const billingMode = billingModeFor(subscription);
+  // Two different things are both "canceled" to the user: a subscription
+  // that is still running and set to end (undo it in the portal), and one
+  // that has ended with paid time left (only a new one can follow).
+  const hasEnded = subscription?.status === "canceled";
+  const accessEndsAt = subscription?.accessEndsAt ?? subscription?.expiresAt ?? null;
   const billingNotice = subscription ? billingIssueNotice(subscription.billingIssue, isProUser) : null;
 
   return (
@@ -156,11 +158,13 @@ export default async function SettingsPage() {
               )}
               {isProUser && isCanceled && (
                 <Text size="sm" c="orange">
-                  Your subscription is canceled but remains active until{" "}
-                  {subscription.expiresAt
-                    ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
+                  {hasEnded
+                    ? "Your subscription has been canceled. You keep Pro until "
+                    : "Your subscription is set to cancel and will not renew. You keep Pro until "}
+                  {accessEndsAt
+                    ? <LocalDate date={new Date(accessEndsAt).toISOString()} />
                     : "the end of your billing period"}
-                  .
+                  {hasEnded ? "." : ". To keep it, undo the cancellation in Manage Subscription."}
                 </Text>
               )}
               {!isProUser && !billingNotice && (
@@ -169,7 +173,11 @@ export default async function SettingsPage() {
                 </Text>
               )}
             </Stack>
-            <BillingActions mode={billingMode} pricing={pricing} />
+            <BillingActions
+              mode={billingMode}
+              pricing={pricing}
+              paidUntil={billingMode === "resubscribe" && accessEndsAt ? new Date(accessEndsAt).toISOString() : null}
+            />
           </Group>
         </Paper>
 
