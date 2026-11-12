@@ -92,6 +92,83 @@ mistake with a new migration.
 that `next dev` uses (`DATABASE_URL=file:./dev.db`). It never touches D1 and
 is not a substitute for a migration.
 
+## What Prisma does not see: the `Message_touch_thread` trigger
+
+`migrations/0003_billing_read_state_indexes.sql` creates one database object
+that is not in `prisma/schema.prisma`, because Prisma has no notion of it:
+
+```sql
+CREATE TRIGGER "Message_touch_thread" AFTER INSERT ON "Message"
+BEGIN
+  UPDATE "MessageThread" SET "updatedAt" = NEW."createdAt" WHERE "id" = NEW."threadId";
+END;
+```
+
+It moves a conversation's activity time (`MessageThread.updatedAt`, which the
+conversation list sorts by) in the same statement that inserts a message. D1
+has no multi-statement transactions, so doing it from application code would
+leave a window in which a sent message has not moved its thread.
+
+What follows from Prisma not knowing about it:
+
+- **`npm run db:check` does not detect its loss.** The check compares tables,
+  columns and indexes; a database without the trigger still "matches".
+- **Rebuilding the `Message` table drops it.** SQLite removes a table's
+  triggers with the table, and Prisma's generated migrations rebuild a table
+  (create `new_Message`, copy, drop `Message`, rename) for most column
+  changes. **Any migration that rebuilds `Message` must end by creating the
+  trigger again**, with the statement above. The next one that will is the
+  removal of `Message.isRead` (below): SQLite's `ALTER TABLE ... DROP COLUMN`
+  keeps the trigger, a rebuild does not. Prefer `DROP COLUMN`; if
+  `db:migrate:diff` hands you a rebuild, append the `CREATE TRIGGER`.
+- **The test that catches its loss** is `thread activity time > moves with
+  the message insert itself (database trigger), for any writer` in
+  `src/server/api/routers/message.test.ts`. Tests build their database from
+  `migrations/`, so a migration that loses the trigger fails that test (and
+  `a reply brings an older conversation back to the top` next to it).
+- To check a deployed database:
+  `wrangler d1 execute DB --remote --env staging --command "SELECT name FROM sqlite_master WHERE type = 'trigger'"`
+  must list `Message_touch_thread`.
+
+## Columns kept for the previous release (two-step removal)
+
+Migration `0003` left columns in place that the current code no longer
+depends on. The first two sets are there because the release before it still
+reads or writes them and, per the rule above, a migration must be something
+the deployed code can live with:
+
+| Columns | Why they are still there | What the current code does with them |
+| --- | --- | --- |
+| `Subscription.isTrial`, `isActive`, `isCanceled`, `isPaused`, `isPending`, `isExpired`, `expiresAt` | The previous release decides Pro access from `isActive` and writes these flags from its webhook | Writes them on every sync, derived from `status` (`legacyFlags` in `src/server/_billing/subscriptionStore.ts`), so a rollback finds them correct. Never reads them: access comes from `status` and the columns described in `docs/BILLING.md` |
+| `Message.isRead` | The previous release selects it | Neither reads nor writes it (read state is `ThreadRead`); queries omit it |
+| `Event.isFulfilled` | A stored copy, for ad-hoc queries and anything that reads the column directly | Written after each booking transition, and repaired when a single event is read; every read through the API derives the value from the bookings (`withDerivedFulfilled`), so a failed write cannot show. Not scheduled for removal |
+
+Removing the first two takes two releases, in this order:
+
+1. **This release** (done): the code stops depending on the columns, while
+   still keeping the `Subscription` flags up to date. Deploy it, run the
+   billing re-sync (`docs/BILLING.md`), and keep it deployed until a rollback
+   to the release before it is no longer on the table.
+2. **A later release**: first deploy code that no longer mentions the columns
+   at all (remove `legacyFlags`, the fields from `schema.prisma`, the
+   `omit: { isRead: true }` in the message queries, and the "pending" scope's
+   legacy-flag conditions in `src/server/_billing/resync.ts`). Only then apply
+   the migration that drops them:
+
+   ```sql
+   ALTER TABLE "Subscription" DROP COLUMN "isTrial";
+   -- ... likewise isActive, isCanceled, isPaused, isPending, isExpired, expiresAt
+   ALTER TABLE "Message" DROP COLUMN "isRead";
+   ```
+
+   `isLifetime` stays: it is how a comped account is recorded. If the
+   migration is generated as a table rebuild instead of `DROP COLUMN`, see
+   the trigger note above before applying it to `Message`.
+
+Doing it in one step (dropping the columns in the same release that stops
+using them) would break the still-running previous release for the length of
+the deploy, and make a rollback impossible.
+
 ## Local D1 from scratch
 
 ```sh
