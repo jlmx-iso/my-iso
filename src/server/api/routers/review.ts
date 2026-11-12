@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { ErrorReason } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { RateLimits } from "~/server/_utils/rateLimit";
+import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, publicProcedure, rateLimit } from "~/server/api/trpc";
 
 const idInput = z.string().min(1).max(64);
@@ -52,6 +54,32 @@ function findReviews(
 
 const ALREADY_REVIEWED = "You have already reviewed this photographer";
 
+/**
+ * Whether the two users have worked together: a completed booking between
+ * them, whichever of them was the applicant, on an event that still exists.
+ */
+async function haveWorkedTogether(
+  db: Pick<ExtendedPrismaClient, "booking">,
+  userA: string,
+  userB: string,
+): Promise<boolean> {
+  const booking = await db.booking.findFirst({
+    select: { id: true },
+    where: {
+      event: { isDeleted: false },
+      OR: [
+        { applicantId: userA, ownerId: userB },
+        { applicantId: userB, ownerId: userA },
+      ],
+      status: "completed",
+    },
+  });
+  return booking !== null;
+}
+
+/** Why the caller cannot review a photographer right now. */
+type ReviewBlocker = "self" | "no_completed_booking" | "already_reviewed";
+
 export const reviewRouter = createTRPCRouter({
   create: protectedProcedure
     .use(rateLimit(RateLimits.REVIEW_CREATE))
@@ -74,7 +102,16 @@ export const reviewRouter = createTRPCRouter({
 
       // Prevent reviewing yourself
       if (photographer.userId === ctx.session.user.id) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot review yourself" });
+        throw reasonedError("BAD_REQUEST", ErrorReason.REVIEW_SELF, "You cannot review yourself");
+      }
+
+      // Reviews are for people who have worked together.
+      if (!(await haveWorkedTogether(ctx.db, ctx.session.user.id, photographer.userId))) {
+        throw reasonedError(
+          "FORBIDDEN",
+          ErrorReason.REVIEW_NOT_ELIGIBLE,
+          "You can review a photographer once you have completed a booking together.",
+        );
       }
 
       // One review per reviewer per photographer is enforced by the unique
@@ -92,10 +129,47 @@ export const reviewRouter = createTRPCRouter({
         });
       } catch (error) {
         if (isUniqueViolation(error)) {
-          throw new TRPCError({ code: "CONFLICT", message: ALREADY_REVIEWED });
+          throw reasonedError("CONFLICT", ErrorReason.REVIEW_EXISTS, ALREADY_REVIEWED);
         }
         throw error;
       }
+    }),
+
+  /**
+   * Whether the caller may review this photographer, and their review if
+   * they already wrote one. For deciding whether to show the review form:
+   *
+   * - `canReview`: true only when a `create` would be accepted now.
+   * - `blocker`: why not ("self", "no_completed_booking",
+   *   "already_reviewed"), or null.
+   * - `hasReviewed`, `myReview`: the caller's existing review, or null.
+   *
+   * An unknown photographer id answers like one the caller has not worked
+   * with.
+   */
+  getMyReviewState: protectedProcedure
+    .input(z.object({ photographerId: idInput }))
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const [photographer, myReview] = await Promise.all([
+        ctx.db.photographer.findFirst({
+          select: { userId: true },
+          where: { id: input.photographerId },
+        }),
+        ctx.db.review.findUnique({
+          select: { createdAt: true, description: true, id: true, rating: true, title: true },
+          where: { photographerId_userId: { photographerId: input.photographerId, userId } },
+        }),
+      ]);
+
+      let blocker: ReviewBlocker | null = null;
+      if (photographer?.userId === userId) blocker = "self";
+      else if (myReview) blocker = "already_reviewed";
+      else if (!photographer || !(await haveWorkedTogether(ctx.db, userId, photographer.userId))) {
+        blocker = "no_completed_booking";
+      }
+
+      return { blocker, canReview: blocker === null, hasReviewed: myReview !== null, myReview };
     }),
 
   /**
@@ -110,22 +184,6 @@ export const reviewRouter = createTRPCRouter({
   getPageByPhotographerId: publicProcedure
     .input(reviewsInput)
     .query(async ({ ctx, input }) => toPage(await findReviews(ctx.db, input, 1), input.limit)),
-
-  /**
-   * The caller's own review of a photographer, or null: lets the profile
-   * show "your review" instead of a form that could only answer "already
-   * reviewed". (The public list deliberately carries no reviewer ids.)
-   */
-  getMine: protectedProcedure
-    .input(z.object({ photographerId: idInput }))
-    .query(({ ctx, input }) =>
-      ctx.db.review.findUnique({
-        select: { createdAt: true, description: true, id: true, rating: true, title: true },
-        where: {
-          photographerId_userId: { photographerId: input.photographerId, userId: ctx.session.user.id },
-        },
-      }),
-    ),
 
   getAverageRating: publicProcedure
     .input(z.object({ photographerId: idInput }))

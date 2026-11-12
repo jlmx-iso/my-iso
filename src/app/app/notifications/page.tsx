@@ -26,7 +26,7 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 
-import dayjs from "~/_lib/dayjs";
+import { formatRelative } from "~/_lib/dayjs";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
 import { type RouterOutputs, api } from "~/trpc/react";
@@ -91,7 +91,7 @@ function NotificationRow({
                             </Badge>
                         )}
                         <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-                            {dayjs(notification.createdAt).fromNow()}
+                            {formatRelative(notification.createdAt)}
                         </Text>
                     </Group>
                 </Group>

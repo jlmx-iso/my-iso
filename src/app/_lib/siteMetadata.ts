@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 
+import { SITE_URL } from "~/_lib/site";
+
 export const SITE_NAME = "ISO";
-export const SITE_URL = "https://myiso.app";
 export const SITE_DESCRIPTION =
   "ISO is the network where lead photographers find skilled second shooters for weddings, events, and sessions. Build your team and book more work.";
 

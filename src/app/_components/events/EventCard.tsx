@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 
-import dayjs, { formatLocalDate } from '~/_lib/dayjs';
+import dayjs, { formatDate } from '~/_lib/dayjs';
 import { api } from "~/trpc/react";
 
 import AddCommentForm from "../AddCommentForm";
@@ -35,7 +35,7 @@ function EventMeta({ date, duration, location }: { date: Date | string; duration
                 </Badge>
             )}
             <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
-                <span className="sr-only">Date: </span>{formatLocalDate(date)}
+                <span className="sr-only">Date: </span>{formatDate(date)}
             </Badge>
             <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
                 <span className="sr-only">Duration: </span>{formatDuration(duration)}

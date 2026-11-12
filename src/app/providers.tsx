@@ -1,28 +1,33 @@
-// app/providers.js
 'use client'
-import cookie from 'cookie-light'
+
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
+import { useEffect } from 'react'
 
-import { env } from '~/env'
+import { type AnalyticsUser, syncAnalyticsUser } from '~/_lib/analyticsBrowser'
 
-if (typeof window !== 'undefined') {
-    const flags = cookie.get('bootstrapData');
+export type { AnalyticsUser } from '~/_lib/analyticsBrowser'
 
-    let bootstrapData = {}
-    if (flags) {
-        bootstrapData = JSON.parse(flags) as { featureFlags: Record<string, boolean> }
-    }
+/**
+ * Provides PostHog to the tree and keeps its identity in step with the
+ * signed-in user (id only; see `syncAnalyticsUser`). PostHog itself is
+ * started in src/instrumentation-client.ts; when it is not running (no
+ * project token, or the visitor refused analytics) this does nothing.
+ */
+export function CSPostHogProvider({
+    children,
+    user = null,
+}: {
+    children: React.ReactNode
+    user?: AnalyticsUser | null
+}) {
+    const id = user?.id ?? null
+    const email = user?.email ?? null
+    const name = user?.name ?? null
 
-    posthog.init(env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY, {
-        api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
-        // set to true to see debug logs
-bootstrap: bootstrapData, 
-        debug: false,
+    useEffect(() => {
+        syncAnalyticsUser(id === null ? null : { email, id, name })
+    }, [id, email, name])
 
-    })
-}
-
-export function CSPostHogProvider({ children }: { children: React.ReactNode }) {
-    return <PostHogProvider client={posthog}> {children} </PostHogProvider>
+    return <PostHogProvider client={posthog}>{children}</PostHogProvider>
 }

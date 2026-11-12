@@ -15,7 +15,7 @@ import { IconCheck } from "@tabler/icons-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import dayjs from "~/_lib/dayjs";
+import { formatRelative } from "~/_lib/dayjs";
 import { api } from "~/trpc/react";
 
 type NotificationDropdownProps = {
@@ -134,7 +134,7 @@ export function NotificationDropdown({
                                         </Stack>
                                         <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
                                             <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-                                                {dayjs(notification.createdAt).fromNow()}
+                                                {formatRelative(notification.createdAt)}
                                             </Text>
                                             {!notification.isRead && (
                                                 <Box

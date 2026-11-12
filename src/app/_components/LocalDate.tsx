@@ -2,11 +2,11 @@
 
 import { useSyncExternalStore } from "react";
 
-import { formatLocalDate } from "~/_lib/dayjs";
+import { type DateFormatName, formatDate } from "~/_lib/dayjs";
 
 type LocalDateProps = {
   date: string;
-  format?: string;
+  format?: DateFormatName;
 };
 
 /** Client component that formats a UTC date in the user's local timezone. Use this in server components. */
@@ -20,7 +20,7 @@ export default function LocalDate({ date, format }: LocalDateProps) {
   );
 
   if (!isClient) return null;
-  const formatted = formatLocalDate(date, format);
+  const formatted = formatDate(date, format);
   if (!formatted) return null;
   return <>{formatted}</>;
 }

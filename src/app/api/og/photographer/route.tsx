@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 
+import { SITE_HOST } from "~/_lib/site";
 import { isOwnCloudinaryUrl } from "~/server/_utils/image";
 import { db } from "~/server/db";
 
@@ -146,7 +147,7 @@ export async function GET(request: Request) {
               marginTop: 8,
             }}
           >
-            myiso.app
+            {SITE_HOST}
           </div>
         </div>
       </div>

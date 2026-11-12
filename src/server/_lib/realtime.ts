@@ -4,6 +4,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { logger } from "~/_utils";
 import type { ThreadMessage } from "~/_utils/threadMessages";
 
+import { captureServerException } from "./posthog";
+
 /** Frame pushed to every socket of a thread's ChatRoom. */
 export type ThreadMessageEvent = {
   message: Omit<ThreadMessage, "createdAt"> & { createdAt: string };
@@ -42,6 +44,7 @@ export function publishThreadMessage(threadId: string, message: ThreadMessage): 
     context.ctx.waitUntil(
       room.broadcast(JSON.stringify(event)).catch((error: unknown) => {
         logger.error("Failed to broadcast message to ChatRoom", { error, threadId });
+        captureServerException(error, { extra: { threadId }, source: "realtime" });
       }),
     );
   } catch (error) {

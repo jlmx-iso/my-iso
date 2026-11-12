@@ -18,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 
-import { formatLocalDate } from "~/_lib/dayjs";
+import { formatDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
 import { userFacingError } from "~/_utils/userError";
 import { notify } from "~/app/_lib/notify";
@@ -130,7 +130,7 @@ export default function BookingCard({
               <Group gap={4}>
                 <IconCalendar size={14} color="var(--mantine-color-dimmed)" aria-hidden />
                 <Text size="xs" c="dimmed">
-                  {formatLocalDate(event.date)}
+                  {formatDate(event.date)}
                 </Text>
               </Group>
             </Group>
@@ -253,7 +253,7 @@ export default function BookingCard({
 
         {/* Timestamp */}
         <Text size="xs" c="dimmed">
-          Applied {formatLocalDate(booking.createdAt)}
+          Applied {formatDate(booking.createdAt)}
         </Text>
       </Stack>
     </Paper>

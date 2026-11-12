@@ -20,7 +20,7 @@ import { IconAlertCircle, IconCircleCheck, IconStar, IconStarFilled } from "@tab
 import Link from "next/link";
 import { useId } from "react";
 
-import { formatLocalDate } from "~/_lib/dayjs";
+import { formatDate } from "~/_lib/dayjs";
 import { REVIEWS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePages, partialCountNote } from "~/_utils/pagination";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
@@ -28,6 +28,7 @@ import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 import { Avatar } from "../Avatar";
+import { reviewGate } from "./reviewGate";
 import { StarRating } from "./StarRating";
 
 /**
@@ -183,8 +184,14 @@ export default function ReviewsSection({
     { getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined },
   );
   const rating = api.review.getAverageRating.useQuery({ photographerId });
-  // Only a signed-in visitor who is not the owner can have a review here.
-  const mine = api.review.getMine.useQuery({ photographerId }, { enabled: viewer === "member" });
+  // Only a signed-in visitor who is not the owner can review here. The server
+  // says whether a review would be accepted, so the form is never offered to
+  // someone it would refuse.
+  const myState = api.review.getMyReviewState.useQuery(
+    { photographerId },
+    { enabled: viewer === "member" },
+  );
+  const gate = viewer === "member" && myState.data ? reviewGate(myState.data, photographerName) : null;
   const loaded = mergePages(reviews.data?.pages);
   // The header shows the real total; the list says when it shows fewer.
   const reviewCount = Math.max(rating.data?.count ?? 0, loaded.length);
@@ -195,7 +202,7 @@ export default function ReviewsSection({
   const refresh = () => {
     void utils.review.getPageByPhotographerId.invalidate({ photographerId });
     void utils.review.getAverageRating.invalidate({ photographerId });
-    void utils.review.getMine.invalidate({ photographerId });
+    void utils.review.getMyReviewState.invalidate({ photographerId });
   };
 
   return (
@@ -250,7 +257,7 @@ export default function ReviewsSection({
                         {reviewer}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {formatLocalDate(review.createdAt, "MMMM D, YYYY")}
+                        {formatDate(review.createdAt, "dateLong")}
                       </Text>
                     </Group>
                     <StarRating rating={review.rating} size={14} />
@@ -290,23 +297,23 @@ export default function ReviewsSection({
         </Stack>
       )}
 
-      {viewer === "member" && mine.data && (
+      {gate?.kind === "own" && (
         // One review per person: show theirs instead of a form that would be refused.
         <Paper p="md" radius="md" withBorder bg="gray.0" data-testid="own-review">
           <Stack gap={4}>
             <Group gap="xs">
               <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
               <Text size="sm" fw={600}>
-                You reviewed {photographerName} on {formatLocalDate(mine.data.createdAt, "MMMM D, YYYY")}
+                You reviewed {photographerName} on {formatDate(gate.review.createdAt, "dateLong")}
               </Text>
             </Group>
-            <StarRating rating={mine.data.rating} size={14} />
+            <StarRating rating={gate.review.rating} size={14} />
             <Text size="sm" fw={600}>
-              {mine.data.title}
+              {gate.review.title}
             </Text>
-            {mine.data.description && (
+            {gate.review.description && (
               <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }}>
-                {mine.data.description}
+                {gate.review.description}
               </Text>
             )}
             <Text size="xs" c="dimmed" mt={4}>
@@ -315,12 +322,17 @@ export default function ReviewsSection({
           </Stack>
         </Paper>
       )}
-      {viewer === "member" && mine.isSuccess && !mine.data && (
+      {gate?.kind === "form" && (
         <ReviewForm
           photographerId={photographerId}
           photographerName={photographerName}
           onSubmitted={refresh}
         />
+      )}
+      {gate?.kind === "blocked" && (
+        <Text size="sm" c="dimmed" data-testid="review-blocked">
+          {gate.message}
+        </Text>
       )}
       {viewer === "anonymous" && signInHref && (
         <Text size="sm">

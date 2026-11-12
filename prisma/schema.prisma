@@ -35,21 +35,72 @@ model Account {
   @@unique([provider, providerAccountId])
 }
 
+// One row per user: the Stripe subscription that currently decides their
+// access (see src/server/_billing). Written only by the functions in
+// src/server/_billing/subscriptionStore.ts, always from a subscription object
+// fetched from Stripe.
 model Subscription {
-  id             String    @id @default(cuid())
-  userId         String    @unique
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  isTrial        Boolean
-  isActive       Boolean
-  isCanceled     Boolean
-  isPaused       Boolean
-  isPending      Boolean
-  isExpired      Boolean
-  isLifetime     Boolean
-  subscriptionId String?
-  expiresAt      DateTime?
-  user           User      @relation(fields: userId, references: id, onDelete: Cascade)
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  // Stripe subscription id (sub_...). Null only on rows from before billing
+  // state was mirrored from Stripe.
+  subscriptionId     String?
+  stripeCustomerId   String?
+  // Mirrors Stripe's subscription.status: trialing, active, past_due,
+  // canceled, unpaid, incomplete, incomplete_expired, paused.
+  status             String    @default("incomplete")
+  // Stripe price id of the plan item, which configured plan it is
+  // ("founding" | "standard", null for a price this app does not know) and
+  // its billing interval ("month" | "year").
+  priceId            String?
+  plan               String?
+  interval           String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  // The subscription is set to end (cancel_at_period_end or cancel_at), and
+  // when.
+  cancelAtPeriodEnd  Boolean   @default(false)
+  cancelAt           DateTime?
+  endedAt            DateTime?
+  // Stripe's cancellation_details.reason once canceled.
+  cancellationReason String?
+  // When Stripe created the subscription, and Stripe's clock when the state
+  // above was read from its API. A write carrying an older reading never
+  // replaces a newer one.
+  stripeCreatedAt    DateTime?
+  stripeSyncedAt     DateTime?
+  // A comped account: Pro without a Stripe subscription. Set by hand.
+  isLifetime         Boolean
+
+  // DEPRECATED legacy flags, still written (derived from `status`) so that
+  // the previously deployed release keeps working during a deploy or a
+  // rollback. Nothing reads them; drop them in a later migration.
+  isTrial            Boolean
+  isActive           Boolean
+  isCanceled         Boolean
+  isPaused           Boolean
+  isPending          Boolean
+  isExpired          Boolean
+  expiresAt          DateTime?
+  user               User      @relation(fields: userId, references: id, onDelete: Cascade)
+}
+
+// Stripe webhook events this app has taken on (see
+// src/server/_billing/webhook.ts). `id` is the Stripe event id (evt_...),
+// which is what makes a repeated delivery a no-op. Times are Unix seconds.
+model StripeEvent {
+  id           String @id
+  type         String
+  // "processing" while a delivery is being handled, then "processed".
+  status       String
+  // event.created
+  eventCreated Int
+  claimedAt    Int
+  processedAt  Int?
+
+  @@index([claimedAt])
 }
 
 model Session {
@@ -134,7 +185,8 @@ model Review {
   title          String
   description    String?
 
-  // One review per reviewer per photographer.
+  // One review per reviewer per photographer. (Also the index for "reviews
+  // of this photographer": photographerId is its first column.)
   @@unique([photographerId, userId])
 }
 
@@ -149,6 +201,20 @@ model MessageThread {
   participants   User[]
   messages       Message[]
   match          Match?
+  reads          ThreadRead[]
+}
+
+// Per-participant read state: `userId` has seen everything in the thread up
+// to `lastReadAt`. No row means nothing has been read.
+model ThreadRead {
+  threadId   String
+  userId     String
+  lastReadAt DateTime
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, userId])
+  @@index([userId])
 }
 
 model Message {
@@ -160,10 +226,18 @@ model Message {
   sender    User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
   senderId  String
   content   String
+  // DEPRECATED, never read or written: read state lives in ThreadRead. Kept
+  // until the release that still selects it is gone; drop it in a later
+  // migration.
   isRead    Boolean       @default(false)
   isDeleted Boolean       @default(false)
 
-  @@index([threadId])
+  // NOTE: migrations/0003 also creates the trigger "Message_touch_thread" on
+  // this table: it sets MessageThread.updatedAt to the new message's
+  // createdAt in the same statement as the insert. Prisma does not know
+  // about triggers; a migration that rebuilds this table drops the trigger
+  // and must create it again (message.test.ts fails if it is missing).
+  @@index([threadId, createdAt])
 }
 
 model User {
@@ -190,6 +264,7 @@ model User {
   reviews           Review[]
   messages          Message[]
   messageThreads    MessageThread[]
+  threadReads       ThreadRead[]
   comments          Comment[]
   stripeId          String?            @unique
   commentLikes      CommentLike[]
@@ -208,10 +283,13 @@ model User {
   swipesReceived    Swipe[]            @relation("SwipesReceived")
   matchesAsUser1    Match[]            @relation("MatchesAsUser1")
   matchesAsUser2    Match[]            @relation("MatchesAsUser2")
-  isDiscoverable    Boolean            @default(true)
+  isDiscoverable    Boolean            @default(false)
   seekingTypes      String? // JSON array: ["wedding", "portrait", "event", "commercial"]
   budgetMin         Int?
   budgetMax         Int?
+
+  // The Discover deck and recipient search filter on it.
+  @@index([isDiscoverable])
 }
 
 model Event {
@@ -237,8 +315,8 @@ model Event {
   // Search performance indexes
   @@index([title])
   @@index([location])
-  @@index([date])
-  @@index([isDeleted, date]) // Composite index for common filter pattern
+  @@index([isDeleted, date]) // Feeds and search: live events by date
+  @@index([photographerId, isDeleted, date]) // One photographer's events by date
 }
 
 model EventLike {
@@ -279,6 +357,7 @@ model CommentLike {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isDeleted Boolean  @default(false)
 
+  // commentId is the first column, so this also serves "likes of a comment".
   @@unique([commentId, userId])
 }
 
@@ -298,10 +377,10 @@ model Booking {
   ownerNotes  String? // Response from event owner
   isDeleted   Boolean  @default(false)
 
+  // Also the index for "bookings of this event" (eventId comes first).
   @@unique([eventId, applicantId])
   @@index([applicantId, status])
   @@index([ownerId, status])
-  @@index([eventId])
 }
 
 model Notification {
@@ -309,7 +388,7 @@ model Notification {
   createdAt   DateTime @default(now())
   recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   recipientId String
-  type        String // booking_applied, booking_accepted, booking_declined, booking_completed, new_message, review_received, profile_view
+  type        String // booking_applied, booking_accepted, booking_declined, booking_canceled, booking_completed, new_message, review_received, profile_view
   title       String
   body        String
   isRead      Boolean  @default(false)
@@ -327,11 +406,21 @@ model InviteCode {
   creator            User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   maxRedemptions     Int                @default(5)
   currentRedemptions Int                @default(0)
+  // How many redemptions were ever recorded for this code. Raised by the
+  // trigger "InviteRedemption_count" (migrations/0002) in the same statement
+  // that inserts the redemption, and never lowered: a used invite stays
+  // used, also after the invited member's account (and with it the
+  // redemption row) is deleted.
+  redeemedCount      Int                @default(0)
+  // Last time a slot was claimed or released. The reconcile job recomputes
+  // `currentRedemptions` only for codes touched recently
+  // (src/server/_jobs/reconcileInviteSlots.ts).
+  slotsChangedAt     DateTime?
   createdAt          DateTime           @default(now())
   regeneratedAt      DateTime?
   redemptions        InviteRedemption[]
 
-  @@index([code])
+  @@index([slotsChangedAt])
 }
 
 model InviteRedemption {
@@ -415,25 +504,32 @@ model Swipe {
   target    User     @relation("SwipesReceived", fields: [targetId], references: [id], onDelete: Cascade)
 
   @@unique([swiperId, targetId])
-  @@index([swiperId])
   @@index([targetId, direction])
 }
 
 model Match {
-  id              String         @id @default(cuid())
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  user1Id         String
-  user2Id         String
-  status          String         @default("matched") // matched, messaged, booked, expired
-  messageThreadId String?        @unique
-  aiSummary       String?
-  expiresAt       DateTime?
-  user1           User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
-  user2           User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
-  messageThread   MessageThread? @relation(fields: [messageThreadId], references: [id])
+  id                     String         @id @default(cuid())
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  user1Id                String
+  user2Id                String
+  status                 String         @default("matched") // matched, messaged, booked, expired
+  messageThreadId        String?        @unique
+  aiSummary              String?
+  // Conversation starters written once per match: a JSON array of strings
+  // (see src/server/_lib/matchInsights.ts). Null until generated.
+  icebreakers            String?
+  // When generation was last started; bounds retries and concurrent runs.
+  icebreakersRequestedAt DateTime?
+  expiresAt              DateTime?
+  user1                  User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2                  User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messageThread          MessageThread? @relation(fields: [messageThreadId], references: [id])
 
   @@unique([user1Id, user2Id])
   @@index([user1Id, status])
   @@index([user2Id, status])
+  // Expiry sweep and read-time expiry: "matched" rows whose expiresAt has
+  // passed. Created by migrations/0003.
+  @@index([status, expiresAt])
 }

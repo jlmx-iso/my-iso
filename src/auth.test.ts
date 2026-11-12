@@ -6,7 +6,8 @@ vi.mock("next-auth", () => ({
   CredentialsSignin: class CredentialsSignin extends Error {},
   default: () => ({ auth: vi.fn(), handlers: {}, signIn: vi.fn(), signOut: vi.fn() }),
 }));
-vi.mock("~/server/db", () => ({ db: {} }));
+const findUser = vi.hoisted(() => vi.fn());
+vi.mock("~/server/db", () => ({ db: { user: { findUnique: findUser } } }));
 vi.mock("~/app/_lib/posthog", () => ({
   FeatureFlags: { INVITE_ONLY: "invite-only" },
   getFeatureFlagVariant: vi.fn(async () => true),
@@ -45,5 +46,35 @@ describe("Auth.js configuration", () => {
     });
     // The rest of the adapter is intact.
     expect(authConfig.adapter).toHaveProperty("createUser", expect.any(Function));
+  });
+
+  describe("Google sign-in", () => {
+    const google = { provider: "google", providerAccountId: "g-1", type: "oidc" as const };
+    const user = { email: "Ada@Example.com", emailVerified: null, firstName: "Ada", id: "g-1", lastName: "L" };
+
+    it("is refused unless Google says the email address is verified", async () => {
+      const { authConfig } = await import("./auth");
+      findUser.mockReset();
+
+      for (const profile of [{ email_verified: false }, { email_verified: null }, {}, undefined]) {
+        await expect(
+          authConfig.callbacks.signIn({ account: google, profile, user }),
+        ).resolves.toBe(false);
+      }
+      // Refused before any account lookup: an existing member's address
+      // on an unverified Google account does not get in either.
+      expect(findUser).not.toHaveBeenCalled();
+    });
+
+    it("is accepted for an existing member with a verified address", async () => {
+      const { authConfig } = await import("./auth");
+      findUser.mockReset();
+      findUser.mockResolvedValue({ id: "user-1" });
+
+      await expect(
+        authConfig.callbacks.signIn({ account: google, profile: { email_verified: true }, user }),
+      ).resolves.toBe(true);
+      expect(findUser).toHaveBeenCalledWith({ where: { email: "ada@example.com" } });
+    });
   });
 });

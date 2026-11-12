@@ -1,8 +1,9 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { useEffect } from "react";
+
+import { captureBoundaryError } from "~/_lib/analyticsBrowser";
 
 /**
  * Last-resort error screen: it replaces the root layout, so it cannot rely on
@@ -17,7 +18,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    captureBoundaryError(error, "global-error");
   }, [error]);
 
   return (

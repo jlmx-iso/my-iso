@@ -163,7 +163,7 @@ CREATE TABLE "User" (
     "stripeId" TEXT,
     "role" TEXT NOT NULL DEFAULT 'standard',
     "invitedByUserId" TEXT,
-    "isDiscoverable" BOOLEAN NOT NULL DEFAULT true,
+    "isDiscoverable" BOOLEAN NOT NULL DEFAULT false,
     "seekingTypes" TEXT,
     "budgetMin" INTEGER,
     "budgetMax" INTEGER,

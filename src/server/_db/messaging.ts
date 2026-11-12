@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { isUniqueViolation } from "./errors";
 import type { ExtendedPrismaClient } from "./softDelete";
@@ -175,5 +175,98 @@ export async function classifyRecipients(
   return {
     messageable: ids.filter((id) => allowedIds.has(id)),
     notMessageable: ids.filter((id) => !allowedIds.has(id)),
+  };
+}
+
+// ── Read state ──────────────────────────────────────────────────────────────
+//
+// ThreadRead(threadId, userId, lastReadAt): the participant has seen
+// everything in the thread up to lastReadAt. A message is unread for a user
+// when someone else sent it after that (or the user has no row yet). One row
+// per participant, so it works the same for group threads.
+
+type ReadDb = Pick<ExtendedPrismaClient, "$queryRaw" | "threadRead">;
+
+/**
+ * Records that `userId` has read `threadId` up to `at`. The caller has
+ * checked that they are a participant.
+ */
+export async function markThreadReadAt(
+  db: Pick<ExtendedPrismaClient, "threadRead">,
+  threadId: string,
+  userId: string,
+  at: Date,
+): Promise<void> {
+  const key = { threadId_userId: { threadId, userId } };
+  try {
+    await db.threadRead.upsert({
+      create: { lastReadAt: at, threadId, userId },
+      update: { lastReadAt: at },
+      where: key,
+    });
+  } catch (error) {
+    // Two first reads at once: the other request inserted the row.
+    if (!isUniqueViolation(error)) throw error;
+    await db.threadRead.update({ data: { lastReadAt: at }, where: key });
+  }
+}
+
+/**
+ * Thread ids per unread-count statement. D1 accepts at most 100 bound
+ * parameters; a page of the conversation list holds up to 50 threads.
+ */
+const UNREAD_LOOKUP_CHUNK = 80;
+
+const toCount = (value: number | bigint | null | undefined): number => Number(value ?? 0);
+
+/**
+ * Unread messages of `userId` in each of `threadIds`: one grouped statement
+ * per UNREAD_LOOKUP_CHUNK threads (never one per thread). Threads without
+ * unread messages are absent from the map. The caller passes only threads
+ * the user takes part in.
+ */
+export async function countUnreadByThread(
+  db: ReadDb,
+  userId: string,
+  threadIds: readonly string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (let start = 0; start < threadIds.length; start += UNREAD_LOOKUP_CHUNK) {
+    const chunk = threadIds.slice(start, start + UNREAD_LOOKUP_CHUNK);
+    const rows = await db.$queryRaw<Array<{ threadId: string; unread: number | bigint }>>(Prisma.sql`
+      SELECT m."threadId" AS "threadId", COUNT(*) AS "unread"
+      FROM "Message" m
+      LEFT JOIN "ThreadRead" r ON r."threadId" = m."threadId" AND r."userId" = ${userId}
+      WHERE m."threadId" IN (${Prisma.join(chunk)})
+        AND m."senderId" <> ${userId}
+        AND NOT m."isDeleted"
+        AND (r."lastReadAt" IS NULL OR m."createdAt" > r."lastReadAt")
+      GROUP BY m."threadId"`);
+    for (const row of rows) counts.set(row.threadId, toCount(row.unread));
+  }
+  return counts;
+}
+
+/**
+ * Totals for the navigation badge: how many of the user's conversations have
+ * something unread, and how many messages that is. One statement, driven by
+ * the user's participant rows and the (threadId, createdAt) index.
+ */
+export async function countUnreadTotals(
+  db: ReadDb,
+  userId: string,
+): Promise<{ unreadMessages: number; unreadThreads: number }> {
+  const rows = await db.$queryRaw<Array<{ messages: number | bigint; threads: number | bigint }>>(Prisma.sql`
+    SELECT COUNT(*) AS "messages", COUNT(DISTINCT m."threadId") AS "threads"
+    FROM "_MessageThreadToUser" p
+    JOIN "Message" m ON m."threadId" = p."A"
+    LEFT JOIN "ThreadRead" r ON r."threadId" = p."A" AND r."userId" = p."B"
+    WHERE p."B" = ${userId}
+      AND m."senderId" <> ${userId}
+      AND NOT m."isDeleted"
+      AND (r."lastReadAt" IS NULL OR m."createdAt" > r."lastReadAt")`);
+  return {
+    unreadMessages: toCount(rows[0]?.messages),
+    unreadThreads: toCount(rows[0]?.threads),
   };
 }

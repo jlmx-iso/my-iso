@@ -22,7 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { formatLocalDate } from "~/_lib/dayjs";
+import { formatDate } from "~/_lib/dayjs";
 import { toSafeWebsiteUrl } from "~/_utils/social";
 import { userFacingError } from "~/_utils/userError";
 import PageHeader from "~/app/_components/PageHeader";
@@ -183,7 +183,7 @@ export default function Page() {
                       )}
                     </Group>
                     <Text size="xs" c="dimmed">
-                      Applied {formatLocalDate(entry.createdAt)}
+                      Applied {formatDate(entry.createdAt)}
                     </Text>
                   </Stack>
 

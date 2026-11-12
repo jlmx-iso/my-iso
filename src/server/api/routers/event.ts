@@ -1,13 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { ErrorReason, logger } from "~/_utils";
 import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { base64ImageInput, requireValidImage, type ValidImage } from "~/server/_utils/image";
 import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 export { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS };
@@ -135,6 +136,19 @@ function findNewestComments(
     where: { eventId: input.eventId, ...onLiveEvent },
   });
 }
+
+/**
+ * Filters for the location strings a feed is asked for. Only the city part
+ * is matched, so "Austin, TX, USA" finds events in "Austin, TX".
+ */
+function locationFilters(locations: readonly string[]) {
+  return locations
+    .map((loc) => loc.split(",")[0]?.trim())
+    .filter((city): city is string => Boolean(city))
+    .map((city) => ({ location: { contains: city } }));
+}
+
+const feedLocationsInput = z.array(z.string().min(1).max(200)).max(10);
 
 export const eventRouter = createTRPCRouter({
   addCommentToEvent: protectedProcedure
@@ -321,8 +335,10 @@ export const eventRouter = createTRPCRouter({
         where: { id: input.id },
       });
 
+      // Missing and deleted look the same. The reason lets the client show a
+      // "not found" page instead of a generic error.
       if (!event) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found" });
+        throw reasonedError("NOT_FOUND", ErrorReason.EVENT_NOT_FOUND, "Event not found");
       }
 
       const commentCount = await ctx.db.comment.count({
@@ -403,19 +419,61 @@ export const eventRouter = createTRPCRouter({
       return { items: views.reverse(), nextCursor };
     }),
 
+  /**
+   * The events feed, one page at a time, as `{ items, nextCursor }`.
+   *
+   * - `when: "upcoming"` (the default): events that have not started yet
+   *   (date >= now), SOONEST FIRST.
+   * - `when: "past"`: events that have started or are over (date < now),
+   *   most recent first.
+   *
+   * `locations` narrows to events in those places (city match, as
+   * getRecentByLocation); empty or omitted means everywhere. Pass
+   * `nextCursor` back as `cursor` for the next page; it is null on the last.
+   * Deleted events never appear.
+   */
+  getFeedPage: protectedProcedure
+    .input(z.object({
+      ...pageInput,
+      locations: feedLocationsInput.optional(),
+      when: z.enum(["upcoming", "past"]).default("upcoming"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const filters = locationFilters(input.locations ?? []);
+      const upcoming = input.when === "upcoming";
+      const direction = upcoming ? "asc" : "desc";
+
+      const rows = await ctx.db.event.findMany({
+        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+        include: {
+          photographer: { select: eventPhotographerSelect },
+        },
+        // The id breaks ties between events at the same time, so pages
+        // neither repeat nor skip one.
+        orderBy: [{ date: direction }, { id: direction }],
+        take: input.limit + 1,
+        where: {
+          date: upcoming ? { gte: now } : { lt: now },
+          ...(filters.length > 0 ? { OR: filters } : {}),
+        },
+      });
+      return toPage(rows, input.limit);
+    }),
+
+  /**
+   * @deprecated Use getFeedPage, which separates upcoming from past events
+   * and pages with a cursor. This returns upcoming and past events mixed,
+   * latest date first, and is kept for clients that still call it.
+   */
   getRecentByLocation: protectedProcedure
     .input(z.object({
       limit: z.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
-      locations: z.array(z.string().min(1).max(200)).max(10),
+      locations: feedLocationsInput,
       startAt: z.number().int().min(0).max(10_000).optional(),
     }))
     .query(({ ctx, input }) => {
-      // Extract city names from location strings for fuzzy matching
-      // e.g. "Austin, TX, USA" → "Austin" so it matches "Austin, TX"
-      const locationFilters = input.locations
-        .map((loc) => loc.split(",")[0]?.trim())
-        .filter((city): city is string => Boolean(city))
-        .map((city) => ({ location: { contains: city } }));
+      const filters = locationFilters(input.locations);
 
       return ctx.db.event.findMany({
         include: {
@@ -425,15 +483,13 @@ export const eventRouter = createTRPCRouter({
         skip: input.startAt ?? 0,
         take: input.limit ?? 10,
         where: {
-          ...(locationFilters.length > 0
-            ? { OR: locationFilters }
-            : {}),
+          ...(filters.length > 0 ? { OR: filters } : {}),
         },
       });
     }),
 
   search: protectedProcedure
-    .use(rateLimit(RateLimits.SEARCH))
+    .use(rateLimit(RateLimits.EVENT_SEARCH))
     .input(z.object({
       afterDate: z.date(),
       beforeDate: z.date(),

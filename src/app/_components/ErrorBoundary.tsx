@@ -12,6 +12,7 @@ import {
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useEffect } from "react";
 
+import { captureBoundaryError } from "~/_lib/analyticsBrowser";
 import { logger } from "~/_utils/logger";
 import { isNetworkError } from "~/_utils/userError";
 
@@ -29,6 +30,7 @@ interface ErrorBoundaryProps {
 export default function ErrorBoundary({ error, reset, homeHref = "/" }: ErrorBoundaryProps) {
   useEffect(() => {
     logger.error("Route error boundary", { digest: error.digest, error });
+    captureBoundaryError(error, "error");
   }, [error]);
 
   const offline = isNetworkError(error);

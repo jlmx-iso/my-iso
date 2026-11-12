@@ -9,6 +9,7 @@ import { Notifications } from '@mantine/notifications';
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 
+import { SITE_URL } from "~/_lib/site";
 import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
 
@@ -17,7 +18,7 @@ import AppShell from "./_components/AppShell";
 import { AppFooter, Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, defaultOpenGraph } from "./_lib/siteMetadata";
+import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -86,7 +87,13 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: REVEAL_SCRIPT }} />
       </head>
       <body>
-        <CSPostHogProvider>
+        <CSPostHogProvider
+          user={
+            session?.user
+              ? { email: session.user.email, id: session.user.id, name: session.user.name }
+              : null
+          }
+        >
           <ThemeProvider>
             {/* Top of the screen: clear of the phone tab bar and of the buttons
                 at the bottom of dialogs (offsets in globals.css). */}

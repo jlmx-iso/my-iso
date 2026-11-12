@@ -47,7 +47,7 @@ export default function ConversationList({ initialThreads, initialNextCursor, cu
             initialData: {
                 pageParams: [undefined],
                 pages: [{
-                    items: initialThreads.map(({ id, participants }) => ({ id, participants })),
+                    items: initialThreads.map(({ lastMessage: _lastMessage, ...thread }) => thread),
                     nextCursor: initialNextCursor,
                 }],
             },

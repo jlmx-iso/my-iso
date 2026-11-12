@@ -367,25 +367,6 @@ describe("lists against SQLite", () => {
         "profilePic",
       ]);
     });
-
-    it("getMine returns only the caller's own review, and needs a session", async () => {
-      const other = await createTestUser(testDb.db);
-      await testDb.db.review.create({
-        data: { photographerId, rating: 3, title: "Someone else's", userId: other.id },
-      });
-      await expect(reviewsAs(visitor).getMine({ photographerId })).resolves.toBeNull();
-
-      await reviewsAs(visitor).create({ photographerId, rating: 5, title: "Mine" });
-      await expect(reviewsAs(visitor).getMine({ photographerId })).resolves.toMatchObject({
-        rating: 5,
-        title: "Mine",
-      });
-      // The photographer has no review of themselves.
-      await expect(reviewsAs(owner).getMine({ photographerId })).resolves.toBeNull();
-      await expect(reviewsAs().getMine({ photographerId })).rejects.toMatchObject({
-        code: "UNAUTHORIZED",
-      });
-    });
   });
 
   // -------------------------------------------------------------------------

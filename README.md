@@ -1,86 +1,105 @@
-# my-iso
+# ISO
 
-A modern photographer marketplace and social platform where photographers can showcase their portfolios, connect with clients, and manage bookings.
+ISO is an invite-only network where lead photographers find second shooters.
+The app's domain is `myiso.app`; it is operated by MyISO, LLC
+(<https://myiso.dev>).
 
-## Features
+## Stack
 
-- **Photographer Portfolios**: Showcase work with Cloudinary-powered image galleries
-- **User Authentication**: Secure login and registration with NextAuth.js
-- **Messaging System**: Real-time communication between photographers and clients
-- **Event Management**: Create, browse, and manage photography events
-- **Search & Discovery**: Find photographers by location, style, and availability
-- **Subscription Plans**: Tiered pricing with Stripe integration
-- **Social Features**: Favorites, profiles, and user interactions
+| | |
+| --- | --- |
+| Framework | Next.js 16 (App Router), React 19, Mantine 9, tRPC 11 |
+| Runtime | Cloudflare Workers through [OpenNext](https://opennext.js.org/cloudflare), with a custom entry (`worker.ts`) |
+| Database | Cloudflare D1 (SQLite) with Prisma 7; plain SQLite locally and in tests |
+| Realtime | A Durable Object per message thread (`src/do/ChatRoom.ts`) |
+| Auth | Auth.js v5: Google sign-in and emailed one-time codes; sign-up needs an invite |
+| Analytics, replay, flags, errors | PostHog, through a first-party proxy on the app's own origin |
+| Email | Resend |
+| Images | Cloudinary |
+| Payments | Stripe |
+| AI | Claude (match summaries and icebreakers), optional |
 
-## Tech Stack
+Package manager: npm. Node 22 (`.nvmrc`).
 
-This project is built with the [T3 Stack](https://create.t3.gg/):
+## Run it locally
 
-- [Next.js](https://nextjs.org) - React framework with App Router
-- [NextAuth.js](https://next-auth.js.org) - Authentication
-- [Prisma](https://prisma.io) - Type-safe ORM
-- [tRPC](https://trpc.io) - End-to-end type safety
-- [Mantine](https://mantine.dev) - React component library
+```sh
+npm ci
+cp .env.example .env        # fill in what you need; see docs/DEPLOYMENT.md
+npm run db:push             # creates the SQLite file `next dev` uses
+npm run db:seed             # optional demo data
+npm run dev                 # http://localhost:3000
+```
 
-Additional integrations:
-- PostgreSQL database
-- Cloudinary for image management
-- Cloudflare Durable Objects for real-time messaging
-- Stripe for payments
-- Postmark for transactional emails
-- PostHog for analytics
+`npm run dev` is plain `next dev` on Node with a SQLite file. To run the real
+thing, the built Worker on workerd with a local D1 (set
+`NEXT_PUBLIC_BASE_URL` and `AUTH_URL` to `http://localhost:8787` for this):
 
-## Getting Started
+```sh
+cp .dev.vars.example .dev.vars
+npm run db:migrate:local    # applies migrations/ to the local D1
+npm run db:seed:local       # optional demo data
+npm run dev:wrangler        # builds, then `wrangler dev` on http://localhost:8787
+```
 
-### Prerequisites
+Variables without a value switch their feature off where that is possible:
+no `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` means no analytics, no `RESEND_API_KEY`
+means no email is sent, no `ANTHROPIC_API_KEY` means no AI text.
 
-- Node.js 18+
-- PostgreSQL database
-- Yarn package manager
+## Check your work
 
-### Installation
+```sh
+npm run lint
+npm run typecheck           # the app, then worker.ts against the Workers types
+npm test                    # Vitest; database tests run against real SQLite
+npm run db:check            # migrations/ and prisma/schema.prisma agree
+npm run build:cf            # Next.js build + OpenNext Worker
+npm run check:bundle        # wrangler dry run; fails over 9.5 MiB gzipped
+```
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   yarn install
-   ```
+CI (`.github/workflows/ci.yml`) runs all of these on every pull request and
+never deploys.
 
-3. Set up environment variables (copy `.env.example` to `.env`)
+## Database changes
 
-4. Initialize the database:
-   ```bash
-   yarn db:push
-   ```
+Edit `prisma/schema.prisma`, run `npm run db:migrate:diff`, save the SQL as
+the next file in `migrations/`. Details and rules in
+[docs/DATABASE.md](docs/DATABASE.md).
 
-5. Run the development server:
-   ```bash
-   yarn dev
-   ```
+## Scheduled jobs
 
-6. Open [http://localhost:3000](http://localhost:3000)
+Cron Triggers in `wrangler.toml` run small idempotent jobs from
+`src/server/_jobs` (expire stale matches, purge expired rows, reconcile
+invite counters). To run them against a local Worker:
 
-## Development
+```sh
+npx wrangler dev --test-scheduled      # after npm run build:cf
+npm run jobs:local                     # in another terminal
+```
 
-- `yarn dev` - Start development server
-- `yarn build` - Build for production
-- `yarn start` - Start production server
-- `yarn lint` - Run ESLint
-- `yarn db:studio` - Open Prisma Studio
-- `yarn db:push` - Push schema changes to the local SQLite file used by `yarn dev`
-- `yarn db:check` - Check that `migrations/` matches `prisma/schema.prisma`
+## Deploy
 
-Staging and production run on Cloudflare D1 and are changed only through the
-SQL files in `migrations/`. See [docs/DATABASE.md](./docs/DATABASE.md).
+```sh
+npm run deploy:staging
+npm run deploy:production
+```
 
-## Project Structure
+Each builds for that environment, applies pending D1 migrations, then deploys.
+Everything about configuration, secrets, first deploy and rollback is in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-See [Claude.md](./Claude.md) for detailed documentation on:
-- Project architecture
-- Coding patterns and conventions
-- API design guidelines
-- Component organization
+## Where things are
 
-## License
-
-Private - All rights reserved
+```
+worker.ts                 Worker entry: telemetry proxy, realtime gateway, cron, then Next.js
+wrangler.toml             Cloudflare config (top level = production, [env.staging])
+migrations/               D1 migrations (the schema that is actually applied)
+prisma/schema.prisma      The schema you edit
+src/app/                  Pages, layouts and route handlers
+src/server/api/routers/   tRPC routers
+src/server/_jobs/         Scheduled jobs
+src/server/_lib/          Email, AI, PostHog, background work
+src/do/                   ChatRoom Durable Object and its gateway
+src/env.js                Every environment variable, validated
+docs/                     DATABASE, DEPLOYMENT, RATE_LIMITING, adr/
+```

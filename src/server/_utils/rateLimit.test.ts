@@ -9,8 +9,11 @@ import {
   checkRateLimitsInOrder,
   consumeRateLimit,
   enforceRateLimit,
+  otpRequestLimits,
+  otpVerifyLimits,
   purgeExpiredRateLimits,
   RateLimits,
+  refundRateLimit,
   type RateLimitDb,
   type RateLimitPolicy,
 } from "./rateLimit";
@@ -203,6 +206,32 @@ describe("rate limiter against SQLite", () => {
       checkRateLimitsInOrder(brokenDb, [{ identifier: "user:1", policy }]),
     ).resolves.toMatchObject({ allowed: false, limiterFailed: true });
   });
+
+  it("counts several units at once with `cost`", async () => {
+    const first = await consumeRateLimit(testDb.db, policy, "user:cost", { cost: 2, nowMs: T0 });
+    const second = await consumeRateLimit(testDb.db, policy, "user:cost", { cost: 2, nowMs: T0 });
+
+    expect(first).toMatchObject({ allowed: true, remaining: 1 });
+    expect(second).toMatchObject({ allowed: false, remaining: 0 });
+    await expect(
+      consumeRateLimit(testDb.db, policy, "user:cost", { cost: 0, nowMs: T0 }),
+    ).rejects.toThrow(/positive integer/);
+  });
+
+  it("refunds units that were counted but not used, never below zero", async () => {
+    await consumeRateLimit(testDb.db, policy, "user:refund", { nowMs: T0 });
+    await consumeRateLimit(testDb.db, policy, "user:refund", { cost: 3, nowMs: T0 });
+
+    await refundRateLimit(testDb.db, policy, "user:refund", 3, { nowMs: T0 });
+
+    // One unit is still counted: two more fit, a third does not.
+    const next = await consumeRateLimit(testDb.db, policy, "user:refund", { cost: 2, nowMs: T0 });
+    expect(next).toMatchObject({ allowed: true, remaining: 0 });
+
+    await refundRateLimit(testDb.db, policy, "user:refund", 50, { nowMs: T0 });
+    await refundRateLimit(testDb.db, policy, "user:never-counted", 1, { nowMs: T0 });
+    expect(await testDb.raw.rateLimit.findMany({ select: { count: true } })).toEqual([{ count: 0 }]);
+  });
 });
 
 describe("limiter failure", () => {
@@ -243,12 +272,47 @@ describe("RateLimits", () => {
       RateLimits.OTP_VERIFY_IP,
       RateLimits.OTP_REQUEST_EMAIL_DAILY,
       RateLimits.OTP_VERIFY_EMAIL_DAILY,
+      RateLimits.OTP_VERIFY_EMAIL_IP,
+      RateLimits.OTP_VERIFY_EMAIL_IP_DAILY,
+      RateLimits.WAITLIST_RECONFIRM_EMAIL,
       RateLimits.MOBILE_TOKEN_EXCHANGE,
       RateLimits.INVITE_VALIDATE,
       RateLimits.INVITE_PREPARE,
       RateLimits.WAITLIST_SUBMIT,
     ];
     expect(authSensitive.every((p) => p.onError === "deny")).toBe(true);
+  });
+
+  it("checks a client's own sign-in limits before any limit shared with the address's owner", () => {
+    const order = otpVerifyLimits("203.0.113.9", "ada@example.com").map((check) => check.policy.name);
+
+    expect(order).toEqual([
+      "otp-verify-ip",
+      "otp-verify-email-ip",
+      "otp-verify-email-ip-daily",
+      "otp-verify-email",
+      "otp-verify-email-daily",
+    ]);
+    expect(otpRequestLimits("203.0.113.9", "ada@example.com")[0]?.policy.name).toBe("otp-request-ip");
+    // One client cannot reach the address-wide ceilings on its own.
+    expect(RateLimits.OTP_VERIFY_EMAIL_IP.limit).toBeLessThan(RateLimits.OTP_VERIFY_EMAIL.limit);
+    expect(RateLimits.OTP_VERIFY_EMAIL_IP_DAILY.limit).toBe(30);
+    expect(RateLimits.OTP_VERIFY_EMAIL_DAILY.limit).toBe(100);
+  });
+
+  it("keys the per-client limits on the address and the client together", async () => {
+    const [, emailAndIp] = otpVerifyLimits("203.0.113.9", "ada@example.com");
+    const [, otherClient] = otpVerifyLimits("203.0.113.10", "ada@example.com");
+    const [, otherAddress] = otpVerifyLimits("203.0.113.9", "bob@example.com");
+
+    expect(new Set([emailAndIp?.identifier, otherClient?.identifier, otherAddress?.identifier]).size).toBe(3);
+  });
+
+  it("gives search, event search and recipient lookup their own budgets", () => {
+    const names = [RateLimits.MEMBER_SEARCH, RateLimits.EVENT_SEARCH, RateLimits.RECIPIENT_SEARCH, RateLimits.PLACES_AUTOCOMPLETE]
+      .map((policy) => policy.name);
+
+    expect(new Set(names).size).toBe(4);
   });
 
   it("gives every policy a distinct bucket name", () => {
