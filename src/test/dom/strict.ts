@@ -16,21 +16,37 @@ import { afterEach, beforeEach, vi } from "vitest";
 
 const unhandledCalls: string[] = [];
 let errorLogs: string[] = [];
-let allowed: Array<RegExp | null> = [];
+let allowed: RegExp[] = [];
 
 /** Called by the mocked tRPC link for a procedure without a handler. */
 export function recordUnhandledTrpcCall(description: string) {
   unhandledCalls.push(description);
 }
 
+/** Unrelated strings that no pattern for one real log message matches. */
+const UNRELATED = ["qzxv", "0", "§¶", "an unrelated log line"];
+
 /**
- * Lets this test log errors with console.error: those matching `pattern`,
- * or any error when called without one. Use it only where the error log is
- * the expected outcome (a failure path that the app reports with
- * `logger.error`), and match the message.
+ * Lets this test log errors with console.error that match one of
+ * `patterns`. Use it only where the error log is the expected outcome (a
+ * failure path that the app reports with `logger.error`), and match that
+ * message: at least one pattern is required, and a pattern that matches
+ * anything (an empty one, /./, /.*\/, /[\s\S]*\/) is refused.
  */
-export function allowConsoleError(pattern?: RegExp) {
-  allowed.push(pattern ?? null);
+export function allowConsoleError(...patterns: [RegExp, ...RegExp[]]) {
+  if (patterns.length === 0) {
+    throw new Error("allowConsoleError needs the pattern of the error message the test expects.");
+  }
+  for (const pattern of patterns) {
+    if (!(pattern instanceof RegExp)) {
+      throw new Error(`allowConsoleError takes regular expressions, got ${String(pattern)}`);
+    }
+    if (pattern.source === "" || pattern.source === "(?:)" || UNRELATED.every((text) => pattern.test(text))) {
+      throw new Error(`allowConsoleError: ${String(pattern)} matches any message; match the expected one.`);
+    }
+    pattern.lastIndex = 0;
+  }
+  allowed.push(...patterns);
 }
 
 /** The log line as the console would print it (React passes "%s" formats). */
@@ -48,7 +64,7 @@ export function resetStrictDomRun() {
 /** Throws if this test made an unhandled tRPC call or an unexpected error log. */
 export function checkStrictDomRun() {
   const unhandled = [...unhandledCalls];
-  const unexpected = errorLogs.filter((log) => !allowed.some((pattern) => pattern === null || pattern.test(log)));
+  const unexpected = errorLogs.filter((log) => !allowed.some((pattern) => { pattern.lastIndex = 0; return pattern.test(log); }));
   if (unhandled.length > 0) {
     throw new Error(
       `The component called tRPC procedures this test has no handler for:\n  ${unhandled.join("\n  ")}\n` +

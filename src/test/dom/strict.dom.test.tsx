@@ -41,6 +41,28 @@ describe("strict DOM checks", () => {
     resetStrictDomRun();
   });
 
+  it("allow several expected messages in one call", () => {
+    allowConsoleError(/Profile update failed/, /Avatar upload failed/);
+    console.error("Profile update failed");
+    console.error("Avatar upload failed");
+    expect(() => checkStrictDomRun()).not.toThrow();
+    resetStrictDomRun();
+  });
+
+  it("refuse a call without a pattern, and patterns that match any message", () => {
+    // @ts-expect-error -- the pattern is required.
+    expect(() => allowConsoleError()).toThrow(/needs the pattern/);
+    for (const pattern of [/./, /.*/, /[\s\S]*/, new RegExp(""), /(?:)/, /^/, /[^]*/]) {
+      expect(() => allowConsoleError(pattern), String(pattern)).toThrow(/matches any message/);
+    }
+    // @ts-expect-error -- a string is not a pattern.
+    expect(() => allowConsoleError("Error creating event")).toThrow(/regular expressions/);
+    // Refused patterns leave nothing allowed.
+    console.error("Something else entirely");
+    expect(() => checkStrictDomRun()).toThrow(/Something else entirely/);
+    resetStrictDomRun();
+  });
+
   it("pass a clean run", () => {
     recordUnhandledTrpcCall("query x.y");
     resetStrictDomRun();
