@@ -121,3 +121,17 @@ describe("subscriptionSummary", () => {
     expect(summary).toMatchObject({ banner: null, planDetail: "Complimentary", planName: "Pro" });
   });
 });
+
+describe("a subscription that ended early", () => {
+  it("never says it ended on a date that is still ahead", () => {
+    const summary = subscriptionSummary({
+      ...active,
+      accessEndsAt: null,
+      canStartCheckout: true,
+      hasProAccess: false,
+      renewsAt: null,
+      status: "canceled",
+    });
+    expect(summary.line).toEqual({ date: null, text: "Your Pro subscription has ended. You're on the Free plan." });
+  });
+});

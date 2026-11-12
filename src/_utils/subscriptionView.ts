@@ -199,7 +199,10 @@ export function subscriptionSummary(subscription: SubscriptionState | null | und
   }
 
   // No access and nothing wrong: a subscription that ended.
-  const endedAt = subscription.accessEndsAt ?? subscription.cancelAt ?? subscription.currentPeriodEnd;
+  // Only a date the server gives as the end of access: a period end or
+  // cancellation date can lie in the future for a subscription that was cut
+  // off early (refunded, never paid), and "ended on <a future date>" is wrong.
+  const endedAt = subscription.accessEndsAt;
   return {
     ...free,
     line: endedAt
