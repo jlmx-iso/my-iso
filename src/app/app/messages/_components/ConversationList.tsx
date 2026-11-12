@@ -1,10 +1,12 @@
 "use client";
 
-import { Box, Group, Stack, Text } from "@mantine/core";
+import { Box, Button, Group, Stack, Text } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
 
 import { sortThreadsByRecency } from "~/_utils/messagePanes";
+import { THREADS_PAGE_SIZE } from "~/_utils/pageSizes";
+import { mergePages } from "~/_utils/pagination";
 import { Avatar } from "~/app/_components/Avatar";
 import EmptyState from "~/app/_components/EmptyState";
 import Timemarker from "~/app/_components/Timemarker";
@@ -12,13 +14,14 @@ import { type RouterOutputs, api } from "~/trpc/react";
 
 import classes from "./MessagesShell.module.css";
 
-type Thread = RouterOutputs["message"]["getThreadsByUserId"][number];
+type Thread = RouterOutputs["message"]["getThreadsPage"]["items"][number];
 type LatestMessage = RouterOutputs["message"]["getLatestThreadMessage"];
 
 export type ConversationSummary = Thread & { lastMessage: LatestMessage };
 
 type ConversationListProps = {
     initialThreads: ConversationSummary[];
+    initialNextCursor: string | null;
     currentUserId: string;
     selectedThreadId: string | null;
 };
@@ -31,16 +34,29 @@ const fullName = (person: { firstName: string; lastName: string }) =>
     `${person.firstName || ""} ${person.lastName || ""}`.trim() || "ISO member";
 
 /**
- * Conversation list, most recent first. Previews and order follow the
- * `getLatestThreadMessage` cache, which the open thread updates as messages
- * are sent or arrive, and which is polled for the other threads.
+ * Conversation list, most recent first, a page at a time ("Load older
+ * conversations"). Previews and order follow the `getLatestThreadMessage`
+ * cache, which the open thread updates as messages are sent or arrive, and
+ * which is polled for the other threads.
  */
-export default function ConversationList({ initialThreads, currentUserId, selectedThreadId }: ConversationListProps) {
-    const { data: threads } = api.message.getThreadsByUserId.useQuery(undefined, {
-        initialData: initialThreads.map(({ id, participants }) => ({ id, participants })),
-        refetchInterval: THREADS_POLL_MS,
-        refetchIntervalInBackground: false,
-    });
+export default function ConversationList({ initialThreads, initialNextCursor, currentUserId, selectedThreadId }: ConversationListProps) {
+    const threadPages = api.message.getThreadsPage.useInfiniteQuery(
+        { limit: THREADS_PAGE_SIZE },
+        {
+            getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+            initialData: {
+                pageParams: [undefined],
+                pages: [{
+                    items: initialThreads.map(({ id, participants }) => ({ id, participants })),
+                    nextCursor: initialNextCursor,
+                }],
+            },
+            refetchInterval: THREADS_POLL_MS,
+            refetchIntervalInBackground: false,
+        },
+    );
+    // A conversation can move between pages while they are refetched: once only.
+    const threads = mergePages(threadPages.data.pages);
 
     const latestMessages = api.useQueries((t) =>
         threads.map((thread) =>
@@ -68,7 +84,7 @@ export default function ConversationList({ initialThreads, currentUserId, select
                 <EmptyState
                     icon={IconMessageCircle}
                     title="No conversations yet"
-                    description="Message a photographer from their profile, or start one with New message."
+                    description="Start one with New message. You can write to photographers who are visible in Discover, and to anyone you've matched or booked with."
                 />
             </Box>
         );
@@ -107,6 +123,23 @@ export default function ConversationList({ initialThreads, currentUserId, select
                     </li>
                 );
             })}
+            {threadPages.hasNextPage && (
+                <Box component="li" p="sm" ta="center">
+                    <Button
+                        variant="default"
+                        size="xs"
+                        onClick={() => void threadPages.fetchNextPage()}
+                        loading={threadPages.isFetchingNextPage}
+                    >
+                        Load older conversations
+                    </Button>
+                    {threadPages.isFetchNextPageError && (
+                        <Text size="xs" c="red" mt={6} role="alert">
+                            We couldn&apos;t load more conversations. Please try again.
+                        </Text>
+                    )}
+                </Box>
+            )}
         </Stack>
     );
 }

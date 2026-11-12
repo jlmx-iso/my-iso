@@ -1,11 +1,14 @@
 "use client";
 
-import { Autocomplete, Button, Center, Group, Loader, Modal, Stack, Text } from "@mantine/core";
-import { IconMessagePlus } from "@tabler/icons-react";
+import { Anchor, Autocomplete, Button, Center, Group, Loader, Modal, Stack, Text, ThemeIcon } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
+import { IconMessagePlus, IconUserSearch, IconUsers } from "@tabler/icons-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { NOT_MESSAGEABLE_MESSAGE, userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import { api } from "~/trpc/react";
 
@@ -21,6 +24,9 @@ export type Recipient = {
     id: string;
     profilePic: string | null;
 };
+
+/** The search starts at this many characters. */
+const MIN_QUERY_LENGTH = 2;
 
 const fullName = (recipient: Recipient) => `${recipient.firstName} ${recipient.lastName}`.trim();
 
@@ -70,10 +76,19 @@ export default function NewMessageModal() {
 
     const [isCheckingPicked, setIsCheckingPicked] = useState(false);
 
-    const { data: potentialRecipients = [], isFetching: isSearching } = api.message.getPotentialRecipients.useQuery(
-        { query: recipientQuery },
-        { enabled: recipientQuery.length > 1 },
+    // One search per pause in typing, not one per keystroke (searches are rate limited).
+    const [debouncedQuery] = useDebouncedValue(recipientQuery.trim(), 250);
+    const isSearchEnabled = debouncedQuery.length >= MIN_QUERY_LENGTH;
+    const {
+        data: potentialRecipients = [],
+        error: searchError,
+        isFetching: isSearching,
+        isSuccess: hasSearched,
+    } = api.message.getPotentialRecipients.useQuery(
+        { query: debouncedQuery },
+        { enabled: isSearchEnabled },
     );
+    const hasNoMatches = isSearchEnabled && hasSearched && !isSearching && potentialRecipients.length === 0;
 
     const opened = isOpenedByButton || isDeepLinkActive;
 
@@ -93,7 +108,7 @@ export default function NewMessageModal() {
     /** Opens a thread: the one just created, or the one that already existed. */
     const openThread = (threadId: string) => {
         reset();
-        void utils.message.getThreadsByUserId.invalidate();
+        void utils.message.getThreadsPage.invalidate();
         void utils.message.getThreadById.invalidate({ threadId });
         void utils.message.getLatestThreadMessage.invalidate({ threadId });
         router.replace(`/app/messages/${threadId}`);
@@ -157,14 +172,18 @@ export default function NewMessageModal() {
                         {isDeepLinkUnknown && (
                             <Text size="sm" c="red" role="alert">
                                 {isDeepLinkNotMessageable
-                                    ? "You can't message this person yet. To connect, match with them on Discover or apply to one of their events."
-                                    : "We couldn't find that person. Search for a recipient instead."}
+                                    ? NOT_MESSAGEABLE_MESSAGE
+                                    : "We couldn't find that person. Search for someone else instead."}
                             </Text>
                         )}
                         <Autocomplete
                             label="Recipient"
-                            description="Search by name"
+                            description="Search by name or business name"
                             placeholder="Start typing a name"
+                            error={searchError
+                                // Typing fast can run into the search limit: say how long to wait.
+                                ? userFacingError(searchError, "We couldn't search right now. Please try again.")
+                                : undefined}
                             data-autofocus
                             data={potentialRecipients.map((r) => ({
                                 value: r.id,
@@ -177,12 +196,35 @@ export default function NewMessageModal() {
                                 if (selected) void pickRecipient(selected);
                             }}
                         />
-                        {recipientQuery.length > 1 && !isSearching && potentialRecipients.length === 0 && (
-                            <Text size="sm" c="dimmed" role="status">
-                                No one you can message matches &ldquo;{recipientQuery}&rdquo;. You can message
-                                photographers who are discoverable, and people you have matched or booked with.
-                            </Text>
-                        )}
+                        {/* Always rendered so screen readers hear the outcome of a search. */}
+                        <div role="status" aria-live="polite">
+                            {hasNoMatches ? (
+                                <Stack align="center" gap={6} py="md" data-testid="recipient-empty">
+                                    <ThemeIcon size={44} radius="xl" variant="light" color="gray">
+                                        <IconUserSearch size={22} aria-hidden />
+                                    </ThemeIcon>
+                                    <Text fw={600} size="sm" ta="center">
+                                        No one to message matches &ldquo;{debouncedQuery}&rdquo;
+                                    </Text>
+                                    <Text size="sm" c="dimmed" ta="center" maw={340}>
+                                        You can start a conversation with photographers who are visible in
+                                        Discover, and with anyone you&apos;ve matched or booked with. To reach
+                                        someone else, match with them on{" "}
+                                        <Anchor component={Link} href="/app/discover" inherit underline="always">Discover</Anchor>{" "}
+                                        or apply to one of their{" "}
+                                        <Anchor component={Link} href="/app/events" inherit underline="always">events</Anchor>.
+                                    </Text>
+                                </Stack>
+                            ) : !isSearchEnabled && !searchError ? (
+                                <Group gap="xs" wrap="nowrap" align="flex-start" py={4}>
+                                    <IconUsers size={16} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                                    <Text size="sm" c="dimmed">
+                                        You can message photographers who are visible in Discover, and anyone
+                                        you&apos;ve matched or booked with.
+                                    </Text>
+                                </Group>
+                            ) : null}
+                        </div>
                     </Stack>
                 )}
             </Modal>

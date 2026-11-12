@@ -16,13 +16,15 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconStar, IconStarFilled } from "@tabler/icons-react";
+import { IconAlertCircle, IconCircleCheck, IconStar, IconStarFilled } from "@tabler/icons-react";
 import Link from "next/link";
 import { useId } from "react";
 
 import { formatLocalDate } from "~/_lib/dayjs";
-import { userFacingError } from "~/_utils/userError";
+import { REVIEWS_PAGE_SIZE } from "~/_utils/pageSizes";
+import { mergePages, partialCountNote } from "~/_utils/pagination";
+import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 import { Avatar } from "../Avatar";
@@ -76,11 +78,16 @@ function ReviewForm({
         rating: values.rating,
         title: values.title.trim(),
       });
-      notifications.show({ color: "teal", message: "Thanks for sharing your experience.", title: "Review posted" });
+      notify.success({
+        message: `Your ${values.rating}-star review of ${photographerName} is on their profile.`,
+        title: "Review posted",
+      });
       form.reset();
       onSubmitted();
-    } catch {
-      // The inline alert below reports it; nothing else to do here.
+    } catch (error) {
+      // Reviewed from another tab or device in the meantime: show that review
+      // instead of the form. Anything else is reported by the alert below.
+      if (trpcErrorCode(error) === "CONFLICT") onSubmitted();
     }
   });
 
@@ -107,6 +114,14 @@ function ReviewForm({
             required
             error={form.errors.rating}
             errorProps={{ id: ratingErrorId }}
+            // Mantine only previews a rating chosen with the arrow keys (it
+            // commits on Space/Enter, and Enter submits the form). The radio's
+            // own change event bubbles here, so arrow keys choose a rating too.
+            onChange={(event) => {
+              if (event.target instanceof HTMLInputElement && event.target.type === "radio") {
+                form.setFieldValue("rating", Number(event.target.value));
+              }
+            }}
           >
             <Rating
               size="xl"
@@ -132,12 +147,16 @@ function ReviewForm({
 
           <Textarea
             label="Your review"
-            description="Optional"
             placeholder="What was it like working together?"
             autosize
             minRows={3}
             maxRows={6}
             {...form.getInputProps("description")}
+            description={
+              form.values.description.length >= 1800
+                ? `Optional. ${form.values.description.length}/2000 characters`
+                : "Optional"
+            }
           />
 
           <Group>
@@ -159,13 +178,24 @@ export default function ReviewsSection({
   signInHref,
 }: ReviewsSectionProps) {
   const utils = api.useUtils();
-  const reviews = api.review.getByPhotographerId.useQuery({ photographerId });
+  const reviews = api.review.getPageByPhotographerId.useInfiniteQuery(
+    { limit: REVIEWS_PAGE_SIZE, photographerId },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined },
+  );
   const rating = api.review.getAverageRating.useQuery({ photographerId });
-  const reviewCount = rating.data?.count ?? 0;
+  // Only a signed-in visitor who is not the owner can have a review here.
+  const mine = api.review.getMine.useQuery({ photographerId }, { enabled: viewer === "member" });
+  const loaded = mergePages(reviews.data?.pages);
+  // The header shows the real total; the list says when it shows fewer.
+  const reviewCount = Math.max(rating.data?.count ?? 0, loaded.length);
+  const partialNote = reviews.hasNextPage
+    ? partialCountNote(loaded.length, reviewCount, { one: "review", other: "reviews" })
+    : null;
 
   const refresh = () => {
-    void utils.review.getByPhotographerId.invalidate({ photographerId });
+    void utils.review.getPageByPhotographerId.invalidate({ photographerId });
     void utils.review.getAverageRating.invalidate({ photographerId });
+    void utils.review.getMine.invalidate({ photographerId });
   };
 
   return (
@@ -199,7 +229,7 @@ export default function ReviewsSection({
             Try again
           </Anchor>
         </Alert>
-      ) : reviews.data.length === 0 ? (
+      ) : loaded.length === 0 ? (
         <Text c="dimmed" size="sm">
           {viewer === "owner"
             ? "You don't have any reviews yet. They'll appear here after photographers you've worked with leave one."
@@ -207,11 +237,11 @@ export default function ReviewsSection({
         </Text>
       ) : (
         <Stack gap="sm" component="ul" m={0} p={0} style={{ listStyle: "none" }}>
-          {reviews.data.map((review) => {
+          {loaded.map((review) => {
             const reviewer =
               `${review.user.firstName || ""} ${review.user.lastName || ""}`.trim() || "ISO member";
             return (
-              <Paper key={review.id} component="li" p="md" radius="md" withBorder>
+              <Paper key={review.id} component="li" p="md" radius="md" withBorder data-testid="review-item">
                 <Group align="flex-start" gap="md" wrap="nowrap">
                   <Avatar src={review.user.profilePic} name={reviewer} alt="" size={40} />
                   <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
@@ -240,7 +270,52 @@ export default function ReviewsSection({
         </Stack>
       )}
 
-      {viewer === "member" && (
+      {reviews.hasNextPage && (
+        <Stack gap={6} align="center">
+          <Text size="sm" c="dimmed" role="status" data-testid="reviews-partial">
+            {partialNote ?? `Showing the ${loaded.length} most recent reviews`}
+          </Text>
+          <Button
+            variant="default"
+            onClick={() => void reviews.fetchNextPage()}
+            loading={reviews.isFetchingNextPage}
+          >
+            Load more reviews
+          </Button>
+          {reviews.isFetchNextPageError && (
+            <Text size="sm" c="red" role="alert">
+              We couldn&apos;t load more reviews. Please try again.
+            </Text>
+          )}
+        </Stack>
+      )}
+
+      {viewer === "member" && mine.data && (
+        // One review per person: show theirs instead of a form that would be refused.
+        <Paper p="md" radius="md" withBorder bg="gray.0" data-testid="own-review">
+          <Stack gap={4}>
+            <Group gap="xs">
+              <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
+              <Text size="sm" fw={600}>
+                You reviewed {photographerName} on {formatLocalDate(mine.data.createdAt, "MMMM D, YYYY")}
+              </Text>
+            </Group>
+            <StarRating rating={mine.data.rating} size={14} />
+            <Text size="sm" fw={600}>
+              {mine.data.title}
+            </Text>
+            {mine.data.description && (
+              <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }}>
+                {mine.data.description}
+              </Text>
+            )}
+            <Text size="xs" c="dimmed" mt={4}>
+              Each member can leave one review per photographer.
+            </Text>
+          </Stack>
+        </Paper>
+      )}
+      {viewer === "member" && mine.isSuccess && !mine.data && (
         <ReviewForm
           photographerId={photographerId}
           photographerName={photographerName}

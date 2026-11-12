@@ -1,14 +1,14 @@
 "use client";
 
 import { Alert, Box, Button, Center, Group, Loader, Stack } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconEyeOff, IconHeartHandshake } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { userFacingError } from "~/_utils/userError";
+import { isRateLimited, userFacingError } from "~/_utils/userError";
 import EmptyState from "~/app/_components/EmptyState";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 import MatchCelebration from "./MatchCelebration";
@@ -82,12 +82,23 @@ export default function CardStack() {
         next.delete(target.id);
         return next;
       });
-      setAnnouncement(`Your ${direction} on ${name} was not saved`);
-      notifications.show({
-        color: "red",
-        message: userFacingError(error, `Your ${direction} wasn't saved, so ${name} is back on top. Please try again.`),
-        title: direction === "like" ? "Couldn't save your like" : "Couldn't save your pass",
-      });
+      const notSaved = `Your ${direction} wasn't saved, so ${name} is back on top.`;
+      if (isRateLimited(error)) {
+        // The server's sentence says how long to wait.
+        const wait = userFacingError(error);
+        setAnnouncement(`You're swiping too fast. ${notSaved} ${wait}`);
+        notify.warning({
+          id: "swipe-rate-limit",
+          message: `${notSaved} ${wait}`,
+          title: "You're swiping too fast",
+        });
+      } else {
+        setAnnouncement(`Your ${direction} on ${name} was not saved`);
+        notify.error({
+          message: userFacingError(error, `${notSaved} Please try again.`),
+          title: direction === "like" ? "Couldn't save your like" : "Couldn't save your pass",
+        });
+      }
     }
   };
 

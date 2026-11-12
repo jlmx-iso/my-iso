@@ -1,9 +1,10 @@
 "use client";
 
-import { Button, Group, Textarea } from "@mantine/core";
+import { Button, Group, Text, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
 
+import { MAX_COMMENT_LENGTH } from "~/_utils/limits";
 import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
@@ -12,7 +13,8 @@ type AddCommentFormProps = {
     eventTitle: string;
 };
 
-const MAX_COMMENT_LENGTH = 2000;
+/** The counter appears once a comment is this close to the limit. */
+const COUNTER_FROM = MAX_COMMENT_LENGTH - 200;
 
 export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormProps) {
     const utils = api.useUtils();
@@ -23,17 +25,21 @@ export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormPr
         validate: {
             comment: (value: string) => {
                 if (!value.trim()) return "Write a comment first";
-                return value.length > MAX_COMMENT_LENGTH ? `Keep comments under ${MAX_COMMENT_LENGTH} characters` : null;
+                const over = value.trim().length - MAX_COMMENT_LENGTH;
+                return over > 0
+                    ? `That comment is ${over} characters over the ${MAX_COMMENT_LENGTH.toLocaleString("en-US")} limit. Shorten it to post.`
+                    : null;
             },
         },
     });
     const { mutate, isPending } = api.event.addCommentToEvent.useMutation({
-        // The draft stays in the field so a failed post loses nothing.
+        // The draft is only cleared once the server has stored the comment,
+        // so a failed post (rate limit, too long, offline) loses nothing.
         onError: (error) =>
-            form.setFieldError("comment", userFacingError(error, "Your comment couldn't be posted. Please try again.")),
+            form.setFieldError("comment", userFacingError(error, "Your comment wasn't posted. It's still here — please try again.")),
         onSuccess: () => {
             form.reset();
-            void utils.event.getCommentsByEventId.invalidate({ eventId });
+            void utils.event.getCommentsPage.invalidate({ eventId });
             void utils.event.getCommentCountByEventId.invalidate({ eventId });
             void utils.event.getById.invalidate({ id: eventId });
         },
@@ -43,6 +49,8 @@ export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormPr
         if (isPending) return;
         mutate({ content: values.comment.trim(), eventId });
     });
+
+    const length = form.values.comment.trim().length;
 
     return (
         <form onSubmit={handleSubmit} noValidate>
@@ -57,7 +65,12 @@ export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormPr
                     ["mod+Enter", () => handleSubmit()],
                 ])}
             />
-            <Group justify="flex-end" mt="xs">
+            <Group justify="flex-end" align="center" gap="sm" mt="xs">
+                {length >= COUNTER_FROM && (
+                    <Text size="xs" c={length > MAX_COMMENT_LENGTH ? "red" : "dimmed"} data-testid="comment-counter">
+                        {length.toLocaleString("en-US")}/{MAX_COMMENT_LENGTH.toLocaleString("en-US")}
+                    </Text>
+                )}
                 <Button type="submit" size="xs" loading={isPending}>Post comment</Button>
             </Group>
         </form>

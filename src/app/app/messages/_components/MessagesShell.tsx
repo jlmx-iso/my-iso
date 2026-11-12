@@ -13,6 +13,8 @@ import NewMessageModal from "./NewMessageModal";
 type MessagesShellProps = {
     /** Thread list with each thread's latest message, fetched on the server. */
     initialThreads: ConversationSummary[];
+    /** Cursor of the next page of conversations; null when these are all. */
+    initialNextCursor: string | null;
     currentUserId: string;
     children: React.ReactNode;
 };
@@ -77,7 +79,7 @@ function DefaultThreadRedirect({ threads }: { threads: ConversationSummary[] }) 
  * Two-pane messages screen. The pane shown on small screens follows the URL:
  * the list at `/app/messages`, the thread at `/app/messages/[id]`.
  */
-export default function MessagesShell({ initialThreads, currentUserId, children }: MessagesShellProps) {
+export default function MessagesShell({ initialThreads, initialNextCursor, currentUserId, children }: MessagesShellProps) {
     const segment = useSelectedLayoutSegment();
     const shellRef = useRef<HTMLDivElement>(null);
     useKeyboardAwareHeight(shellRef);
@@ -99,6 +101,7 @@ export default function MessagesShell({ initialThreads, currentUserId, children 
                 <aside className={classes.sidebar} aria-label="Conversations">
                     <ConversationList
                         initialThreads={initialThreads}
+                        initialNextCursor={initialNextCursor}
                         currentUserId={currentUserId}
                         selectedThreadId={selectedThreadId(segment)}
                     />

@@ -6,7 +6,7 @@ import EventSearchCard from './EventSearchCard';
 import PhotographerCard from './PhotographerCard';
 
 type SearchResultsProps = {
-  results: RouterOutputs['search']['searchAll'];
+  results: Pick<RouterOutputs['search']['searchAll'], 'events' | 'photographers'>;
   searchType: 'all' | 'photographers' | 'events';
 };
 

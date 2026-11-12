@@ -10,7 +10,6 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import {
   IconCalendar,
   IconCheck,
@@ -22,6 +21,7 @@ import Link from "next/link";
 import { formatLocalDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -74,21 +74,24 @@ export default function BookingCard({
     api.booking.updateStatus.useMutation({
       onError: (error) => {
         logger.error("Error updating booking status", { error });
-        notifications.show({
-          color: "red",
+        notify.error({
           message: userFacingError(error, "Nothing was changed. Please try again."),
-          title: "Update Failed",
+          title: "Booking not updated",
         });
       },
-      onSuccess: () => {
-        notifications.show({
-          color: "teal",
-          icon: <IconCheck size={16} />,
-          message: "Booking status updated.",
-          title: "Updated",
+      onSuccess: (_data, { status }) => {
+        const name = `${user.firstName} ${user.lastName}`.trim() || "the photographer";
+        const copy: Record<typeof status, { message: string; title: string }> = {
+          accepted: { message: `${name} is booked for ${event.title}.`, title: "Application accepted" },
+          canceled: { message: `Your application to ${event.title} has been withdrawn.`, title: "Application withdrawn" },
+          completed: { message: `${event.title} is marked as complete.`, title: "Booking completed" },
+          declined: { message: `${name}'s application to ${event.title} was declined.`, title: "Application declined" },
+        };
+        notify.success({
+          ...copy[status],
         });
-        void utils.booking.getMyApplications.invalidate();
-        void utils.booking.getReceivedApplications.invalidate();
+        void utils.booking.getMyApplicationsPage.invalidate();
+        void utils.booking.getReceivedApplicationsPage.invalidate();
       },
     });
 

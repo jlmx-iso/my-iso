@@ -14,7 +14,7 @@ export default function Page() {
       <EmptyState
         icon={IconMessageCircle}
         title="Your messages"
-        description="Choose a conversation, or start one with New message."
+        description="Choose a conversation, or start one with New message. You can write to photographers who are visible in Discover, and to anyone you've matched or booked with."
       />
     </Center>
   );

@@ -1,11 +1,13 @@
 "use client";
 
-import { ActionIcon, Group, Textarea } from "@mantine/core";
+import { ActionIcon, Group, Text, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { IconSend } from "@tabler/icons-react";
-import { type KeyboardEvent } from "react";
+import { type KeyboardEvent, useId } from "react";
 
+import { MAX_MESSAGE_LENGTH } from "~/_utils/limits";
 import { type ThreadMessage } from "~/_utils/threadMessages";
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
 import { type Recipient } from "./NewMessageModal";
@@ -23,8 +25,9 @@ type ComposeMessageProps = {
   threadId: string;
 };
 
-const SEND_FAILED = "Message could not be sent. Please try again.";
-const MAX_LENGTH = 5000;
+const SEND_FAILED = "Your message wasn't sent. It's still here — please try again.";
+/** The counter appears once a message is this close to the limit. */
+const COUNTER_FROM = MAX_MESSAGE_LENGTH - 500;
 
 /**
  * Enter sends where there is a hardware keyboard (a fine pointer); on touch
@@ -49,7 +52,9 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     validate: {
       text: (value: string) => {
         if (value.trim().length < 1) return "Write a message first";
-        if (value.length > MAX_LENGTH) return `Keep messages under ${MAX_LENGTH} characters`;
+        if (value.trim().length > MAX_MESSAGE_LENGTH) {
+          return `That message is ${value.trim().length - MAX_MESSAGE_LENGTH} characters over the ${MAX_MESSAGE_LENGTH.toLocaleString("en-US")} limit. Shorten it or split it in two.`;
+        }
         return null;
       },
     },
@@ -57,13 +62,19 @@ export default function ComposeMessage(props: ComposeMessageProps) {
 
   const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
 
+  const statusId = useId();
+  const length = form.values.text.trim().length;
+  const error = typeof form.errors.text === "string" ? form.errors.text : null;
+
   // The draft stays in the input until the server confirms, so a failed send
   // loses nothing.
   const handleSubmit = () => {
     if (isPending) return;
     if (form.validate().hasErrors) return;
     const content = form.values.text.trim();
-    const onError = () => form.setFieldError("text", SEND_FAILED);
+    // Says why: over the daily limit for new conversations, a person who
+    // cannot be messaged, sending too fast (with the wait), too long...
+    const onError = (failure: unknown) => form.setFieldError("text", userFacingError(failure, SEND_FAILED));
 
     if ("threadId" in props) {
       createMessageMutation.mutate({ content, threadId: props.threadId }, {
@@ -100,6 +111,9 @@ export default function ComposeMessage(props: ComposeMessageProps) {
       >
         <Textarea
           {...form.getInputProps("text")}
+          // The message itself is shown below, full width, under the row.
+          error={!!error}
+          aria-describedby={statusId}
           style={{ flex: 1 }}
           // 16px text: smaller makes iOS zoom the page on focus.
           size="md"
@@ -122,11 +136,20 @@ export default function ComposeMessage(props: ComposeMessageProps) {
           radius="xl"
           loading={isPending}
           aria-label="Send message"
-          // Line up with the input, not with the error text under it.
-          mb={form.errors.text ? 24 : 0}
         >
           <IconSend size={18} />
         </ActionIcon>
+      </Group>
+      {/* Always rendered so screen readers announce errors as they appear. */}
+      <Group id={statusId} justify="space-between" align="flex-start" gap="xs" wrap="nowrap" mt={error || length >= COUNTER_FROM ? 4 : 0}>
+        <Text size="sm" c="red" role="alert" data-testid="compose-error" style={{ flex: 1 }}>
+          {error}
+        </Text>
+        {length >= COUNTER_FROM && (
+          <Text size="xs" c={length > MAX_MESSAGE_LENGTH ? "red" : "dimmed"} style={{ whiteSpace: "nowrap" }} data-testid="compose-counter">
+            {length.toLocaleString("en-US")}/{MAX_MESSAGE_LENGTH.toLocaleString("en-US")}
+          </Text>
+        )}
       </Group>
     </form>
   );

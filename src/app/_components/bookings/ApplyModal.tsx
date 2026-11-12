@@ -9,12 +9,12 @@ import {
   Textarea,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
 import { IconCheck, IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
 
 import { logger } from "~/_utils/logger";
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 type ApplyModalProps = {
@@ -39,21 +39,18 @@ export default function ApplyModal({
   const { mutate, isPending } = api.booking.applyToEvent.useMutation({
     onError: (error) => {
       logger.error("Error applying to event", { error });
-      notifications.show({
-        color: "red",
+      notify.error({
         message: userFacingError(error, "Your application couldn't be sent. Please try again."),
         title: "Application not sent",
       });
     },
     onSuccess: () => {
-      notifications.show({
-        color: "teal",
-        icon: <IconCheck size={16} />,
+      notify.success({
         message: "Your application has been sent to the event owner.",
         title: "Application sent",
       });
       void utils.booking.hasApplied.invalidate({ eventId });
-      void utils.booking.getMyApplications.invalidate();
+      void utils.booking.getMyApplicationsPage.invalidate();
       setRate("");
       setNotes("");
       close();

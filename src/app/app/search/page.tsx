@@ -1,6 +1,6 @@
 'use client';
 
-import { ActionIcon, Alert, Button, Collapse, Group, Paper, SegmentedControl, SimpleGrid, Stack, TextInput } from '@mantine/core';
+import { ActionIcon, Alert, Button, Collapse, Group, Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { DatePickerInput, type DatesRangeValue } from '@mantine/dates';
 import { useDisclosure, useId } from '@mantine/hooks';
 import { IconAdjustments, IconAlertCircle, IconSearch, IconSearchOff } from '@tabler/icons-react';
@@ -8,6 +8,9 @@ import dayjs from 'dayjs';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useState } from 'react';
 
+import { SEARCH_MAX_OFFSET } from '~/_utils/limits';
+import { SEARCH_PAGE_SIZE } from '~/_utils/pageSizes';
+import { loadedCountLabel, mergeOffsetPages } from '~/_utils/pagination';
 import { userFacingError } from '~/_utils/userError';
 import EmptyState from '~/app/_components/EmptyState';
 import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
@@ -35,20 +38,47 @@ function Search() {
 
   const hasSearched = submittedQuery.length > 0;
 
-  // Always fetch all types — searchType only controls client-side display filtering
-  const { data: results, isLoading, error, refetch } = api.search.searchAll.useQuery(
-    {
-      query: submittedQuery,
-      location: location || undefined,
-      filters: {
-        type: 'all',
-        // @mantine/dates emits local `YYYY-MM-DD` strings; the API expects Dates.
-        dateFrom: dateRange[0] ? dayjs(dateRange[0]).startOf('day').toDate() : undefined,
-        dateTo: dateRange[1] ? dayjs(dateRange[1]).endOf('day').toDate() : undefined,
-      },
+  // The server filters by date only when it gets both ends, so a half-chosen
+  // range is not sent at all (and is not shown as an active filter).
+  const [dateFrom, dateTo] = dateRange;
+  const hasDateRange = !!dateFrom && !!dateTo;
+  const searchInput = {
+    query: submittedQuery,
+    location: location || undefined,
+    filters: {
+      // Always fetch all types — searchType only controls client-side display filtering
+      type: 'all' as const,
+      // @mantine/dates emits local `YYYY-MM-DD` strings; the API expects Dates.
+      ...(hasDateRange
+        ? { dateFrom: dayjs(dateFrom).startOf('day').toDate(), dateTo: dayjs(dateTo).endOf('day').toDate() }
+        : {}),
     },
-    { enabled: hasSearched }
+  };
+
+  // "Load more" adds a page; a new search starts again from the first one.
+  const searchKey = JSON.stringify([submittedQuery, location, hasDateRange ? dateRange : null]);
+  const [paging, setPaging] = useState({ count: 1, key: searchKey });
+  const pageCount = paging.key === searchKey ? paging.count : 1;
+
+  // One query per loaded page. Each asks for one row more than a page holds,
+  // which is how the client knows whether there is more to load.
+  const pages = api.useQueries((t) =>
+    Array.from({ length: hasSearched ? pageCount : 0 }, (_, index) =>
+      t.search.searchAll({ ...searchInput, limit: SEARCH_PAGE_SIZE + 1, offset: index * SEARCH_PAGE_SIZE }),
+    ),
   );
+  const firstPage = pages[0];
+  const lastPage = pages.at(-1);
+  const isLoading = hasSearched && !!firstPage?.isPending;
+  const error = firstPage?.error ?? null;
+  const isLoadingMore = pageCount > 1 && !!lastPage?.isPending;
+  const loadMoreError = pageCount > 1 ? (lastPage?.error ?? null) : null;
+
+  const photographers = mergeOffsetPages(pages.map((page) => page.data?.photographers), SEARCH_PAGE_SIZE);
+  const events = mergeOffsetPages(pages.map((page) => page.data?.events), SEARCH_PAGE_SIZE);
+  const results = firstPage?.data ? { events: events.items, photographers: photographers.items } : undefined;
+  const hasMore =
+    (photographers.hasMore || events.hasMore) && pageCount * SEARCH_PAGE_SIZE <= SEARCH_MAX_OFFSET;
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -56,12 +86,14 @@ function Search() {
     router.replace(query ? `${pathname}?q=${encodeURIComponent(query)}` : pathname, { scroll: false });
   };
 
-  const hasActiveFilters = !!(location || dateRange[0] || dateRange[1]);
+  const hasActiveFilters = !!location || hasDateRange;
 
   const photographerCount = results?.photographers.length ?? 0;
   const eventCount = results?.events.length ?? 0;
   const totalCount = photographerCount + eventCount;
   const hasResults = !!results && totalCount > 0;
+  // Counts never claim to be the total while more can be loaded: "20+".
+  const totalLabel = loadedCountLabel(totalCount, hasMore);
 
   return (
     <Stack gap="md">
@@ -115,9 +147,14 @@ function Search() {
                 <DatePickerInput
                   type="range"
                   label="Event dates"
-                  description="Choose a start and an end date"
+                  description={
+                    dateFrom && !dateTo
+                      ? 'Now choose the end date. The filter applies once both are set.'
+                      : 'Choose a start and an end date'
+                  }
                   placeholder="Any time"
                   clearable
+                  allowSingleDateInRange
                   value={dateRange}
                   onChange={setDateRange}
                 />
@@ -133,9 +170,9 @@ function Search() {
           onChange={(v) => setSearchType(v)}
           aria-label="Show"
           data={[
-            { label: `All (${totalCount})`, value: 'all' },
-            { label: `Photographers (${photographerCount})`, value: 'photographers' },
-            { label: `Events (${eventCount})`, value: 'events' },
+            { label: `All (${totalLabel})`, value: 'all' },
+            { label: `Photographers (${loadedCountLabel(photographerCount, hasMore && photographers.hasMore)})`, value: 'photographers' },
+            { label: `Events (${loadedCountLabel(eventCount, hasMore && events.hasMore)})`, value: 'events' },
           ]}
           size="sm"
           w={{ base: '100%', sm: 'fit-content' }}
@@ -148,14 +185,16 @@ function Search() {
         {hasSearched && !isLoading && results &&
           (totalCount === 0
             ? `No results for ${submittedQuery}`
-            : `${totalCount} ${totalCount === 1 ? 'result' : 'results'} for ${submittedQuery}`)}
+            : hasMore
+              ? `Showing the first ${totalCount} results for ${submittedQuery}. More are available.`
+              : `${totalCount} ${totalCount === 1 ? 'result' : 'results'} for ${submittedQuery}`)}
       </div>
 
       {error && (
         <Alert color="red" icon={<IconAlertCircle size={16} />} title="Search didn't work" role="alert">
           {userFacingError(error, 'Something went wrong on our side. Please try again.')}
           <Group mt="xs">
-            <Button variant="default" size="xs" onClick={() => void refetch()}>
+            <Button variant="default" size="xs" onClick={() => void firstPage?.refetch()}>
               Try again
             </Button>
           </Group>
@@ -164,6 +203,30 @@ function Search() {
 
       {isLoading && hasSearched && <SearchLoadingSkeleton type={searchType} />}
       {hasSearched && !isLoading && hasResults && <SearchResults results={results} searchType={searchType} />}
+
+      {hasSearched && !isLoading && hasResults && hasMore && (
+        <Stack gap={6} align="center">
+          <Text size="sm" c="dimmed" data-testid="search-partial">
+            Showing the first {totalCount} results
+          </Text>
+          <Button
+            variant="default"
+            loading={isLoadingMore}
+            onClick={() =>
+              loadMoreError
+                ? void lastPage?.refetch()
+                : setPaging({ count: pageCount + 1, key: searchKey })
+            }
+          >
+            {loadMoreError ? 'Try again' : 'Load more results'}
+          </Button>
+          {loadMoreError && (
+            <Text size="sm" c="red" role="alert">
+              {userFacingError(loadMoreError, "We couldn't load more results. Please try again.")}
+            </Text>
+          )}
+        </Stack>
+      )}
 
       {/* Same visual language for "nothing found" and "nothing searched yet". */}
       {hasSearched && !isLoading && !error && results && !hasResults && (
