@@ -2,8 +2,10 @@ import "~/styles/globals.css";
 import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
+import '@mantine/notifications/styles.css';
 
 import { ColorSchemeScript } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
@@ -72,6 +74,7 @@ export default async function RootLayout({
       <body>
         <CSPostHogProvider>
           <ThemeProvider>
+            <Notifications />
             <TRPCReactProvider cookies={cookieStore.toString()}>
               <AppShell
                 header={<Navbar />}
