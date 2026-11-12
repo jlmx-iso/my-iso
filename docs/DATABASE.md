@@ -240,16 +240,21 @@ visitor can send any `Referer` they like. What the server adds:
   Messages is vouched for only when the signed-in viewer shares a message
   thread with the profile's member (for an event, the event's owner):
   `checkedViewSource`, one indexed lookup on the thread-membership table,
-  run only for that claim. Otherwise the view is Other. So a Messages view
-  always comes from someone the owner already talks to.
+  run only for that claim. Otherwise the view is Other. The thread can be
+  a group thread, so "shares a thread" means the two are in a conversation
+  together, not that they have written to each other. A Messages view
+  therefore always comes from someone in one of the owner's conversations.
 - **How far one person can skew the numbers is bounded** by the rate limits,
   the once-a-day dedupe per member or address, and invite-only membership
   (each account is a real invitation). A forged `Referer` can still file a
   visitor's own view under Search, Events, Discover and so on.
 
-What remains possible: an owner who really exchanges messages with extra
-accounts of their own can make real Messages views. Invite-only membership
-and the shared-thread requirement make that costly. A Messages attribution
+What remains possible: an owner who puts extra accounts of their own into
+a thread with themselves (directly or in a group) can make Messages views,
+and anyone already in one of the owner's threads can file their own view
+under Messages with a forged `Referer`. Invite-only membership, the
+shared-thread requirement and the per-viewer daily dedupe make that costly,
+and we accept it. A Messages attribution
 needs a shared thread, but it still rests on the `Referer`, so it stays as
 approximate as every other source: at most it hints at where a visitor who
 already talks to the owner came from, never who they are. Sources under
