@@ -327,11 +327,16 @@ model InviteCode {
   creator            User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   maxRedemptions     Int                @default(5)
   currentRedemptions Int                @default(0)
+  // Last time a slot was claimed or released. The reconcile job recomputes
+  // `currentRedemptions` only for codes touched recently
+  // (src/server/_jobs/reconcileInviteSlots.ts).
+  slotsChangedAt     DateTime?
   createdAt          DateTime           @default(now())
   regeneratedAt      DateTime?
   redemptions        InviteRedemption[]
 
   @@index([code])
+  @@index([slotsChangedAt])
 }
 
 model InviteRedemption {
@@ -420,20 +425,27 @@ model Swipe {
 }
 
 model Match {
-  id              String         @id @default(cuid())
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  user1Id         String
-  user2Id         String
-  status          String         @default("matched") // matched, messaged, booked, expired
-  messageThreadId String?        @unique
-  aiSummary       String?
-  expiresAt       DateTime?
-  user1           User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
-  user2           User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
-  messageThread   MessageThread? @relation(fields: [messageThreadId], references: [id])
+  id                     String         @id @default(cuid())
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  user1Id                String
+  user2Id                String
+  status                 String         @default("matched") // matched, messaged, booked, expired
+  messageThreadId        String?        @unique
+  aiSummary              String?
+  // Conversation starters written once per match: a JSON array of strings
+  // (see src/server/_lib/matchInsights.ts). Null until generated.
+  icebreakers            String?
+  // When generation was last started; bounds retries and concurrent runs.
+  icebreakersRequestedAt DateTime?
+  expiresAt              DateTime?
+  user1                  User           @relation("MatchesAsUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2                  User           @relation("MatchesAsUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messageThread          MessageThread? @relation(fields: [messageThreadId], references: [id])
 
   @@unique([user1Id, user2Id])
   @@index([user1Id, status])
   @@index([user2Id, status])
+  // The expiry job and read-time expiry filter on these two.
+  @@index([status, expiresAt])
 }

@@ -1,5 +1,7 @@
 import { type MetadataRoute } from "next";
 
+import { SITE_URL } from "~/_lib/site";
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
@@ -24,6 +26,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/app/", "/api/"],
       },
     ],
-    sitemap: "https://myiso.app/sitemap.xml",
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

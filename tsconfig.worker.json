@@ -13,6 +13,8 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": true,
     "noEmit": true,
     "types": ["@cloudflare/workers-types"],
     /* The generated OpenNext worker is imported through an alias (see
@@ -24,6 +26,12 @@
   "include": [
     "worker.ts",
     "src/do/**/*.ts",
+    "src/worker/**/*.ts",
+    /* Shared with the Next.js app; written against standard Web APIs. */
+    "src/_lib/jobToken.ts",
+    "src/_lib/posthogServer.ts",
+    "src/_lib/telemetryProxy.ts",
+    "src/telemetryConfig.js",
     "src/types/chatRoom.ts",
     "cloudflare-env.d.ts",
     "open-next-worker.d.ts"

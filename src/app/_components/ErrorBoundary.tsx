@@ -10,6 +10,8 @@ import {
   Title,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
+import posthog from "posthog-js";
+import { useEffect } from "react";
 
 interface ErrorBoundaryProps {
   error: Error;
@@ -17,6 +19,11 @@ interface ErrorBoundaryProps {
 }
 
 export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
+  useEffect(() => {
+    // No-op until PostHog is initialised (src/instrumentation-client.ts).
+    posthog.captureException(error, { boundary: "error" });
+  }, [error]);
+
   return (
     <Container size="sm" py={80}>
       <Stack align="center" gap="lg">

@@ -1,9 +1,4 @@
-import { logger } from "~/_utils";
-import { env } from "~/env";
-
-export type FeatureFlagData = {
-    featureFlags: Record<string, boolean>
-}
+import { getFeatureFlag } from "~/server/_lib/posthog";
 
 export type FlagValue = boolean | string | undefined
 
@@ -20,7 +15,15 @@ export const FeatureFlags = {
 
 export type FeatureFlags = typeof FeatureFlags[keyof typeof FeatureFlags];
 
-
+/**
+ * The value of a feature flag for `distinctUserId`, evaluated by PostHog on
+ * the server.
+ *
+ * `undefined` means "no value": the flag is missing or off, or PostHog was
+ * unreachable. Throws when PostHog is not configured. Either way the caller
+ * decides what is safe; sign-up, for one, stays invite-only unless the
+ * invite-only flag is explicitly `false` (see ~/auth).
+ */
 export async function getFeatureFlagVariant(
     distinctUserId: string,
     featureName: FeatureFlags
@@ -29,23 +32,5 @@ export async function getFeatureFlagVariant(
         throw new Error(`distinctUserId is required and it can't be empty`)
     }
 
-    const res = await fetch(`${env.NEXT_PUBLIC_POSTHOG_HOST}/decide?v=3`, {
-        body: JSON.stringify({
-            api_key: env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY,
-            distinct_id: distinctUserId,
-        }),
-        method: 'POST',
-    })
-
-    if (!res.ok) {
-        throw new Error(
-            `Fetch request to retrieve the ${featureName} flag status failed with: (${res.status}) ${res.statusText}`
-        )
-    }
-
-    const data = await res.json() as FeatureFlagData;
-
-    logger.info("Feature flags data", data)
-
-    return data.featureFlags[featureName]
+    return getFeatureFlag(featureName, distinctUserId)
 }

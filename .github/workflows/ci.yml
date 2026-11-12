@@ -22,8 +22,6 @@ env:
   DATABASE_URL: file:./ci.db
   NEXT_PUBLIC_BASE_URL: http://localhost:3000
   NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: ci-placeholder
-  NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
-  NEXT_PUBLIC_POSTHOG_PUBLIC_KEY: ci-placeholder
   NEXT_PUBLIC_STRIPE_PUBLIC_KEY: pk_test_ci_placeholder
   AUTH_SECRET: ci-placeholder-auth-secret-0123456789abcdef
   CLOUDINARY_API_KEY: ci-placeholder
@@ -87,8 +85,31 @@ jobs:
         run: npm ci
 
       # OpenNext runs `next build` itself, so this is the only build.
-      - name: Build Next.js and the Cloudflare Worker (OpenNext)
+      #
+      # The build's last step (`postbuild:cf`, scripts/sourcemaps.mjs) uploads
+      # browser source maps to PostHog error tracking, but only when both
+      # POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID are present: without
+      # them (pull requests, forks, a repository that has not set them) it
+      # skips the upload cleanly. Either way it removes source maps from the
+      # assets that would be deployed.
+      #
+      # The secrets are only handed to pushes on main, never to pull
+      # requests. CI does not deploy: the maps that belong to a deployed
+      # Worker are the ones uploaded by `npm run deploy:*`
+      # (docs/DEPLOYMENT.md, "Source maps").
+      - name: Build Next.js and the Cloudflare Worker (OpenNext), upload source maps
         run: npm run build:cf
+        env:
+          POSTHOG_CLI_API_KEY: ${{ github.event_name == 'push' && secrets.POSTHOG_CLI_API_KEY || '' }}
+          POSTHOG_CLI_PROJECT_ID: ${{ github.event_name == 'push' && secrets.POSTHOG_CLI_PROJECT_ID || '' }}
+          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+
+      - name: No source maps in the deployable assets
+        run: |
+          if find .open-next/assets -name '*.map' | grep -q .; then
+            echo "Source maps found in .open-next/assets" >&2
+            exit 1
+          fi
 
       # Bundles with `wrangler deploy --dry-run` (no upload, no credentials),
       # then fails if the gzipped Worker exceeds 9.5 MiB (Cloudflare's limit
