@@ -27,6 +27,8 @@ GOOGLE_CLIENT_SECRET=
 # ---- Email (Resend) ----------------------------------------------------------
 EMAIL_FROM=noreply@example.com
 RESEND_API_KEY=
+# Where Pro support requests go; defaults to NEXT_PUBLIC_SUPPORT_EMAIL.
+SUPPORT_INBOX_EMAIL=
 
 # ---- Images (Cloudinary) -----------------------------------------------------
 CLOUDINARY_CLOUD_NAME=

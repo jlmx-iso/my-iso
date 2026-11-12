@@ -6,6 +6,7 @@ import Link from 'next/link';
 
 import { fullName } from '~/_utils/names';
 import { Avatar } from '~/app/_components/Avatar';
+import { ProBadge } from '~/app/_components/ProBadge';
 import type { RouterOutputs } from '~/trpc/react';
 
 type PhotographerCardProps = {
@@ -35,12 +36,15 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
           <Avatar src={photographer.user.profilePic} name={displayName} alt="" size={48} />
           {/* The name wraps instead of truncating: it is what people search for. */}
           <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-            <Title order={3} size="h5" style={{ overflowWrap: 'anywhere' }}>
-              {/* The ::after stretches the link over the whole card. */}
-              <Link href={profileHref} className="stretched-link">
-                {displayName}
-              </Link>
-            </Title>
+            <Group gap={6} wrap="nowrap" align="center">
+              <Title order={3} size="h5" style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
+                {/* The ::after stretches the link over the whole card. */}
+                <Link href={profileHref} className="stretched-link">
+                  {displayName}
+                </Link>
+              </Title>
+              {photographer.isPro && <ProBadge />}
+            </Group>
             {photographer.companyName && (
               <Text size="sm" c="dimmed" fw={500}>
                 {photographer.companyName}

@@ -258,13 +258,23 @@ describe("content routers against SQLite", () => {
       const profile = await photographersAs().getByUsername({ username: "@Olive" });
 
       expect(Object.keys(profile ?? {}).sort()).toEqual([
-        "avatar", "bio", "companyName", "facebook", "id", "instagram", "location",
+        "avatar", "bio", "companyName", "facebook", "id", "instagram",
+        // Public by design: it is the Pro badge on the page.
+        "isPro", "location",
         "name", "tiktok", "twitter", "userId", "vimeo", "website", "youtube",
       ]);
       const serialized = JSON.stringify(profile);
       expect(serialized).not.toContain(owner.email);
       expect(serialized).not.toContain("5125550100");
       expect(serialized).not.toContain("cus_123");
+    });
+
+    it("getByUsername finds a handle however the address spells it: @, %40, capitals", async () => {
+      await testDb.db.user.update({ data: { handle: "olive" }, where: { id: owner.id } });
+      for (const username of ["olive", "@olive", "OLIVE", "%40Olive", "%40olive%20"]) {
+        expect([username, (await photographersAs().getByUsername({ username }))?.userId]).toEqual([username, owner.id]);
+      }
+      expect(await photographersAs().getByUsername({ username: "%E0%A4%A" })).toBeNull();
     });
 
     it("public reviews carry the reviewer's name, not their user id or email", async () => {

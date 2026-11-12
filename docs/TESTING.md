@@ -202,9 +202,16 @@ per procedure: its access level and a minimal valid input.
 
 A gate's refusal is recognised by its cause, `AccessGateError` (set by the
 gates in `trpc.ts`), never by its code or message, so a resolver's own
-UNAUTHORIZED cannot pass for the gate. Probe procedures exercise each gate,
-including `proProcedure`, which no app procedure uses yet: adding a `pro`
-procedure needs only its row.
+UNAUTHORIZED cannot pass for the gate. Probe procedures exercise each gate.
+
+**Pro-only procedures must use `proProcedure`** and have `access: "pro"`
+(today `insights.getSummary` and `support.contact`). A Pro check written
+inside a resolver is caught: a `member` row must answer a member without
+Pro the same way it answers a Pro member, so a resolver that refuses one
+and not the other fails the row, `resolverDenies` or not (a probe proves
+it). Because every row carries a valid input, the check runs past input
+validation. A settled Pro subscription for a test user of your own:
+`makePro` (`src/test/helpers/pro.ts`).
 
 The test walks `appRouter._def.procedures`, so a new procedure without a row
 fails ("missing"), and so does a row for a procedure that no longer exists

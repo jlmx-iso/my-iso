@@ -76,6 +76,7 @@ describe("events feed", () => {
     expect(page.nextCursor).toBeNull();
     expect(page.items[0]?.photographer).toEqual({
       avatar: "https://example.com/a.jpg",
+      isPro: false,
       name: "Olive Owner",
       userId: owner.id,
     });

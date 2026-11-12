@@ -30,6 +30,7 @@ import { Avatar } from "~/app/_components/Avatar";
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
 import { releaseDialogOnUnmount, routeFailure } from "~/app/_components/dialogFailure";
 import LocalDate from "~/app/_components/LocalDate";
+import { ProBadge } from "~/app/_components/ProBadge";
 import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
@@ -40,6 +41,8 @@ import { useNowAtBoundaries } from "./boundaryClock";
 type BookingUser = {
   firstName: string;
   id: string;
+  /** From the server: shows the Pro badge after the name. */
+  isPro?: boolean;
   lastName: string;
   profilePic: string | null;
 };
@@ -283,9 +286,12 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
           <Stack gap={0} style={{ minWidth: 0 }}>
             {/* The link truncates itself (.ellipsis): a truncating parent would
                 clip its enlarged hit area and lose the ellipsis. */}
-            <Text size="sm" fw={600}>
-              <Link href={`/app/photographer/${user.id}`} className="tap-link ellipsis">{name}</Link>
-            </Text>
+            <Group gap={6} wrap="nowrap">
+              <Text size="sm" fw={600} style={{ minWidth: 0 }}>
+                <Link href={`/app/photographer/${user.id}`} className="tap-link ellipsis">{name}</Link>
+              </Text>
+              {user.isPro && <ProBadge />}
+            </Group>
             <Text size="xs" c="dimmed">
               {variant === "sent" ? "Event owner" : "Applicant"}
             </Text>

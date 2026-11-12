@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   Container,
   Group,
   Paper,
@@ -9,15 +10,17 @@ import {
   ThemeIcon,
   Title,
 } from "@mantine/core";
-import { IconCheck, IconCrown } from "@tabler/icons-react";
+import { IconChartBar, IconCheck, IconCrown } from "@tabler/icons-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { parseCheckoutReturn } from "~/_utils/checkoutStatus";
 import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { hasProAccess } from "~/_utils/subscriptionView";
+import { NextLink } from "~/app/_components/NextLink";
 import PageHeader from "~/app/_components/PageHeader";
 import ProFeatures from "~/app/_components/plans/ProFeatures";
+import SupportCard from "~/app/_components/support/SupportCard";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
@@ -139,11 +142,24 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                   )}
                 </Group>
                 <ProFeatures pricing={pricing} />
+                {isProUser && (
+                  <Button
+                    component={NextLink}
+                    href="/app/insights"
+                    variant="light"
+                    size="sm"
+                    leftSection={<IconChartBar size={16} aria-hidden />}
+                    data-testid="view-insights"
+                  >
+                    View insights
+                  </Button>
+                )}
               </Stack>
             </Paper>
           </SimpleGrid>
         </Stack>
 
+        <SupportCard isPro={isProUser} replyTo={user.email} />
       </Stack>
     </Container>
   );

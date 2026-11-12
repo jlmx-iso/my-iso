@@ -357,6 +357,12 @@ export const RateLimits = {
   BILLING_RESYNC: { limit: 120, name: "billing-resync", onError: "allow", windowSeconds: 5 * MINUTE },
   BOOKING_UPDATE: { limit: 60, name: "booking-update", onError: "allow", windowSeconds: HOUR },
   PLACES_AUTOCOMPLETE: { limit: 60, name: "places-autocomplete", onError: "allow", windowSeconds: MINUTE },
+  // Pro insights: a page load is one request; polling is what this stops.
+  INSIGHTS: { limit: 30, name: "insights", onError: "allow", windowSeconds: MINUTE },
+  // Pro support requests: each sends an email to the support inbox. "deny":
+  // a limiter that silently vanished would let one account flood the inbox.
+  SUPPORT_REQUEST: { limit: 5, name: "support-request", onError: "deny", windowSeconds: HOUR },
+  SUPPORT_REQUEST_DAILY: { limit: 10, name: "support-request-daily", onError: "deny", windowSeconds: DAY },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 /**

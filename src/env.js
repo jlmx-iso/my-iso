@@ -72,6 +72,7 @@ export const env = createEnv({
     STRIPE_STANDARD_ANNUAL_PRICE_ID: process.env.STRIPE_STANDARD_ANNUAL_PRICE_ID,
     STRIPE_STANDARD_MONTHLY_PRICE_ID: process.env.STRIPE_STANDARD_MONTHLY_PRICE_ID,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    SUPPORT_INBOX_EMAIL: process.env.SUPPORT_INBOX_EMAIL,
   },
 
   /** Runtime, server only. */
@@ -122,6 +123,10 @@ export const env = createEnv({
     STRIPE_STANDARD_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_STANDARD_MONTHLY_PRICE_ID: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string(),
+    // Where Pro members' in-app support requests are sent (subject tagged
+    // "[Pro]"). Optional: defaults to NEXT_PUBLIC_SUPPORT_EMAIL, then
+    // support@myiso.app. Not shown to anyone.
+    SUPPORT_INBOX_EMAIL: z.string().email().optional(),
   },
 
   /**

@@ -7,6 +7,8 @@ import PortfolioSection from "~/app/_components/portfolio/PortfolioSection";
 import { MessageAction } from "~/app/_components/profiles/MessageAction";
 import ProfileHeader from "~/app/_components/profiles/ProfileHeader";
 import ReviewsSection, { type ReviewViewer } from "~/app/_components/profiles/ReviewsSection";
+import ViewBeacon from "~/app/_components/ViewBeacon";
+import { viewSource } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -31,12 +33,15 @@ export default async function PhotographerProfilePage({ params }: PageProps) {
       ? "owner"
       : "member";
 
+  const source = await viewSource();
+
   const messageHref = `/app/messages?new=${photographer.userId}`;
   const signInHref = (destination: string) => `/login?callbackUrl=${encodeURIComponent(destination)}`;
 
   return (
     <Container size="lg" py="md" px={0}>
       <Stack gap="xl">
+        {viewer !== "owner" && <ViewBeacon kind="profile" id={photographer.userId} source={source} />}
         <ProfileHeader
           photographer={photographer}
           coverImage={images[0]?.image}

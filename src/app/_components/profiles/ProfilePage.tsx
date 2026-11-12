@@ -1,8 +1,10 @@
-import { Button, Divider, Stack } from "@mantine/core";
+import { Anchor, Button, Divider, Group, Stack } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
-import { IconExternalLink, IconPencil } from "@tabler/icons-react";
+import { IconArrowRight, IconChartBar, IconExternalLink, IconPencil } from "@tabler/icons-react";
 
 import { NextLink } from "~/app/_components/NextLink";
+import ViewBeacon from "~/app/_components/ViewBeacon";
+import { viewSource } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -14,7 +16,8 @@ import ReviewsSection from "./ReviewsSection";
 import PortfolioSection from "../portfolio/PortfolioSection";
 
 type ProfilePageProps = {
-  photographer: Photographer;
+  /** `isPro` from the server, for the Pro badge. */
+  photographer: Photographer & { isPro: boolean };
   /** Render the edit form instead of the profile (owner only). */
   isEditing?: boolean;
 };
@@ -30,19 +33,39 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
     const me = await caller.user.getMe();
     return <EditProfile photographer={photographer} handle={me.handle} />;
   }
-
-  const [images, favorite, owner] = await Promise.all([
+  const [images, favorite, owner, source, weekViews] = await Promise.all([
     caller.photographer.getPortfolioImages({ photographerId: photographer.id }),
     isSelf ? Promise.resolve({ isFavorite: false }) : caller.user.isFavorite({ targetId: photographer.id }),
     isSelf ? caller.user.getMe() : Promise.resolve(null),
+    viewSource(),
+    // A Pro member's own profile links to their insights with last week's number.
+    isSelf && photographer.isPro
+      ? caller.insights
+          .getSummary({ days: 7 })
+          .then((summary) => summary.profileViews.value)
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   return (
     <Stack w="100%" gap="xl">
+      {/* For the member's insights; the owner's own visits are not counted. */}
+      {!isSelf && <ViewBeacon kind="profile" id={photographer.userId} source={source} />}
       <ProfileHeader
         photographer={photographer}
         coverImage={images[0]?.image}
         canChangePhoto={isSelf}
+        footer={
+          weekViews !== null && (
+            <Anchor component={NextLink} href="/app/insights" size="sm" fw={600} className="tap-link" w="fit-content" data-testid="profile-insights-link">
+              <Group gap={6} wrap="nowrap">
+                <IconChartBar size={16} aria-hidden />
+                {weekViews.toLocaleString("en-US")} profile {weekViews === 1 ? "view" : "views"} in the last 7 days
+                <IconArrowRight size={14} aria-hidden />
+              </Group>
+            </Anchor>
+          )
+        }
         actions={
           isSelf ? (
             <>

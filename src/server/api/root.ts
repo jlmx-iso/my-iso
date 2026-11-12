@@ -6,6 +6,7 @@ import { bookingRouter } from "./routers/booking";
 import { discoverRouter } from "./routers/discover";
 import { eventRouter } from "./routers/event";
 import { googleRouter } from "./routers/google";
+import { insightsRouter } from "./routers/insights";
 import { inviteRouter } from "./routers/invite";
 import { messageRouter } from "./routers/message";
 import { notificationRouter } from "./routers/notification";
@@ -13,6 +14,7 @@ import { photographerRouter } from "./routers/photographer";
 import { reviewRouter } from "./routers/review";
 import { searchRouter } from "./routers/search";
 import { subscriptionRouter } from "./routers/subscription";
+import { supportRouter } from "./routers/support";
 import { userRouter } from "./routers/user";
 import { waitlistRouter } from "./routers/waitlist";
 
@@ -28,6 +30,7 @@ export const appRouter = createTRPCRouter({
   discover: discoverRouter,
   event: eventRouter,
   google: googleRouter,
+  insights: insightsRouter,
   invite: inviteRouter,
   message: messageRouter,
   notification: notificationRouter,
@@ -35,6 +38,7 @@ export const appRouter = createTRPCRouter({
   review: reviewRouter,
   search: searchRouter,
   subscription: subscriptionRouter,
+  support: supportRouter,
   user: userRouter,
   waitlist: waitlistRouter,
 });

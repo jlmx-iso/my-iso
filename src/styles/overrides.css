@@ -123,3 +123,9 @@ h5 > a.ellipsis {
   white-space: nowrap;
   vertical-align: top;
 }
+
+/* Insights chart columns: the focus ring sits inside the column, so neighbours do not hide it. */
+.chart-column:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
