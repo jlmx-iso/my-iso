@@ -24,6 +24,7 @@ import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
+import type { BillingIssue } from "~/server/api/routers/subscription";
 import { api } from "~/trpc/server";
 
 import BillingActions from "./_components/BillingActions";
@@ -68,6 +69,26 @@ const FREE_FEATURES = [
   "Apply to 3 bookings per month",
 ];
 
+/** One line on why a subscription needs attention, next to "Manage Subscription". */
+function billingIssueNotice(issue: BillingIssue | null, hasProAccess: boolean): string | null {
+  switch (issue) {
+    case "payment_failed":
+      return hasProAccess
+        ? "Your last payment failed. Update your payment method in Manage Subscription to keep Pro."
+        : "Your Pro subscription is on hold because a payment failed. Update your payment method in Manage Subscription to restore it.";
+    case "paused":
+      return "Your Pro subscription is paused. Resume it in Manage Subscription.";
+    case "incomplete":
+      return "Your first payment has not gone through yet. Complete or retry it in Manage Subscription.";
+    case "disputed":
+      return "Pro is on hold while a payment dispute is open with your bank. Contact support if this is a mistake.";
+    case "unknown_status":
+      return "Your subscription needs attention. Open Manage Subscription to review it.";
+    case null:
+      return null;
+  }
+}
+
 export default async function SettingsPage() {
   const session = await auth();
   if (!session?.user) return null;
@@ -78,9 +99,22 @@ export default async function SettingsPage() {
     caller.user.getMe(),
   ]);
 
-  const isProUser = subscription?.isActive === true;
+  const isProUser = subscription?.hasProAccess === true;
   const isCanceled = subscription?.isCanceled === true;
   const pricing = getPricingForRole(user.role);
+
+  // A subscription that cannot start a new checkout is managed in the
+  // billing portal, WHETHER OR NOT it currently gives Pro access: that is
+  // where a failed payment is fixed and a paused or unfinished subscription
+  // is resumed or ended. (Offering "Upgrade" there would only be refused.)
+  const billingMode = !subscription
+    ? "checkout"
+    : subscription.isLifetime
+      ? "none"
+      : subscription.canStartCheckout
+        ? "checkout"
+        : "portal";
+  const billingNotice = subscription ? billingIssueNotice(subscription.billingIssue, isProUser) : null;
 
   return (
     <Container size="md" py="lg">
@@ -104,7 +138,18 @@ export default async function SettingsPage() {
                   {isProUser ? "Pro" : "Free"}
                 </Badge>
               </Group>
-              {isProUser && !isCanceled && (
+              {billingNotice && (
+                <Text size="sm" c="red">
+                  {billingNotice}
+                  {isProUser && subscription?.accessEndsAt && (
+                    <>
+                      {" "}Pro stays on until{" "}
+                      <LocalDate date={new Date(subscription.accessEndsAt).toISOString()} />.
+                    </>
+                  )}
+                </Text>
+              )}
+              {isProUser && !isCanceled && !billingNotice && (
                 <Text size="sm" c="dimmed">
                   Your Pro subscription is active. You have access to all Pro features.
                 </Text>
@@ -118,13 +163,13 @@ export default async function SettingsPage() {
                   .
                 </Text>
               )}
-              {!isProUser && (
+              {!isProUser && !billingNotice && (
                 <Text size="sm" c="dimmed">
                   You are on the free plan. Upgrade to Pro to unlock all features.
                 </Text>
               )}
             </Stack>
-            <BillingActions isProUser={isProUser} pricing={pricing} />
+            <BillingActions mode={billingMode} pricing={pricing} />
           </Group>
         </Paper>
 
