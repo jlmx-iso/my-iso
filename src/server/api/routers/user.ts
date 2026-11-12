@@ -35,6 +35,8 @@ export const userRouter = createTRPCRouter({
    */
   updateProfile: protectedProcedure
     .input(z.object({
+      firstName: z.string().min(1).optional(),
+      lastName: z.string().min(1).optional(),
       phone: phoneSchemaOptional,
       handle: z.string().min(1).optional(),
       city: z.string().optional(),

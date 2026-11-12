@@ -18,9 +18,9 @@ import { notifications } from "@mantine/notifications";
 import { IconUpload } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { dataUrlToBase64, logger } from "~/_utils";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Modal } from "~/app/_components/Modal";
-import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
 type PortfolioUploadProps = {
@@ -55,7 +55,7 @@ export default function PortfolioUpload({ onSuccess }: PortfolioUploadProps) {
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64File = reader.result?.toString().split(",")[1];
+      const base64File = dataUrlToBase64(reader.result);
 
       if (!base64File) {
         setUploading(false);
@@ -102,6 +102,7 @@ export default function PortfolioUpload({ onSuccess }: PortfolioUploadProps) {
       <Image
         key={index}
         src={imageUrl}
+        alt={`Preview of ${file.name}`}
         onLoad={() => URL.revokeObjectURL(imageUrl)}
         radius="md"
       />

@@ -1,4 +1,5 @@
 import { PostHog } from "posthog-node";
+
 import { env } from "~/env";
 
 let _client: PostHog | null = null;
@@ -6,13 +7,11 @@ let _client: PostHog | null = null;
 export function getPostHogClient(): PostHog | null {
   if (env.NODE_ENV === "test") return null;
   if (!process.env.POSTHOG_API_KEY) return null;
-  if (!_client) {
-    _client = new PostHog(process.env.POSTHOG_API_KEY, {
-      host: "https://us.i.posthog.com",
-      flushAt: 1,
-      flushInterval: 0,
-    });
-  }
+  _client ??= new PostHog(process.env.POSTHOG_API_KEY, {
+    host: "https://us.i.posthog.com",
+    flushAt: 1,
+    flushInterval: 0,
+  });
   return _client;
 }
 

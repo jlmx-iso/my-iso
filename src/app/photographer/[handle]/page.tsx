@@ -1,6 +1,6 @@
 "use client";
 
-import { Container, Stack, Text } from "@mantine/core";
+import { Container, Stack } from "@mantine/core";
 import { IconCamera } from "@tabler/icons-react";
 import { useParams } from "next/navigation";
 

@@ -70,7 +70,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
 
   const photo = user.photographer;
   const avatar = photo?.avatar ?? user.profilePic;
-  const displayName = photo?.companyName ?? `${user.firstName} ${user.lastName}`;
+  const normalizedCompanyName = photo?.companyName?.trim();
+  const displayName = normalizedCompanyName || (`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User");
   const location = photo?.location ?? [user.city, user.state].filter(Boolean).join(", ");
 
   const hasPortfolio = photo?.portfolioImages && photo.portfolioImages.length > 0;
@@ -102,13 +103,13 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
       <Box
         p="lg"
         style={{
-          borderRadius: "var(--mantine-radius-lg)",
-          border: "1px solid var(--mantine-color-gray-2)",
           background: "var(--mantine-color-body)",
+          border: "1px solid var(--mantine-color-gray-2)",
+          borderRadius: "var(--mantine-radius-lg)",
+          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.08)",
           overflow: "hidden",
           position: "relative",
-          boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.04)",
-          transform: isTop ? undefined : "scale(0.97) translateY(8px)",
+          transform: isTop ? undefined : "scale(0.93) translateY(20px)",
         }}
       >
         {/* Swipe indicators */}
@@ -157,7 +158,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
           {/* Avatar + Name + Location */}
           <Group gap="md" wrap="nowrap">
             <Avatar src={avatar} size={64} radius="xl" color="orange">
-              {user.firstName[0]}
+              {(user.firstName || "U")[0]}
             </Avatar>
             <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
               <Title order={4} lineClamp={1}>{displayName}</Title>
@@ -249,7 +250,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 <Text size="sm" fw={600}>Portfolio</Text>
                 {hasPortfolio ? (
                   <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
-                    {photo!.portfolioImages!.map((img, i) => (
+                    {photo.portfolioImages!.map((img, i) => (
                       <Image
                         key={i}
                         src={img.image}
@@ -282,7 +283,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
               </Stack>
 
               {/* Rating detail */}
-              {photo && photo.avgRating != null && (
+              {photo?.avgRating != null && (
                 <Group gap="xs">
                   <Group gap={4}>
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -315,8 +316,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                         </Group>
                       </Anchor>
                     )}
-                    {photo.instagram && (
-                      <Anchor href={instagramUrl(photo.instagram)} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
+                    {photo.instagram && instagramUrl(photo.instagram) && (
+                      <Anchor href={instagramUrl(photo.instagram)!} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
                         <Group gap={4}>
                           <ThemeIcon size={20} variant="subtle" color="grape">
                             <IconBrandInstagram size={14} />

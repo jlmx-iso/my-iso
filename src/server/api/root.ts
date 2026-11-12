@@ -1,4 +1,6 @@
 
+import { createTRPCRouter } from "~/server/api/trpc";
+
 import { authRouter } from "./routers/auth";
 import { bookingRouter } from "./routers/booking";
 import { discoverRouter } from "./routers/discover";
@@ -15,7 +17,6 @@ import { subscriptionRouter } from "./routers/subscription";
 import { userRouter } from "./routers/user";
 import { waitlistRouter } from "./routers/waitlist";
 
-import { createTRPCRouter } from "~/server/api/trpc";
 
 /**
  * This is the primary router for your server.

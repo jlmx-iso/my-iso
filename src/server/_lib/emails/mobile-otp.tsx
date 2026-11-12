@@ -33,7 +33,7 @@ export function MobileOtpEmail({ code }: MobileOtpEmailProps) {
       </Section>
 
       <Text style={smallText}>
-        If you didn't request this code, you can safely ignore this email.
+        If you didn&apos;t request this code, you can safely ignore this email.
       </Text>
     </Layout>
   );

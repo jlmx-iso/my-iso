@@ -29,6 +29,7 @@ import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vim
 
 type Photographer = {
   id: string;
+  userId: string;
   name: string;
   companyName: string;
   location: string;
@@ -160,8 +161,8 @@ export default function PublicProfileHero({
               {safeWebsite && (
                 <SocialLink href={safeWebsite} icon={IconWorld} label="Website" />
               )}
-              {photographer.instagram && (
-                <SocialLink href={instagramUrl(photographer.instagram)} icon={IconBrandInstagram} label="Instagram" />
+              {photographer.instagram && instagramUrl(photographer.instagram) && (
+                <SocialLink href={instagramUrl(photographer.instagram)!} icon={IconBrandInstagram} label="Instagram" />
               )}
               {photographer.facebook && (
                 <SocialLink href={facebookUrl(photographer.facebook)} icon={IconBrandFacebook} label="Facebook" />
@@ -186,7 +187,7 @@ export default function PublicProfileHero({
         <Stack gap="xs">
           <Button
             component={Link}
-            href="/app/messages"
+            href={`/app/messages?new=${photographer.userId}`}
             leftSection={<IconMessage size={16} />}
             variant="filled"
           >

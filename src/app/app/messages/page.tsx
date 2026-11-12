@@ -1,11 +1,12 @@
 import { Center } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 
-import MessageFeed from "./_components/MessageFeed";
 
 import EmptyState from "~/app/_components/EmptyState";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
+
+import MessageFeed from "./_components/MessageFeed";
 
 export default async function Page({ params }: { params: Promise<{ threadId?: string }> }) {
   const { threadId: initialThreadId } = await params;
@@ -30,6 +31,6 @@ export default async function Page({ params }: { params: Promise<{ threadId?: st
   }
 
   return (
-    <MessageFeed threadId={threadId} />
+    <MessageFeed key={threadId} threadId={threadId} />
   );
 }

@@ -20,11 +20,13 @@ import {
   IconShieldCheck,
 } from "@tabler/icons-react";
 
-import BillingActions from "./_components/BillingActions";
+import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
+
+import BillingActions from "./_components/BillingActions";
 
 const PRO_FEATURES = [
   {
@@ -111,7 +113,7 @@ export default async function SettingsPage() {
                 <Text size="sm" c="orange">
                   Your subscription is canceled but remains active until{" "}
                   {subscription.expiresAt
-                    ? new Date(subscription.expiresAt).toLocaleDateString()
+                    ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
                     : "the end of your billing period"}
                   .
                 </Text>
@@ -216,25 +218,6 @@ export default async function SettingsPage() {
           </SimpleGrid>
         </Stack>
 
-        {/* Pro Features Detail */}
-        <Stack gap="md">
-          <Title order={3}>Pro Features</Title>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">
-            {PRO_FEATURES.map((feature) => (
-              <Paper key={feature.title} withBorder p="lg" radius="md">
-                <Stack gap="sm">
-                  <ThemeIcon size={40} radius="md" variant="light" color="orange">
-                    <feature.icon size={20} />
-                  </ThemeIcon>
-                  <Text fw={500}>{feature.title}</Text>
-                  <Text size="sm" c="dimmed">
-                    {feature.description}
-                  </Text>
-                </Stack>
-              </Paper>
-            ))}
-          </SimpleGrid>
-        </Stack>
       </Stack>
     </Container>
   );

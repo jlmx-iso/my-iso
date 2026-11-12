@@ -44,7 +44,7 @@ export function VerifyEmail({
       </Section>
 
       <Text style={smallText}>
-        If the button doesn't work, copy and paste this link into your browser:
+        If the button doesn&apos;t work, copy and paste this link into your browser:
       </Text>
       <Text style={smallText}>
         <Link href={verificationUrl} style={{ color: "#F97316", wordBreak: "break-all" }}>
@@ -53,7 +53,7 @@ export function VerifyEmail({
       </Text>
 
       <Text style={smallText}>
-        This link will expire in 24 hours. If you didn't create an ISO account,
+        This link will expire in 24 hours. If you didn&apos;t create an ISO account,
         you can safely ignore this email.
       </Text>
     </Layout>

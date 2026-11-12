@@ -1,6 +1,7 @@
+import { auth } from "~/auth";
+
 import { ProfilePage } from "../../_components/profiles/ProfilePage";
 
-import { auth } from "~/auth";
 
 
 
@@ -8,7 +9,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const resolvedSearchParams = await searchParams;
   const session = await auth()
 
-  if (!session || !session.user) {
+  if (!session?.user) {
     return null;
   };
 

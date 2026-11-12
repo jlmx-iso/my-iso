@@ -1,4 +1,3 @@
-import type * as React from "react";
 import {
   Button,
   Heading,
@@ -7,6 +6,7 @@ import {
   Hr,
 } from "@react-email/components";
 import { render } from "@react-email/render";
+import type * as React from "react";
 
 import { Layout } from "./components/Layout";
 import {
@@ -42,11 +42,11 @@ export function UpgradePitchEmail({
       preview={`You're getting popular on ISO, ${firstName}`}
       unsubscribeUrl={unsubscribeUrl}
     >
-      <Heading style={heading}>You're getting popular, {firstName}</Heading>
+      <Heading style={heading}>You&apos;re getting popular, {firstName}</Heading>
 
       <Text style={paragraph}>
-        We've been watching your activity on ISO (in the best, least-creepy way
-        possible), and you're on a roll.
+        We&apos;ve been watching your activity on ISO (in the best, least-creepy way
+        possible), and you&apos;re on a roll.
       </Text>
 
       {/* Stats */}
@@ -68,7 +68,7 @@ export function UpgradePitchEmail({
       </Section>
 
       <Text style={paragraph}>
-        You're clearly building something here. ISO Pro can help you take it
+        You&apos;re clearly building something here. ISO Pro can help you take it
         further.
       </Text>
 
@@ -90,7 +90,7 @@ export function UpgradePitchEmail({
       </Section>
 
       <Text style={paragraph}>
-        No pressure — ISO will always have a free tier. But if you're serious
+        No pressure — ISO will always have a free tier. But if you&apos;re serious
         about growing your photography business, Pro is built for people like
         you.
       </Text>

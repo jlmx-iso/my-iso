@@ -20,6 +20,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { formatLocalDate } from "~/_lib/dayjs";
 import PageHeader from "~/app/_components/PageHeader";
 import { api } from "~/trpc/react";
 
@@ -145,7 +146,7 @@ export default function Page() {
                   )}
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Applied {new Date(entry.createdAt).toLocaleDateString()}
+                  Applied {formatLocalDate(entry.createdAt)}
                 </Text>
               </Stack>
 

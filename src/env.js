@@ -19,8 +19,6 @@ export const env = createEnv({
     NEXT_PUBLIC_POSTHOG_PUBLIC_KEY: z.string(),
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: z.string(),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string(),
-    NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   },
 
 
@@ -53,8 +51,6 @@ export const env = createEnv({
     NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
     NEXT_PUBLIC_POSTHOG_PUBLIC_KEY: process.env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY,
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     AUTH_SECRET: process.env.AUTH_SECRET,
     AUTH_URL: process.env.AUTH_URL,
     NODE_ENV: process.env.NODE_ENV,
@@ -91,7 +87,7 @@ export const env = createEnv({
       .url()
       .optional()
       .refine(
-        (str) => !str || !str.includes("YOUR_MYSQL_URL_HERE"),
+        (str) => !str?.includes("YOUR_MYSQL_URL_HERE"),
         "You forgot to change the default URL"
       ),
 

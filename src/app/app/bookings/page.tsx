@@ -69,7 +69,7 @@ export default function BookingsPage() {
               </Text>
             )}
 
-            {myApplications && myApplications.length === 0 && (
+            {myApplications?.length === 0 && (
               <EmptyState
                 icon={IconBriefcase}
                 title="No applications yet"
@@ -101,7 +101,7 @@ export default function BookingsPage() {
               </Text>
             )}
 
-            {receivedApplications && receivedApplications.length === 0 && (
+            {receivedApplications?.length === 0 && (
               <EmptyState
                 icon={IconInbox}
                 title="No applications received"

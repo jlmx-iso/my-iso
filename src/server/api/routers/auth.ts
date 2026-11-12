@@ -221,13 +221,23 @@ export const authRouter = createTRPCRouter({
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
       }
 
-      const user = await ctx.db.user.findUnique({
-        where: { email: normalizedEmail },
-        select: { id: true },
-      });
+      // The `otp` sign-in (src/auth.ts) accepts a code for an existing user,
+      // or for an invitee whose invite /join has just validated: it creates
+      // that user at verification time.
+      const [user, pendingInvite] = await Promise.all([
+        ctx.db.user.findUnique({
+          where: { email: normalizedEmail },
+          select: { id: true },
+        }),
+        ctx.db.pendingInviteValidation.findFirst({
+          where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
+          select: { id: true },
+        }),
+      ]);
 
-      // Silently succeed if no account — avoids email enumeration
-      if (!user) {
+      // Silently succeed for anyone else: avoids email enumeration and stops
+      // this endpoint from mailing codes that can never be accepted.
+      if (!user && !pendingInvite) {
         return { sent: true, devCode: undefined };
       }
 

@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
+
 import { env } from "~/env";
 
 /**

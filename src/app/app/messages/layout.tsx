@@ -1,14 +1,16 @@
 import { Box, Grid, GridCol, ScrollArea, Stack } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
-import ConversationTile from "./_components/ConversationTile";
-import NewMessageModal from "./_components/NewMessageModal";
 
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
+
+import ConversationTile from "./_components/ConversationTile";
+import NewMessageModal from "./_components/NewMessageModal";
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -35,7 +37,7 @@ export default async function Layout({ children, params }: LayoutProps) {
             `}</style>
             <PageHeader
                 title="Messages"
-                action={<NewMessageModal />}
+                action={<Suspense><NewMessageModal /></Suspense>}
             />
             <Grid
                 gutter={0}

@@ -5,46 +5,85 @@ import { useScrollIntoView } from "@mantine/hooks";
 import { IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+
+import { mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
+import ScrollButton from "~/app/_components/buttons/ScrollButton";
+import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
+import { api } from "~/trpc/react";
 
 import ComposeMessage from "./ComposeMessage";
-import MessageListener from "./MessageListener";
 import MessageTile from "./MessageTile";
 
-import ScrollButton from "~/app/_components/buttons/ScrollButton";
-import { api } from "~/trpc/react";
+/** How often to refetch the thread while the realtime socket is not open. */
+const POLL_INTERVAL_MS = 5_000;
 
 type MessageFeedProps = {
     threadId: string;
 };
 
+/**
+ * Renders one thread. Mount it with `key={threadId}` so that the messages
+ * collected for one thread never carry over to another.
+ */
 export default function MessageFeed({ threadId }: MessageFeedProps) {
     const { scrollIntoView, targetRef, scrollableRef } = useScrollIntoView<HTMLDivElement>({
         offset: 60,
     });
-    const session = useSession()
+    const session = useSession();
     const userId = session.data?.user.id;
+    const utils = api.useUtils();
 
     const [isScrollButtonHidden, setIsScrollButtonHidden] = useState(true);
+    // Messages received over the socket or just sent from here. They are
+    // merged with the query result below, so each message renders once and in
+    // order no matter which of the two delivers it first.
+    const [liveMessages, setLiveMessages] = useState<ThreadMessage[]>([]);
 
-    const { data } = api.message.getThreadById.useQuery({ threadId }, { enabled: !!userId });
-    const messages = data?.messages ?? [];
+    const addLiveMessage = useCallback((message: ThreadMessage) => {
+        setLiveMessages((current) => mergeThreadMessages(current, [message]));
+    }, []);
+
+    const realtimeStatus = useMessageWebSocket({
+        onMessage: (message) => {
+            addLiveMessage(message);
+            if (message.sender.id !== userId) {
+                setIsScrollButtonHidden(false);
+            }
+        },
+        // Nothing is replayed after a gap in the connection: fetch what was missed.
+        onOpen: () => void utils.message.getThreadById.invalidate({ threadId }),
+        threadId,
+    });
+
+    const { data } = api.message.getThreadById.useQuery({ threadId }, {
+        enabled: !!userId,
+        // Without an open socket, poll instead (only while the tab is visible).
+        refetchInterval: realtimeStatus === "open" ? false : POLL_INTERVAL_MS,
+        refetchIntervalInBackground: false,
+    });
+
+    const messages = useMemo(
+        () => mergeThreadMessages(data?.messages ?? [], liveMessages),
+        [data?.messages, liveMessages],
+    );
 
     const hideScrollButton = () => setIsScrollButtonHidden(true);
-    const showScrollButton = () => setIsScrollButtonHidden(false);
 
     const scrollToBottom = () => {
         scrollIntoView({ alignment: "end" });
         hideScrollButton();
     };
 
-    const onNewMessage = () => {
-        showScrollButton();
+    const onSent = (message: ThreadMessage) => {
+        addLiveMessage(message);
+        // Wait for the new tile to render before scrolling to it.
+        requestAnimationFrame(scrollToBottom);
     };
 
     const title = data?.participants
         .filter(p => p.id !== userId)
-        .map(p => `${p.firstName} ${p.lastName}`)
+        .map(p => `${p.firstName || ""} ${p.lastName || ""}`.trim() || "User")
         .join(", ");
 
     if (!userId) {
@@ -82,18 +121,13 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                     px="xs"
                     py="sm"
                 >
-                    <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} />
                     {messages.map((message, index) => {
-                        const nextMessage = messages[index + 1];
-                        const isLastInGroup = !nextMessage || nextMessage.sender.id !== message.sender.id;
+                        const isLastInGroup = messages[index + 1]?.sender.id !== message.sender.id;
                         return (
                             <MessageTile
                                 key={message.id}
-                                message={{
-                                    ...message,
-                                    isAuthor: userId === message.sender.id,
-                                    senderId: message.sender.id
-                                }}
+                                message={message}
+                                isAuthor={message.sender.id === userId}
                                 showTimestamp={isLastInGroup}
                                 isLastInGroup={isLastInGroup}
                             />
@@ -110,8 +144,8 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
 
             {/* Compose */}
             <Box px="md" pb="md">
-                <ComposeMessage threadId={threadId} />
+                <ComposeMessage threadId={threadId} onSent={onSent} />
             </Box>
         </Stack>
-    )
+    );
 }

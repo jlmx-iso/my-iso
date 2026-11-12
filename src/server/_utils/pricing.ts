@@ -1,7 +1,8 @@
-import { USER_ROLES, type UserRole } from "./roles";
 
 import { logger } from "~/_utils";
 import { env } from "~/env";
+
+import { USER_ROLES, type UserRole } from "./roles";
 
 export type PricingInfo = {
   annualPrice: number;
@@ -49,7 +50,7 @@ export function getPriceIdForCheckout(
 ): string | null {
   const isFounding = FOUNDING_ROLES.includes(role as UserRole);
   const tier = isFounding ? "founding" : "standard";
-  const key = `${tier}:${billingInterval}` as keyof typeof PRICE_ENV_VAR_MAP;
+  const key = `${tier}:${billingInterval}` as const;
   const envVarName = PRICE_ENV_VAR_MAP[key];
 
   const priceId = env[envVarName] ?? null;

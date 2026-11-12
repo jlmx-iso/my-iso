@@ -12,19 +12,15 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-
 import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import { useSession } from "next-auth/react";
 import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
-import Cropper, { type CropperProps } from "react-easy-crop";
 import type { Area } from "react-easy-crop";
+import Cropper from "react-easy-crop";
 
-import { OnboardingComplete } from "./OnboardingComplete";
-import { PlanSelection } from "./PlanSelection";
-import { WelcomeScreen } from "./WelcomeScreen";
-
-import { isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
+import { dataUrlToBase64, isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
@@ -32,6 +28,10 @@ import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { env } from "~/env";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
+
+import { OnboardingComplete } from "./OnboardingComplete";
+import { PlanSelection } from "./PlanSelection";
+import { WelcomeScreen } from "./WelcomeScreen";
 
 // Onboarding stages (not steps in the stepper — separate screens)
 type Stage = "welcome" | "profile" | "plan" | "complete";
@@ -72,6 +72,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const cropSrcFileRef = useRef<FileWithPath | null>(null);
 
+  const { update: updateSession } = useSession();
   const updateProfile = api.user.updateProfile.useMutation();
   const createPhotographer = api.photographer.create.useMutation();
   const uploadAvatar = api.photographer.uploadProfileImage.useMutation();
@@ -84,11 +85,16 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const error =
     updateProfile.error ?? createPhotographer.error ?? uploadAvatar.error;
 
+  // Name fields are editable when not pre-filled (e.g. email OTP sign-up)
+  const nameEditable = !user.firstName && !user.lastName;
+
   const form = useForm({
     initialValues: {
       companyName: "",
+      firstName: user.firstName,
       handle: user.handle ?? "",
       instagram: "",
+      lastName: user.lastName,
       location: "",
       phoneNumber: user.phone ?? "",
       website: "",
@@ -96,8 +102,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     validate: {
       companyName: (value: string) =>
         value.length > 0 ? null : "Business name is required",
+      firstName: (value: string) =>
+        nameEditable && !value.trim() ? "First name is required" : null,
       instagram: (value: string) =>
         !value || isValidInstagramHandle(value) ? null : "Enter a valid Instagram handle (e.g. yourhandle)",
+      lastName: (value: string) =>
+        nameEditable && !value.trim() ? "Last name is required" : null,
       location: (value: string) =>
         value.length > 0 ? null : "Location is required",
       phoneNumber: (value: string) =>
@@ -113,9 +123,13 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   // Preview URL for the cropped file
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   useEffect(() => {
+    // The object URL is an external resource owned by this effect: it must be
+    // created and revoked together, so it cannot be derived during render.
+    /* eslint-disable react-hooks/set-state-in-effect -- see above */
     if (!avatarFiles?.[0]) { setAvatarPreviewUrl(null); return; }
     const url = URL.createObjectURL(avatarFiles[0]);
     setAvatarPreviewUrl(url);
+    /* eslint-enable react-hooks/set-state-in-effect */
     return () => URL.revokeObjectURL(url);
   }, [avatarFiles]);
 
@@ -181,7 +195,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
     e.preventDefault();
     const stepFields: Record<number, string[]> = {
-      0: ["location", "phoneNumber"],
+      0: [...(nameEditable ? ["firstName", "lastName"] : []), "location", "phoneNumber"],
       1: ["companyName", "instagram", "website"],
     };
     const fields = stepFields[profileStep] ?? [];
@@ -205,8 +219,12 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
 
     const values = form.values;
 
+    const firstName = nameEditable ? values.firstName : user.firstName;
+    const lastName = nameEditable ? values.lastName : user.lastName;
+
     try {
       await updateProfile.mutateAsync({
+        ...(nameEditable ? { firstName, lastName } : {}),
         handle: values.handle || undefined,
         phone: normalizePhone(values.phoneNumber),
       });
@@ -221,7 +239,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
         facebook: null,
         instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : null,
         location: values.location,
-        name: `${user.firstName} ${user.lastName}`,
+        name: `${firstName} ${lastName}`,
         tiktok: null,
         twitter: null,
         vimeo: null,
@@ -240,7 +258,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       await new Promise<void>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = async () => {
-          const base64File = reader.result?.toString().split(",")[1];
+          const base64File = dataUrlToBase64(reader.result);
           if (base64File) {
             try {
               await uploadAvatar.mutateAsync({ image: base64File });
@@ -277,6 +295,8 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       });
     }
 
+    // Refresh session so navbar shows updated name/avatar
+    await updateSession();
     setStage("plan");
   };
 
@@ -344,16 +364,35 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
             <Stepper.Step label="The basics" description="Who you are">
               <Stack gap="sm" mt="md">
                 <Group grow>
-                  <TextInput
-                    label="First Name"
-                    value={user.firstName}
-                    disabled
-                  />
-                  <TextInput
-                    label="Last Name"
-                    value={user.lastName}
-                    disabled
-                  />
+                  {nameEditable ? (
+                    <>
+                      <TextInput
+                        label="First Name"
+                        placeholder="First name"
+                        required
+                        {...form.getInputProps("firstName")}
+                      />
+                      <TextInput
+                        label="Last Name"
+                        placeholder="Last name"
+                        required
+                        {...form.getInputProps("lastName")}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <TextInput
+                        label="First Name"
+                        value={user.firstName}
+                        disabled
+                      />
+                      <TextInput
+                        label="Last Name"
+                        value={user.lastName}
+                        disabled
+                      />
+                    </>
+                  )}
                 </Group>
                 <TextInput label="Email" value={user.email} disabled />
                 <TextInput
@@ -365,7 +404,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                 <Stack gap={4}>
                   <TextInput
                     label="Username"
-                    placeholder="@yourhandle (optional)"
+                    placeholder="yourhandle (optional)"
                     leftSection={<Text size="sm" c="dimmed">@</Text>}
                     {...form.getInputProps("handle")}
                   />
@@ -453,6 +492,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                   <Box pos="relative">
                     <Image
                       src={avatarPreviewUrl}
+                      alt="Profile photo preview"
                       radius="md"
                       style={{ maxHeight: 400, objectFit: "cover", width: "100%" }}
                     />

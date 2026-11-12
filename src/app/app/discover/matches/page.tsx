@@ -1,7 +1,7 @@
 import { Stack } from "@mantine/core";
 
-import PageHeader from "~/app/_components/PageHeader";
 import { MatchesList } from "~/app/_components/discover";
+import PageHeader from "~/app/_components/PageHeader";
 
 export default function MatchesPage() {
   return (

@@ -12,7 +12,7 @@ import {
 import { useHover } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconCamera, IconEdit, IconStar, IconTrash } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { api } from "~/trpc/react";
 
@@ -42,8 +42,9 @@ export default function PortfolioImageCard({
 }: PortfolioImageCardProps) {
   const { hovered, ref } = useHover();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [broken, setBroken] = useState(false);
-  useEffect(() => { setBroken(false); }, [image]);
+  // Track which src failed so a new image gets a fresh attempt.
+  const [brokenImage, setBrokenImage] = useState<string | null>(null);
+  const broken = brokenImage === image;
   const deleteMutation = api.photographer.deletePortfolioImage.useMutation();
 
   const parsedTags: string[] = (() => {
@@ -67,7 +68,7 @@ export default function PortfolioImageCard({
         color: "green",
       });
       onDelete?.();
-    } catch (error) {
+    } catch {
       notifications.show({
         title: "Error",
         message: "Failed to delete image. Please try again.",
@@ -92,7 +93,7 @@ export default function PortfolioImageCard({
         overflow: "hidden",
         cursor: onClick ? "pointer" : "default",
         breakInside: "avoid",
-        marginBottom: "var(--mantine-spacing-md)",
+        marginBottom: "var(--mantine-spacing-sm)",
       }}
       onClick={onClick}
     >
@@ -116,7 +117,7 @@ export default function PortfolioImageCard({
           alt={title}
           radius="md"
           style={{ display: "block", width: "100%" }}
-          onError={() => setBroken(true)}
+          onError={() => setBrokenImage(image)}
         />
       )}
 

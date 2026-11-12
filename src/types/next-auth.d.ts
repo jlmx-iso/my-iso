@@ -10,7 +10,7 @@ declare module "next-auth" {
   interface User {
     firstName: string;
     lastName: string;
-    profilePic?: string;
+    profilePic?: string | null;
   }
 
   interface Session {
@@ -20,7 +20,8 @@ declare module "next-auth" {
       lastName: string;
       profilePic?: string;
     } & DefaultSession["user"];
-    accessToken: string;
+    /** Google OAuth access token; absent for OTP and mobile sessions. */
+    accessToken?: string;
   }
 }
 
@@ -28,5 +29,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     accessToken?: string;
+    firstName?: string;
+    lastName?: string;
+    profilePic?: string;
   }
 }

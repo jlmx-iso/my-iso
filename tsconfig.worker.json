@@ -1,0 +1,31 @@
+{
+  /* Type-checks the Cloudflare Worker entry (worker.ts) and its Durable
+     Objects against the Workers runtime types instead of the DOM/Node types
+     the Next.js app uses. wrangler bundles these files itself; this config
+     only exists for `tsc --noEmit` and ESLint. */
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["@cloudflare/workers-types"],
+    /* The generated OpenNext worker is imported through an alias (see
+       `[alias]` in wrangler.toml) and typed by a hand-written declaration. */
+    "paths": {
+      "open-next-worker": ["./open-next-worker.d.ts"]
+    }
+  },
+  "include": [
+    "worker.ts",
+    "src/do/**/*.ts",
+    "src/types/chatRoom.ts",
+    "cloudflare-env.d.ts",
+    "open-next-worker.d.ts"
+  ]
+}

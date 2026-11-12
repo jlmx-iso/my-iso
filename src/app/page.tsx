@@ -26,12 +26,12 @@ import {
 } from "@tabler/icons-react";
 import { redirect } from "next/navigation";
 
-import { auth } from "~/auth";
 import {
   FadeInOnScroll,
   StaggerContainer,
   SmoothScroll,
 } from "~/app/_components/animations";
+import { auth } from "~/auth";
 
 function HeroSection() {
   return (

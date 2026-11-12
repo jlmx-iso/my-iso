@@ -1,15 +1,16 @@
 "use client";
 
-import { Card, Group, Text } from "@mantine/core";
+import { Box, Group, Stack, Text } from "@mantine/core";
 import { type Comment } from "@prisma/client";
 import { useState } from "react";
 
+
+import { api } from "~/trpc/react";
 
 import LikeButton from "../buttons/LikeButton";
 import Timemarker from "../Timemarker";
 import UserBadge from "../UserBadge";
 
-import { api } from "~/trpc/react";
 
 
 
@@ -39,18 +40,20 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
     const { user } = comment;
 
     return (
-        <Card withBorder={false}>
-            <Group justify="space-between" align="start" style={{ flexDirection: "row-reverse" }}>
-                <Timemarker date={comment.createdAt} />
+        <Box py="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
+            <Group justify="space-between" align="center" mb={4}>
                 <UserBadge user={{
                     avatar: user.profilePic,
-                    name: user.firstName + " " + user.lastName,
+                    name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "User",
                     userId: comment.userId
                 }} />
+                <Timemarker date={comment.createdAt} />
             </Group>
-            <Text>{comment.content}</Text>
-            <LikeButton isLiked={comment.isLiked} mutate={mutate} targetType="comment" targetId={comment.id} isPending={isPending} numberOfLikes={comment.commentLikes} />
-        </Card>
+            <Stack gap={4} pl={46}>
+                <Text size="sm">{comment.content}</Text>
+                <LikeButton isLiked={comment.isLiked} mutate={mutate} targetType="comment" targetId={comment.id} isPending={isPending} numberOfLikes={comment.commentLikes} />
+            </Stack>
+        </Box>
     );
 
 }

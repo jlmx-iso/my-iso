@@ -43,8 +43,8 @@ export function MakeConnectionEmail({
 
       <Text style={paragraph}>
         Find someone whose work catches your eye and send them a note. It
-        doesn't have to be fancy — "Hey, I love your work, especially [that
-        shot]" goes a long way. You'd be surprised how many people are just
+        doesn&apos;t have to be fancy — &quot;Hey, I love your work, especially [that
+        shot]&quot; goes a long way. You&apos;d be surprised how many people are just
         waiting for someone to reach out.
       </Text>
 

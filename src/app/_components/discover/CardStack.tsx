@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import EmptyState from "~/app/_components/EmptyState";
 import { api } from "~/trpc/react";
+
 import MatchCelebration from "./MatchCelebration";
 import SwipeCard from "./SwipeCard";
 
@@ -75,6 +76,7 @@ export default function CardStack() {
   useEffect(() => {
     if (deck && currentIndex >= deck.length && deck.length > 0) {
       void refetch();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restarts the stack alongside the refetch this effect triggers
       setCurrentIndex(0);
     }
   }, [currentIndex, deck, refetch]);

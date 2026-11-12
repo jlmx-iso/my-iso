@@ -8,7 +8,7 @@ export default function Page({ params }: { params: { token: string } }) {
     const { error, isError, isPending, isSuccess, mutate: verifyAccount } = api.auth.verifyAccount.useMutation();
     useEffect(() => {
         verifyAccount({ token: params.token });
-    }, [params.token]);
+    }, [params.token, verifyAccount]);
 
     if (isPending) {
         return <p>Verifying...</p>;

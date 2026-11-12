@@ -38,7 +38,7 @@ export function InactiveMissingEmail({
       </Heading>
 
       <Text style={paragraph}>
-        Hey {firstName}, it's been a couple weeks since you've been on ISO,
+        Hey {firstName}, it&apos;s been a couple weeks since you&apos;ve been on ISO,
         and we wanted you to know — the community is growing. New
         photographers are joining every day, events are being posted, and
         connections are being made.
@@ -47,7 +47,7 @@ export function InactiveMissingEmail({
       <Section style={calloutBox}>
         <Text style={calloutText}>
           Your profile is still live, and other photographers can see it.
-          If someone reaches out, you'll want to be around to respond.
+          If someone reaches out, you&apos;ll want to be around to respond.
         </Text>
       </Section>
 

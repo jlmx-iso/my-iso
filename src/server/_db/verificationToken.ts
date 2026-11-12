@@ -1,13 +1,12 @@
-import { generateVerificationCode } from "../_utils";
 
 import { Result, logger } from "~/_utils";
 import { db } from "~/server/db";
 
+import { generateVerificationCode } from "../_utils";
+
 
 export const createVerificationToken = async ({ identifier, token }: { identifier: string; token?: string; }): Promise<Result<string>> => {
-    if (!token) {
-        token = generateVerificationCode();
-    }
+    token ??= generateVerificationCode();
 
     // Validate token format (only 6 digits for security - prevents XSS)
     if (!/^[0-9]{6}$/.test(token)) {

@@ -1,6 +1,5 @@
 import "~/styles/globals.css";
 import '@mantine/core/styles.css';
-import '@mantine/carousel/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 
@@ -8,15 +7,16 @@ import { ColorSchemeScript, MantineProvider } from '@mantine/core';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
+import { auth } from "~/auth";
+import { TRPCReactProvider } from "~/trpc/react";
+
 import AppShell from "./_components/AppShell";
 import { Footer } from "./_components/Footer";
-import { Navbar } from "./_components/NavBar";
 import BottomTabBar from "./_components/nav/BottomTabBar";
+import { Navbar } from "./_components/NavBar";
 import { CSPostHogProvider } from './providers';
 import theme from "./theme";
 
-import { auth } from "~/auth";
-import { TRPCReactProvider } from "~/trpc/react";
 
 
 const inter = Inter({

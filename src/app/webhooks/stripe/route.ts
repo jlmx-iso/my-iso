@@ -45,7 +45,7 @@ const handler = async (req: NextRequest) => {
       // ── Customer events (existing) ──────────────────────────────────
       case 'customer.created':
       case 'customer.updated': {
-        const customer = event.data.object as Stripe.Customer;
+        const customer = event.data.object;
         const customerEmail = customer.email;
 
         if (!customerEmail) {
@@ -71,7 +71,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Checkout completed ──────────────────────────────────────────
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = event.data.object;
 
         if (session.mode !== 'subscription') {
           logger.info('Checkout session is not subscription mode, skipping', {
@@ -144,7 +144,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Invoice payment succeeded ───────────────────────────────────
       case 'invoice.payment_succeeded': {
-        const invoice = event.data.object as Stripe.Invoice;
+        const invoice = event.data.object;
         const customerId = typeof invoice.customer === 'string'
           ? invoice.customer
           : invoice.customer?.id;
@@ -207,7 +207,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Invoice payment failed ──────────────────────────────────────
       case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice;
+        const invoice = event.data.object;
         const customerId = typeof invoice.customer === 'string'
           ? invoice.customer
           : invoice.customer?.id;
@@ -246,7 +246,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Subscription created ────────────────────────────────────────
       case 'customer.subscription.created': {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         const customerId = typeof subscription.customer === 'string'
           ? subscription.customer
           : subscription.customer.id;
@@ -305,7 +305,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Subscription updated ────────────────────────────────────────
       case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         const customerId = typeof subscription.customer === 'string'
           ? subscription.customer
           : subscription.customer.id;
@@ -366,7 +366,7 @@ const handler = async (req: NextRequest) => {
 
       // ── Subscription deleted ────────────────────────────────────────
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         const customerId = typeof subscription.customer === 'string'
           ? subscription.customer
           : subscription.customer.id;

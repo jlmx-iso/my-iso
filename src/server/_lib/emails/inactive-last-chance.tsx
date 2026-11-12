@@ -38,20 +38,20 @@ export function InactiveLastChanceEmail({
       <Heading style={heading}>We miss you, {firstName}</Heading>
 
       <Text style={paragraph}>
-        It's been a month since you've been on ISO, and we'll be honest — we
-        notice when someone goes quiet. Not in a creepy way. In a "we hope
-        you're doing great work out there" kind of way.
+        It&apos;s been a month since you&apos;ve been on ISO, and we&apos;ll be honest — we
+        notice when someone goes quiet. Not in a creepy way. In a &quot;we hope
+        you&apos;re doing great work out there&quot; kind of way.
       </Text>
 
       <Text style={paragraph}>
-        If ISO isn't what you needed, that's okay. We're always making it
+        If ISO isn&apos;t what you needed, that&apos;s okay. We&apos;re always making it
         better, and what you see today is different from what you saw when
         you signed up. New features, more photographers, and a growing
         community of people who love what they do.
       </Text>
 
       <Text style={paragraph}>
-        If you'd like to come back and take a fresh look, we'd love to have
+        If you&apos;d like to come back and take a fresh look, we&apos;d love to have
         you. If not, no hard feelings — you can adjust how often you hear
         from us below.
       </Text>

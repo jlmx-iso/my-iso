@@ -1,16 +1,16 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaD1 } from "@prisma/adapter-d1";
 import type { D1Database } from "@cloudflare/workers-types";
+import { PrismaD1 } from "@prisma/adapter-d1";
+import { PrismaClient } from "@prisma/client";
+import type { SqlDriverAdapterFactory } from "@prisma/client/runtime/client";
 
-import { env } from "~/env";
 import { logger } from "~/_utils";
+import { env } from "~/env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createExtendedClient>;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createExtendedClient(adapter: any) {
+function createExtendedClient(adapter: SqlDriverAdapterFactory) {
   const client = new PrismaClient({
     adapter,
     log:

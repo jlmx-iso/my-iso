@@ -15,7 +15,7 @@ export function SmoothScroll() {
       if (!href) return;
 
       // Match both "/#section" and "#section" patterns
-      const hashMatch = href.match(/^\/?#(.+)$/);
+      const hashMatch = /^\/?#(.+)$/.exec(href);
       if (!hashMatch) return;
 
       const id = hashMatch[1];

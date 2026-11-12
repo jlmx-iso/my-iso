@@ -3,12 +3,11 @@
  * for Docker builds.
  */
 await import("./src/env.js");
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 /** @type {import("next").NextConfig} */
 const config = {
   serverExternalPackages: ["@prisma/client", ".prisma/client"],
-  transpilePackages: ["prettier"],
   images: {
     remotePatterns: [
       {

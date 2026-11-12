@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Supersede stale runs on pull requests only; every push to main completes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Placeholder configuration so env validation (src/env.js) passes during
+  # typegen and builds. None of these are real credentials and nothing in CI
+  # talks to the services they belong to.
+  DATABASE_URL: file:./ci.db
+  NEXT_PUBLIC_BASE_URL: http://localhost:3000
+  NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: ci-placeholder
+  NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
+  NEXT_PUBLIC_POSTHOG_PUBLIC_KEY: ci-placeholder
+  NEXT_PUBLIC_STRIPE_PUBLIC_KEY: pk_test_ci_placeholder
+  AUTH_SECRET: ci-placeholder-auth-secret-0123456789abcdef
+  CLOUDINARY_API_KEY: ci-placeholder
+  CLOUDINARY_API_SECRET: ci-placeholder
+  CLOUDINARY_CLOUD_NAME: ci-placeholder
+  EMAIL_FROM: ci@example.com
+  GOOGLE_CLIENT_ID: ci-placeholder
+  GOOGLE_CLIENT_SECRET: ci-placeholder
+  GOOGLE_PLACES_API_KEY: ci-placeholder
+  STRIPE_SECRET_KEY: sk_test_ci_placeholder
+  STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+
+jobs:
+  verify:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test:coverage
+
+  build:
+    name: Build (Next.js + Cloudflare Worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # OpenNext runs `next build` itself, so this is the only build.
+      - name: Build Next.js and the Cloudflare Worker (OpenNext)
+        run: npm run build:cf
+
+      # Bundles with `wrangler deploy --dry-run` (no upload, no credentials),
+      # then fails if the gzipped Worker exceeds 9.5 MiB (Cloudflare's limit
+      # is 10 MiB) or the Prisma WASM module is missing from the bundle.
+      - name: Worker bundle dry run and size budget
+        run: npm run check:bundle -- --outdir "$RUNNER_TEMP/worker-bundle"

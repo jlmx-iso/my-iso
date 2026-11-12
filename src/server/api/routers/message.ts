@@ -1,11 +1,23 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 import { logger } from "~/_utils";
 import { captureEvent } from "~/server/_lib/posthog";
+import { publishThreadMessage } from "~/server/_lib/realtime";
 
+import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+
+const senderSelect = {
+  firstName: true,
+  id: true,
+  lastName: true,
+  profilePic: true,
+} as const;
+
+/** Number of most recent messages a thread query returns. */
+const THREAD_PAGE_SIZE = 50;
 
 export const messageRouter = createTRPCRouter({
   create: protectedProcedure
@@ -41,12 +53,21 @@ export const messageRouter = createTRPCRouter({
               },
             }
           },
+          include: { sender: { select: senderSelect } },
+        });
+
+        publishThreadMessage(input.threadId, {
+          content: message.content,
+          createdAt: message.createdAt,
+          id: message.id,
+          sender: message.sender,
         });
 
         void captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform, thread_id: input.threadId });
 
         return message;
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         logger.error("Unable to create message", { error, threadId: input.threadId, userId: ctx.session.user.id });
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -62,24 +83,22 @@ export const messageRouter = createTRPCRouter({
       platform: z.enum(['ios', 'web']).optional().default('web'),
     }))
     .mutation(async ({ ctx, input }) => {
-      const allParticipants = [...input.participants, ctx.session.user.id];
+      const allParticipants = [...new Set([...input.participants, ctx.session.user.id])];
       try {
-        const thread = await ctx.db.$transaction(async (tx) => {
-          const newThread = await tx.messageThread.create({
-            data: {
-              participants: {
-                connect: allParticipants.map((id) => ({ id })),
+        // One nested write rather than an interactive transaction, which
+        // Cloudflare D1 does not support.
+        const thread = await ctx.db.messageThread.create({
+          data: {
+            messages: {
+              create: {
+                content: input.initialMessage,
+                sender: { connect: { id: ctx.session.user.id } },
               },
             },
-          });
-          await tx.message.create({
-            data: {
-              content: input.initialMessage,
-              sender: { connect: { id: ctx.session.user.id } },
-              thread: { connect: { id: newThread.id } },
+            participants: {
+              connect: allParticipants.map((id) => ({ id })),
             },
-          });
-          return newThread;
+          },
         });
 
         void captureEvent(ctx.session.user.id, 'thread_created', { platform: input.platform, thread_id: thread.id });
@@ -247,6 +266,29 @@ export const messageRouter = createTRPCRouter({
       };
     }),
 
+  getRecipientById: protectedProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      // You cannot start a conversation with yourself.
+      if (input.userId === ctx.session.user.id) return null;
+
+      return ctx.db.user.findUnique({
+        select: {
+          firstName: true,
+          id: true,
+          lastName: true,
+          photographer: {
+            select: {
+              companyName: true,
+              id: true,
+            }
+          },
+          profilePic: true
+        },
+        where: { id: input.userId },
+      });
+    }),
+
   getThreadById: protectedProcedure
     .input(z.object({
       startAt: z.number().min(0).default(0),
@@ -254,7 +296,7 @@ export const messageRouter = createTRPCRouter({
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await ctx.db.messageThread.findFirst({
+        const thread = await ctx.db.messageThread.findFirst({
           select: {
             _count: {
               select: {
@@ -263,24 +305,18 @@ export const messageRouter = createTRPCRouter({
             },
             id: true,
             messages: {
+              // Newest page first; put back in reading order below.
               orderBy: {
-                createdAt: "asc",
+                createdAt: "desc",
               },
               select: {
                 content: true,
                 createdAt: true,
                 id: true,
-                sender: {
-                  select: {
-                    firstName: true,
-                    id: true,
-                    lastName: true,
-                    profilePic: true,
-                  },
-                },
+                sender: { select: senderSelect },
               },
               skip: input.startAt,
-              take: 20,
+              take: THREAD_PAGE_SIZE,
               where: {
                 isDeleted: false,
               },
@@ -305,6 +341,9 @@ export const messageRouter = createTRPCRouter({
             participants: { some: { id: ctx.session.user.id } },
           },
         });
+        if (!thread) return null;
+
+        return { ...thread, messages: thread.messages.reverse() };
       } catch (error) {
         logger.error("Failed to retrieve message thread", { error, threadId: input.threadId, userId: ctx.session.user.id });
         throw new TRPCError({

@@ -1,16 +1,17 @@
 "use client";
 
-import { Button, Container, Textarea } from "@mantine/core";
+import { Button, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
 import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
+import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
+import { api } from "~/trpc/react";
+
 import { Loader } from "./Loader";
 import { Notification } from "./Notification";
 
-import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
-import { api } from "~/trpc/react";
 
 
 
@@ -53,21 +54,20 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
     return (
         <>
             {error && <Notification type="error" autoDismiss={5000} >Error adding comment</Notification>}
-            <Container w="100%" py="lg">
-                <form onSubmit={handleSumbit} style={{ alignItems: "flex-end", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <Textarea
-                        {...form.getInputProps("comment")}
-                        w="100%"
-                        placeholder="Add a comment"
-                        required
-                        my="md"
-                        onKeyDown={getHotkeyHandler([
-                            ["mod+Enter", handleSumbit],
-                        ])}
-                    />
-                    <Button type="submit" maw="140">Add Comment</Button>
-                </form>
-            </Container>
+            <form onSubmit={handleSumbit} style={{ alignItems: "flex-end", display: "flex", flexDirection: "column", gap: 8 }}>
+                <Textarea
+                    {...form.getInputProps("comment")}
+                    w="100%"
+                    placeholder="Add a comment"
+                    required
+                    autosize
+                    minRows={2}
+                    onKeyDown={getHotkeyHandler([
+                        ["mod+Enter", handleSumbit],
+                    ])}
+                />
+                <Button type="submit" size="xs">Add Comment</Button>
+            </form>
         </>
     )
 };

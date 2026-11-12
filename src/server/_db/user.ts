@@ -97,7 +97,7 @@ export const verifyUserEmail = async (token: string): Promise<Result<User["id"]>
             logger.error(UserVerificationErrors.TOKEN_EXPIRED, { userId: verificationToken.identifier });
             return Result.err(new Error(UserVerificationErrors.TOKEN_EXPIRED));
         }
-        let user = await db.user.findFirst({
+        const user = await db.user.findFirst({
             where: {
                 id: verificationToken.identifier,
             },

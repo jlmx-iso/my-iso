@@ -5,30 +5,27 @@ import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from "@mantine/hooks";
 import { IconSend } from "@tabler/icons-react";
 
-import { type Recipient } from "./NewMessageModal";
-
+import { type ThreadMessage } from "~/_utils/threadMessages";
 import { api } from "~/trpc/react";
 
+import { type Recipient } from "./NewMessageModal";
+
 type ComposeMessageProps = {
+  /** Called with the new thread's id once the first message is stored. */
+  onThreadCreated: (threadId: string) => void;
   recipient: Recipient;
 } | {
+  /** Called with the stored message once the server has accepted it. */
+  onSent: (message: ThreadMessage) => void;
   threadId: string;
 };
 
+const SEND_FAILED = "Message could not be sent. Please try again.";
+
 export default function ComposeMessage(props: ComposeMessageProps) {
-  const utils = api.useUtils();
-  const createMessageThreadMutation = api.message.createThread.useMutation({
-    onSuccess: () => {
-      void utils.message.getThreadsByUserId.invalidate();
-    },
-  });
-  const createMessageMutation = api.message.create.useMutation({
-    onSuccess: () => {
-      if ("threadId" in props) {
-        void utils.message.getThreadById.invalidate({ threadId: props.threadId });
-      }
-    },
-  });
+  const createMessageThreadMutation = api.message.createThread.useMutation();
+  const createMessageMutation = api.message.create.useMutation();
+
   const form = useForm({
     initialValues: {
       text: "",
@@ -42,24 +39,43 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     }
   });
 
+  const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
+
+  // The draft stays in the input until the server confirms, so a failed send
+  // loses nothing.
   const handleSubmit = () => {
+    if (isPending) return;
     if (form.validate().hasErrors) return;
     const content = form.values.text.trim();
-    if (!content) return;
+    const onError = () => form.setFieldError("text", SEND_FAILED);
 
     if ("threadId" in props) {
-      createMessageMutation.mutate({ content, threadId: props.threadId });
+      createMessageMutation.mutate({ content, threadId: props.threadId }, {
+        onError,
+        onSuccess: ({ content, createdAt, id, sender }) => {
+          form.reset();
+          props.onSent({ content, createdAt, id, sender });
+        },
+      });
     } else {
-      createMessageThreadMutation.mutate({ initialMessage: content, participants: [props.recipient.id] });
+      createMessageThreadMutation.mutate({
+        initialMessage: content,
+        participants: [props.recipient.id],
+      }, {
+        onError,
+        onSuccess: (thread) => {
+          form.reset();
+          props.onThreadCreated(thread.id);
+        },
+      });
     }
-    form.reset();
-  }
+  };
 
   return (
-    <form onSubmit={form.onSubmit(handleSubmit)}>
+    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <Group
         gap="xs"
-        align="end"
+        align="start"
         wrap="nowrap"
         pt="sm"
         style={{
@@ -79,13 +95,12 @@ export default function ComposeMessage(props: ComposeMessageProps) {
           maxRows={4}
         />
         <ActionIcon
-          onClick={handleSubmit}
+          type="submit"
           variant="filled"
           size="lg"
           radius="xl"
-          mb={1}
-          loading={createMessageMutation.isPending || createMessageThreadMutation.isPending}
-          disabled={createMessageMutation.isPending || createMessageThreadMutation.isPending}
+          loading={isPending}
+          disabled={isPending}
           aria-label="Send message"
         >
           <IconSend size={18} />
