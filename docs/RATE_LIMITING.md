@@ -22,7 +22,8 @@ never observe the same count: exactly `limit` requests per window are allowed.
 - `key` is `<policy name>:<keyed hash of the identifier>`. Identifiers (user
   ids, IP addresses, email addresses) are never stored or logged in the clear.
 - Expired rows are swept opportunistically when a new window opens
-  (`purgeExpiredRateLimits`), so no cron job is needed.
+  (`purgeExpiredRateLimits`) and by the daily `purge-expired` scheduled job
+  (`src/server/_jobs`).
 - Clients are identified by `CF-Connecting-IP` (`src/server/_utils/clientIp.ts`).
   `X-Forwarded-For` is never trusted on Cloudflare. IPv6 addresses are counted
   per /64.
@@ -39,7 +40,11 @@ Each policy states what happens if the limiter itself fails (`onError`):
 
 ## Using it
 
-All policies live in `RateLimits` in `src/server/_utils/rateLimit.ts`.
+Policies live in `RateLimits` in `src/server/_utils/rateLimit.ts`. Two that
+belong to one feature each sit next to it and use the same limiter:
+`AI_GENERATION_DAILY` (`src/server/_lib/matchInsights.ts`, AI generations a
+member may cause per day) and `CSP_REPORT_LIMIT`
+(`src/server/_lib/cspReport.ts`, violation reports per client address).
 
 Per user (or per IP for anonymous callers), in one line on the procedure:
 

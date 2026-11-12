@@ -21,9 +21,14 @@ against exactly what D1 gets.
 
 **Apply migrations before deploying the code that needs them.**
 
+`npm run deploy:staging` and `npm run deploy:production` do this for you:
+they build, apply pending migrations, and only then deploy
+(`scripts/deploy.mjs`, [DEPLOYMENT.md](DEPLOYMENT.md)). To migrate without
+deploying:
+
 ```sh
-npm run db:migrate:staging      # then: npm run deploy:staging
-npm run db:migrate:production   # then: npm run deploy:production
+npm run db:migrate:staging
+npm run db:migrate:production
 ```
 
 D1 has no way to deploy schema and code atomically, so for a moment the old
@@ -82,8 +87,8 @@ shows what is pending without applying anything.
 5. `npm run db:check` must now pass, and `npm test` runs against the new
    schema.
 6. Try it locally: `npm run db:migrate:local`, then `npm run dev:wrangler`.
-7. After review: migrate staging, deploy staging; migrate production, deploy
-   production.
+7. After review: `npm run deploy:staging`, check it, then
+   `npm run deploy:production` (each applies its migrations first).
 
 Never edit or delete a migration that has been applied anywhere. Fix a
 mistake with a new migration.
