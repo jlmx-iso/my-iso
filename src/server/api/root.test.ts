@@ -48,6 +48,8 @@ const PUBLIC_PROCEDURES = [
   "photographer.getPortfolioImages",
   "review.getAverageRating",
   "review.getByPhotographerId",
+  // The same public data as getByPhotographerId, as { items, nextCursor }.
+  "review.getPageByPhotographerId",
   "waitlist.submit",
 ];
 

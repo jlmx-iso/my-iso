@@ -28,7 +28,8 @@ const schema = z.object({
         return date.isValid() && date.isAfter(dayjs());
     }, "Date must be in the future"),
     description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`),
-    duration: z.coerce.number().min(0.5, "Duration must be at least 30 minutes"),
+    // The server accepts whole hours only (see eventDurationInput).
+    duration: z.coerce.number().int("Duration must be a whole number of hours").min(1, "Duration must be at least 1 hour"),
     image: typeof window === 'undefined' ? z.any() : z.instanceof(File).optional(),
     location: z.string().min(1, "Location is required"),
     title: z.string().max(140, "Title is required an must be less than 140 characters"),
@@ -139,9 +140,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
                         label="Duration (hours)"
                         required
                         data={[
-                            { value: "0.5", label: "30 minutes" },
                             { value: "1",   label: "1 hour" },
-                            { value: "1.5", label: "1.5 hours" },
                             { value: "2",   label: "2 hours" },
                             { value: "3",   label: "3 hours" },
                             { value: "4",   label: "4 hours" },

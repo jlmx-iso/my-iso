@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { MAX_IMAGE_BYTES } from "~/server/_utils/image";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller, fakeCloudinary } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,9 @@ function jpegBase64(totalBytes = 256): string {
 const GIF_BASE64 = Buffer.from("GIF89a-not-an-allowed-type-000000").toString("base64");
 
 const nextYear = () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+freezeRateLimitClock();
 
 describe("content routers against SQLite", () => {
   let testDb: TestDb;
@@ -351,7 +355,11 @@ describe("content routers against SQLite", () => {
 
       await expect(
         photographersAs(owner).addPortfolioImage({ image: jpegBase64(), title: "One too many" }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      ).rejects.toMatchObject({
+        cause: { reason: "portfolio_full" },
+        code: "BAD_REQUEST",
+        message: `A portfolio can hold at most ${MAX_PORTFOLIO_IMAGES} images. Remove one to add another.`,
+      });
       expect(cloudinary.upload).not.toHaveBeenCalled();
 
       // Deleting one frees a place.

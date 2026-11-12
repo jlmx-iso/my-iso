@@ -117,6 +117,21 @@ export const userRouter = createTRPCRouter({
     }),
 
   /**
+   * Whether the caller has favourited `targetId` (a photographer id). One
+   * indexed lookup, so the answer does not depend on how many favourites the
+   * caller has, unlike searching the capped getFavorites list.
+   */
+  isFavorite: protectedProcedure
+    .input(z.object({ targetId: z.string().min(1).max(64) }))
+    .query(async ({ ctx, input }) => {
+      const favorite = await ctx.db.favorite.findUnique({
+        select: { id: true },
+        where: { userId_targetId: { targetId: input.targetId, userId: ctx.session.user.id } },
+      });
+      return { isFavorite: favorite !== null };
+    }),
+
+  /**
    * Remove a photographer from the authenticated user's favorites
    * SECURITY: Uses ctx.session.user.id to prevent modifying other users' favorites
    */

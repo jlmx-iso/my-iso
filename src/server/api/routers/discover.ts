@@ -4,6 +4,7 @@ import { z } from "zod";
 import { logger } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { findOrCreateThread } from "~/server/_db/messaging";
+import { MAX_LIST_OFFSET } from "~/server/_db/pagination";
 import { generateIcebreakers, generateMatchSummary } from "~/server/_lib/ai";
 import { runAfterResponse } from "~/server/_lib/background";
 import { RateLimits } from "~/server/_utils/rateLimit";
@@ -311,8 +312,8 @@ export const discoverRouter = createTRPCRouter({
   getMatches: protectedProcedure
     .input(
       z.object({
-        limit: z.number().min(1).max(50).default(20),
-        offset: z.number().min(0).default(0),
+        limit: z.number().int().min(1).max(50).default(20),
+        offset: z.number().int().min(0).max(MAX_LIST_OFFSET).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -324,7 +325,7 @@ export const discoverRouter = createTRPCRouter({
             OR: [{ user1Id: userId }, { user2Id: userId }],
             status: { not: "expired" },
           },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: input.limit,
           skip: input.offset,
           select: {

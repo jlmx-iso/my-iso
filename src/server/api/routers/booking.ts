@@ -3,8 +3,11 @@ import { z } from "zod";
 
 import { logger } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
+import { toPage } from "~/server/_db/pagination";
+import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { captureEvent } from "~/server/_lib/posthog";
-import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 const idInput = z.string().min(1).max(64);
 
@@ -18,18 +21,81 @@ const pageInput = z
   })
   .optional();
 
-function page(input: z.infer<typeof pageInput>) {
+/** Newest first; `extra` rows beyond the page are for toPage. */
+function page(input: z.infer<typeof pageInput>, extra: 0 | 1 = 0) {
   return {
     ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
     orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
-    take: input?.limit ?? BOOKINGS_PAGE_SIZE,
+    take: (input?.limit ?? BOOKINGS_PAGE_SIZE) + extra,
   };
 }
+
+/**
+ * Bookings are listed with their event's title, date and place. A booking
+ * whose event has been deleted is left out: the include would otherwise
+ * hand out a deleted event's details (the soft-delete extension does not
+ * reach into includes).
+ */
+const onLiveEvent = { event: { isDeleted: false } } as const;
+
+const bookingEventSelect = {
+  date: true,
+  id: true,
+  location: true,
+  title: true,
+} as const;
+
+const bookingPartySelect = {
+  firstName: true,
+  id: true,
+  lastName: true,
+  profilePic: true,
+} as const;
+
+type BookingDb = Pick<ExtendedPrismaClient, "booking">;
+
+/** Applications `userId` has sent, newest first. */
+function findMyApplications(
+  db: BookingDb,
+  userId: string,
+  input: z.infer<typeof pageInput>,
+  extra: 0 | 1,
+) {
+  return db.booking.findMany({
+    include: {
+      event: { select: bookingEventSelect },
+      owner: { select: bookingPartySelect },
+    },
+    ...page(input, extra),
+    where: { applicantId: userId, ...onLiveEvent },
+  });
+}
+
+/** Applications to `userId`'s events, newest first. */
+function findReceivedApplications(
+  db: BookingDb,
+  userId: string,
+  input: z.infer<typeof pageInput>,
+  extra: 0 | 1,
+) {
+  return db.booking.findMany({
+    include: {
+      applicant: { select: bookingPartySelect },
+      event: { select: bookingEventSelect },
+    },
+    ...page(input, extra),
+    where: { ownerId: userId, ...onLiveEvent },
+  });
+}
+
+/** An event stops accepting applications at its start time. */
+const isInThePast = (date: Date) => date.getTime() < Date.now();
 
 const ALREADY_APPLIED = "You have already applied to this event";
 
 export const bookingRouter = createTRPCRouter({
   applyToEvent: protectedProcedure
+    .use(rateLimit(RateLimits.BOOKING_APPLY))
     .input(
       z.object({
         eventId: idInput,
@@ -57,6 +123,13 @@ export const bookingRouter = createTRPCRouter({
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
+        });
+      }
+
+      if (isInThePast(event.date)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This event has already taken place",
         });
       }
 
@@ -149,24 +222,11 @@ export const bookingRouter = createTRPCRouter({
         });
       }
 
+      // The event was just loaded through the soft-delete filter, so it is live.
       return ctx.db.booking.findMany({
         include: {
-          applicant: {
-            select: {
-              firstName: true,
-              id: true,
-              lastName: true,
-              profilePic: true,
-            },
-          },
-          event: {
-            select: {
-              date: true,
-              id: true,
-              location: true,
-              title: true,
-            },
-          },
+          applicant: { select: bookingPartySelect },
+          event: { select: bookingEventSelect },
         },
         ...page(input),
         where: {
@@ -175,62 +235,31 @@ export const bookingRouter = createTRPCRouter({
       });
     }),
 
-  getMyApplications: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+  /**
+   * The caller's applications, newest first, as a plain array (`cursor` is
+   * the id of the last booking received). getMyApplicationsPage returns the
+   * same as `{ items, nextCursor }`.
+   */
+  getMyApplications: protectedProcedure
+    .input(pageInput)
+    .query(({ ctx, input }) => findMyApplications(ctx.db, ctx.session.user.id, input, 0)),
 
-    return ctx.db.booking.findMany({
-      include: {
-        event: {
-          select: {
-            date: true,
-            id: true,
-            location: true,
-            title: true,
-          },
-        },
-        owner: {
-          select: {
-            firstName: true,
-            id: true,
-            lastName: true,
-            profilePic: true,
-          },
-        },
-      },
-      ...page(input),
-      where: {
-        applicantId: userId,
-      },
-    });
+  getMyApplicationsPage: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
+    const rows = await findMyApplications(ctx.db, ctx.session.user.id, input, 1);
+    return toPage(rows, input?.limit ?? BOOKINGS_PAGE_SIZE);
   }),
 
-  getReceivedApplications: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+  /**
+   * Applications to the caller's events, newest first, as a plain array.
+   * getReceivedApplicationsPage returns the same as `{ items, nextCursor }`.
+   */
+  getReceivedApplications: protectedProcedure
+    .input(pageInput)
+    .query(({ ctx, input }) => findReceivedApplications(ctx.db, ctx.session.user.id, input, 0)),
 
-    return ctx.db.booking.findMany({
-      include: {
-        applicant: {
-          select: {
-            firstName: true,
-            id: true,
-            lastName: true,
-            profilePic: true,
-          },
-        },
-        event: {
-          select: {
-            date: true,
-            id: true,
-            location: true,
-            title: true,
-          },
-        },
-      },
-      ...page(input),
-      where: {
-        ownerId: userId,
-      },
-    });
+  getReceivedApplicationsPage: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
+    const rows = await findReceivedApplications(ctx.db, ctx.session.user.id, input, 1);
+    return toPage(rows, input?.limit ?? BOOKINGS_PAGE_SIZE);
   }),
 
   hasApplied: protectedProcedure

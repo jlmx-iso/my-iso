@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
+import { ErrorReason, instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
 import { isRecordNotFound, isUniqueViolation } from "~/server/_db/errors";
 import {
   base64ImageInput,
@@ -10,6 +10,7 @@ import {
   websiteUrlInput,
 } from "~/server/_utils/image";
 import { RateLimits } from "~/server/_utils/rateLimit";
+import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, publicProcedure, rateLimit } from "~/server/api/trpc";
 
 /** Portfolio images one photographer may have (deleted ones do not count). */
@@ -219,10 +220,11 @@ export const photographerRouter = createTRPCRouter({
         where: { photographerId: photographer.id },
       });
       if (existingCount >= MAX_PORTFOLIO_IMAGES) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `A portfolio can hold at most ${MAX_PORTFOLIO_IMAGES} images. Remove one to add another.`,
-        });
+        throw reasonedError(
+          "BAD_REQUEST",
+          ErrorReason.PORTFOLIO_FULL,
+          `A portfolio can hold at most ${MAX_PORTFOLIO_IMAGES} images. Remove one to add another.`,
+        );
       }
 
       const uploadResult = await ctx.cloudinaryClient.upload(
