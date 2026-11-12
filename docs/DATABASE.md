@@ -249,9 +249,11 @@ visitor can send any `Referer` they like. What the server adds:
 
 What remains possible: an owner who really exchanges messages with extra
 accounts of their own can make real Messages views. Invite-only membership
-and the shared-thread requirement make that costly, and all it can reveal
-is whether a visitor who already talks to the owner came from Messages.
-Sources under three views are still folded into Other.
+and the shared-thread requirement make that costly. A Messages attribution
+needs a shared thread, but it still rests on the `Referer`, so it stays as
+approximate as every other source: at most it hints at where a visitor who
+already talks to the owner came from, never who they are. Sources under
+three views are still folded into Other.
 
 **The cookie.** `iso_views`: HttpOnly, SameSite=Lax, Secure on https, path
 `/api/views` (sent nowhere else), expires at the end of the UTC day. Its
