@@ -29,6 +29,7 @@
     "coverage:ratchet": "node scripts/coverage-ratchet.mjs",
     "coverage:diff": "node scripts/diff-coverage.mjs",
     "test:mutation": "stryker run",
+    "test:e2e": "playwright test",
     "postinstall": "prisma generate",
     "db:push": "prisma generate && prisma db push",
     "db:studio": "prisma studio",
@@ -80,6 +81,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",
+    "@playwright/test": "^1.63.0",
     "@posthog/cli": "^0.19.3",
     "@prisma/adapter-better-sqlite3": "^7.10.1",
     "@prisma/adapter-libsql": "^7.10.1",
