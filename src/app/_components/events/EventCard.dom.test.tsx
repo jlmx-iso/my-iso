@@ -88,6 +88,13 @@ describe("EventCard", () => {
     expect(within(card).getByTestId("event-meta").textContent).toContain("Starts: Sun, Nov 22, 2:00 PM MST");
   });
 
+  it("adds the year for screen readers when the event is not this year", () => {
+    // 2 PM in Denver, far enough ahead never to be "this year" while this test lives.
+    renderCard(feedEvent({ date: new Date("2031-01-10T21:00:00.000Z") }));
+
+    expect(screen.getByTestId("event-meta").textContent).toContain("Starts: Fri, Jan 10, 2031, 2:00 PM MST");
+  });
+
   it("leaves the poster out on the viewer's own event (the pill says so)", () => {
     renderWithProviders(
       <EventCard event={feedEvent()} application={undefined} currentUserId="marcus" now={NOW} />,

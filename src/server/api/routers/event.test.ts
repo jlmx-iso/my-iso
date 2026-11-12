@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorReason } from "~/_utils/errorReason";
+import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -384,6 +386,19 @@ describe("events feed", () => {
       expect(await zoneOf("")).toBeNull();
     });
 
+    describe("rate limit", () => {
+      freezeRateLimitClock();
+
+      it("limits edits per member (EVENT_UPDATE)", async () => {
+        const created = await as(owner).create({ ...base, date: start() });
+        await spendRateLimit(testDb.db, RateLimits.EVENT_UPDATE, `user:${owner.id}`, RateLimits.EVENT_UPDATE.limit);
+
+        await expect(as(owner).update({ id: created.id, title: "Once more" })).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+        // Another member's budget is their own.
+        await expect(as(viewer).update({ id: created.id, title: "Not mine" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      });
+    });
+
     describe("telling booked shooters", () => {
       async function bookedEvent() {
         const event = await as(owner).create({ ...base, date: start(), payCents: 45_000, timeZone: "America/Denver" });
@@ -413,6 +428,18 @@ describe("events feed", () => {
 
         await as(owner).update({ id: event.id, payCents: null });
         expect((await inbox(shooter.id)).map((n) => n.body)).toContain("The event details changed: pay is no longer listed.");
+      });
+
+      it("still saves the edit when the notification cannot be written", async () => {
+        const { event, inbox, shooter } = await bookedEvent();
+        const create = vi.spyOn(testDb.db.notification, "create").mockRejectedValue(new Error("db down"));
+
+        const saved = await as(owner).update({ id: event.id, payCents: 50_000 });
+
+        expect(saved.payCents).toBe(50_000);
+        expect(create).toHaveBeenCalledOnce();
+        create.mockRestore();
+        expect(await inbox(shooter.id)).toEqual([]);
       });
 
       it("sends nothing for other edits, or when the values did not change", async () => {

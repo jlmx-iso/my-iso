@@ -35,7 +35,9 @@ describe("formatEventTime", () => {
     expect(formatEventTime(START, null)).toBe("Sun, Nov 22 · 9:00 PM UTC (your time)");
     expect(formatEventTime(START, "Not/AZone")).toBe("Sun, Nov 22 · 9:00 PM UTC (your time)");
     expect(formatEventTime(START.toISOString(), undefined, "time")).toBe("9:00 PM UTC (your time)");
-    expect(formatEventTime(START, null, "weekdayDate")).toBe("Sun, Nov 22");
+    expect(formatEventTime(START, null, "weekdayDate", { now: new Date("2026-03-01T12:00:00Z") })).toBe("Sun, Nov 22");
+    // Another year: said, so "Sun, Nov 22" is not taken for this one.
+    expect(formatEventTime(START, null, "weekdayDate", { now: new Date("2025-12-31T12:00:00Z") })).toBe("Sun, Nov 22, 2026");
   });
 
   it("can leave the zone out when it shows the reader's clock", () => {
@@ -115,6 +117,9 @@ describe("time zones", () => {
     expect(canonicalTimeZone("UTC")).toBe("UTC");
     expect(canonicalTimeZone("+01:00")).toBeNull();
     expect(canonicalTimeZone("-0500")).toBeNull();
+    expect(canonicalTimeZone("Etc/GMT+5")).toBeNull();
+    expect(canonicalTimeZone("etc/gmt-1")).toBeNull();
+    expect(canonicalTimeZone("Etc/UTC")).toBe("UTC");
     expect(canonicalTimeZone("Mars/Base")).toBeNull();
     expect(canonicalTimeZone(null)).toBeNull();
   });

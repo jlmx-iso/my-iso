@@ -14,7 +14,9 @@ export function withAlpha(hex: string, alpha: number): string {
  */
 export const DARK_LIGHT_ALPHA = 0.2;
 export const DARK_LIGHT_HOVER_ALPHA = 0.28;
-export const DARK_TINTED = ["orange", "teal", "red", "blue", "purple"] as const;
+// gray and green too: "Your event" and "Past event" badges and gray
+// ThemeIcons (empty states) were near-black blobs.
+export const DARK_TINTED = ["orange", "teal", "red", "blue", "purple", "gray", "green"] as const;
 
 export const darkLightVariables: Record<string, string> = Object.fromEntries(
     DARK_TINTED.flatMap((name) => [

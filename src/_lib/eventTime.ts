@@ -22,7 +22,10 @@ export type EventTimeFormat =
   | "dateTime"
   /** 2:00 PM MST */
   | "time"
-  /** Sun, Nov 22 (the day only, e.g. for a screen reader next to "time") */
+  /**
+   * Sun, Nov 22 (the day only, e.g. for a screen reader next to "time");
+   * with the year, "Sun, Nov 22, 2027", when it is not this year.
+   */
   | "weekdayDate";
 
 export type EventTimeOptions = {
@@ -33,6 +36,8 @@ export type EventTimeOptions = {
    * is in the reader's zone anyway).
    */
   zone?: "always" | "when-different";
+  /** What "this year" is, for "weekdayDate" (defaults to the clock). */
+  now?: Date;
 };
 
 /** Whether `zone` is an IANA time zone this runtime knows. */
@@ -54,13 +59,14 @@ const knownZones = new Set<string>();
 /**
  * A zone as the runtime spells it ("america/chicago" → "America/Chicago",
  * "US/Central" stays itself), or null for anything that is not a named IANA
- * zone: unknown names, and offsets ("+01:00", "UTC+1"), which say nothing
- * about daylight saving and so give the wrong time half the year.
+ * zone: unknown names, and fixed offsets ("+01:00", "UTC+1", "Etc/GMT-1"),
+ * which say nothing about daylight saving and so give the wrong time half
+ * the year.
  */
 export function canonicalTimeZone(zone: string | null | undefined): string | null {
   if (!zone || !isValidTimeZone(zone.trim())) return null;
   const canonical = new Intl.DateTimeFormat("en-US", { timeZone: zone.trim() }).resolvedOptions().timeZone;
-  return /^[A-Za-z]/.test(canonical) && !/^(?:UTC|GMT)[+-]/i.test(canonical) ? canonical : null;
+  return /^[A-Za-z]/.test(canonical) && !/^(?:Etc\/)?(?:UTC|GMT)[+-]/i.test(canonical) ? canonical : null;
 }
 
 /** The browser's (or server's) own IANA zone, or null if it has none. */
@@ -122,7 +128,7 @@ export function formatEventTime(
   date: Date | string | number | null | undefined,
   timeZone: string | null | undefined,
   format: EventTimeFormat = "dayTime",
-  { zone = "always" }: EventTimeOptions = {},
+  { zone = "always", now = new Date() }: EventTimeOptions = {},
 ): string {
   if (date === null || date === undefined || date === "") return "";
   const value = date instanceof Date ? date : new Date(date);
@@ -137,7 +143,7 @@ export function formatEventTime(
     case "date":
       return `${day}, ${p.year}`;
     case "weekdayDate":
-      return `${p.weekday}, ${day}`;
+      return p.year === partsOf(now, eventZone).year ? `${p.weekday}, ${day}` : `${p.weekday}, ${day}, ${p.year}`;
     case "dateTime":
       return `${day}, ${p.year} · ${time}`;
     case "time":
