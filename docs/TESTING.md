@@ -194,16 +194,22 @@ the code, it runs the related tests; a change no test notices "survives".
 The HTML report (`reports/mutation/index.html`) shows each survivor in
 place.
 
-First local run: `src/_lib/telemetryScrub.ts` scored 83% (109 of 131
-mutants killed). Survivors worth a test: a non-Error thrown value keeps a
-six-digit code (`scrubErrorForLog`'s `codes: true` for non-Errors is
-untested); `$set_once` handling and nested `email`/`name` keys outside
-`$set`; `$snapshot_bytes` passing through unscrubbed; query strings on
-`http://` and `ws://` URLs (only `https`/`wss` are tested); and the
-`MAX_DEPTH` boundary. `src/server/_billing/entitlements.ts` scored 96% (122
-of 127); its survivors: the `refundedInvoiceId !== null` guard (no test has
-a row with neither a refunded nor a latest invoice) and `isPastDue` on a
-disputed `unpaid` subscription.
+Baseline (all four files, 580 mutants, about 12 minutes on 4 cores): 97%.
+
+| File | Score | Survivors left, and why they are accepted |
+| --- | --- | --- |
+| `telemetryScrub.ts` | 100% | none |
+| `entitlements.ts` | 100% | none |
+| `bookingTransitions.ts` | 95% | equivalent: `when: "any_time"` emptied (behaves the same), `ownerNotes: undefined` written (Prisma ignores it), the accept condition's `id: { not: bookingId }` (the booking itself never holds the slot), and the chunking of `withDerivedFulfilled` (same result, different queries) |
+| `rateLimit.ts` | 94% | log messages and metadata, the hash namespace string (not observable), and the test-only clock restore |
+
+The first run found real gaps (83% and 96% for the first two, 92% and 84%
+for the others): sign-in codes in thrown non-Error values, nested
+`email`/`name` keys outside `$set`, query strings on `http://` and `ws://`
+URLs, a row with no invoices read as refunded, sign-in limit keys, the
+limiter's failure answer, and the booking slot rules. Each now has a test
+(none needed an app change). Keep the table up to date when a run changes
+it, and give every new survivor that matters a test.
 
 It runs weekly and on demand (`.github/workflows/mutation.yml`, Actions tab,
 "Run workflow"), uploads the report as the `mutation-report` artifact and
@@ -235,5 +241,12 @@ already on the machine at `/opt/pw-browsers/chromium` or `E2E_CHROMIUM_PATH`.
 Traces are off. CI runs this as the "End-to-end smoke" job, in parallel with
 the others.
 
-Known noise: typing a location makes the Worker call Google Places with the
-placeholder key; the call fails and the form accepts the typed text.
+No real outbound calls. The browser may only reach the Worker under test:
+any other host is refused, and a test that tried one fails, naming it. The
+one Worker call a test could trigger, Google Places autocomplete (typing a
+location), is refused in the browser before it reaches the Worker, so the
+form's fallback (it keeps the typed text) is what runs. The rest is off by
+configuration in `e2e/serve.mjs`: no Resend or Anthropic key, Stripe never
+called by these pages, PostHog pointed at a closed local port, and
+`WRANGLER_SEND_METRICS=false`. A server already started with
+`node e2e/serve.mjs` is reused locally (never in CI).
