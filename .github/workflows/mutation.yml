@@ -1,0 +1,82 @@
+name: Mutation testing
+
+# Weekly, and on demand. Not a required check: the score is information for
+# whoever reads the report (docs/TESTING.md, "Mutation testing").
+on:
+  schedule:
+    # Mondays 04:17 UTC.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      mutate:
+        description: "Files to mutate (comma-separated globs); empty for stryker.config.mjs's list"
+        required: false
+        default: ""
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  stryker:
+    name: Stryker
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Stryker
+        env:
+          MUTATE: ${{ inputs.mutate }}
+        run: |
+          if [ -n "$MUTATE" ]; then
+            npm run test:mutation -- --mutate "$MUTATE"
+          else
+            npm run test:mutation
+          fi
+
+      - name: Score in the job summary
+        if: always()
+        run: |
+          if [ -f reports/mutation/mutation.json ]; then
+            node -e '
+              const r = require("./reports/mutation/mutation.json");
+              const rows = [];
+              let killed = 0, valid = 0;
+              for (const [file, f] of Object.entries(r.files)) {
+                const m = f.mutants;
+                const k = m.filter((x) => ["Killed", "Timeout"].includes(x.status)).length;
+                const v = m.filter((x) => !["CompileError", "RuntimeError", "Ignored"].includes(x.status)).length;
+                killed += k; valid += v;
+                rows.push(`| ${file} | ${v ? ((100 * k) / v).toFixed(1) : "-"}% | ${v - k} |`);
+              }
+              console.log(`### Mutation score: ${valid ? ((100 * killed) / valid).toFixed(1) : "-"}%\n`);
+              console.log("| File | Score | Survived or no coverage |\n| --- | --- | --- |");
+              console.log(rows.join("\n"));
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30
+          if-no-files-found: ignore

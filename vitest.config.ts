@@ -69,7 +69,7 @@ export default defineConfig({
     // `// @vitest-environment happy-dom` docblock (see docs/TESTING.md).
     environment: "node",
     // .claude/ can hold agent worktrees with their own copy of the suite.
-    exclude: [...configDefaults.exclude, ".claude/**", "e2e/**"],
+    exclude: [...configDefaults.exclude, ".claude/**", ".stryker-tmp/**", "e2e/**"],
     globals: true,
     setupFiles: ["./src/test/setup.ts", "./src/test/dom/setup.ts"],
   },
