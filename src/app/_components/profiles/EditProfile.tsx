@@ -1,9 +1,8 @@
 "use client";
 
 import { Button, Group, Stack, Text, TextInput, Textarea, type TextInputProps } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { schemaResolver, useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
-import { zod4Resolver } from 'mantine-form-zod-resolver';
 import Link from "next/link";
 import { redirect } from 'next/navigation';
 import { useSession } from "next-auth/react";
@@ -74,7 +73,7 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             youtube: photographer.youtube ? normalizeYouTubeHandle(photographer.youtube) : photographer.youtube,
         },
         mode: "uncontrolled",
-        validate: zod4Resolver(schema),
+        validate: schemaResolver(schema, { sync: true }),
     });
 
     const submitForm = async (values: typeof form.values) => {

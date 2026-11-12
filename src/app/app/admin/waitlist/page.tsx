@@ -67,7 +67,7 @@ export default function Page() {
       <SegmentedControl
         value={status}
         onChange={(v) => {
-          setStatus(v as typeof status);
+          setStatus(v);
           setPage(1);
         }}
         data={[

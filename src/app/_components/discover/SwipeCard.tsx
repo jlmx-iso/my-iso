@@ -240,7 +240,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
           )}
 
           {/* Expanded details — onPointerDownCapture stops drag from starting here */}
-          <Collapse in={expanded}>
+          <Collapse expanded={expanded}>
             <div onPointerDownCapture={(e) => e.stopPropagation()}>
             <Stack gap="md">
               <Divider color="gray.2" />

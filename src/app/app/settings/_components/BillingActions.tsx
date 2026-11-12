@@ -71,7 +71,7 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
     <Stack gap="xs" align="flex-end">
       <SegmentedControl
         value={billingInterval}
-        onChange={(value) => setBillingInterval(value as "monthly" | "annual")}
+        onChange={(value) => setBillingInterval(value)}
         data={[
           { label: "Monthly", value: "monthly" },
           { label: "Annual", value: "annual" },

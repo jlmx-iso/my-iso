@@ -3,7 +3,7 @@ import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 
-import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { ColorSchemeScript } from '@mantine/core';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
@@ -15,7 +15,7 @@ import { Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
 import { CSPostHogProvider } from './providers';
-import theme from "./theme";
+import { ThemeProvider } from "./theme/ThemeProvider";
 
 
 
@@ -71,7 +71,7 @@ export default async function RootLayout({
       </head>
       <body className={`font-sans ${inter.variable}`}>
         <CSPostHogProvider>
-          <MantineProvider theme={theme}>
+          <ThemeProvider>
             <TRPCReactProvider cookies={cookieStore.toString()}>
               <AppShell
                 header={<Navbar />}
@@ -81,7 +81,7 @@ export default async function RootLayout({
                 {children}
               </AppShell>
             </TRPCReactProvider>
-          </MantineProvider>
+          </ThemeProvider>
         </CSPostHogProvider>
       </body>
     </html>

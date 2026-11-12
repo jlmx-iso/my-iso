@@ -87,7 +87,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
         </Text>
         <SegmentedControl
           value={billingInterval}
-          onChange={(value) => setBillingInterval(value as "monthly" | "annual")}
+          onChange={(value) => setBillingInterval(value)}
           data={[
             { label: "Monthly", value: "monthly" },
             { label: "Annual (save more)", value: "annual" },

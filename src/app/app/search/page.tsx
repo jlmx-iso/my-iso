@@ -1,9 +1,10 @@
 'use client';
 
 import { TextInput, Button, Group, Stack, Text, Collapse, ActionIcon, Paper, SegmentedControl } from '@mantine/core';
-import { DatePickerInput } from '@mantine/dates';
+import { DatePickerInput, type DatesRangeValue } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { IconAdjustments, IconSearch } from '@tabler/icons-react';
+import dayjs from 'dayjs';
 import { useState } from 'react';
 
 import EmptyState from '~/app/_components/EmptyState';
@@ -19,7 +20,7 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [location, setLocation] = useState('');
   const [searchType, setSearchType] = useState<SearchType>('all');
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const [dateRange, setDateRange] = useState<DatesRangeValue<string>>([null, null]);
   const [hasSearched, setHasSearched] = useState(false);
   const [filtersOpen, { toggle: toggleFilters }] = useDisclosure(false);
 
@@ -30,8 +31,9 @@ export default function SearchPage() {
       location: location || undefined,
       filters: {
         type: 'all',
-        dateFrom: dateRange[0] ?? undefined,
-        dateTo: dateRange[1] ?? undefined,
+        // @mantine/dates emits local `YYYY-MM-DD` strings; the API expects Dates.
+        dateFrom: dateRange[0] ? dayjs(dateRange[0]).startOf('day').toDate() : undefined,
+        dateTo: dateRange[1] ? dayjs(dateRange[1]).endOf('day').toDate() : undefined,
       },
     },
     { enabled: hasSearched && searchQuery.length > 0 }
@@ -87,7 +89,7 @@ export default function SearchPage() {
       />
 
       {/* Collapsible filters */}
-      <Collapse in={filtersOpen}>
+      <Collapse expanded={filtersOpen}>
         <Paper p="sm" radius="md" withBorder>
           <Stack gap="sm">
             <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
@@ -107,7 +109,7 @@ export default function SearchPage() {
                   label="Date range"
                   placeholder="Select dates"
                   value={dateRange}
-                  onChange={(value) => setDateRange(value as [Date | null, Date | null])}
+                  onChange={setDateRange}
                 />
               )}
             </Group>
@@ -119,7 +121,7 @@ export default function SearchPage() {
       {hasSearched && !isLoading && results && totalCount > 0 && (
         <SegmentedControl
           value={searchType}
-          onChange={(v) => setSearchType(v as SearchType)}
+          onChange={(v) => setSearchType(v)}
           data={[
             { label: `All (${totalCount})`, value: 'all' },
             { label: `Photographers (${photographerCount})`, value: 'photographers' },
