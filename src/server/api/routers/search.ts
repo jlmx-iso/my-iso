@@ -1,19 +1,37 @@
 import { z } from "zod";
 
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
+
+export const SEARCH_MAX_LIMIT = 50;
+export const SEARCH_MAX_OFFSET = 1000;
+
+const searcherUserSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  profilePic: true,
+} as const;
 
 export const searchRouter = createTRPCRouter({
-  searchAll: publicProcedure
+  /**
+   * Member and event search. Signed-in members only: it is the member
+   * directory. Pages are bounded (`limit`, `offset`) and ordered by a stable
+   * key, so paging neither skips nor repeats rows and cannot be used to pull
+   * the whole table in one request.
+   */
+  searchAll: protectedProcedure
+    .use(rateLimit(RateLimits.SEARCH))
     .input(z.object({
-      query: z.string().min(1),
-      location: z.string().optional(),
+      query: z.string().trim().min(1).max(100),
+      location: z.string().trim().max(200).optional(),
       filters: z.object({
         type: z.enum(['photographers', 'events', 'all']).default('all'),
         dateFrom: z.date().optional(),
         dateTo: z.date().optional(),
       }).optional(),
-      limit: z.number().min(1).max(100).default(20),
-      offset: z.number().default(0),
+      limit: z.number().int().min(1).max(SEARCH_MAX_LIMIT).default(20),
+      offset: z.number().int().min(0).max(SEARCH_MAX_OFFSET).default(0),
     }))
     .query(async ({ ctx, input }) => {
       const { query, location, filters, limit, offset } = input;
@@ -32,10 +50,10 @@ export const searchRouter = createTRPCRouter({
         ],
       };
 
-      // Build where clause for events
+      // Build where clause for events (deleted events are excluded by the
+      // soft-delete extension on findMany)
       const eventWhere = {
         AND: [
-          { isDeleted: false },
           {
             OR: [
               { title: { contains: query } },
@@ -63,17 +81,11 @@ export const searchRouter = createTRPCRouter({
       const photographersPromise = shouldSearchPhotographers
         ? ctx.db.photographer.findMany({
             where: photographerWhere,
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: limit,
             skip: offset,
             include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  profilePic: true,
-                },
-              },
+              user: { select: searcherUserSelect },
               portfolioImages: {
                 where: { isDeleted: false },
                 orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }],
@@ -87,25 +99,21 @@ export const searchRouter = createTRPCRouter({
       const eventsPromise = shouldSearchEvents
         ? ctx.db.event.findMany({
             where: eventWhere,
+            orderBy: [{ date: 'asc' }, { id: 'asc' }],
             take: limit,
             skip: offset,
             include: {
               photographer: {
                 include: {
-                  user: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      profilePic: true,
-                    },
-                  },
+                  user: { select: searcherUserSelect },
                 },
               },
               _count: {
                 select: {
-                  comments: true,
-                  eventLikes: true,
+                  // Relation counts are not covered by the soft-delete
+                  // extension, so deleted rows are excluded here.
+                  comments: { where: { isDeleted: false } },
+                  eventLikes: { where: { isDeleted: false } },
                 },
               },
             },
