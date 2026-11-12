@@ -1,24 +1,14 @@
+import { notFound } from "next/navigation";
 
-import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
 import MessageFeed from "../_components/MessageFeed";
 
-
 export default async function Page({ params }: { params: Promise<{ id: string; }>; }) {
   const { id } = await params;
-  const session = await auth();
+  // Null when the thread does not exist or the member is not part of it.
+  const thread = await (await api()).message.getThreadById({ threadId: id });
+  if (!thread) notFound();
 
-  if (!session?.user) return null;
-
-  const data = await (await api()).message.getThreadById({ threadId: id });
-  const recipient = data?.participants.find(p => p.id !== session.user.id);
-
-  if (!recipient || !data?.messages) {
-    return null;
-  }
-
-  return (
-    <MessageFeed key={id} threadId={id} />
-  );
+  return <MessageFeed key={id} threadId={id} />;
 }

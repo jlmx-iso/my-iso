@@ -2,8 +2,8 @@
 
 import { ActionIcon, Group, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { getHotkeyHandler } from "@mantine/hooks";
 import { IconSend } from "@tabler/icons-react";
+import { type KeyboardEvent } from "react";
 
 import { type ThreadMessage } from "~/_utils/threadMessages";
 import { api } from "~/trpc/react";
@@ -11,7 +11,10 @@ import { api } from "~/trpc/react";
 import { type Recipient } from "./NewMessageModal";
 
 type ComposeMessageProps = {
-  /** Called with the new thread's id once the first message is stored. */
+  /**
+   * Called with the id of the thread the message went to: a new thread, or
+   * the existing one when the two people already had a conversation.
+   */
   onThreadCreated: (threadId: string) => void;
   recipient: Recipient;
 } | {
@@ -21,6 +24,19 @@ type ComposeMessageProps = {
 };
 
 const SEND_FAILED = "Message could not be sent. Please try again.";
+const MAX_LENGTH = 5000;
+
+/**
+ * Enter sends where there is a hardware keyboard (a fine pointer); on touch
+ * keyboards Enter stays a line break and the send button sends. Shift+Enter
+ * is always a line break, Ctrl/Cmd+Enter always sends.
+ */
+function shouldSendOnKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  if (event.key !== "Enter" || event.nativeEvent.isComposing) return false;
+  if (event.metaKey || event.ctrlKey) return true;
+  if (event.shiftKey || event.altKey) return false;
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
 
 export default function ComposeMessage(props: ComposeMessageProps) {
   const createMessageThreadMutation = api.message.createThread.useMutation();
@@ -32,11 +48,11 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     },
     validate: {
       text: (value: string) => {
-        if (value.trim().length < 1) {
-          return "Message must be at least 1 character long";
-        }
-      }
-    }
+        if (value.trim().length < 1) return "Write a message first";
+        if (value.length > MAX_LENGTH) return `Keep messages under ${MAX_LENGTH} characters`;
+        return null;
+      },
+    },
   });
 
   const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
@@ -75,7 +91,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <Group
         gap="xs"
-        align="start"
+        align="flex-end"
         wrap="nowrap"
         pt="sm"
         style={{
@@ -85,11 +101,16 @@ export default function ComposeMessage(props: ComposeMessageProps) {
         <Textarea
           {...form.getInputProps("text")}
           style={{ flex: 1 }}
-          aria-label="Create a new message"
-          onKeyDown={getHotkeyHandler([
-            ["mod+Enter", handleSubmit],
-          ])}
-          placeholder="Type a message..."
+          // 16px text: smaller makes iOS zoom the page on focus.
+          size="md"
+          aria-label="Message"
+          onKeyDown={(event) => {
+            if (shouldSendOnKey(event)) {
+              event.preventDefault();
+              handleSubmit();
+            }
+          }}
+          placeholder="Type a message…"
           autosize
           minRows={1}
           maxRows={4}
@@ -97,11 +118,12 @@ export default function ComposeMessage(props: ComposeMessageProps) {
         <ActionIcon
           type="submit"
           variant="filled"
-          size="lg"
+          size={42}
           radius="xl"
           loading={isPending}
-          disabled={isPending}
           aria-label="Send message"
+          // Line up with the input, not with the error text under it.
+          mb={form.errors.text ? 24 : 0}
         >
           <IconSend size={18} />
         </ActionIcon>

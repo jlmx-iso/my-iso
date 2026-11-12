@@ -1,36 +1,21 @@
 import { Center } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 
-
 import EmptyState from "~/app/_components/EmptyState";
-import { auth } from "~/auth";
-import { api } from "~/trpc/server";
 
-import MessageFeed from "./_components/MessageFeed";
-
-export default async function Page({ params }: { params: Promise<{ threadId?: string }> }) {
-  const { threadId: initialThreadId } = await params;
-  const session = await auth();
-  if (!session?.user) return null;
-
-  let threadId = initialThreadId;
-  if (!threadId) {
-    const latestThreadData = await (await api()).message.getLatestThreadByUserId();
-    threadId = latestThreadData?.id;
-    if (!threadId) {
-      return (
-        <Center h="100%">
-          <EmptyState
-            icon={IconMessageCircle}
-            title="No messages yet"
-            description="Start a conversation using the New Message button."
-          />
-        </Center>
-      );
-    }
-  }
-
+/**
+ * Thread pane of `/app/messages`. Phones show the conversation list here
+ * instead; wide screens are sent on to the most recent thread by
+ * MessagesShell, so this is only seen when there is nothing to open.
+ */
+export default function Page() {
   return (
-    <MessageFeed key={threadId} threadId={threadId} />
+    <Center h="100%" p="md">
+      <EmptyState
+        icon={IconMessageCircle}
+        title="Your messages"
+        description="Choose a conversation, or start one with New message."
+      />
+    </Center>
   );
 }
