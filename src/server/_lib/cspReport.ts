@@ -27,6 +27,8 @@ export type CspViolation = {
   blocked: string | null;
   directive: string | null;
   disposition: string | null;
+  /** The page's origin (scheme and host only). */
+  documentOrigin: string | null;
   documentPath: string | null;
   lineNumber: number | null;
   sourceFile: string | null;
@@ -82,6 +84,17 @@ function pathOf(value: unknown): string | null {
   }
 }
 
+function originOf(value: unknown): string | null {
+  const raw = text(value);
+  if (!raw) return null;
+  try {
+    const { origin } = new URL(raw);
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
 function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
@@ -96,6 +109,7 @@ function fromBody(body: Record<string, unknown>): CspViolation | null {
     blocked: safeUrl(body["blocked-uri"] ?? body.blockedURL, { generic: true }),
     directive: text(body["effective-directive"] ?? body.effectiveDirective ?? body["violated-directive"]),
     disposition: text(body.disposition),
+    documentOrigin: originOf(body["document-uri"] ?? body.documentURL),
     documentPath: pathOf(body["document-uri"] ?? body.documentURL),
     lineNumber: integer(body["line-number"] ?? body.lineNumber),
     sourceFile: safeUrl(body["source-file"] ?? body.sourceFile),
@@ -131,27 +145,40 @@ export function parseCspReports(payload: unknown): CspViolation[] {
 
 /**
  * A library feature probe, not a problem to act on: code in the app's own
- * bundle (`/_next/static/...`, or no source reported) trying `eval` /
- * `new Function`. Zod 4 does this once per page to decide whether it may
- * compile its parsers; the throw is caught, but the browser still reports
- * it. The app never evaluates code itself (script-src has no
- * 'unsafe-eval' on purpose), so a first-party eval report is always such a
- * probe. An eval from a script elsewhere is still reported.
+ * bundle trying `eval` / `new Function`. Zod 4 does this once per page to
+ * decide whether it may compile its parsers; the throw is caught, but the
+ * browser still reports it. The app never evaluates code itself
+ * (script-src has no 'unsafe-eval' on purpose), so an eval from its own
+ * bundle is always such a probe.
+ *
+ * "The app's own bundle" means a source file under `/_next/static/` on one
+ * of `appOrigins`. A report without a source file counts only when the
+ * page itself is on one of them. An eval from a script anywhere else, also
+ * a `/_next/static/` path on another origin, is still reported.
  */
-export function isFirstPartyEvalProbe(violation: CspViolation): boolean {
+export function isFirstPartyEvalProbe(
+  violation: CspViolation,
+  appOrigins: ReadonlySet<string>,
+): boolean {
   if (violation.blocked !== "eval") return false;
   if (!violation.directive?.startsWith("script-src")) return false;
-  if (violation.sourceFile === null) return true;
+  if (violation.sourceFile === null) {
+    return violation.documentOrigin !== null && appOrigins.has(violation.documentOrigin);
+  }
   try {
-    return new URL(violation.sourceFile).pathname.startsWith("/_next/static/");
+    const source = new URL(violation.sourceFile);
+    return appOrigins.has(source.origin) && source.pathname.startsWith("/_next/static/");
   } catch {
     return false;
   }
 }
 
 /** The violations worth recording: everything but known probes. */
-export function actionableViolations(violations: CspViolation[]): CspViolation[] {
-  return violations.filter((violation) => !isFirstPartyEvalProbe(violation));
+export function actionableViolations(
+  violations: CspViolation[],
+  appOrigins: ReadonlySet<string>,
+): CspViolation[] {
+  return violations.filter((violation) => !isFirstPartyEvalProbe(violation, appOrigins));
 }
 
 /**

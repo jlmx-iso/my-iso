@@ -33,6 +33,7 @@ describe("parseCspReports", () => {
         blocked: "https://evil.example/x.js",
         directive: "script-src-elem",
         disposition: "report",
+        documentOrigin: "https://myiso.app",
         documentPath: "/app/messages",
         lineNumber: 12,
         sourceFile: "https://myiso.app/_next/static/chunks/a.js",
@@ -67,6 +68,7 @@ describe("parseCspReports", () => {
         blocked: "inline",
         directive: "style-src-attr",
         disposition: "report",
+        documentOrigin: "https://myiso.app",
         documentPath: "/app",
         lineNumber: 3,
         sourceFile: "https://myiso.app/app",
@@ -129,10 +131,12 @@ describe("identifying path segments", () => {
 });
 
 describe("isFirstPartyEvalProbe", () => {
+  const APP = new Set(["https://myiso.app"]);
   const evalReport = (overrides: Partial<CspViolation> = {}): CspViolation => ({
     blocked: "eval",
     directive: "script-src",
     disposition: "report",
+    documentOrigin: "https://myiso.app",
     documentPath: "/app/events",
     lineNumber: 1,
     sourceFile: "https://myiso.app/_next/static/chunks/zod.js",
@@ -149,20 +153,39 @@ describe("isFirstPartyEvalProbe", () => {
         "source-file": "https://myiso.app/_next/static/chunks/1234-abcd.js",
       },
     });
-    expect(parsed && isFirstPartyEvalProbe(parsed)).toBe(true);
-    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: null }))).toBe(true);
+    expect(parsed && isFirstPartyEvalProbe(parsed, APP)).toBe(true);
+  });
+
+  it("keeps a /_next/static/ eval served from another origin", () => {
+    for (const sourceFile of [
+      "https://cdn.example/_next/static/chunks/x.js",
+      "https://myiso.app.evil.example/_next/static/chunks/x.js",
+      "http://myiso.app/_next/static/chunks/x.js",
+    ]) {
+      expect(isFirstPartyEvalProbe(evalReport({ sourceFile }), APP)).toBe(false);
+    }
+  });
+
+  it("drops a report without a source file only when the page is the app's", () => {
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: null }), APP)).toBe(true);
+    expect(isFirstPartyEvalProbe(evalReport({ documentOrigin: "https://other.example", sourceFile: null }), APP)).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ documentOrigin: null, sourceFile: null }), APP)).toBe(false);
   });
 
   it("keeps an eval from anywhere else, and every other violation", () => {
-    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://cdn.example/x.js" }))).toBe(false);
-    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://myiso.app/app/page.js" }))).toBe(false);
-    expect(isFirstPartyEvalProbe(evalReport({ blocked: "inline" }))).toBe(false);
-    expect(isFirstPartyEvalProbe(evalReport({ directive: "style-src" }))).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://cdn.example/x.js" }), APP)).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://myiso.app/app/page.js" }), APP)).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ blocked: "inline" }), APP)).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ directive: "style-src" }), APP)).toBe(false);
   });
 
   it("drops only the probes from a batch", () => {
     const real = evalReport({ blocked: "https://evil.example/x.js", directive: "script-src-elem" });
-    expect(actionableViolations([evalReport(), real, evalReport({ sourceFile: null })])).toEqual([real]);
+    const foreign = evalReport({ sourceFile: "https://cdn.example/_next/static/chunks/x.js" });
+    expect(actionableViolations([evalReport(), real, evalReport({ sourceFile: null }), foreign], APP)).toEqual([
+      real,
+      foreign,
+    ]);
   });
 });
 
