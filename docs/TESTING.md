@@ -11,7 +11,8 @@ enforced by CI, and it only moves up.
 | Coverage, global | lines 72%, branches 66%, functions 69%, statements 72% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
 | Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 90 / 95 / 93, `src/server/_db` 93 / 88 / 100 / 92, `src/server/api/routers` 86 / 76 / 90 / 85, `src/server/_jobs` 100 / 95 / 100 / 98, `src/_lib` 75 / 85 / 89 / 77 | `coverage-thresholds.json` | yes |
 | Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
-| Coverage guard | no threshold lowered or removed, no exclusion added, against the base branch, unless the pull request has the **`coverage-exception`** label | `scripts/coverage-guard.mjs` | yes |
+| Coverage guard | no threshold lowered or removed, no file measured before left unmeasured, against the base branch, unless the pull request has the **`coverage-exception`** label | `scripts/coverage-guard.mjs` | yes |
+| Test bar guard | a pull request that changes a test-bar file (thresholds, coverage scope, the checks, workflows) needs the **`coverage-exception`** label; raising thresholds does not | `.github/workflows/test-bar-guard.yml` | yes, once required |
 | Strict DOM tests | a DOM test fails on a tRPC call it gave no handler for, and on any `console.error` it did not allow | `src/test/dom/strict.ts` | yes |
 | Authorization matrix | **every tRPC procedure has a row** saying who may call it, and behaves as its row says | `src/server/api/authz.matrix.test.ts` | yes |
 | Mutation score | reported weekly, for a few critical modules | `stryker.config.mjs` | no |
@@ -129,22 +130,63 @@ branch left its base), keeps the added or edited lines of non-test files,
 and looks each up in `coverage/lcov.info`. Lines the coverage report does
 not count as executable (comments, types, imports, blank lines) do not
 count. It prints each file's covered/total and the uncovered line numbers,
-warns about changed files that `coverage.config.mjs` excludes, writes the
-same to the job summary, and fails under 90%. A change with no executable
-lines in `src/` passes. It fails closed: a coverage report with no file
-under `src/`, or a changed file coverage should measure but has no record
-of, is a failure. Paths git quotes (non-ASCII, quotes, control characters)
-are decoded.
+warns about changed files under `src/` that `coverage.config.mjs` excludes
+or does not include, writes the same to the job summary, and fails under
+90%. A change with no executable lines in `src/` passes. It fails closed: a
+coverage report with no file under `src/`, or a changed file coverage should
+measure but has no record of, is a failure. It runs git with
+`core.quotePath=false` and decodes the paths git still quotes (quotes,
+backslashes, control characters), octal escapes and literal non-ASCII
+characters alike.
 
 ### Coverage guard
 
-Also on pull requests, `npm run coverage:guard -- --base origin/<base
+Also on pull requests, `node scripts/coverage-guard.mjs --base origin/<base
 branch>` compares `coverage-thresholds.json` and `coverage.config.mjs` with
-the base branch's copies and fails if any threshold is lower or gone, or an
-exclusion was added. With the **`coverage-exception`** label on the pull
-request (CI re-runs when labels change) it reports the same and passes. Use
-the label only for a deliberate change of what is measured, and say why in
-the pull request.
+the base branch's copies and fails if
+
+- a threshold is lower or gone (a whole directory entry included);
+- an include pattern was removed, an exclusion glob added, or the
+  route-file rule changed;
+- **any file under `src/` that the base's rules measure is not measured by
+  the head's**. Both copies of `coverage.config.mjs` (the base's taken from
+  git) are evaluated against the same tree, so a change in how exclusions
+  are computed (say, `isClientModule`) is caught by its effect, whatever
+  the code looks like;
+- the base has no `coverage-thresholds.json` or `coverage.config.mjs`.
+  `--bootstrap` skips this, and CI passes it only while the base branch
+  predates the guard (the pull request that introduces it).
+
+With the **`coverage-exception`** label on the pull request (CI re-runs when
+labels change) it reports the same and passes. Use the label only for a
+deliberate change of what is measured, and say why in the pull request.
+
+A test (`scripts/coverage-config.test.ts`) checks that Vitest's resolved
+coverage options are exactly `coverage.config.mjs` and
+`coverage-thresholds.json`, nothing added in `vitest.config.ts`. CI calls the
+coverage run, diff coverage and the guard directly (`npx vitest run
+--coverage`, `node scripts/...`), not through `package.json` scripts, so
+editing a script cannot switch a gate off.
+
+### Test bar guard (workflow)
+
+A pull request could still edit its own `ci.yml` or the guard script. A
+second workflow, `.github/workflows/test-bar-guard.yml`, runs on
+`pull_request_target`: GitHub runs the **default branch's** copy of it, so
+a pull request cannot change or remove it. It never checks out or runs the
+pull request's code: it reads the list of changed files from the API and
+fails if any is part of the test bar (`scripts/test-bar-paths.mjs`, the
+same list as `.github/CODEOWNERS`: thresholds, `coverage.config.mjs`,
+`vitest.config.ts`, `package.json`, the coverage scripts, `stryker.config.mjs`,
+the strict DOM setup, the authorization matrix, `trpc.ts`, workflows,
+CODEOWNERS), unless the pull request has the `coverage-exception` label.
+The job summary lists the files and says the label is required. A change
+to `coverage-thresholds.json` that only raises numbers (a ratchet) passes
+without the label; it compares the two JSON texts read through the API.
+
+It takes effect once it is on the default branch (so not for the pull
+request that adds it). Make "Test bar guard" a **required status check** in
+branch protection, alongside requiring code-owner review.
 
 ## Authorization matrix
 
@@ -219,7 +261,9 @@ component swallowed the error), or if anything was logged with
 `console.error` (act() warnings, React errors, and the app's own
 `logger.error`). Where an error log is the expected outcome of the test,
 allow exactly that one: `allowConsoleError(/Error updating booking/)`
-(exported from `~/test/dom/render`).
+(exported from `~/test/dom/render`; several patterns in one call are
+fine). A pattern is required, and one that matches any message (an empty
+pattern, `/./`, `/.*/`, `/[\s\S]*/`) is refused.
 
 Test through the DOM: roles, labels and text a user sees. Do not add test
 hooks to components. For time, use fake timers limited to what the code
