@@ -52,6 +52,37 @@ async function pickDateDaysAhead(page: Page, days: number) {
   await page.locator(".mantine-DateTimePicker-submitButton").click();
 }
 
+/**
+ * No real outbound calls. The browser may only talk to the Worker under
+ * test: any other host is refused and recorded, and the test fails on it.
+ * The Worker's own outbound calls are kept away the same way: the only one
+ * a test can trigger is Google Places autocomplete (typing a location), so
+ * the browser's request for suggestions is refused before it reaches the
+ * Worker, and the form falls back to the typed text, as it does when Places
+ * is down. Everything else the Worker could call is off by configuration
+ * (e2e/serve.mjs): no Resend, Anthropic or Stripe calls are made by these
+ * pages, and PostHog points at a closed local port.
+ */
+const externalRequests: string[] = [];
+
+test.beforeEach(async ({ context }) => {
+  externalRequests.length = 0;
+  await context.route(
+    (url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1",
+    async (route) => {
+      externalRequests.push(route.request().url());
+      await route.abort("blockedbyclient");
+    },
+  );
+  await context.route(/\/api\/trpc\/[^?]*google\.getAutocompleteLocations/, (route) =>
+    route.abort("blockedbyclient"),
+  );
+});
+
+test.afterEach(() => {
+  expect(externalRequests, "requests to hosts other than the Worker under test").toEqual([]);
+});
+
 test("the landing page renders", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);

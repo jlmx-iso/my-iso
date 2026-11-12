@@ -23,9 +23,12 @@ if (!existsSync(path.join(root, ".open-next", "worker.js"))) {
   process.exit(2);
 }
 
+// Wrangler's own usage metrics are not sent from test runs.
+const spawnEnv = { ...process.env, WRANGLER_SEND_METRICS: "false" };
+
 /** @param {string[]} args */
 function wrangler(args) {
-  const result = spawnSync("npx", ["wrangler", ...args], { cwd: root, stdio: "inherit" });
+  const result = spawnSync("npx", ["wrangler", ...args], { cwd: root, env: spawnEnv, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
@@ -65,7 +68,7 @@ const server = spawn(
     "--show-interactive-dev-session=false",
     ...Object.entries(vars).flatMap(([key, value]) => ["--var", `${key}:${value}`]),
   ],
-  { cwd: root, stdio: "inherit" },
+  { cwd: root, env: spawnEnv, stdio: "inherit" },
 );
 
 const stop = () => server.kill("SIGTERM");

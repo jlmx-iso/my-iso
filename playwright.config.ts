@@ -27,7 +27,8 @@ export default defineConfig({
     // Migrating and seeding the local D1, then starting workerd.
     timeout: 180_000,
     url: `http://localhost:${E2E_PORT}/api/health`,
-    reuseExistingServer: false,
+    // Locally, a server already running from `node e2e/serve.mjs` is reused.
+    reuseExistingServer: !process.env.CI,
     stdout: "pipe",
     stderr: "pipe",
   },
