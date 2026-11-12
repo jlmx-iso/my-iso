@@ -13,21 +13,24 @@ const usdWhole = new Intl.NumberFormat("en-US", { currency: "USD", maximumFracti
 
 /**
  * "$450", "$1,200", "$87.50": whole dollars without ".00". Null for an
- * event with no listed pay (or a value that is not a sensible amount).
+ * event with no listed pay, $0 included (an unpaid listing is not "pays
+ * $0"; the description says so), or a value that is not a sensible amount.
  */
 export function formatPay(cents: number | null | undefined): string | null {
-  if (cents === null || cents === undefined || !Number.isInteger(cents) || cents < 0) return null;
+  if (cents === null || cents === undefined || !Number.isInteger(cents) || cents <= 0) return null;
   return cents % 100 === 0 ? usdWhole.format(cents / 100) : usd.format(cents / 100);
 }
 
 /**
  * The form's value (dollars, as Mantine's NumberInput gives it: a number,
- * or "" when empty) as cents. Null when the field is empty: pay is optional.
+ * or "" when empty) as cents. Null when the field is empty or zero: pay is
+ * optional, and $0 is "not listed".
  */
 export function payDollarsToCents(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
   const dollars = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(dollars) ? Math.round(dollars * 100) : null;
+  const cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+  return cents > 0 ? cents : null;
 }
 
 /** Cents as the form's dollar value; "" for no listed pay. */

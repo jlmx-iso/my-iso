@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { eventDay, formatEventTime, isValidTimeZone, localTimeZone, timeZoneLabel } from "./eventTime";
+import { canonicalTimeZone, eventDay, formatEventTime, isValidTimeZone, localTimeZone, timeZoneLabel } from "./eventTime";
 
 // 2 PM in Denver (MST, UTC-7) on Sunday, November 22, 2026.
 const START = new Date("2026-11-22T21:00:00.000Z");
@@ -50,6 +50,16 @@ describe("time zones", () => {
     expect(isValidTimeZone("Mars/Olympus_Mons")).toBe(false);
     expect(isValidTimeZone("")).toBe(false);
     expect(isValidTimeZone(null)).toBe(false);
+  });
+
+  it("canonicalises named zones and refuses offsets and unknown names", () => {
+    expect(canonicalTimeZone("america/new_york")).toBe("America/New_York");
+    expect(canonicalTimeZone(" Europe/Paris ")).toBe("Europe/Paris");
+    expect(canonicalTimeZone("UTC")).toBe("UTC");
+    expect(canonicalTimeZone("+01:00")).toBeNull();
+    expect(canonicalTimeZone("-0500")).toBeNull();
+    expect(canonicalTimeZone("Mars/Base")).toBeNull();
+    expect(canonicalTimeZone(null)).toBeNull();
   });
 
   it("names the local zone and a zone's short label", () => {

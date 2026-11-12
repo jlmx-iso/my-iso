@@ -462,7 +462,7 @@ model Notification {
   createdAt   DateTime @default(now())
   recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   recipientId String
-  type        String // booking_applied, booking_accepted, booking_declined, booking_canceled, booking_completed, new_message, review_received, profile_view
+  type        String // booking_applied, booking_accepted, booking_declined, booking_canceled, booking_completed, event_updated, new_message, review_received, profile_view
   title       String
   body        String
   isRead      Boolean  @default(false)

@@ -7,11 +7,12 @@ describe("formatPay", () => {
     expect(formatPay(45_000)).toBe("$450");
     expect(formatPay(120_000)).toBe("$1,200");
     expect(formatPay(8_750)).toBe("$87.50");
-    expect(formatPay(0)).toBe("$0");
   });
 
   it("has nothing to show for no pay or a value that is not an amount", () => {
     expect(formatPay(null)).toBeNull();
+    // $0 is "not listed", never "pays $0".
+    expect(formatPay(0)).toBeNull();
     expect(formatPay(undefined)).toBeNull();
     expect(formatPay(-100)).toBeNull();
     expect(formatPay(1.5)).toBeNull();
@@ -32,6 +33,7 @@ describe("payDollarsToCents and payCentsToDollars", () => {
     expect(payDollarsToCents(null)).toBeNull();
     expect(payDollarsToCents(undefined)).toBeNull();
     expect(payDollarsToCents("abc")).toBeNull();
+    expect(payDollarsToCents(0)).toBeNull();
     expect(payCentsToDollars(null)).toBe("");
     expect(payCentsToDollars(undefined)).toBe("");
   });

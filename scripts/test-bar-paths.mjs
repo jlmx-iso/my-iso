@@ -142,7 +142,11 @@ export const MEASUREMENT_PACKAGES = Object.freeze([
   "magicast",
 ]);
 
-/** Whether a package name is a measurement tool. */
+/**
+ * Whether a package name is a measurement tool.
+ *
+ * @param {string} name
+ */
 export function isMeasurementPackage(name) {
   return MEASUREMENT_PACKAGES.some((pattern) =>
     pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern,

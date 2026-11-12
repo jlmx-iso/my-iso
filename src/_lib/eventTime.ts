@@ -5,7 +5,8 @@
  * converted. Events posted before their zone was recorded (`timeZone` null)
  * are written in the reader's zone, still labelled, so the reader can tell.
  *
- * Plain Intl, no dependencies: used in client components and in emails.
+ * Plain Intl, no dependencies: used in client components and on the server
+ * (the in-app notification when a booked event's time changes).
  */
 
 export type EventTimeFormat =
@@ -13,7 +14,7 @@ export type EventTimeFormat =
   | "date"
   /** Sun, Nov 22 · 2:00 PM MST (the event page, where the weekday matters) */
   | "dayTime"
-  /** Nov 22, 2026 · 2:00 PM MST (bookings, emails) */
+  /** Nov 22, 2026 · 2:00 PM MST (notifications) */
   | "dateTime"
   /** 2:00 PM MST */
   | "time";
@@ -27,6 +28,18 @@ export function isValidTimeZone(zone: string | null | undefined): zone is string
   } catch {
     return false;
   }
+}
+
+/**
+ * A zone as the runtime spells it ("america/chicago" → "America/Chicago",
+ * "US/Central" stays itself), or null for anything that is not a named IANA
+ * zone: unknown names, and offsets ("+01:00", "UTC+1"), which say nothing
+ * about daylight saving and so give the wrong time half the year.
+ */
+export function canonicalTimeZone(zone: string | null | undefined): string | null {
+  if (!zone || !isValidTimeZone(zone.trim())) return null;
+  const canonical = new Intl.DateTimeFormat("en-US", { timeZone: zone.trim() }).resolvedOptions().timeZone;
+  return /^[A-Za-z]/.test(canonical) && !/^(?:UTC|GMT)[+-]/i.test(canonical) ? canonical : null;
 }
 
 /** The browser's (or server's) own IANA zone, or null if it has none. */
