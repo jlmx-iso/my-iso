@@ -1,8 +1,8 @@
 {
-  "branches": 53,
-  "functions": 53,
-  "lines": 58,
-  "statements": 58,
+  "branches": 66,
+  "functions": 69,
+  "lines": 72,
+  "statements": 72,
   "src/server/_billing/**": {
     "branches": 90,
     "functions": 95,
