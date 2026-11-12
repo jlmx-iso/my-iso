@@ -24,9 +24,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
       shadow="xs"
       p={0}
       radius="md"
-      withBorder
       h="100%"
-      style={{ borderLeft: '3px solid var(--mantine-color-orange-3)' }}
       data-testid="search-event-card"
     >
       {event.image && (
@@ -39,7 +37,21 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         </Link>
       )}
 
-      <Stack gap="xs" p="md" style={{ flex: 1 }}>
+      {/* The border and accent stripe are drawn around the text only, so a
+          cover image runs edge to edge under the card's rounded corners. */}
+      <Stack
+        gap="xs"
+        p="md"
+        style={{
+          flex: 1,
+          border: '1px solid var(--mantine-color-gray-3)',
+          borderLeft: '3px solid var(--mantine-color-orange-3)',
+          borderRadius: event.image
+            ? '0 0 var(--mantine-radius-md) var(--mantine-radius-md)'
+            : 'var(--mantine-radius-md)',
+          borderTopWidth: event.image ? 0 : 1,
+        }}
+      >
         <UserBadge
           user={{
             userId: event.photographer.user.id,
