@@ -94,7 +94,7 @@ describe("InsightsDashboard", () => {
 
   it("asks for the period the member picks", async () => {
     const view = renderWithProviders(<InsightsDashboard profileUrl={PROFILE_URL} />, {
-      trpc: { insights: { getSummary: ({ days }) => insights({ days }) } },
+      trpc: { insights: { getSummary: ({ days }) => insights({ days: days as Insights["days"] }) } },
     });
     await screen.findByTestId("stat-profile-views");
     await userEvent.click(screen.getByRole("radio", { name: "7 days" }));
