@@ -30,12 +30,15 @@ export default defineConfig({
         "src/types/**",
         "src/_types/**",
         "src/styles/**",
-        // Next.js route-convention files: async server components and
-        // layouts that need the Next.js request scope (headers(), cookies(),
-        // redirect(), the RSC tRPC caller). They are exercised by the build
-        // and the workerd E2E smoke (npm run test:e2e), not Vitest. Route
-        // handlers (route.ts), sitemap and robots are plain functions and stay
-        // in.
+        // Next.js route-convention files. Most (25 of 36) are async server
+        // components and layouts that need the Next.js request scope
+        // (headers(), cookies(), redirect(), the RSC tRPC caller) and are
+        // exercised by the build and the workerd E2E smoke, not Vitest. The
+        // client-component pages can be rendered in a DOM test (the
+        // photographer profile is), but are left out as a class so the gate
+        // does not depend on which kind a route file is. Keep logic out of
+        // them. Route handlers (route.ts), sitemap and robots are plain
+        // functions and stay in.
         "src/app/**/{page,layout,loading,error,not-found,template,default,global-error}.tsx",
         // Browser bootstrap that runs PostHog init as an import side effect.
         "src/instrumentation-client.ts",
@@ -50,8 +53,8 @@ export default defineConfig({
         // exists in workerd. Its decisions live in chatRoomPolicy.ts and
         // realtimeGateway.ts, which are covered.
         "src/do/ChatRoom.ts",
-        // React Email templates: static markup with props. Sending logic
-        // (email.ts) is covered; the templates are checked by the build.
+        // React Email templates: static markup with props, type-checked and
+        // built. The sending code (email.ts) stays in.
         "src/server/_lib/emails/**",
       ],
       provider: "v8",
@@ -68,6 +71,6 @@ export default defineConfig({
     // .claude/ can hold agent worktrees with their own copy of the suite.
     exclude: [...configDefaults.exclude, ".claude/**", "e2e/**"],
     globals: true,
-    setupFiles: ["./src/test/setup.ts"],
+    setupFiles: ["./src/test/setup.ts", "./src/test/dom/setup.ts"],
   },
 });
