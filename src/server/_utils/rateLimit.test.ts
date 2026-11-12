@@ -122,8 +122,13 @@ describe("rate limiter against SQLite", () => {
   });
 
   it("purges only counters whose window has ended", async () => {
-    await consumeRateLimit(testDb.db, policy, "user:old", { nowMs: T0 });
-    await consumeRateLimit(testDb.db, policy, "user:new", { nowMs: T0 + 120_000 });
+    // `random: () => 1` turns off the opportunistic sweep, which would
+    // otherwise remove the old row first about one run in fifty.
+    await consumeRateLimit(testDb.db, policy, "user:old", { nowMs: T0, random: () => 1 });
+    await consumeRateLimit(testDb.db, policy, "user:new", {
+      nowMs: T0 + 120_000,
+      random: () => 1,
+    });
 
     const removed = await purgeExpiredRateLimits(testDb.db, T0 + 120_000);
 

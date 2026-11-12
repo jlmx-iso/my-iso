@@ -13,7 +13,10 @@ import { db as prismaDb } from "~/server/db";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "../trpc";
 
 /** Most recent swipes excluded from a card deck. */
-const MAX_SWIPES_CONSIDERED = 5000;
+// Candidates fetched to score and rank before the deck is cut down. Prisma
+// loads each nested relation with one `IN (...parent ids)` statement, and D1
+// allows about 100 bound parameters per statement, so this must stay below it.
+const DECK_CANDIDATE_POOL = 90;
 
 export const discoverRouter = createTRPCRouter({
   getCardDeck: protectedProcedure
@@ -38,20 +41,15 @@ export const discoverRouter = createTRPCRouter({
           },
         });
 
-        // Get IDs the user has already swiped on
-        const swipedIds = await ctx.db.swipe.findMany({
-          where: { swiperId: userId },
-          select: { targetId: true },
-          orderBy: { createdAt: "desc" },
-          take: MAX_SWIPES_CONSIDERED,
-        });
-        const excludeIds = new Set([userId, ...swipedIds.map((s) => s.targetId)]);
-
         // Fetch discoverable users with photographer profiles
         const candidates = await ctx.db.user.findMany({
           where: {
             isDiscoverable: true,
-            id: { notIn: [...excludeIds] },
+            id: { not: userId },
+            // A relation filter, not `id: { notIn: [...] }`: D1 allows about
+            // 100 bound parameters per statement, so a list of every id the
+            // user has swiped on stops working after ~95 swipes.
+            swipesReceived: { none: { swiperId: userId } },
             photographer: { isNot: null },
           },
           select: {
@@ -90,7 +88,7 @@ export const discoverRouter = createTRPCRouter({
               },
             },
           },
-          take: 100, // fetch more than needed to score and rank
+          take: DECK_CANDIDATE_POOL,
         });
 
         // Score and rank candidates
