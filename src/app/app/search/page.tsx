@@ -91,8 +91,7 @@ function Search() {
   const hasMore =
     (photographers.hasMore || events.hasMore) && pageCount * SEARCH_PAGE_SIZE <= SEARCH_MAX_OFFSET;
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = () => {
     const query = draft.trim();
     // From here the box belongs to this query: Back to an earlier search
     // shows that search's words, not these.
@@ -100,6 +99,11 @@ function Search() {
     if (query === submittedQuery) return;
     // A history entry per search, so Back returns to the previous results.
     router.push(query ? `${pathname}?q=${encodeURIComponent(query)}` : pathname, { scroll: false });
+  };
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    submit();
   };
 
   const hasActiveFilters = !!locationDraft.trim() || hasDateRange;
@@ -136,6 +140,15 @@ function Search() {
             placeholder="Photographers, events, cities…"
             value={draft}
             onChange={(e) => setDraft(e.currentTarget.value)}
+            // Enter always searches. Left to the browser, it does nothing
+            // while the Search button is busy with the previous search (a
+            // disabled submit button blocks implicit submission).
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
             leftSection={<IconSearch size={20} aria-hidden />}
             rightSection={
               <Group gap={4} wrap="nowrap" mr={4}>
