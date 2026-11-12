@@ -2,9 +2,11 @@
 //
 // The review section of a photographer's profile: the form only for a
 // signed-in member whose review the server would accept, their own review or
-// the reason otherwise, and nothing asked for visitors and the owner.
+// the reason otherwise, nothing asked for visitors and the owner, and an
+// error with a working "Try again" when eligibility fails to load.
 
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
@@ -14,6 +16,7 @@ import ReviewsSection, { type ReviewViewer } from "./ReviewsSection";
 type ReviewState = ReturnType<NonNullable<NonNullable<TrpcHandlers["review"]>["getMyReviewState"]>>;
 
 const ELIGIBLE = { blocker: null, canReview: true, hasReviewed: false, myReview: null };
+const ERROR_TEXT = "We could not check whether you can review this photographer.";
 
 function renderSection(viewer: ReviewViewer, getMyReviewState: () => ReviewState) {
   return renderWithProviders(
@@ -69,16 +72,38 @@ describe("review eligibility", () => {
     expect(screen.queryByRole("link", { name: "Sign in" }) !== null).toBe(viewer === "anonymous");
   });
 
-  // KNOWN GAP (reported, not fixed here): when eligibility fails to load,
-  // the section shows neither the form, nor a reason, nor an error with a way
-  // to retry. The previous profile page did ("We could not check whether you
-  // can review this photographer." + "Try again"). Remove `.fails` once the
-  // section has an error state.
-  it.fails("says so when eligibility fails to load, with a way to try again", async () => {
-    renderSection("member", () => {
-      throw trpcError("INTERNAL_SERVER_ERROR", "database unavailable");
+  it("says so when eligibility fails to load, and Try again recovers to the real gate", async () => {
+    let attempts = 0;
+    const view = renderSection("member", () => {
+      attempts += 1;
+      if (attempts === 1) throw trpcError("INTERNAL_SERVER_ERROR", "database unavailable");
+      return { ...ELIGIBLE, blocker: "no_completed_booking", canReview: false };
     });
 
-    expect(await screen.findByRole("button", { name: /try again/i })).toBeTruthy();
+    expect(await screen.findByText(ERROR_TEXT)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Post review" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByText("You can review Ann Lee after you've completed a booking together."),
+    ).toBeTruthy();
+    expect(screen.queryByText(ERROR_TEXT)).toBeNull();
+    expect(view.callsTo("review.getMyReviewState")).toHaveLength(2);
+  });
+
+  it("keeps the error and Try again after a retry that fails again", async () => {
+    let attempts = 0;
+    renderSection("member", () => {
+      attempts += 1;
+      throw trpcError("INTERNAL_SERVER_ERROR", "still down");
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(attempts).toBe(2));
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.getByText(ERROR_TEXT)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Post review" })).toBeNull();
   });
 });
