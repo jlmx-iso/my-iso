@@ -7,7 +7,12 @@ import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 
 import { isSubscriptionStatus, isTerminalStatus, TERMINAL_STATUSES } from "./entitlements";
 import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
-import { readPaymentStanding, type PaymentStanding } from "./paymentStanding";
+import {
+  readPaymentStanding,
+  UNFINISHED_DISPUTE_STATUSES,
+  type KnownDispute,
+  type PaymentStanding,
+} from "./paymentStanding";
 import { reportBillingError } from "./report";
 import { isStripeResourceMissing, stripeResponseTime } from "./stripe";
 import {
@@ -34,7 +39,7 @@ import {
  * that outlives its lease.
  */
 
-export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "user"> & LeaseDb;
+export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "subscriptionDispute" | "user"> & LeaseDb;
 
 /**
  * The legacy boolean columns, derived from the status. The previous release
@@ -483,6 +488,38 @@ type SingleReading = { outcome: ApplyOutcome; state: SubscriptionState; userId: 
 /** The subscription is on a customer other than the one whose lease is held. */
 type OtherCustomer = { customerId: string; outcome: "other_customer" };
 
+/** More unfinished disputes than this on one subscription are not even read; the re-read bound fails closed first. */
+const KNOWN_DISPUTES_READ = 50;
+
+const isKnownDisputeStatus = (status: string): status is KnownDispute["status"] =>
+  ["open", "inquiry", "lost", "superseded", "cleared"].includes(status);
+
+/**
+ * Upserts one dispute into SubscriptionDispute, in ONE statement that also
+ * requires the customer's lease to be held (a holder that outlived its
+ * lease writes nothing). A dispute is never removed, and one that is
+ * finished is not looked at again; "superseded" is not undone by the same
+ * lost dispute being seen once more on a listing.
+ */
+async function rememberDispute(
+  db: BillingDb,
+  lease: LeaseHandle,
+  subscriptionId: string,
+  dispute: KnownDispute,
+): Promise<void> {
+  const now = new Date();
+  await db.$executeRaw(Prisma.sql`
+    INSERT INTO "SubscriptionDispute" ("disputeId", "subscriptionId", "invoiceId", "status", "updatedAt")
+    SELECT ${dispute.disputeId}, ${subscriptionId}, ${dispute.invoiceId}, ${dispute.status}, ${now}
+    WHERE ${lease.heldCondition()}
+    ON CONFLICT ("disputeId") DO UPDATE SET
+      "status" = CASE
+        WHEN "SubscriptionDispute"."status" = 'superseded' AND excluded."status" = 'lost' THEN 'superseded'
+        ELSE excluded."status"
+      END,
+      "updatedAt" = excluded."updatedAt"`);
+}
+
 /** Derives the standing of `subscription` from Stripe and stores it; null when not stored. */
 async function storePaymentStanding(
   db: BillingDb,
@@ -491,14 +528,22 @@ async function storePaymentStanding(
   subscription: Stripe.Subscription,
   paymentIntentId: string | null = null,
 ): Promise<PaymentStanding | null> {
-  // The marker the row holds now (read under the lease, which is what
-  // serialises it with the write below): that dispute is re-read by id.
-  const stored = await db.subscription.findFirst({
-    select: { disputeId: true, disputeInvoiceId: true },
-    where: { subscriptionId: subscription.id },
-  });
-  const standing = await readPaymentStanding(stripe, subscription, { paymentIntentId, stored });
-  if (!standing) return null;
+  // Every dispute known for the subscription that is not finished. Read
+  // under the lease, which is what serialises it with the writes below.
+  const known = (
+    await db.subscriptionDispute.findMany({
+      orderBy: { updatedAt: "desc" },
+      select: { disputeId: true, invoiceId: true, status: true },
+      take: KNOWN_DISPUTES_READ,
+      where: { status: { in: [...UNFINISHED_DISPUTE_STATUSES] }, subscriptionId: subscription.id },
+    })
+  ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
+  const reading = await readPaymentStanding(stripe, subscription, { known, paymentIntentId });
+  if (!reading) return null;
+  const { standing } = reading;
+  // Remember every dispute this derivation knows of, as it is now. Each is
+  // one statement that also requires the lease to be held still.
+  for (const dispute of reading.disputes) await rememberDispute(db, lease, subscription.id, dispute);
   const written = await writePaymentStanding(db, lease, subscription.id, standing);
   if (written !== "recorded") return null;
   if (standing.incomplete) {

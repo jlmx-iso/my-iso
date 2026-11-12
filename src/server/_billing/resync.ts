@@ -36,18 +36,21 @@ import { MAX_READINGS, MAX_SUBSCRIPTION_PAGES, type BillingDb, type SyncOptions 
  *   MAX_READINGS readings, one to learn its customer, one for the customer;
  * - Stripe, the payment standing: MAX_STANDING_STRIPE_CALLS;
  * - D1: the lease (up to about eight attempts to take it, one to release),
- *   the guarded writes and the reads around them: under
- *   D1_STATEMENTS_PER_ROW.
+ *   the guarded writes and the reads around them, and one upsert per
+ *   dispute known for the subscription: under D1_STATEMENTS_PER_ROW.
  *
  * A row normally costs four or five Stripe requests and a dozen statements.
  */
 export const SUBREQUEST_BUDGET = 1000;
-export const D1_STATEMENTS_PER_ROW = 30;
+export const D1_STATEMENTS_PER_ROW = 50;
 export const MAX_STRIPE_CALLS_PER_ROW =
   2 * MAX_SUBSCRIPTION_PAGES * MAX_READINGS + (MAX_READINGS + 2) + MAX_STANDING_STRIPE_CALLS;
 export const MAX_SUBREQUESTS_PER_ROW = MAX_STRIPE_CALLS_PER_ROW + D1_STATEMENTS_PER_ROW;
 
-/** Rows per call: the most that fit in SUBREQUEST_BUDGET at the worst case per row, and no more than ten. */
+/**
+ * Rows per call: the most that fit in SUBREQUEST_BUDGET at the worst case
+ * per row, and no more than ten. (Eight, with the bounds as they are.)
+ */
 export const RESYNC_MAX_BATCH = Math.min(10, Math.floor(SUBREQUEST_BUDGET / MAX_SUBREQUESTS_PER_ROW));
 
 /**

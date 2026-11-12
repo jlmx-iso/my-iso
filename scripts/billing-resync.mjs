@@ -11,7 +11,7 @@
  * Usage:
  *
  *   RESYNC_COOKIE='__Secure-authjs.session-token=...' \
- *     node scripts/billing-resync.mjs --url https://app.example.com [--scope pending|all] [--limit 10]
+ *     node scripts/billing-resync.mjs --url https://app.example.com [--scope pending|all] [--limit <rows per batch>]
  *
  * Sign in to the app as a founder or ambassador and copy the session cookie
  * from the browser (never commit or log it), or pass a bearer token in
@@ -42,13 +42,16 @@ const option = (name, fallback) => {
 
 const baseUrl = option("url", process.env.RESYNC_URL);
 const scope = option("scope", "pending") ?? "pending";
-const limit = Number(option("limit", "10"));
+// Without --limit the server uses its own batch size (RESYNC_MAX_BATCH, the
+// most that fits its subrequest budget); a larger value would be refused.
+const limitOption = option("limit", undefined);
+const limit = limitOption === undefined ? undefined : Number(limitOption);
 const cookie = process.env.RESYNC_COOKIE;
 const authorization = process.env.RESYNC_AUTHORIZATION;
 
-if (!baseUrl || (!cookie && !authorization) || !["pending", "all"].includes(scope) || !Number.isInteger(limit)) {
+if (!baseUrl || (!cookie && !authorization) || !["pending", "all"].includes(scope) || (limit !== undefined && !Number.isInteger(limit))) {
   console.error(
-    "Usage: RESYNC_COOKIE='<session cookie>' node scripts/billing-resync.mjs --url <app origin> [--scope pending|all] [--limit 1-10]",
+    "Usage: RESYNC_COOKIE='<session cookie>' node scripts/billing-resync.mjs --url <app origin> [--scope pending|all] [--limit <rows per batch>]",
   );
   process.exit(2);
 }

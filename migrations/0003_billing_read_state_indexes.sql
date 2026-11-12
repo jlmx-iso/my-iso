@@ -61,6 +61,19 @@ UPDATE "Subscription" SET "stripeCustomerId" =
 -- Existing canceled rows keep NULL (unknown), which never allows re-applying.
 ALTER TABLE "Booking" ADD COLUMN "cancelOrigin" TEXT;
 
+-- ── Every dispute the app has learned of, per Stripe subscription ──────────
+-- A dispute is never removed; one that is not finished is re-read from
+-- Stripe by its id whenever the subscription's payment standing is derived
+-- (src/server/_billing/paymentStanding.ts).
+CREATE TABLE "SubscriptionDispute" (
+    "disputeId" TEXT NOT NULL PRIMARY KEY,
+    "subscriptionId" TEXT NOT NULL,
+    "invoiceId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "updatedAt" DATETIME NOT NULL
+);
+CREATE INDEX "SubscriptionDispute_subscriptionId_status_idx" ON "SubscriptionDispute"("subscriptionId", "status");
+
 -- ── Leases that serialise billing work per user ─────────────────────────────
 CREATE TABLE "BillingLease" (
     "key" TEXT NOT NULL PRIMARY KEY,

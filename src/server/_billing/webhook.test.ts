@@ -17,7 +17,7 @@ import {
 
 import { entitlementsFor } from "./entitlements";
 import { CLAIM_LEASE_SECONDS } from "./eventLog";
-import { MAX_DISPUTED_CHARGES, MAX_STANDING_STRIPE_CALLS } from "./paymentStanding";
+import { MAX_DISPUTED_CHARGES, MAX_KNOWN_DISPUTES_REREAD, MAX_STANDING_STRIPE_CALLS } from "./paymentStanding";
 import { constructWebhookEvent } from "./stripe";
 import { subscriptionStateFromStripe } from "./subscriptionState";
 import { applySubscriptionState } from "./subscriptionStore";
@@ -883,6 +883,133 @@ describe("disputes and refunds", () => {
 
           expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBe("in_1");
           expect(await access(user.id)).toMatchObject({ hasProAccess: false, reason: "none" });
+        });
+      });
+
+      describe("every dispute ever learned of is remembered until Stripe says it is over", () => {
+        /** Another old payment of sub_1 (invoice in_<name>, charge ch_<name>), outside the listing. */
+        function oldPayment(name: string, daysAgo: number) {
+          stub.invoices.set(`in_${name}`, buildInvoice({ created: T0 - daysAgo * DAY, customer: "cus_alice", id: `in_${name}`, status: "paid", subscriptionId: "sub_1" }));
+          stub.invoicePayments.set(`inpay_${name}`, buildInvoicePayment({ id: `inpay_${name}`, invoice: `in_${name}`, paymentIntent: `pi_${name}` }));
+          stub.charges.set(`ch_${name}`, buildCharge({ created: nowSeconds() - daysAgo * DAY, customer: "cus_alice", id: `ch_${name}`, paymentIntent: `pi_${name}` }));
+        }
+        const dispute = (name: string, status: string) => {
+          const object = buildDispute({ charge: `ch_${name}`, id: `dp_${name}`, paymentIntent: `pi_${name}`, status });
+          stub.disputes.set(`dp_${name}`, object);
+          return object;
+        };
+        const known = async () =>
+          Object.fromEntries((await testDb.db.subscriptionDispute.findMany()).map((row) => [row.disputeId, row.status]));
+
+        /** A and B, both on charges outside the newest 300, both opened, both creation events delivered. */
+        async function twoUnlistedOpenDisputes() {
+          const user = await paidSubscription();
+          longHistory();
+          oldPayment("a", 500);
+          oldPayment("b", 470);
+          await deliver(buildEvent("charge.dispute.created", dispute("a", "needs_response")));
+          await deliver(buildEvent("charge.dispute.created", dispute("b", "needs_response")));
+          expect(await known()).toEqual({ dp_a: "open", dp_b: "open" });
+          expect((await access(user.id)).hasProAccess).toBe(false);
+          return user;
+        }
+
+        it("open A, open B, win B while A stays open: access is still withheld", async () => {
+          const user = await twoUnlistedOpenDisputes();
+
+          await deliver(buildEvent("charge.dispute.closed", dispute("b", "won")));
+
+          expect(await known()).toEqual({ dp_a: "open", dp_b: "cleared" });
+          expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_a", disputeInvoiceId: "in_a", disputeStatus: "open" });
+          expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+
+          // And it stays withheld through events that know of neither.
+          await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+          expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_a", disputeStatus: "open" });
+        });
+
+        it("the other way round, win A while B stays open: still withheld; both resolved: access is back", async () => {
+          const user = await twoUnlistedOpenDisputes();
+
+          await deliver(buildEvent("charge.dispute.closed", dispute("a", "won")));
+          expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_b", disputeStatus: "open" });
+          expect((await access(user.id)).hasProAccess).toBe(false);
+
+          await deliver(buildEvent("charge.dispute.closed", dispute("b", "won")));
+          expect(await known()).toEqual({ dp_a: "cleared", dp_b: "cleared" });
+          expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: null });
+          expect(await access(user.id)).toMatchObject({ hasProAccess: true, isDisputed: false });
+        });
+
+        it("a dispute won without its closing event ever arriving is still found won, by id, at the next derivation", async () => {
+          const user = await twoUnlistedOpenDisputes();
+          dispute("a", "won");
+          dispute("b", "won");
+
+          await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+          expect(await known()).toEqual({ dp_a: "cleared", dp_b: "cleared" });
+          expect((await access(user.id)).hasProAccess).toBe(true);
+        });
+
+        it("lost A superseded by a later paid invoice while B is open: still withheld, and released when B is won", async () => {
+          const user = await twoUnlistedOpenDisputes();
+
+          // A is lost. in_1 (the latest invoice) was paid for after in_a, so the loss is superseded at once...
+          await deliver(buildEvent("charge.dispute.closed", dispute("a", "lost")));
+          expect(await known()).toEqual({ dp_a: "superseded", dp_b: "open" });
+          // ...but B is open.
+          expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_b", disputeStatus: "open" });
+          expect((await access(user.id)).hasProAccess).toBe(false);
+
+          await deliver(buildEvent("charge.dispute.closed", dispute("b", "won")));
+          expect(await known()).toEqual({ dp_a: "superseded", dp_b: "cleared" });
+          expect((await access(user.id)).hasProAccess).toBe(true);
+        });
+
+        it("an inquiry is remembered without withholding, and withholds once it has become a chargeback, event or no event", async () => {
+          const user = await paidSubscription();
+          longHistory();
+          oldPayment("a", 500);
+          await deliver(buildEvent("charge.dispute.created", dispute("a", "warning_needs_response")));
+          expect(await known()).toEqual({ dp_a: "inquiry" });
+          expect((await access(user.id)).hasProAccess).toBe(true);
+
+          // It escalates; the update event is lost. An unrelated event's derivation re-reads it.
+          dispute("a", "needs_response");
+          await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+          expect(await known()).toEqual({ dp_a: "open" });
+          expect((await access(user.id)).hasProAccess).toBe(false);
+        });
+
+        it("more known open disputes than are re-read fails closed and is reported; the rest are read the next time", async () => {
+          const user = await paidSubscription();
+          // Eleven disputes the app once recorded as open; at Stripe all of them have since been won.
+          for (let i = 1; i <= MAX_KNOWN_DISPUTES_REREAD + 1; i += 1) {
+            const id = String(i).padStart(2, "0");
+            stub.disputes.set(`dp_k${id}`, buildDispute({ charge: `ch_k${id}`, id: `dp_k${id}`, paymentIntent: `pi_k${id}`, status: "won" }));
+            await testDb.db.subscriptionDispute.create({
+              data: { disputeId: `dp_k${id}`, invoiceId: `in_k${id}`, status: "open", subscriptionId: "sub_1", updatedAt: new Date(T0 * 1000 + i) },
+            });
+          }
+          const invoice = buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" });
+          const retrievals = () => stub.requests.filter((request) => request.path.startsWith("/v1/disputes/dp_k")).length;
+
+          const first = await deliver(buildEvent("invoice.paid", invoice));
+
+          // Ten were re-read (and are over); one was not, and so still counts as open.
+          expect(retrievals()).toBe(MAX_KNOWN_DISPUTES_REREAD);
+          expect(Object.values(await known()).filter((status) => status === "open")).toHaveLength(1);
+          expect(first).toMatchObject({ result: "standing_incomplete", status: 200 });
+          expect((await subscriptionRow(user.id))?.disputeStatus).toBe("open");
+          expect((await access(user.id)).hasProAccess).toBe(false);
+          expect(errorText()).toContain((await subscriptionRow(user.id))?.id);
+
+          // The next derivation reads the one that was left.
+          await deliver(buildEvent("invoice.payment_succeeded", invoice));
+          expect(Object.values(await known()).every((status) => status === "cleared")).toBe(true);
+          expect((await access(user.id)).hasProAccess).toBe(true);
         });
       });
 

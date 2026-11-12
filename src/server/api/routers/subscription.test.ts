@@ -896,7 +896,11 @@ describe("a dispute on a charge the listing does not reach, recorded by its own 
     }
     stub.disputes.set("dp_1", buildDispute({ charge: "ch_1", id: "dp_1", paymentIntent: "pi_1", status: "needs_response" }));
     await as(user).syncStatus();
-    // What `charge.dispute.created` stored (webhook.test.ts covers that step).
+    // What `charge.dispute.created` stored (webhook.test.ts covers that
+    // step): the dispute in the set of known disputes, and the summary.
+    await testDb.db.subscriptionDispute.create({
+      data: { disputeId: "dp_1", invoiceId: "in_1", status: "open", subscriptionId: "sub_a", updatedAt: new Date() },
+    });
     await testDb.db.subscription.update({
       data: { disputeId: "dp_1", disputeInvoiceId: "in_1", disputeStatus: "open" },
       where: { userId: user.id },

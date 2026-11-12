@@ -9,7 +9,7 @@ access from that mirror.
 | Access rules (the one place state becomes access) | `src/server/_billing/entitlements.ts` |
 | Stripe subscription → stored state; which of several subscriptions counts | `src/server/_billing/subscriptionState.ts` |
 | Reading from Stripe and the guarded writes | `src/server/_billing/subscriptionStore.ts` |
-| Disputes and refunds, derived from Stripe | `src/server/_billing/paymentStanding.ts` |
+| Disputes and refunds, derived from Stripe; the set of known disputes | `src/server/_billing/paymentStanding.ts`, table `SubscriptionDispute` |
 | Leases (one sequence per customer / per user at a time) | `src/server/_billing/lease.ts` |
 | First sync of a legacy row on an access check | `src/server/_billing/lazySync.ts` |
 | Webhook (events, status codes) and its HTTP shell | `src/server/_billing/webhook.ts`, `webhookRequest.ts`, `src/app/webhooks/stripe/route.ts` |
@@ -117,18 +117,34 @@ The rules behind the columns the status alone does not explain:
   at once are both seen, and winning one does not hide the other; and
   nothing depends on which event was handled last. `subscription.syncStatus`
   derives it too, so a customer can put a stale standing right from the
-  settings page if an event is late. One derivation is bounded (at most 19
-  Stripe requests), and neither bound keeps the previous standing:
-  - **A stored marker is cleared only on evidence about that very
-    dispute.** The dispute the row names (`disputeId`) is re-read from
-    Stripe by its id in every derivation and merged into the result. So a
-    derivation that cannot see its charge (an invoice event, or a dispute
-    closing on another charge, for a customer past the listing limit) does
-    not clear it. It is cleared when that dispute reads as won, withdrawn
-    or gone, or when it was lost and a later invoice has been paid for.
-    Likewise the refund marker: the charges that paid the latest invoice
-    are read directly when the listing does not hold them, so "not listed"
-    is never taken for "not refunded".
+  settings page if an event is late.
+- **Every dispute is remembered until Stripe says it is over**
+  (table `SubscriptionDispute`, keyed by dispute id, per Stripe
+  subscription). Whatever a derivation learns of, from an event's own
+  charge or from the listing, is upserted there (one statement each, under
+  the customer's lease) and never deleted. Its `status` is `open`,
+  `inquiry` (no money taken yet; can still become a chargeback), `lost`,
+  `superseded` (lost, and a later invoice has been paid for) or `cleared`
+  (won, withdrawn, closed, or gone at Stripe). A dispute that is `open` or
+  `inquiry` is **re-read from Stripe by its id in every derivation**; a
+  `lost` one is final at Stripe and is carried until superseded. The
+  standing is the worst across all of them: any `open` withholds access;
+  otherwise a `lost` one on the most recent invoice paid for does. So a
+  dispute stops withholding only on a direct read of that dispute, never
+  because a later derivation could not see its charge, and it makes no
+  difference how many disputes there are, in which order they open and
+  close, or which event triggers the derivation (an invoice event, another
+  dispute, the re-sync, the manual refresh). `disputeId`, `disputeStatus`
+  and `disputeInvoiceId` on `Subscription` are the summary of that set,
+  written with each derivation, so an access check needs no join.
+  The refund marker needs no memory: the charges that paid the latest
+  invoice are read directly when the listing does not hold them.
+- **One derivation is bounded** (at most 28 Stripe requests), and no bound
+  restores access:
+  - **More than ten known disputes still unfinished**: ten are re-read; the
+    others keep their stored status, so an open one still withholds, and
+    the row is reported (`standing_incomplete`). They are read the next
+    time.
   - **More than 300 charges** on the customer: the standing is derived from
     the newest 300 **plus the charge a dispute or refund event is about**,
     which is read directly by its payment intent whatever its age. So for
@@ -207,7 +223,7 @@ plan's size limit). What the billing code assumes from it:
 
 | Limit | Value | Where it matters |
 | --- | --- | --- |
-| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 54 Stripe requests and 30 statements, so `RESYNC_MAX_BATCH` is 10. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 19 for the payment standing. The Free plan would not carry a batch. |
+| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 63 Stripe requests and 50 statements, so `RESYNC_MAX_BATCH` is 8. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 28 for the payment standing. The Free plan would not carry a batch. |
 | Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget finishes there; its Stripe calls are limited to 3 seconds each for that reason. |
 
 If `limits.subrequests` is ever set below 1,000, lower `SUBREQUEST_BUDGET`
@@ -395,7 +411,7 @@ RESYNC_COOKIE='<session cookie of a founder or ambassador>' \
 ```
 
 The script calls the admin procedure `subscription.resyncFromStripe` in
-batches of up to 10 rows until nothing is left, and prints the outcome of
+batches of up to 8 rows (`RESYNC_MAX_BATCH`; the script lets the server choose unless `--limit` is given) until nothing is left, and prints the outcome of
 each batch. It can be interrupted and run again at any time: each row is
 brought up to date by the same idempotent sync the webhook uses, and a row
 that fails (Stripe unavailable) is counted, skipped, and picked up by the
