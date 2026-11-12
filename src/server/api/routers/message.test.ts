@@ -3,7 +3,12 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
-import { ACTIVE_BOOKING_STATUSES, threadParticipantKey } from "~/server/_db/messaging";
+import {
+  ACTIVE_BOOKING_STATUSES,
+  countUnreadByThread,
+  markThreadReadAt,
+  threadParticipantKey,
+} from "~/server/_db/messaging";
 import { MAX_NEW_CONVERSATIONS_PER_DAY, RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
@@ -715,6 +720,63 @@ describe("messageRouter against SQLite", () => {
     });
   });
 
+  describe("the allowance is charged once per conversation that comes into being", () => {
+    const strangers = (count: number) =>
+      Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          createTestUser(testDb.db, { firstName: `Race${i}`, isDiscoverable: true }),
+        ),
+      );
+
+    /** Units of today's new-conversation allowance Alice has used. */
+    const spent = async () => {
+      const rows = await testDb.raw.$queryRaw<Array<{ count: number | bigint }>>`
+        SELECT "count" FROM "RateLimit" WHERE "key" LIKE 'new-conversation-daily:%'`;
+      return rows.reduce((sum, row) => sum + Number(row.count), 0);
+    };
+
+    it("identical group threads created at the same moment cost their recipients once", async () => {
+      const ids = (await strangers(9)).map((person) => person.id);
+
+      const threads = await Promise.all([
+        as(alice).createThread({ initialMessage: "team, first tab", participants: ids }),
+        as(alice).createThread({ initialMessage: "team, second tab", participants: [...ids].reverse() }),
+      ]);
+
+      expect(new Set(threads.map((thread) => thread.id)).size).toBe(1);
+      expect(await testDb.db.messageThread.count()).toBe(1);
+      expect(await testDb.db.message.count()).toBe(2);
+      // Nine people reached, nine units: not eighteen.
+      expect(await spent()).toBe(9);
+      // So the eleven that are left are really left.
+      const more = (await strangers(11)).map((person) => person.id);
+      await as(alice).createThread({ initialMessage: "another team", participants: more.slice(0, 9) });
+      await as(alice).createThread({ initialMessage: "hi", participants: [more[9] ?? ""] });
+      await as(alice).createThread({ initialMessage: "hi", participants: [more[10] ?? ""] });
+      expect(await spent()).toBe(MAX_NEW_CONVERSATIONS_PER_DAY);
+    });
+
+    it("hands the units back when the thread could not be created", async () => {
+      const ids = (await strangers(3)).map((person) => person.id);
+      const create = vi.spyOn(testDb.db.messageThread, "create").mockRejectedValueOnce(new Error("database unavailable"));
+
+      await expect(as(alice).createThread({ initialMessage: "hello", participants: ids })).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+      });
+      create.mockRestore();
+
+      expect(await testDb.db.messageThread.count()).toBe(0);
+      expect(await spent()).toBe(0);
+    });
+
+    it("writing into a conversation that already exists costs nothing", async () => {
+      await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+      await as(alice).createThread({ initialMessage: "two", participants: [bob.id] });
+
+      expect(await spent()).toBe(1);
+    });
+  });
+
   describe("thread activity time", () => {
     it("moves with the message insert itself (database trigger), for any writer", async () => {
       const thread = await as(alice).createThread({ initialMessage: "first", participants: [bob.id] });
@@ -833,6 +895,176 @@ describe("messageRouter against SQLite", () => {
 
       expect(await testDb.raw.threadRead.count({ where: { userId: carol.id } })).toBe(0);
       expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+    });
+
+    describe("lastReadAt never moves backwards", () => {
+      const lastReadAt = async (user: TestUser, threadId: string) =>
+        (await testDb.raw.threadRead.findUniqueOrThrow({ where: { threadId_userId: { threadId, userId: user.id } } })).lastReadAt;
+
+      it("an earlier time written after a later one changes nothing", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        const later = new Date("2031-05-05T10:00:10.000Z");
+        const earlier = new Date("2031-05-05T10:00:05.000Z");
+
+        expect(await markThreadReadAt(testDb.db, thread.id, bob.id, later)).toEqual(later);
+        // The delayed write of an earlier read (for instance the sender's
+        // own "read up to my message", overtaken by an explicit mark-read).
+        expect(await markThreadReadAt(testDb.db, thread.id, bob.id, earlier)).toEqual(later);
+        expect(await lastReadAt(bob, thread.id)).toEqual(later);
+
+        // Forward still works, and the same time again is harmless.
+        const latest = new Date("2031-05-05T10:00:10.001Z");
+        expect(await markThreadReadAt(testDb.db, thread.id, bob.id, latest)).toEqual(latest);
+        expect(await markThreadReadAt(testDb.db, thread.id, bob.id, latest)).toEqual(latest);
+      });
+
+      it("holds when the first reads of a thread race each other (no row yet)", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        const times = [3, 9, 1, 7, 5].map((second) => new Date(Date.UTC(2031, 4, 5, 10, 0, second)));
+
+        await Promise.all(times.map((at) => markThreadReadAt(testDb.db, thread.id, bob.id, at)));
+
+        expect(await lastReadAt(bob, thread.id)).toEqual(new Date(Date.UTC(2031, 4, 5, 10, 0, 9)));
+        expect(await testDb.raw.threadRead.count({ where: { threadId: thread.id, userId: bob.id } })).toBe(1);
+      });
+
+      it("a stale mark-read does not bring read messages back as unread", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        const first = await testDb.db.message.findFirstOrThrow({ where: { threadId: thread.id } });
+        await tick();
+        await as(alice).create({ content: "two", threadId: thread.id });
+        await tick();
+        await as(bob).markThreadRead({ threadId: thread.id });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+
+        // A request from an older screen, which had only seen the first message.
+        const stale = await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: first.id });
+
+        expect(stale.lastReadAt.getTime()).toBeGreaterThan(first.createdAt.getTime());
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+      });
+    });
+
+    describe("marking read up to what was seen", () => {
+      it("does not mark a message read that arrived after the one the client saw", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        const seen = await testDb.db.message.findFirstOrThrow({ where: { threadId: thread.id } });
+        await tick();
+        // Arrives while Bob's mark-read request is on its way.
+        await as(alice).create({ content: "two", threadId: thread.id });
+        await tick();
+
+        const marked = await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: seen.id });
+
+        expect(marked.lastReadAt).toEqual(seen.createdAt);
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: true, unreadCount: 1 });
+        expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 1, unreadThreads: 1 });
+
+        // The same with the message's time instead of its id.
+        const second = await testDb.db.message.findFirstOrThrow({ where: { content: "two" } });
+        await as(bob).markThreadRead({ threadId: thread.id, upTo: second.createdAt });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+      });
+
+      it("defaults to now", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        await tick();
+        const before = Date.now();
+
+        const marked = await as(bob).markThreadRead({ threadId: thread.id });
+
+        expect(marked.lastReadAt.getTime()).toBeGreaterThanOrEqual(before);
+        expect(marked.lastReadAt.getTime()).toBeLessThanOrEqual(Date.now());
+      });
+
+      it("treats a time in the future as now, so messages yet to come are not read in advance", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+
+        const marked = await as(bob).markThreadRead({ threadId: thread.id, upTo: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) });
+
+        expect(marked.lastReadAt.getTime()).toBeLessThanOrEqual(Date.now());
+        await tick();
+        await as(alice).create({ content: "later", threadId: thread.id });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+      });
+
+      it("refuses a message that belongs to another thread, or to none", async () => {
+        const dave = await createTestUser(testDb.db, { isDiscoverable: true });
+        const thread = await as(alice).createThread({ initialMessage: "ours", participants: [bob.id] });
+        const elsewhere = await as(alice).createThread({ initialMessage: "theirs", participants: [dave.id] });
+        const foreign = await testDb.db.message.findFirstOrThrow({ where: { threadId: elsewhere.id } });
+
+        for (const upToMessageId of [foreign.id, "no-such-message"]) {
+          await expect(as(bob).markThreadRead({ threadId: thread.id, upToMessageId })).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+          });
+        }
+        expect(await testDb.raw.threadRead.count({ where: { userId: bob.id } })).toBe(0);
+      });
+
+      it("accepts a message that has been deleted since it was shown, and refuses both forms at once", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "oops", participants: [bob.id] });
+        const message = await testDb.db.message.findFirstOrThrow({ where: { threadId: thread.id } });
+        await as(alice).delete({ id: message.id });
+
+        expect((await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: message.id })).lastReadAt).toEqual(message.createdAt);
+        await expect(
+          as(bob).markThreadRead({ threadId: thread.id, upTo: new Date(), upToMessageId: message.id }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      });
+    });
+
+    describe("the unread queries read only the unread tail of each thread", () => {
+      /** EXPLAIN QUERY PLAN of every statement a call sent that mentions ThreadRead. */
+      async function plansOf(call: () => Promise<unknown>): Promise<string[]> {
+        const queryRaw = vi.spyOn(testDb.db, "$queryRaw");
+        await call();
+        const statements = queryRaw.mock.calls
+          .map(([query]): unknown => query)
+          .filter(isSqlObject)
+          .filter((query) => query.sql.includes("ThreadRead"));
+        queryRaw.mockRestore();
+        const plans: string[] = [];
+        for (const statement of statements) {
+          const rows = await testDb.raw.$queryRawUnsafe<Array<{ detail: string }>>(
+            `EXPLAIN QUERY PLAN ${statement.sql}`,
+            ...statement.values,
+          );
+          plans.push(rows.map((row) => row.detail).join("\n"));
+        }
+        return plans;
+      }
+
+      it.each([
+        ["per thread (conversation list)", () => as(bob).getThreadsPage()],
+        ["totals (navigation badge)", () => as(bob).getUnreadCount()],
+      ])("%s: a range on (threadId, createdAt), never a scan of Message", async (_label, call) => {
+        await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+
+        const [plan, ...others] = await plansOf(call);
+
+        expect(others).toEqual([]);
+        expect(plan).toContain("Message_threadId_createdAt_idx (threadId=? AND createdAt>?)");
+        expect(plan).not.toMatch(/SCAN (m|"?Message"?)\b/);
+        // The user's threads come from their participant rows, by index.
+        expect(plan).toMatch(/SEARCH p USING (COVERING )?INDEX/);
+      });
+
+      it("counts the same with and without read state, for threads of other people too", async () => {
+        const mine = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        const dave = await createTestUser(testDb.db, { isDiscoverable: true });
+        const notMine = await as(alice).createThread({ initialMessage: "private", participants: [dave.id] });
+        await tick();
+        await as(alice).create({ content: "two", threadId: mine.id });
+
+        // Never read: both. A thread Bob is not in: not counted at all.
+        expect(await countUnreadByThread(testDb.db, bob.id, [mine.id, notMine.id])).toEqual(new Map([[mine.id, 2]]));
+
+        const first = await testDb.db.message.findFirstOrThrow({ orderBy: { createdAt: "asc" }, where: { threadId: mine.id } });
+        await as(bob).markThreadRead({ threadId: mine.id, upToMessageId: first.id });
+        expect(await countUnreadByThread(testDb.db, bob.id, [mine.id, notMine.id])).toEqual(new Map([[mine.id, 1]]));
+        expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 1, unreadThreads: 1 });
+      });
     });
 
     it("marking read twice at once is fine, and it is rate limited", async () => {

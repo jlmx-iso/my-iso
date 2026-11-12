@@ -123,7 +123,7 @@ function findThreadsOf(
  * query for the whole page.
  */
 async function withUnreadCounts<T extends { id: string }>(
-  db: Pick<ExtendedPrismaClient, "$queryRaw" | "threadRead">,
+  db: Pick<ExtendedPrismaClient, "$queryRaw">,
   userId: string,
   threads: readonly T[],
 ) {
@@ -139,7 +139,7 @@ async function withUnreadCounts<T extends { id: string }>(
  * Read state only: a failure is logged and does not fail the send.
  */
 async function markReadBySender(
-  db: Pick<ExtendedPrismaClient, "threadRead">,
+  db: Pick<ExtendedPrismaClient, "$queryRaw">,
   threadId: string,
   userId: string,
   at: Date,
@@ -283,7 +283,23 @@ export const messageRouter = createTRPCRouter({
                 : `You've started conversations with ${RateLimits.NEW_CONVERSATION_DAILY.limit} new people today, which is the daily limit. You can still reply in your existing conversations, and start new ones tomorrow.`,
             );
           }
-          const result = await findOrCreateThread(ctx.db, allParticipants);
+          // The allowance is for a conversation that comes into being. If
+          // none does through this request (an identical request got there
+          // first and this one lands in its thread, or creation failed),
+          // the units are handed back: one new thread costs its recipients
+          // once, however many requests raced to open it.
+          const refund = () =>
+            refundRateLimit(ctx.db, RateLimits.NEW_CONVERSATION_DAILY, `user:${userId}`, cost).catch(
+              (error: unknown) => logger.warn("Failed to refund the new-conversation allowance", { error }),
+            );
+          let result: Awaited<ReturnType<typeof findOrCreateThread>>;
+          try {
+            result = await findOrCreateThread(ctx.db, allParticipants);
+          } catch (error) {
+            await refund();
+            throw error;
+          }
+          if (!result.created) await refund();
           thread = { id: result.id };
           created = result.created;
         }
@@ -619,15 +635,38 @@ export const messageRouter = createTRPCRouter({
   ),
 
   /**
-   * Marks everything in a thread as read by the caller (call it when the
-   * thread is opened and when a message arrives while it is open). Only
-   * the caller's own read state changes; other participants keep theirs.
+   * Marks a thread as read by the caller (call it when the thread is opened
+   * and when a message arrives while it is open). Only the caller's own
+   * read state changes; other participants keep theirs.
+   *
+   * Say how far the caller has actually SEEN, so that a message that
+   * arrives while this request is under way is not marked read unseen:
+   *
+   * - `upToMessageId`: the newest message on screen. It must be a message
+   *   of this thread (BAD_REQUEST otherwise).
+   * - `upTo`: a timestamp instead (the `createdAt` of that message). A
+   *   time in the future is treated as now.
+   * - neither: everything up to now.
+   *
+   * Read state never moves backwards: the returned `lastReadAt` is the
+   * later of what was stored and what was asked for.
+   *
    * FORBIDDEN unless the caller takes part in the thread (or it does not
    * exist: the two are indistinguishable).
    */
   markThreadRead: protectedProcedure
     .use(rateLimit(RateLimits.MESSAGE_MARK_READ))
-    .input(z.object({ threadId: idInput }))
+    .input(
+      z
+        .object({
+          threadId: idInput,
+          upTo: z.date().optional(),
+          upToMessageId: idInput.optional(),
+        })
+        .refine((input) => !(input.upTo && input.upToMessageId), {
+          message: "Pass either upTo or upToMessageId, not both.",
+        }),
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const thread = await ctx.db.messageThread.findFirst({
@@ -638,8 +677,27 @@ export const messageRouter = createTRPCRouter({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a participant of this thread' });
       }
 
-      const lastReadAt = new Date();
-      await markThreadReadAt(ctx.db, thread.id, userId, lastReadAt);
+      const now = new Date();
+      let readUpTo = now;
+      if (input.upToMessageId) {
+        // Looked up IN this thread: an id from another conversation (whose
+        // time the caller should not learn or borrow) is refused. A message
+        // deleted since it was shown still marks the place it had.
+        const message = await ctx.db.message.findFirst({
+          select: { createdAt: true },
+          where: { id: input.upToMessageId, isDeleted: {}, threadId: thread.id },
+        });
+        if (!message) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'That message is not part of this thread.' });
+        }
+        readUpTo = message.createdAt;
+      } else if (input.upTo) {
+        readUpTo = input.upTo;
+      }
+      // Nothing can have been seen that does not exist yet.
+      if (readUpTo.getTime() > now.getTime()) readUpTo = now;
+
+      const lastReadAt = await markThreadReadAt(ctx.db, thread.id, userId, readUpTo);
       return { lastReadAt, threadId: thread.id };
     }),
 });

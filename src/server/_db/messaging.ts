@@ -185,45 +185,74 @@ export async function classifyRecipients(
 // when someone else sent it after that (or the user has no row yet). One row
 // per participant, so it works the same for group threads.
 
-type ReadDb = Pick<ExtendedPrismaClient, "$queryRaw" | "threadRead">;
+type ReadDb = Pick<ExtendedPrismaClient, "$queryRaw">;
 
 /**
- * Records that `userId` has read `threadId` up to `at`. The caller has
- * checked that they are a participant.
+ * Records that `userId` has read `threadId` up to `at`, and returns how far
+ * they have read now. The caller has checked that they are a participant.
+ *
+ * `lastReadAt` only ever moves forward: the stored value becomes the later
+ * of what is stored and `at`, in ONE statement (an upsert whose update
+ * takes the maximum). So a delayed write of an earlier time (the sender's
+ * own "read up to my message", overtaken by an explicit mark-read) cannot
+ * make messages unread again, two first reads at once cannot collide, and
+ * there is no read-then-write window.
+ *
+ * Both sides of the MAX are timestamps written through Prisma, in the one
+ * text format the adapter uses, so comparing them as text is comparing
+ * them in time.
  */
 export async function markThreadReadAt(
-  db: Pick<ExtendedPrismaClient, "threadRead">,
+  db: ReadDb,
   threadId: string,
   userId: string,
   at: Date,
-): Promise<void> {
-  const key = { threadId_userId: { threadId, userId } };
-  try {
-    await db.threadRead.upsert({
-      create: { lastReadAt: at, threadId, userId },
-      update: { lastReadAt: at },
-      where: key,
-    });
-  } catch (error) {
-    // Two first reads at once: the other request inserted the row.
-    if (!isUniqueViolation(error)) throw error;
-    await db.threadRead.update({ data: { lastReadAt: at }, where: key });
-  }
+): Promise<Date> {
+  const rows = await db.$queryRaw<Array<{ lastReadAt: string | Date }>>(Prisma.sql`
+    INSERT INTO "ThreadRead" ("threadId", "userId", "lastReadAt")
+    VALUES (${threadId}, ${userId}, ${at})
+    ON CONFLICT ("threadId", "userId") DO UPDATE
+      SET "lastReadAt" = MAX("ThreadRead"."lastReadAt", excluded."lastReadAt")
+    RETURNING "lastReadAt"`);
+  const stored = rows[0]?.lastReadAt;
+  return stored === undefined ? at : new Date(stored);
 }
 
 /**
  * Thread ids per unread-count statement. D1 accepts at most 100 bound
- * parameters; a page of the conversation list holds up to 50 threads.
+ * parameters (each statement below binds the user id three times); a page
+ * of the conversation list holds up to 50 threads.
  */
 const UNREAD_LOOKUP_CHUNK = 80;
 
 const toCount = (value: number | bigint | null | undefined): number => Number(value ?? 0);
 
 /**
- * Unread messages of `userId` in each of `threadIds`: one grouped statement
- * per UNREAD_LOOKUP_CHUNK threads (never one per thread). Threads without
- * unread messages are absent from the map. The caller passes only threads
- * the user takes part in.
+ * The unread messages of one thread, for the participant row `p`
+ * ("_MessageThreadToUser": A = thread, B = user).
+ *
+ * Written so that SQLite walks only the unread tail of the thread: the
+ * lower bound on "createdAt" is a single value (the user's lastReadAt, or
+ * 0, which sorts before every timestamp, when they have never read it), so
+ * the (threadId, createdAt) index is used as a RANGE. The earlier form,
+ * `r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt`, could only use the
+ * index for threadId and visited every message of every thread.
+ */
+const unreadInThread = (userId: string) => Prisma.sql`(
+    SELECT COUNT(*) FROM "Message" m
+    WHERE m."threadId" = p."A"
+      AND m."createdAt" > COALESCE(
+        (SELECT r."lastReadAt" FROM "ThreadRead" r WHERE r."threadId" = p."A" AND r."userId" = ${userId}),
+        0)
+      AND m."senderId" <> ${userId}
+      AND NOT m."isDeleted"
+  )`;
+
+/**
+ * Unread messages of `userId` in each of `threadIds`: one statement per
+ * UNREAD_LOOKUP_CHUNK threads (never one per thread). Threads without
+ * unread messages, and threads the user does not take part in, are absent
+ * from the map.
  */
 export async function countUnreadByThread(
   db: ReadDb,
@@ -234,37 +263,33 @@ export async function countUnreadByThread(
   for (let start = 0; start < threadIds.length; start += UNREAD_LOOKUP_CHUNK) {
     const chunk = threadIds.slice(start, start + UNREAD_LOOKUP_CHUNK);
     const rows = await db.$queryRaw<Array<{ threadId: string; unread: number | bigint }>>(Prisma.sql`
-      SELECT m."threadId" AS "threadId", COUNT(*) AS "unread"
-      FROM "Message" m
-      LEFT JOIN "ThreadRead" r ON r."threadId" = m."threadId" AND r."userId" = ${userId}
-      WHERE m."threadId" IN (${Prisma.join(chunk)})
-        AND m."senderId" <> ${userId}
-        AND NOT m."isDeleted"
-        AND (r."lastReadAt" IS NULL OR m."createdAt" > r."lastReadAt")
-      GROUP BY m."threadId"`);
-    for (const row of rows) counts.set(row.threadId, toCount(row.unread));
+      SELECT p."A" AS "threadId", ${unreadInThread(userId)} AS "unread"
+      FROM "_MessageThreadToUser" p
+      WHERE p."B" = ${userId} AND p."A" IN (${Prisma.join(chunk)})`);
+    for (const row of rows) {
+      const unread = toCount(row.unread);
+      if (unread > 0) counts.set(row.threadId, unread);
+    }
   }
   return counts;
 }
 
 /**
  * Totals for the navigation badge: how many of the user's conversations have
- * something unread, and how many messages that is. One statement, driven by
- * the user's participant rows and the (threadId, createdAt) index.
+ * something unread, and how many messages that is. One statement: the
+ * user's participant rows, and for each the unread tail of that thread.
  */
 export async function countUnreadTotals(
   db: ReadDb,
   userId: string,
 ): Promise<{ unreadMessages: number; unreadThreads: number }> {
-  const rows = await db.$queryRaw<Array<{ messages: number | bigint; threads: number | bigint }>>(Prisma.sql`
-    SELECT COUNT(*) AS "messages", COUNT(DISTINCT m."threadId") AS "threads"
-    FROM "_MessageThreadToUser" p
-    JOIN "Message" m ON m."threadId" = p."A"
-    LEFT JOIN "ThreadRead" r ON r."threadId" = p."A" AND r."userId" = p."B"
-    WHERE p."B" = ${userId}
-      AND m."senderId" <> ${userId}
-      AND NOT m."isDeleted"
-      AND (r."lastReadAt" IS NULL OR m."createdAt" > r."lastReadAt")`);
+  const rows = await db.$queryRaw<Array<{ messages: number | bigint | null; threads: number | bigint }>>(Prisma.sql`
+    SELECT SUM(t."unread") AS "messages", COUNT(CASE WHEN t."unread" > 0 THEN 1 END) AS "threads"
+    FROM (
+      SELECT ${unreadInThread(userId)} AS "unread"
+      FROM "_MessageThreadToUser" p
+      WHERE p."B" = ${userId}
+    ) t`);
   return {
     unreadMessages: toCount(rows[0]?.messages),
     unreadThreads: toCount(rows[0]?.threads),
