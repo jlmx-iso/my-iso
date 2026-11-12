@@ -130,6 +130,58 @@ What follows from Prisma not knowing about it:
   `wrangler d1 execute DB --remote --env staging --command "SELECT name FROM sqlite_master WHERE type = 'trigger'"`
   must list `Message_touch_thread`.
 
+## Timestamps are text: one spelling
+
+SQLite has no date type. Prisma stores a `DateTime` as ISO-8601 **text**,
+and both adapters this project uses (`@prisma/adapter-d1` on Cloudflare,
+`@prisma/adapter-better-sqlite3` in the tests) write it the same way:
+milliseconds, and the offset spelled **`+00:00`**, for example
+`2026-03-03T20:00:00.000+00:00`. The test "Prisma stores every timestamp in
+ONE spelling" in `src/server/api/routers/event.test.ts` reads the stored
+text and fails if an adapter upgrade changes this.
+
+Comparisons and `ORDER BY` on these columns are comparisons of text. They
+agree with time **only while every row uses the same spelling**:
+`...000+00:00` and `...000Z` are the same instant, but `+` sorts before `Z`,
+so two rows at one instant are ordered by their spelling before anything
+else. The events feed pages by `(date, id)` and would skip or repeat an
+event across such a pair; the unread counts and read state compare
+`createdAt` the same way.
+
+So:
+
+- **Every write goes through Prisma, or writes the `+00:00` spelling.**
+  Raw SQL in the app binds `Date` values as parameters (the adapter formats
+  them). SQL written by hand (seed files, one-off fixes, migrations) must
+  spell timestamps `strftime('%Y-%m-%dT%H:%M:%f+00:00', ...)` or as a
+  literal ending in `+00:00`, never `Z` and never SQLite's
+  `CURRENT_TIMESTAMP` format. `prisma/seed-staging.sql` and migration
+  `0003` do.
+- **Existing rows written with `Z`** (the staging seed did so before it was
+  fixed; `INSERT OR IGNORE` leaves those rows as they are) are normalised
+  once per database:
+
+  ```sql
+  UPDATE "Event" SET "date" = replace("date", 'Z', '+00:00') WHERE "date" LIKE '%Z';
+  UPDATE "Event" SET "createdAt" = replace("createdAt", 'Z', '+00:00') WHERE "createdAt" LIKE '%Z';
+  UPDATE "Event" SET "updatedAt" = replace("updatedAt", 'Z', '+00:00') WHERE "updatedAt" LIKE '%Z';
+  ```
+
+  (`wrangler d1 execute DB --remote --env staging --command "..."`.) Any
+  other table a hand-written script has filled gets the same treatment for
+  its `DateTime` columns; this finds them:
+
+  ```sql
+  SELECT 'Event' AS "table", COUNT(*) FROM "Event" WHERE "date" LIKE '%Z' OR "createdAt" LIKE '%Z'
+  UNION ALL SELECT 'Message', COUNT(*) FROM "Message" WHERE "createdAt" LIKE '%Z'
+  UNION ALL SELECT 'Booking', COUNT(*) FROM "Booking" WHERE "createdAt" LIKE '%Z';
+  ```
+
+The feed does recognise a `Z` row as being AT its cursor's instant (it
+matches the instant as a range, not by equality), so rows at different
+instants page correctly whatever their spelling; it is only the order
+within one instant that needs the single spelling.
+
 ## Columns kept for the previous release (staged removal)
 
 Migration `0003` left columns in place that the current code no longer

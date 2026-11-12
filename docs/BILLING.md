@@ -27,7 +27,10 @@ access from that mirror.
   `syncStatus`, the re-sync, the lazy first sync) runs under a **lease per
   Stripe customer** (`BillingLease`, key `customer:<id>`), so two readings
   for one customer are taken and stored one after the other. A webhook that
-  cannot get the lease within ten seconds answers `409` and is redelivered.
+  cannot get the lease within 3.5 seconds answers `409` and is redelivered.
+  Waiting backs off (150 ms doubling to one second), so a waiter costs about
+  seven D1 statements. Leases and claims that expired more than an hour ago
+  are swept now and then when a lease is taken.
 - Every write is also one conditional statement (D1 has no transactions),
   which is what still holds if a holder outlives its lease. A reading
   replaces the stored one only if it is newer on Stripe's clock
@@ -45,9 +48,7 @@ access from that mirror.
   than are read (five pages of 100, of either kind), nothing is stored from
   what was read, it is reported, and the outcome is `listing_truncated`:
   not "this is the primary", and not "there is none". Checkout is refused
-  ("billing unavailable") rather than risk a second subscription. The same
-  holds for the charges behind the payment standing (three pages of 100):
-  past that, the stored standing is left as it is and reported.
+  ("billing unavailable") rather than risk a second subscription.
 - A user is matched to a Stripe customer by the customer id stored on the
   user when checkout starts, else by `metadata.userId` (which only this
   server writes). Never by email address.
@@ -114,15 +115,37 @@ The rules behind the columns the status alone does not explain:
   whole, in a statement that also requires the customer's lease to be held
   still. So events may arrive late, twice or in any order; two disputes open
   at once are both seen, and winning one does not hide the other; and
-  nothing depends on which event was handled last.
+  nothing depends on which event was handled last. `subscription.syncStatus`
+  derives it too, so a customer can put a stale standing right from the
+  settings page if an event is late. One derivation is bounded (at most 16
+  Stripe requests), and neither bound keeps the previous standing:
+  - **More than 300 charges** on the customer: the standing is derived from
+    the newest 300 **plus the charge a dispute or refund event is about**,
+    which is read directly by its payment intent whatever its age. So for
+    such a customer too, a new dispute is recorded and a won one clears. If
+    charges of the last two years were left unread, the result is marked
+    incomplete: the event answers `standing_incomplete` (200; a retry would
+    read the same), the re-sync lists the row under `unresolved`, and it is
+    reported with the `Subscription` id. What could be missed is a dispute
+    on one of the unread charges whose events were all lost.
+  - **More than five disputed charges in the last two years**: the event's
+    own and the newest are examined, five in all. If one of them withholds
+    access, that is the standing. If none does, the others were not looked
+    at and may be open, so it **fails closed**: `disputeStatus` is `open`
+    with no `disputeId`, access is withheld, and the row is reported as
+    above for a person to review. It lifts by itself when the disputed
+    charges age past two years; until then the override is a comped
+    account (`isLifetime`). Disputed charges older than two years are
+    history and are ignored.
 - **Disputes.** A chargeback suspends access at once, whatever the
   subscription's status and whichever of its invoices the charge paid, until
   it is closed. Won (or withdrawn, or prevented): access returns. Lost, on
   the most recent paid invoice: nothing that was paid for stands behind the
   subscription any more, so there is no access until a later invoice is
-  **paid**. A renewal that is only issued, or whose payment fails
-  (`past_due`), does not lift it: there is no grace window on top of a lost
-  payment. A loss on an older invoice, with a later one already paid,
+  **paid for** (`paid` with `amount_paid` above zero). A renewal that is only
+  issued, or whose payment fails (`past_due`), does not lift it: there is no
+  grace window on top of a lost payment. Neither does an invoice that is
+  `paid` without money (a trial, a credit, a proration that came to nothing). A loss on an older invoice, with a later one already paid,
   withholds nothing. An *inquiry* (`warning_*` statuses) takes no money and
   does not suspend; if it escalates, `charge.dispute.updated` brings the new
   status.
@@ -166,6 +189,19 @@ or wrong). `409` the same event is being handled right now, or another
 event for the same customer is (`busy`). `500` a
 transient failure, or `STRIPE_WEBHOOK_SECRET` is not set (reported once);
 Stripe retries.
+
+## Platform limits this is sized for
+
+The app runs on the **Workers Paid** plan (its bundle is over the Free
+plan's size limit). What the billing code assumes from it:
+
+| Limit | Value | Where it matters |
+| --- | --- | --- |
+| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 51 Stripe requests and 30 statements, so `RESYNC_MAX_BATCH` is 10. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 16 for the payment standing. The Free plan would not carry a batch. |
+| Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget finishes there; its Stripe calls are limited to 3 seconds each for that reason. |
+
+If `limits.subrequests` is ever set below 1,000, lower `SUBREQUEST_BUDGET`
+with it; the batch size follows (a test holds the arithmetic).
 
 ## Stripe dashboard setup
 
@@ -318,9 +354,23 @@ The rule:
   from the row as stored**: what the migration back-filled, which is what
   the previous release decided. Access is neither granted nor taken away on
   a guess.
+- It does not queue behind other billing work. It waits at most one second
+  for the customer's lease; a busy lease means a webhook, checkout or the
+  re-sync is reading that customer right now, so the stored row is used and
+  the row is looked at again 30 seconds later.
+- A sync that outlives the 5 seconds is not abandoned while holding the
+  customer's lease (which would make that customer's webhooks answer 409
+  until the lease expired). It is handed to `waitUntil`
+  (`runAfterResponse`), and it uses a Stripe client whose calls give up
+  after 3 seconds without retrying (`getAccessCheckStripe`), so it finishes
+  and releases the lease well inside the 30 seconds Workers allow after a
+  response. If the isolate dies anyway, the lease expires after 90 seconds.
 - It is attempted at most once per 10 minutes per row, across all isolates
-  (a claim in `BillingLease`, key `first-sync:<Subscription id>`), and once
-  per 24 hours after a definite answer that did not settle the row.
+  (a claim in `BillingLease`, key `first-sync:<Subscription id>`). After
+  **any** answer from Stripe that leaves the row still qualifying (nothing
+  at Stripe for it, an unknown customer, ...) the next attempt is 24 hours
+  away, whether or not access is at stake: the same question would get the
+  same answer.
 - A row that is not settled is reported through `reportBillingError` with
   its `Subscription` id and the outcome.
 
@@ -359,7 +409,10 @@ Outcomes: `applied` (row now mirrors Stripe), `stale` (it already did),
 the row still grants access, in which case nothing was changed: look at it),
 `subscription_missing` (the row names a subscription Stripe does not have,
 for example test data; reported), `listing_truncated` (more subscriptions
-than are read; nothing stored), `unknown_customer`, `failed`.
+than are read; nothing stored), `unknown_customer`, `failed`. A row can
+also be listed as unresolved with `standing_incomplete` although its
+outcome was `applied`: it is up to date, but its payment standing was
+derived from an incomplete history (see "Disputes and refunds are derived").
 
 **`unknown_customer`**: the row has a subscription id but its user has no
 stored Stripe customer id, and the subscription's `metadata.userId` does not
