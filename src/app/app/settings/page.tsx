@@ -19,7 +19,10 @@ import {
   IconStar,
   IconShieldCheck,
 } from "@tabler/icons-react";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
+import { parseCheckoutReturn } from "~/_utils/checkoutStatus";
 import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
@@ -27,6 +30,13 @@ import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
 import BillingActions from "./_components/BillingActions";
+import CheckoutBanner from "./_components/CheckoutBanner";
+
+export const metadata: Metadata = { title: "Settings" };
+
+type PageProps = {
+  searchParams: Promise<{ checkout?: string | string[] }>;
+};
 
 const PRO_FEATURES = [
   {
@@ -68,9 +78,10 @@ const FREE_FEATURES = [
   "Apply to 3 bookings per month",
 ];
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: PageProps) {
   const session = await auth();
-  if (!session?.user) return null;
+  if (!session?.user) redirect("/login?callbackUrl=/app/settings");
+  const checkout = parseCheckoutReturn((await searchParams).checkout);
 
   const caller = await api();
   const [subscription, user] = await Promise.all([
@@ -83,23 +94,27 @@ export default async function SettingsPage() {
   const pricing = getPricingForRole(user.role);
 
   return (
-    <Container size="md" py="lg">
+    <Container size="md" py="lg" px={0}>
       <Stack gap="xl">
         <PageHeader
           title="Settings"
           description="Manage your subscription and billing"
         />
 
+        {/* Keyed so a new return from checkout restarts the confirmation. */}
+        <CheckoutBanner key={checkout ?? "none"} checkout={checkout} isSubscriptionActive={isProUser} />
+
         {/* Current Plan Status */}
         <Paper withBorder p="xl" radius="md">
-          <Group justify="space-between" align="flex-start">
-            <Stack gap="xs">
+          <Group justify="space-between" align="flex-start" gap="lg">
+            <Stack gap="xs" style={{ flex: "1 1 260px" }}>
               <Group gap="sm">
-                <Title order={3}>Current Plan</Title>
+                <Title order={2} size="h4">Current plan</Title>
                 <Badge
                   color={isProUser ? "orange" : "gray"}
                   variant={isProUser ? "filled" : "light"}
                   size="lg"
+                  data-testid="current-plan"
                 >
                   {isProUser ? "Pro" : "Free"}
                 </Badge>
@@ -110,7 +125,7 @@ export default async function SettingsPage() {
                 </Text>
               )}
               {isProUser && isCanceled && (
-                <Text size="sm" c="orange">
+                <Text size="sm" c="orange.7">
                   Your subscription is canceled but remains active until{" "}
                   {subscription.expiresAt
                     ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
@@ -130,13 +145,13 @@ export default async function SettingsPage() {
 
         {/* Plan Comparison */}
         <Stack gap="md">
-          <Title order={3}>Plan Comparison</Title>
+          <Title order={2} size="h4">Plan comparison</Title>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
             {/* Free Plan */}
             <Paper withBorder p="lg" radius="md">
               <Stack gap="md">
                 <Group gap="sm">
-                  <Title order={4}>Free</Title>
+                  <Title order={3} size="h5">Free</Title>
                   {!isProUser && (
                     <Badge color="gray" variant="light">
                       Current
@@ -153,7 +168,7 @@ export default async function SettingsPage() {
                   {FREE_FEATURES.map((feature) => (
                     <Group key={feature} gap="xs" wrap="nowrap">
                       <ThemeIcon size={20} radius="xl" variant="light" color="gray">
-                        <IconCheck size={12} />
+                        <IconCheck size={12} aria-hidden />
                       </ThemeIcon>
                       <Text size="sm">{feature}</Text>
                     </Group>
@@ -174,7 +189,7 @@ export default async function SettingsPage() {
             >
               <Stack gap="md">
                 <Group gap="sm">
-                  <Title order={4}>Pro</Title>
+                  <Title order={3} size="h5">Pro</Title>
                   {isProUser ? (
                     <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} />}>
                       Current
@@ -195,7 +210,7 @@ export default async function SettingsPage() {
                   {pricing.isFoundingPrice && (
                     <>
                       <Text size="sm" td="line-through" c="dimmed">
-                        ${pricing.standardMonthlyPrice}
+                        <span className="sr-only">Regular price </span>${pricing.standardMonthlyPrice}
                       </Text>
                       <Badge color="orange" variant="light" size="sm">
                         Founding Price
@@ -207,7 +222,7 @@ export default async function SettingsPage() {
                   {PRO_FEATURES.map((feature) => (
                     <Group key={feature.title} gap="xs" wrap="nowrap">
                       <ThemeIcon size={20} radius="xl" variant="light" color="orange">
-                        <IconCheck size={12} />
+                        <IconCheck size={12} aria-hidden />
                       </ThemeIcon>
                       <Text size="sm">{feature.title}</Text>
                     </Group>

@@ -1,120 +1,123 @@
 "use client";
 
-import { Box, Button, Image, type MantineSize, SimpleGrid } from '@mantine/core';
-import { type FileWithPath } from '@mantine/dropzone';
-import { useHover } from '@mantine/hooks';
-import { notifications } from '@mantine/notifications';
-import { IconUpload } from '@tabler/icons-react';
-import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import { useState } from 'react';
+import { ActionIcon, Box, Button, Group, Modal, Stack } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
+import { IconCamera } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useState } from "react";
 
+import { logger } from "~/_utils/logger";
+import { userFacingError } from "~/_utils/userError";
+import { ImagePicker } from "~/app/_components/input/ImagePicker";
+import { readFileAsBase64 } from "~/app/_lib/readFile";
+import { api } from "~/trpc/react";
 
-import { dataUrlToBase64, logger } from '~/_utils';
-import { Dropzone } from '~/app/_components/input/Dropzone';
-import { Modal } from '~/app/_components/Modal';
-import colors from '~/app/theme/colors';
-import { api } from '~/trpc/react';
+import { Avatar } from "../Avatar";
 
-import { Avatar } from '../Avatar';
-
-
-type AvatarProps = {
+type ProfileAvatarProps = {
     avatar: string | null;
+    /** The owner gets a button to change the photo. */
     isSelf: boolean;
     name: string;
-    size?: MantineSize;
+    size: number;
 };
 
-export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProps) {
-    const { hovered, ref } = useHover();
-    const [uploading, setUploading] = useState(false);
-    const [files, setFiles] = useState<FileWithPath[] | null>(null);
+function ChangePhotoButton() {
+    const [opened, { close, open }] = useDisclosure(false);
+    const [file, setFile] = useState<File | null>(null);
+    const [isReading, setIsReading] = useState(false);
     const uploadImage = api.photographer.uploadProfileImage.useMutation();
     const { update: updateSession } = useSession();
     const router = useRouter();
+    const isSaving = isReading || uploadImage.isPending;
 
-    const handleFileChange = (files: FileWithPath[]) => {
-        setFiles(files);
+    const handleClose = () => {
+        if (isSaving) return;
+        close();
+        setFile(null);
     };
 
-    const handleImageUpload = () => {
-        if (!files) return;
-        const file = files[0];
+    const handleUpload = async () => {
         if (!file) return;
-        setUploading(true);
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-            const base64File = dataUrlToBase64(reader.result); // Get base64 string without the prefix
+        setIsReading(true);
+        try {
+            const image = await readFileAsBase64(file);
+            await uploadImage.mutateAsync({ image });
+            // Refresh the session so the header avatar updates, then the
+            // server-rendered profile.
+            await updateSession();
+            router.refresh();
+            close();
+            setFile(null);
+            notifications.show({
+                color: "teal",
+                message: "Your new photo is live across ISO.",
+                title: "Profile photo updated",
+            });
+        } catch (error) {
+            logger.error("Error uploading profile avatar", { error });
+            notifications.show({
+                color: "red",
+                message: userFacingError(error, "We couldn't upload that photo. Please try again."),
+                title: "Upload failed",
+            });
+        } finally {
+            setIsReading(false);
+        }
+    };
 
-            if (base64File) {
-                try {
-                    await uploadImage.mutateAsync({
-                        image: base64File,
-                    });
-                    // Refresh the session so the navbar avatar updates
-                    await updateSession();
-                    setFiles(null);
-                    setUploading(false);
-                    router.push('/app/profile');
-                } catch (error) {
-                    logger.error('Error uploading profile avatar', { error });
-                    notifications.show({
-                        title: 'Upload Failed',
-                        message: 'Failed to upload image. Please try again.',
-                        color: 'red',
-                    });
-                    // Cleanup on error, but don't navigate
-                    setFiles(null);
-                    setUploading(false);
-                }
-            }
-        };
-
-        reader.readAsDataURL(file); // Convert file to base64
-    }
-
-    const previews = files?.map((file, index) => {
-        const imageUrl = URL.createObjectURL(file);
-        return <Image key={index} src={imageUrl} alt={`Preview of ${file.name}`} onLoad={() => URL.revokeObjectURL(imageUrl)} />;
-    });
-
-    if (isSelf) {
-        return (
-            <Box ref={ref} w={120} h={120} style={{ position: "relative" }}>
-                <Modal
-                    title="Upload Image"
-                    isIconModal={true}
-                    actionIconProps={{
-                        color: colors.gray![0],
-                        h: 120,
-                        left: "50%",
-                        opacity: hovered ? 1 : 0,
-                        pos: "absolute",
-                        radius: "50%",
-                        size: "xl",
-                        style: {
-                            transform: "translate(-50%, -50%)",
-                            zIndex: 9999,
-                        },
-                        top: "50%",
-                        variant: "subtle",
-                        w: 120,
-                    }}
-                    icon={<IconUpload />}>
-                    <Dropzone multiple={false} loading={uploading} handleFileChange={handleFileChange} />
-                    <SimpleGrid cols={{ base: 1, sm: 4 }} mt={previews?.length ? 'xl' : 0}>
-                        {previews}
-                    </SimpleGrid>
-                    <Button mt="lg" onClick={handleImageUpload} disabled={!files?.length}>
-                        Upload
-                    </Button>
-                </Modal>
-                <Avatar src={avatar} name={name} size={120} />
-            </Box>
-        )
-    }
     return (
-        <Avatar src={avatar} name={name} size={size} />
-    )
+        <>
+            {/* Always visible (not hover-only) so it works on touch screens. */}
+            <ActionIcon
+                onClick={open}
+                pos="absolute"
+                bottom={0}
+                right={0}
+                size="lg"
+                radius="xl"
+                variant="filled"
+                aria-label="Change profile photo"
+                style={{ border: "2px solid var(--mantine-color-body)" }}
+            >
+                <IconCamera size={18} />
+            </ActionIcon>
+            <Modal
+                opened={opened}
+                onClose={handleClose}
+                title="Change profile photo"
+                closeOnClickOutside={!isSaving}
+                closeOnEscape={!isSaving}
+            >
+                <Stack gap="md">
+                    <ImagePicker
+                        file={file}
+                        onChange={setFile}
+                        label="Profile photo"
+                        disabled={isSaving}
+                        previewRadius="50%"
+                    />
+                    <Group justify="flex-end">
+                        <Button variant="default" onClick={handleClose} disabled={isSaving}>
+                            Cancel
+                        </Button>
+                        <Button onClick={() => void handleUpload()} disabled={!file} loading={isSaving}>
+                            Save photo
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
+        </>
+    );
+}
+
+export default function ProfileAvatar({ isSelf, avatar, name, size }: ProfileAvatarProps) {
+    return (
+        <Box pos="relative" w={size} h={size}>
+            <Avatar src={avatar} name={name} alt={`${name}'s profile photo`} size={size} />
+            {isSelf && <ChangePhotoButton />}
+        </Box>
+    );
 }

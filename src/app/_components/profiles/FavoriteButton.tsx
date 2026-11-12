@@ -1,48 +1,52 @@
 "use client";
-import { ActionIcon } from "@mantine/core";
+import { ActionIcon, Tooltip } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { IconBookmark, IconBookmarkFilled } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
-
 
 type FavoriteButtonProps = {
   isFavorite: boolean;
-  targetUserId: string;
+  /** The photographer being saved. */
+  photographerId: string;
+  photographerName: string;
 };
 
-export const FavoriteButton = ({ isFavorite, targetUserId }: FavoriteButtonProps) => {
-  const [isExistingFavorite, setIsExistingFavorite] = useState(isFavorite);
+/** Toggle button that saves a photographer to the viewer's favourites. */
+export const FavoriteButton = ({ isFavorite, photographerId, photographerName }: FavoriteButtonProps) => {
+  const [isSaved, setIsSaved] = useState(isFavorite);
+  const onError = (error: unknown) =>
+    notifications.show({
+      color: "red",
+      message: userFacingError(error, "Please try again."),
+      title: "Couldn't update your saved photographers",
+    });
   const removeFavorite = api.user.removeFavorite.useMutation({
-    onSuccess: () => setIsExistingFavorite(false),
+    onError,
+    onSuccess: () => setIsSaved(false),
   });
   const addFavorite = api.user.addFavorite.useMutation({
-    onSuccess: () => setIsExistingFavorite(true),
+    onError,
+    onSuccess: () => setIsSaved(true),
   });
-  const handleClick = () => {
-    if (isExistingFavorite) {
-      removeFavorite.mutate({ photographerId: targetUserId });
-    } else {
-      addFavorite.mutate({ photographerId: targetUserId });
-    }
-  };
+  const label = isSaved ? `Remove ${photographerName} from saved` : `Save ${photographerName}`;
+
   return (
-    <ActionIcon
-      color="blue"
-      loading={addFavorite.isPending || removeFavorite.isPending}
-      loaderProps={{ type: "dots" }}
-      onClick={handleClick}
-      variant="subtle"
-      radius="sm"
-      size="xl"
-      pos="relative"
-      top={0}
-      right={0}
-    >
-      {isExistingFavorite ?
-        <IconBookmarkFilled size={24} aria-label="Remove bookmark" /> :
-        <IconBookmark size={24} aria-label="Add bookmark" />
-      }
-    </ActionIcon>
+    <Tooltip label={isSaved ? "Saved" : "Save"}>
+      <ActionIcon
+        loading={addFavorite.isPending || removeFavorite.isPending}
+        onClick={() =>
+          (isSaved ? removeFavorite : addFavorite).mutate({ photographerId })
+        }
+        variant={isSaved ? "light" : "default"}
+        size="lg"
+        aria-label={label}
+        aria-pressed={isSaved}
+      >
+        {isSaved ? <IconBookmarkFilled size={20} /> : <IconBookmark size={20} />}
+      </ActionIcon>
+    </Tooltip>
   );
 };

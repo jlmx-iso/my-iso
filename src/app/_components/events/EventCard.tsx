@@ -1,222 +1,187 @@
 "use client";
 
-import { ActionIcon, Badge, Box, Card, Divider, Group, Image, Stack, Text, Title } from "@mantine/core";
-import { useHover } from '@mantine/hooks';
-import { IconMessageCircle } from "@tabler/icons-react";
+import { Badge, Box, Button, Card, Group, Image, Stack, Text, Title } from "@mantine/core";
+import { IconCalendar, IconClock, IconMapPin, IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 
-import { formatLocalDate } from '~/_lib/dayjs';
+import dayjs, { formatLocalDate } from '~/_lib/dayjs';
 import { api } from "~/trpc/react";
 
+import AddCommentForm from "../AddCommentForm";
 import ApplyModal from "../bookings/ApplyModal";
+import Timemarker from "../Timemarker";
 import UserBadge from "../UserBadge";
 import EventCardSkeleton from "./EventCardSkeleton";
-import AddCommentForm from "../AddCommentForm";
-import Timemarker from "../Timemarker";
-
 
 type EventCardProps = {
     eventId: string;
-    initialCommentCount?: number;
+    /** Detail page: the title is the page's h1 and the layout is flush. */
     isEventPage?: boolean;
-    hideCompose?: boolean;
-    variant?: "feed" | "hero";
 };
 
-export default function EventCard({ eventId, initialCommentCount = 0, isEventPage, hideCompose, variant = "feed" }: EventCardProps) {
-    const [isCommentFormOpen, setIsCommentFormOpen] = useState(isEventPage && !hideCompose);
-    const { hovered, ref } = useHover();
+function formatDuration(hours: number) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+/** Location, date and duration of an event, with text alternatives for the icons. */
+function EventMeta({ date, duration, location }: { date: Date | string; duration: number; location: string | null }) {
+    return (
+        <Group gap="xs" wrap="wrap">
+            {location && (
+                <Badge variant="light" color="teal" leftSection={<IconMapPin size={12} aria-hidden />}>
+                    <span className="sr-only">Location: </span>{location}
+                </Badge>
+            )}
+            <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
+                <span className="sr-only">Date: </span>{formatLocalDate(date)}
+            </Badge>
+            <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
+                <span className="sr-only">Duration: </span>{formatDuration(duration)}
+            </Badge>
+        </Group>
+    );
+}
+
+export default function EventCard({ eventId, isEventPage }: EventCardProps) {
+    const [isCommentFormOpen, setIsCommentFormOpen] = useState(false);
     const session = useSession();
-    const { data, isPending, isError } = api.event.getById.useQuery({
+    const { data, isPending, isError, refetch } = api.event.getById.useQuery({
         id: eventId
     });
 
     const currentUserId = session.data?.user?.id;
     const isOwnEvent = data?.photographer?.userId === currentUserId;
-    const numComments = data?.commentCount ?? initialCommentCount;
 
     const { data: applicationStatus } = api.booking.hasApplied.useQuery(
         { eventId },
         { enabled: !!data?.id && !isOwnEvent },
     );
 
-    const handleCommentButtonClick = () => {
-        if (!isEventPage) setIsCommentFormOpen((prev) => !prev);
-    }
-
-    const isHero = variant === "hero";
-
     if (isPending) {
         return (
-            <Card p={isHero ? "lg" : "md"} radius="md" withBorder>
-                <EventCardSkeleton variant={variant} />
+            <Card p="md" radius="md" withBorder h="100%" aria-busy="true">
+                <EventCardSkeleton />
             </Card>
         )
     }
 
-    if (isError) {
+    if (isError || !data?.id) {
         return (
-            <Card p="lg" radius="md" withBorder>
-                <Text c="dimmed" size="sm">Error loading event</Text>
+            <Card p="lg" radius="md" withBorder h="100%">
+                <Stack gap="xs" align="flex-start">
+                    <Text size="sm">This event couldn&apos;t be loaded.</Text>
+                    <Button variant="default" size="xs" onClick={() => void refetch()}>Try again</Button>
+                </Stack>
             </Card>
         )
     }
 
-    if (data?.id) {
-        // Detail page — flush layout, no card chrome
-        if (isEventPage) {
-            return (
-                <div ref={ref}>
-                    <Card p={0} radius="md" style={{ border: "none", background: "transparent" }}>
-                        <Stack gap="xs">
-                            <Group justify="space-between" align="center">
-                                <UserBadge user={data.photographer} />
-                                <Timemarker date={data.createdAt} />
-                            </Group>
+    const isPast = dayjs(data.date).isBefore(dayjs());
+    const apply = !isOwnEvent && !isPast && (
+        <ApplyModal
+            eventId={data.id}
+            eventTitle={data.title}
+            hasApplied={applicationStatus?.hasApplied ?? false}
+        />
+    );
+    const href = `/app/events/${data.id}`;
 
-                            <Box>
-                                <Title order={2} mb={6}>{data.title}</Title>
-                                {data.description && (
-                                    <Text c="dimmed" size="sm" maw={680} style={{ lineHeight: 1.6 }}>
-                                        {data.description}
-                                    </Text>
-                                )}
-                            </Box>
-
-                            {data.image && (
-                                <Box style={{ borderRadius: "var(--mantine-radius-md)", overflow: "hidden" }} mt={4}>
-                                    <Image
-                                        src={data.image}
-                                        alt={data.title}
-                                        h={320}
-                                        fit="cover"
-                                    />
-                                </Box>
-                            )}
-
-                            <Group gap="xs" wrap="wrap" justify="space-between" align="center">
-                                <Group gap="xs" wrap="wrap" align="center">
-                                    {data.location && (
-                                        <Badge variant="light" color="teal" size="xs">
-                                            {data.location}
-                                        </Badge>
-                                    )}
-                                    <Badge variant="light" size="xs">
-                                        {formatLocalDate(data.date)}
-                                    </Badge>
-                                    <Badge variant="light" color="purple" size="xs">
-                                        {data.duration} hour{data.duration > 1 ? "s" : ""}
-                                    </Badge>
-                                </Group>
-
-                                {!isOwnEvent && (
-                                    <ApplyModal
-                                        eventId={data.id}
-                                        eventTitle={data.title}
-                                        hasApplied={applicationStatus?.hasApplied ?? false}
-                                    />
-                                )}
-                            </Group>
-
-                            <Divider mt="sm" />
-
-                            {isCommentFormOpen && !hideCompose && <AddCommentForm eventId={data.id} />}
-                        </Stack>
-                    </Card>
-                </div>
-            )
-        }
-
-        // Feed / hero card — bordered, hover lift, accent stripe
+    // Detail page — flush layout, no card chrome
+    if (isEventPage) {
         return (
-            <div ref={ref}>
-                <Card
-                    shadow={hovered ? "md" : "xs"}
-                    p={0}
-                    radius="md"
-                    withBorder
-                    style={{
-                        transition: "all 200ms ease",
-                        transform: hovered ? "translateY(-2px)" : "none",
-                        borderLeft: "3px solid var(--mantine-color-orange-3)",
-                    }}
-                >
-                    {/* Image — full bleed at top when available */}
-                    {data.image && (
-                        <Card.Section>
-                            <Link href={`/app/events/${data.id}`}>
-                                <Image
-                                    src={data.image}
-                                    alt={data.title}
-                                    h={isHero ? 280 : 180}
-                                    fit="cover"
-                                />
-                            </Link>
-                        </Card.Section>
+            <Stack gap="sm" component="article">
+                <Group justify="space-between" align="center" wrap="nowrap">
+                    <UserBadge user={data.photographer} />
+                    <Timemarker date={data.createdAt} />
+                </Group>
+
+                <Box>
+                    <Title order={1} size="h2" mb={6} style={{ overflowWrap: "anywhere" }}>{data.title}</Title>
+                    {data.description && (
+                        <Text maw={680} style={{ lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                            {data.description}
+                        </Text>
                     )}
+                </Box>
 
-                    <Stack gap="xs" p={isHero ? "lg" : "md"}>
-                        <Group justify="space-between" align="center">
-                            <UserBadge user={data.photographer} />
-                            <Timemarker date={data.createdAt} />
-                        </Group>
+                {data.image && (
+                    <Image
+                        src={data.image}
+                        alt=""
+                        mah={420}
+                        fit="cover"
+                        radius="md"
+                    />
+                )}
 
-                        <Link href={`/app/events/${data.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                            <Title order={isHero ? 3 : 4} mb={2}>{data.title}</Title>
-                            {data.description && (
-                                <Text c="dimmed" size="sm" lineClamp={2}>{data.description}</Text>
-                            )}
-                        </Link>
-
-                        <Group gap="xs" wrap="wrap" justify="space-between" align="center">
-                            <Group gap="xs" wrap="wrap" align="center">
-                                {data.location && (
-                                    <Badge variant="light" color="teal" size="xs">
-                                        {data.location}
-                                    </Badge>
-                                )}
-                                <Badge variant="light" size="xs">
-                                    {formatLocalDate(data.date)}
-                                </Badge>
-                                <Badge variant="light" color="purple" size="xs">
-                                    {data.duration} hour{data.duration > 1 ? "s" : ""}
-                                </Badge>
-                                <Group gap={4} align="center" ml={4}>
-                                    <ActionIcon
-                                        size="sm"
-                                        variant="subtle"
-                                        color="gray"
-                                        aria-label="Toggle comments"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            handleCommentButtonClick()
-                                        }}
-                                    >
-                                        <IconMessageCircle size={14} />
-                                    </ActionIcon>
-                                    {numComments > 0 && (
-                                        <Text size="xs" c="dimmed">{numComments}</Text>
-                                    )}
-                                </Group>
-                            </Group>
-
-                            {!isOwnEvent && (
-                                <ApplyModal
-                                    eventId={data.id}
-                                    eventTitle={data.title}
-                                    hasApplied={applicationStatus?.hasApplied ?? false}
-                                />
-                            )}
-                        </Group>
-
-                        {isCommentFormOpen && !hideCompose && <AddCommentForm eventId={data.id} />}
-                    </Stack>
-                </Card>
-            </div>
+                <Group gap="xs" wrap="wrap" justify="space-between" align="center">
+                    <Group gap="xs">
+                        <EventMeta date={data.date} duration={data.duration} location={data.location} />
+                        {isPast && <Badge variant="light" color="gray">Past event</Badge>}
+                    </Group>
+                    {apply}
+                </Group>
+            </Stack>
         )
     }
 
-    return null;
+    // Feed card
+    return (
+        <Card
+            component="article"
+            className="card-interactive"
+            shadow="xs"
+            p={0}
+            radius="md"
+            withBorder
+            h="100%"
+            style={{ borderLeft: "3px solid var(--mantine-color-orange-3)" }}
+            data-testid="event-card"
+        >
+            {data.image && (
+                // The title below links to the same page; this link is a
+                // bigger pointer target only.
+                <Link href={href} tabIndex={-1} aria-hidden="true">
+                    <Image src={data.image} alt="" h={180} fit="cover" />
+                </Link>
+            )}
+
+            <Stack gap="xs" p="md" style={{ flex: 1 }}>
+                <Group justify="space-between" align="center" wrap="nowrap">
+                    <UserBadge user={data.photographer} />
+                    <Timemarker date={data.createdAt} />
+                </Group>
+
+                <Box>
+                    <Title order={3} size="h4" mb={2} style={{ overflowWrap: "anywhere" }}>
+                        <Link href={href}>{data.title}</Link>
+                    </Title>
+                    {data.description && (
+                        <Text c="dimmed" size="sm" lineClamp={2}>{data.description}</Text>
+                    )}
+                </Box>
+
+                <EventMeta date={data.date} duration={data.duration} location={data.location} />
+
+                <Group gap="xs" justify="space-between" align="center" mt="auto" pt={4}>
+                    <Button
+                        variant="subtle"
+                        color="gray"
+                        size="compact-sm"
+                        leftSection={<IconMessageCircle size={16} />}
+                        aria-expanded={isCommentFormOpen}
+                        aria-label={`Comment on ${data.title}, ${data.commentCount} ${data.commentCount === 1 ? "comment" : "comments"}`}
+                        onClick={() => setIsCommentFormOpen((open) => !open)}
+                    >
+                        {data.commentCount}
+                    </Button>
+                    {apply}
+                </Group>
+
+                {isCommentFormOpen && <AddCommentForm eventId={data.id} eventTitle={data.title} />}
+            </Stack>
+        </Card>
+    )
 }

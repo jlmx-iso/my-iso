@@ -1,40 +1,47 @@
 "use client";
 
 import {
+  Alert,
   Box,
   Button,
   Group,
-  Image,
+  Loader,
   Paper,
+  Progress,
+  SimpleGrid,
   Stack,
-  Stepper,
+  Switch,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
-import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import { IconAlertCircle } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
-import type { Area } from "react-easy-crop";
-import Cropper from "react-easy-crop";
+import { type FormEvent, useState } from "react";
 
-import { dataUrlToBase64, isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
-import { ErrorAlert } from "~/app/_components/Alerts";
-import { Dropzone } from "~/app/_components/input/Dropzone";
-import { Loader } from "~/app/_components/Loader";
+import { normalizeHandle, publicProfileUrl, validateHandle } from "~/_utils/handle";
+import { isValidInstagramHandle, normalizeInstagramHandle } from "~/_utils/instagram";
+import { logger } from "~/_utils/logger";
+import { isValidPhone, normalizePhone } from "~/_utils/phone";
+import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import { parseOptionalWebsite } from "~/_utils/website";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { env } from "~/env";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
-import { OnboardingComplete } from "./OnboardingComplete";
+import { AvatarStep } from "./AvatarStep";
 import { PlanSelection } from "./PlanSelection";
 import { WelcomeScreen } from "./WelcomeScreen";
 
-// Onboarding stages (not steps in the stepper — separate screens)
-type Stage = "welcome" | "profile" | "plan" | "complete";
+/** Where the plan step lives, so a reload during it comes back to it. */
+export const PLAN_STEP_URL = "/app/onboarding?step=plan";
+
+type Stage = "welcome" | "profile" | "plan";
 
 type OnboardingUser = {
   city: string | null;
@@ -49,273 +56,187 @@ type OnboardingUser = {
 };
 
 type OnboardingFormProps = {
+  /** "plan" when the profile already exists (a reload during the plan step). */
+  initialStage: "welcome" | "plan";
   photographerCount: number;
   pricing: PricingInfo;
   user: OnboardingUser;
 };
 
-// Profile stepper steps
-const PROFILE_STEPS = 3; // basics, business, avatar
+type FormValues = {
+  companyName: string;
+  firstName: string;
+  handle: string;
+  instagram: string;
+  isDiscoverable: boolean;
+  lastName: string;
+  location: string;
+  phoneNumber: string;
+  website: string;
+};
 
-export function OnboardingForm({ photographerCount, pricing, user }: OnboardingFormProps) {
-  const [stage, setStage] = useState<Stage>("welcome");
-  const [profileStep, setProfileStep] = useState(0);
+const STEPS = [
+  { fields: ["firstName", "lastName", "phoneNumber", "handle", "location"], title: "The basics" },
+  { fields: ["companyName", "website", "instagram"], title: "Your business" },
+  { fields: [], title: "Your photo" },
+] as const satisfies ReadonlyArray<{ fields: ReadonlyArray<keyof FormValues>; title: string }>;
 
-  // Avatar upload state
-  const [avatarFiles, setAvatarFiles] = useState<FileWithPath[] | null>(null);
-  const [avatarUploading, setAvatarUploading] = useState(false);
+const HANDLE_STEP = 0;
 
-  // Crop state
-  const [cropSrc, setCropSrc] = useState<string | null>(null);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const cropSrcFileRef = useRef<FileWithPath | null>(null);
+export function OnboardingForm({ initialStage, photographerCount, pricing, user }: OnboardingFormProps) {
+  const router = useRouter();
+  const [stage, setStage] = useState<Stage>(initialStage);
+  const [step, setStep] = useState(0);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { update: updateSession } = useSession();
   const updateProfile = api.user.updateProfile.useMutation();
   const createPhotographer = api.photographer.create.useMutation();
+  const updatePreferences = api.discover.updatePreferences.useMutation();
   const uploadAvatar = api.photographer.uploadProfileImage.useMutation();
-
-  const isPending =
-    updateProfile.isPending ||
-    createPhotographer.isPending ||
-    avatarUploading;
-
-  const error =
-    updateProfile.error ?? createPhotographer.error ?? uploadAvatar.error;
 
   // Name fields are editable when not pre-filled (e.g. email OTP sign-up)
   const nameEditable = !user.firstName && !user.lastName;
 
-  const form = useForm({
+  const form = useForm<FormValues>({
     initialValues: {
       companyName: "",
       firstName: user.firstName,
       handle: user.handle ?? "",
       instagram: "",
+      isDiscoverable: true,
       lastName: user.lastName,
       location: "",
       phoneNumber: user.phone ?? "",
       website: "",
     },
     validate: {
-      companyName: (value: string) =>
-        value.length > 0 ? null : "Business name is required",
-      firstName: (value: string) =>
-        nameEditable && !value.trim() ? "First name is required" : null,
-      instagram: (value: string) =>
-        !value || isValidInstagramHandle(value) ? null : "Enter a valid Instagram handle (e.g. yourhandle)",
-      lastName: (value: string) =>
-        nameEditable && !value.trim() ? "Last name is required" : null,
-      location: (value: string) =>
-        value.length > 0 ? null : "Location is required",
-      phoneNumber: (value: string) =>
-        !value ? "Phone number is required" : isValidPhone(value) ? null : "Enter a valid 10-digit US phone number",
-      website: (value: string) => {
-        if (value.length && !/^(http|https):\/\/[^ "]+$/.test(value))
-          return "Invalid website URL";
-        return null;
-      },
+      companyName: (value) => (value.trim() ? null : "Enter your business name. Your own name is fine."),
+      firstName: (value) => (nameEditable && !value.trim() ? "Enter your first name" : null),
+      handle: validateHandle,
+      instagram: (value) =>
+        !value.trim() || isValidInstagramHandle(value) ? null : "Enter just the handle, like yourhandle",
+      lastName: (value) => (nameEditable && !value.trim() ? "Enter your last name" : null),
+      location: (value) => (value.trim() ? null : "Enter the city you're based in"),
+      phoneNumber: (value) =>
+        !value.trim() || isValidPhone(value) ? null : "Enter a 10-digit US phone number, or leave this blank",
+      website: (value) => (parseOptionalWebsite(value).ok ? null : "Enter a web address, like yoursite.com"),
     },
   });
 
-  // Preview URL for the cropped file
-  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
-  useEffect(() => {
-    // The object URL is an external resource owned by this effect: it must be
-    // created and revoked together, so it cannot be derived during render.
-    /* eslint-disable react-hooks/set-state-in-effect -- see above */
-    if (!avatarFiles?.[0]) { setAvatarPreviewUrl(null); return; }
-    const url = URL.createObjectURL(avatarFiles[0]);
-    setAvatarPreviewUrl(url);
-    /* eslint-enable react-hooks/set-state-in-effect */
-    return () => URL.revokeObjectURL(url);
-  }, [avatarFiles]);
+  const handle = normalizeHandle(form.values.handle);
 
-  // Called by react-easy-crop when the user finishes dragging
-  const onCropComplete = useCallback((_: Area, pixels: Area) => {
-    setCroppedAreaPixels(pixels);
-  }, []);
-
-  // When user picks a file, enter crop mode
-  const handleFileChange = useCallback((files: FileWithPath[]) => {
-    const file = files[0];
-    if (!file) return;
-    cropSrcFileRef.current = file;
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result as string);
-    reader.readAsDataURL(file);
-  }, []);
-
-  // Crop the image on canvas and store as a File
-  const applyCrop = useCallback(async () => {
-    if (!cropSrc || !croppedAreaPixels) return;
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new window.Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = cropSrc;
-      });
-      const canvas = document.createElement("canvas");
-      const size = 512;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(
-        image,
-        croppedAreaPixels.x, croppedAreaPixels.y,
-        croppedAreaPixels.width, croppedAreaPixels.height,
-        0, 0, size, size,
-      );
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.9)
-      );
-      if (!blob) throw new Error("Failed to generate cropped image");
-      const croppedFile = new File([blob], cropSrcFileRef.current?.name ?? "avatar.jpg", { type: "image/jpeg" }) as FileWithPath;
-      setAvatarFiles([croppedFile]);
-      setCropSrc(null);
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-    } catch (err) {
-      logger.error("Failed to crop image", { err });
-      notifications.show({
-        color: "red",
-        message: "Failed to crop image. Please try again.",
-        title: "Crop error",
-      });
-      setCropSrc(null);
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-    }
-  }, [cropSrc, croppedAreaPixels]);
-
-  // Validate fields for each profile sub-step
-  const nextProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
-    e.preventDefault();
-    const stepFields: Record<number, string[]> = {
-      0: [...(nameEditable ? ["firstName", "lastName"] : []), "location", "phoneNumber"],
-      1: ["companyName", "instagram", "website"],
-    };
-    const fields = stepFields[profileStep] ?? [];
-    let hasErrors = false;
-    for (const field of fields) {
-      if (form.validateField(field).hasError) hasErrors = true;
-    }
-    if (!hasErrors)
-      setProfileStep((s) => Math.min(s + 1, PROFILE_STEPS - 1));
+  const validateStep = (index: number) => {
+    const fields = STEPS[index]?.fields ?? [];
+    // Validate every field (not just up to the first error) so all show.
+    return fields.map((field) => form.validateField(field).hasError).every((hasError) => !hasError);
   };
 
-  const prevProfileStep: MouseEventHandler<HTMLButtonElement> = (e) => {
-    e.preventDefault();
-    setProfileStep((s) => Math.max(s - 1, 0));
-  };
-
-  // Submit profile data (called after avatar step)
-  const submitProfile = async () => {
-    const validation = form.validate();
-    if (validation.hasErrors) return;
-
+  /** Saves everything collected by the steps, then moves on to the plan step. */
+  const saveProfile = async (): Promise<void> => {
     const values = form.values;
+    const firstName = nameEditable ? values.firstName.trim() : user.firstName;
+    const lastName = nameEditable ? values.lastName.trim() : user.lastName;
+    const website = parseOptionalWebsite(values.website);
 
-    const firstName = nameEditable ? values.firstName : user.firstName;
-    const lastName = nameEditable ? values.lastName : user.lastName;
-
+    setSubmitError(null);
+    setIsSaving(true);
     try {
-      await updateProfile.mutateAsync({
-        ...(nameEditable ? { firstName, lastName } : {}),
-        handle: values.handle || undefined,
-        phone: normalizePhone(values.phoneNumber),
-      });
-    } catch (err) {
-      logger.error("Profile update failed during onboarding", { err });
-      return;
-    }
+      try {
+        await updateProfile.mutateAsync({
+          ...(nameEditable ? { firstName, lastName } : {}),
+          handle: handle || undefined,
+          phone: values.phoneNumber.trim() ? normalizePhone(values.phoneNumber) : "",
+        });
+      } catch (error) {
+        logger.error("Profile update failed during onboarding", { error });
+        if (trpcErrorCode(error) === "CONFLICT") {
+          // The handle belongs to the first step: go back there and say so.
+          setStep(HANDLE_STEP);
+          form.setFieldError("handle", "That username is taken. Try another one.");
+          setSubmitError("That username is already taken. Choose a different one to continue.");
+        } else {
+          setSubmitError(userFacingError(error, "We couldn't save your details. Please try again."));
+        }
+        return;
+      }
 
-    try {
-      await createPhotographer.mutateAsync({
-        companyName: values.companyName,
-        facebook: null,
-        instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : null,
-        location: values.location,
-        name: `${firstName} ${lastName}`,
-        tiktok: null,
-        twitter: null,
-        vimeo: null,
-        website: values.website || null,
-        youtube: null,
-      });
-    } catch (err) {
-      logger.error("Photographer creation failed during onboarding", { err });
-      return;
-    }
+      try {
+        await createPhotographer.mutateAsync({
+          companyName: values.companyName.trim(),
+          facebook: null,
+          instagram: values.instagram.trim() ? normalizeInstagramHandle(values.instagram) : null,
+          location: values.location.trim(),
+          name: `${firstName} ${lastName}`.trim(),
+          tiktok: null,
+          twitter: null,
+          vimeo: null,
+          website: website.ok ? website.value : null,
+          youtube: null,
+        });
+      } catch (error) {
+        logger.error("Photographer creation failed during onboarding", { error });
+        setSubmitError(userFacingError(error, "We couldn't create your profile. Please try again."));
+        return;
+      }
 
-    // Upload avatar if provided
-    if (avatarFiles?.[0]) {
-      setAvatarUploading(true);
-      const file = avatarFiles[0];
-      await new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64File = dataUrlToBase64(reader.result);
-          if (base64File) {
-            try {
-              await uploadAvatar.mutateAsync({ image: base64File });
-            } catch (uploadErr) {
-              logger.error("Avatar upload failed during onboarding", {
-                uploadErr,
-              });
-              notifications.show({
-                color: "yellow",
-                message:
-                  "Profile created, but avatar upload failed. You can upload it from your profile.",
-                title: "Avatar not uploaded",
-              });
-            }
-          }
-          setAvatarUploading(false);
-          resolve();
-        };
-        reader.onerror = () => {
-          logger.error("FileReader error during avatar upload");
+      // From here the profile exists: nothing below may block finishing.
+      try {
+        await updatePreferences.mutateAsync({ isDiscoverable: values.isDiscoverable });
+      } catch (error) {
+        logger.error("Saving discoverability failed during onboarding", { error });
+        notifications.show({
+          color: "tan",
+          message: "We couldn't save your Discover visibility. You can set it on the Discover page.",
+          title: "One setting wasn't saved",
+        });
+      }
+
+      if (photo) {
+        try {
+          await uploadAvatar.mutateAsync({ image: await readFileAsBase64(photo) });
+        } catch (error) {
+          logger.error("Avatar upload failed during onboarding", { error });
           notifications.show({
-            color: "yellow",
-            message: "Could not read the selected file. You can upload your photo from your profile.",
-            title: "File read error",
+            color: "tan",
+            message: "Your profile is ready, but the photo didn't upload. You can add it from your profile.",
+            title: "Photo not uploaded",
           });
-          setAvatarUploading(false);
-          resolve();
-        };
-        reader.onabort = () => {
-          setAvatarUploading(false);
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
-    }
+        }
+      }
 
-    // Refresh session so navbar shows updated name/avatar
-    await updateSession();
-    setStage("plan");
+      // Refresh the session so the header shows the name and photo.
+      await updateSession().catch((error: unknown) =>
+        logger.error("Session refresh failed after onboarding", { error }),
+      );
+      // The plan step has its own URL, so a reload stays on it.
+      router.replace(PLAN_STEP_URL);
+      setStage("plan");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSelectFree = () => setStage("complete");
-  // Note: Pro users are redirected to Stripe checkout via PlanSelection
-  // and land on /app/settings after payment. The complete stage is Free-only.
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (isSaving) return;
+    if (!validateStep(step)) return;
+    if (step < STEPS.length - 1) {
+      setSubmitError(null);
+      setStep(step + 1);
+      return;
+    }
+    // Re-check everything: an earlier step may have been edited since.
+    const firstInvalid = STEPS.findIndex((_step, index) => !validateStep(index));
+    if (firstInvalid !== -1) {
+      setStep(firstInvalid);
+      return;
+    }
+    void saveProfile();
+  };
 
-  if (isPending) {
-    return (
-      <Box maw={600} w="100%" mx="auto" mt="xl">
-        <Stack align="center" gap="md">
-          <Loader size="lg" />
-          <Text c="dimmed">Setting up your profile...</Text>
-        </Stack>
-      </Box>
-    );
-  }
-
-  // Stage: Welcome
   if (stage === "welcome") {
     return (
       <WelcomeScreen
@@ -326,21 +247,17 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
     );
   }
 
-  // Stage: Complete (Free users only — Pro users are redirected to Stripe)
-  if (stage === "complete") {
-    return <OnboardingComplete plan="free" />;
-  }
-
-  // Stage: Plan selection
   if (stage === "plan") {
-    return <PlanSelection pricing={pricing} onSelectFree={handleSelectFree} />;
+    return <PlanSelection pricing={pricing} />;
   }
 
-  // Stage: Profile setup (multi-step stepper)
+  const currentStep = STEPS[step] ?? STEPS[0];
+  const isLastStep = step === STEPS.length - 1;
+
   return (
     <Box maw={640} w="100%" mx="auto">
-      <Stack align="center" mb="xl">
-        <Title order={2} ta="center">
+      <Stack align="center" mb="lg" gap={4}>
+        <Title order={1} size="h2" ta="center">
           Set up your profile
         </Title>
         <Text c="dimmed" size="sm" ta="center">
@@ -348,99 +265,121 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
         </Text>
       </Stack>
 
-      <Paper withBorder shadow="md" p="xl" radius="md">
-        <form onSubmit={(e) => e.preventDefault()}>
-          {error && <ErrorAlert title="Error" message={error.message} />}
+      <Paper withBorder shadow="md" p={{ base: "md", sm: "xl" }} radius="md">
+        <form onSubmit={handleSubmit} noValidate>
+          <Stack gap="md">
+            <Stack gap={6}>
+              <Group justify="space-between" align="baseline">
+                <Title order={2} size="h4">
+                  {currentStep.title}
+                </Title>
+                <Text size="sm" c="dimmed">
+                  Step {step + 1} of {STEPS.length}
+                </Text>
+              </Group>
+              <Progress
+                value={((step + 1) / STEPS.length) * 100}
+                size="sm"
+                aria-label={`Step ${step + 1} of ${STEPS.length}`}
+              />
+            </Stack>
 
-          <Stepper
-            active={profileStep}
-            onStepClick={(step) => {
-              // Only allow going back
-              if (step < profileStep) setProfileStep(step);
-            }}
-            allowNextStepsSelect={false}
-          >
-            {/* Step 1: Basics */}
-            <Stepper.Step label="The basics" description="Who you are">
-              <Stack gap="sm" mt="md">
-                <Group grow>
-                  {nameEditable ? (
-                    <>
-                      <TextInput
-                        label="First Name"
-                        placeholder="First name"
-                        required
-                        {...form.getInputProps("firstName")}
-                      />
-                      <TextInput
-                        label="Last Name"
-                        placeholder="Last name"
-                        required
-                        {...form.getInputProps("lastName")}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <TextInput
-                        label="First Name"
-                        value={user.firstName}
-                        disabled
-                      />
-                      <TextInput
-                        label="Last Name"
-                        value={user.lastName}
-                        disabled
-                      />
-                    </>
-                  )}
-                </Group>
-                <TextInput label="Email" value={user.email} disabled />
-                <TextInput
-                  label="Phone Number"
-                  placeholder="(555) 555-5555"
-                  required
-                  {...form.getInputProps("phoneNumber")}
-                />
-                <Stack gap={4}>
+            {/* Always rendered so screen readers announce errors as they appear. */}
+            <div role="alert" aria-live="assertive">
+              {submitError && (
+                <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="onboarding-error">
+                  {submitError}
+                </Alert>
+              )}
+            </div>
+
+            {step === 0 && (
+              <Stack gap="sm">
+                <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
                   <TextInput
-                    label="Username"
-                    placeholder="yourhandle (optional)"
-                    leftSection={<Text size="sm" c="dimmed">@</Text>}
-                    {...form.getInputProps("handle")}
+                    label="First name"
+                    autoComplete="given-name"
+                    required={nameEditable}
+                    readOnly={!nameEditable}
+                    variant={nameEditable ? "default" : "filled"}
+                    {...form.getInputProps("firstName")}
                   />
-                  {form.values.handle && (
-                    <Text size="xs" c="dimmed">
-                      Your profile: {env.NEXT_PUBLIC_BASE_URL}/photographer/@{form.values.handle}
-                    </Text>
-                  )}
-                </Stack>
+                  <TextInput
+                    label="Last name"
+                    autoComplete="family-name"
+                    required={nameEditable}
+                    readOnly={!nameEditable}
+                    variant={nameEditable ? "default" : "filled"}
+                    {...form.getInputProps("lastName")}
+                  />
+                </SimpleGrid>
+                <TextInput
+                  label="Email"
+                  description="The address you signed in with"
+                  value={user.email}
+                  readOnly
+                  variant="filled"
+                />
                 <LocationAutocomplete
                   label="Location"
                   placeholder="City, State"
-                  isRequired={true}
+                  isRequired
                   {...form.getInputProps("location")}
                 />
-              </Stack>
-            </Stepper.Step>
-
-            {/* Step 2: Business */}
-            <Stepper.Step label="Your business" description="How to find you">
-              <Stack gap="sm" mt="md">
                 <TextInput
-                  label="Business Name"
+                  label="Username"
+                  description={
+                    handle && !validateHandle(handle)
+                      ? `Your public profile: ${publicProfileUrl(env.NEXT_PUBLIC_BASE_URL, handle)}`
+                      : "Optional. 3 to 30 lowercase letters, numbers or underscores. It becomes your public profile link."
+                  }
+                  placeholder="yourname"
+                  leftSection={<Text size="sm" c="dimmed" aria-hidden>@</Text>}
+                  autoCapitalize="none"
+                  autoComplete="username"
+                  spellCheck={false}
+                  maxLength={31}
+                  {...form.getInputProps("handle")}
+                />
+                <TextInput
+                  label="Phone number"
+                  description="Optional. Not shown on your profile."
+                  placeholder="(555) 555-5555"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  {...form.getInputProps("phoneNumber")}
+                />
+              </Stack>
+            )}
+
+            {step === 1 && (
+              <Stack gap="sm">
+                <TextInput
+                  label="Business name"
                   placeholder="Jane Smith Photography"
+                  autoComplete="organization"
                   required
                   {...form.getInputProps("companyName")}
                 />
                 <TextInput
                   label="Website"
-                  placeholder="https://your-website.com"
+                  description="Optional"
+                  placeholder="yoursite.com"
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   {...form.getInputProps("website")}
                 />
                 <TextInput
                   label="Instagram"
                   placeholder="yourhandle"
-                  description="Most photographers live on Instagram — this is the one that counts."
+                  description="Optional. Most photographers live on Instagram — this is the one that counts."
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
                   leftSection={
                     <Text size="sm" c="dimmed" style={{ userSelect: "none", whiteSpace: "nowrap" }}>
                       instagram.com/
@@ -450,107 +389,45 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                   styles={{ input: { paddingLeft: "calc(14ch + 1.25rem)" } }}
                   {...form.getInputProps("instagram")}
                 />
-                <Text size="xs" c="dimmed">
-                  You can add Facebook, TikTok, and other socials from your
-                  profile later.
-                </Text>
+                <Switch
+                  mt="xs"
+                  label="Show me in Discover"
+                  description="Lets other photographers find your profile and match with you. You can change this any time on the Discover page."
+                  {...form.getInputProps("isDiscoverable", { type: "checkbox" })}
+                />
               </Stack>
-            </Stepper.Step>
-
-            {/* Step 3: Avatar */}
-            <Stepper.Step
-              label="Your photo"
-              description="Put a face to the name"
-            >
-              <Stack gap="md" mt="md">
-                <Text size="sm" c="dimmed">
-                  Profiles with a photo get significantly more views. You can
-                  skip this and add it later from your profile.
-                </Text>
-                {cropSrc ? (
-                  <Stack gap="sm">
-                    <Box pos="relative" style={{ background: "#000", borderRadius: 8, height: 320, overflow: "hidden" }}>
-                      <Cropper
-                        image={cropSrc}
-                        crop={crop}
-                        zoom={zoom}
-                        aspect={1}
-                        cropShape="round"
-                        showGrid={false}
-                        onCropChange={setCrop}
-                        onZoomChange={setZoom}
-                        onCropComplete={onCropComplete}
-                      />
-                    </Box>
-                    <Text size="xs" c="dimmed" ta="center">Drag to reposition · scroll to zoom</Text>
-                    <Group justify="flex-end" gap="xs">
-                      <Button variant="subtle" size="sm" onClick={() => setCropSrc(null)}>Cancel</Button>
-                      <Button size="sm" onClick={() => void applyCrop()}>Use this photo</Button>
-                    </Group>
-                  </Stack>
-                ) : avatarPreviewUrl ? (
-                  <Box pos="relative">
-                    <Image
-                      src={avatarPreviewUrl}
-                      alt="Profile photo preview"
-                      radius="md"
-                      style={{ maxHeight: 400, objectFit: "cover", width: "100%" }}
-                    />
-                    <Button
-                      variant="default"
-                      size="xs"
-                      style={{ bottom: 8, position: "absolute", right: 8 }}
-                      onClick={() => setAvatarFiles(null)}
-                    >
-                      Change photo
-                    </Button>
-                  </Box>
-                ) : (
-                  <Dropzone
-                    multiple={false}
-                    loading={avatarUploading}
-                    handleFileChange={handleFileChange}
-                  />
-                )}
-              </Stack>
-            </Stepper.Step>
-          </Stepper>
-
-          <Group justify="space-between" mt="xl">
-            {profileStep > 0 ? (
-              <Button onClick={prevProfileStep} variant="subtle">
-                Back
-              </Button>
-            ) : (
-              <Box />
             )}
 
-            {profileStep < PROFILE_STEPS - 1 ? (
-              <Button onClick={nextProfileStep} color="orange">
-                Next
-              </Button>
-            ) : (
-              <Group gap="sm">
-                {!avatarFiles?.length && (
-                  <Button
-                    variant="subtle"
-                    color="gray"
-                    onClick={() => void submitProfile()}
-                    disabled={isPending}
-                  >
-                    Skip for now
-                  </Button>
-                )}
-                <Button
-                  color="orange"
-                  onClick={() => void submitProfile()}
-                  loading={isPending}
-                >
-                  {avatarFiles?.length ? "Upload & Continue" : "Continue"}
+            {step === 2 && (
+              <Stack gap="md">
+                <Text size="sm" c="dimmed">
+                  Profiles with a photo get noticed more. You can skip this and add one later
+                  from your profile.
+                </Text>
+                <AvatarStep photo={photo} onChange={setPhoto} disabled={isSaving} />
+              </Stack>
+            )}
+
+            <Group justify="space-between" mt="sm">
+              {step > 0 ? (
+                <Button variant="default" onClick={() => setStep(step - 1)} disabled={isSaving}>
+                  Back
                 </Button>
+              ) : (
+                <span />
+              )}
+              <Button type="submit" loading={isSaving}>
+                {!isLastStep ? "Next" : photo ? "Create profile" : "Skip photo and create profile"}
+              </Button>
+            </Group>
+
+            {isSaving && (
+              <Group gap="xs" justify="center" role="status">
+                <Loader size="xs" />
+                <Text size="sm" c="dimmed">Setting up your profile…</Text>
               </Group>
             )}
-          </Group>
+          </Stack>
         </form>
       </Paper>
     </Box>

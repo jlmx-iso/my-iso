@@ -11,9 +11,10 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconSend } from "@tabler/icons-react";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 
-import { logger } from "~/_utils";
+import { logger } from "~/_utils/logger";
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
 type ApplyModalProps = {
@@ -40,8 +41,8 @@ export default function ApplyModal({
       logger.error("Error applying to event", { error });
       notifications.show({
         color: "red",
-        message: error.message ?? "Something went wrong. Please try again.",
-        title: "Application Failed",
+        message: userFacingError(error, "Your application couldn't be sent. Please try again."),
+        title: "Application not sent",
       });
     },
     onSuccess: () => {
@@ -49,7 +50,7 @@ export default function ApplyModal({
         color: "teal",
         icon: <IconCheck size={16} />,
         message: "Your application has been sent to the event owner.",
-        title: "Application Sent",
+        title: "Application sent",
       });
       void utils.booking.hasApplied.invalidate({ eventId });
       void utils.booking.getMyApplications.invalidate();
@@ -60,7 +61,8 @@ export default function ApplyModal({
     },
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     mutate({
       eventId,
       notes: notes.trim() || undefined,
@@ -90,6 +92,7 @@ export default function ApplyModal({
         title={`Apply to "${eventTitle}"`}
         size="md"
       >
+        <form onSubmit={handleSubmit}>
         <Stack gap="md">
           <Text size="sm" c="dimmed">
             Let the event owner know you are interested in second shooting this
@@ -97,7 +100,8 @@ export default function ApplyModal({
           </Text>
 
           <TextInput
-            label="Your Rate"
+            label="Your rate"
+            description="Optional"
             placeholder="e.g. $50/hr, $200 flat, negotiable"
             value={rate}
             onChange={(e) => setRate(e.currentTarget.value)}
@@ -106,6 +110,7 @@ export default function ApplyModal({
 
           <Textarea
             label="Notes"
+            description="Optional"
             placeholder="Introduce yourself, share relevant experience, or ask questions about the event..."
             value={notes}
             onChange={(e) => setNotes(e.currentTarget.value)}
@@ -116,17 +121,18 @@ export default function ApplyModal({
           />
 
           <Button
-            onClick={handleSubmit}
+            type="submit"
             loading={isPending}
             leftSection={<IconSend size={16} />}
           >
-            Send Application
+            Send application
           </Button>
         </Stack>
+        </form>
       </Modal>
 
       <Button size="xs" variant="light" onClick={open}>
-        I&apos;m Interested
+        I&apos;m interested
       </Button>
     </>
   );

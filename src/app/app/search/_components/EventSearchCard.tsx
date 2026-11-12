@@ -1,8 +1,7 @@
 'use client';
 
-import { Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
-import { useHover } from '@mantine/hooks';
-import { IconHeart, IconMessageCircle } from '@tabler/icons-react';
+import { AspectRatio, Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
+import { IconCalendar, IconClock, IconHeart, IconMapPin, IconMessageCircle } from '@tabler/icons-react';
 import Link from 'next/link';
 
 import { formatLocalDate } from '~/_lib/dayjs';
@@ -14,74 +13,77 @@ type EventSearchCardProps = {
 };
 
 export default function EventSearchCard({ event }: EventSearchCardProps) {
-  const { hovered, ref } = useHover();
   const photographerName = event.photographer.name ||
     `${event.photographer.user.firstName || ''} ${event.photographer.user.lastName || ''}`.trim();
+  const href = `/app/events/${event.id}`;
 
   return (
-    <div ref={ref}>
-      <Card
-        shadow={hovered ? 'md' : 'xs'}
-        p={0}
-        radius="md"
-        withBorder
-        style={{
-          transition: 'all 200ms ease',
-          transform: hovered ? 'translateY(-2px)' : 'none',
-          borderLeft: '3px solid var(--mantine-color-orange-3)',
-        }}
-      >
-        <Link href={`/app/events/${event.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-          {/* Hero image — full bleed at top */}
-          {event.image && (
-            <Image src={event.image} alt={event.title} h={160} fit="cover" />
-          )}
-
-          <Stack gap="xs" p="md">
-            {/* UserBadge + date */}
-            <Group justify="space-between" align="center">
-              <UserBadge
-                user={{
-                  userId: event.photographer.user.id,
-                  name: photographerName,
-                  avatar: event.photographer.user.profilePic,
-                }}
-              />
-              <Text size="xs" c="dimmed">{formatLocalDate(event.date)}</Text>
-            </Group>
-
-            {/* Title + description */}
-            <Title order={4}>{event.title}</Title>
-            {event.description && (
-              <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
-            )}
-
-            {/* Badges + counts */}
-            <Group gap="xs" wrap="wrap" justify="space-between" align="center">
-              <Group gap="xs" wrap="wrap" align="center">
-                {event.location && (
-                  <Badge variant="light" color="teal" size="xs">{event.location}</Badge>
-                )}
-                <Badge variant="light" size="xs">{formatLocalDate(event.date)}</Badge>
-                <Badge variant="light" color="purple" size="xs">
-                  {event.duration} hour{event.duration > 1 ? 's' : ''}
-                </Badge>
-              </Group>
-
-              <Group gap="sm" align="center">
-                <Group gap={4} align="center">
-                  <IconMessageCircle size={14} color="var(--mantine-color-dimmed)" />
-                  <Text size="xs" c="dimmed">{event._count.comments}</Text>
-                </Group>
-                <Group gap={4} align="center">
-                  <IconHeart size={14} color="var(--mantine-color-dimmed)" />
-                  <Text size="xs" c="dimmed">{event._count.eventLikes}</Text>
-                </Group>
-              </Group>
-            </Group>
-          </Stack>
+    <Card
+      component="article"
+      className="card-interactive"
+      shadow="xs"
+      p={0}
+      radius="md"
+      withBorder
+      h="100%"
+      style={{ borderLeft: '3px solid var(--mantine-color-orange-3)' }}
+      data-testid="search-event-card"
+    >
+      {event.image && (
+        // The title links to the same page; this is a bigger pointer target only.
+        <Link href={href} tabIndex={-1} aria-hidden="true">
+          {/* A fixed ratio, so the image is never cropped to a strip. */}
+          <AspectRatio ratio={16 / 9}>
+            <Image src={event.image} alt="" fit="cover" />
+          </AspectRatio>
         </Link>
-      </Card>
-    </div>
+      )}
+
+      <Stack gap="xs" p="md" style={{ flex: 1 }}>
+        <UserBadge
+          user={{
+            userId: event.photographer.user.id,
+            name: photographerName,
+            avatar: event.photographer.user.profilePic,
+          }}
+        />
+
+        <Title order={3} size="h5" style={{ overflowWrap: 'anywhere' }}>
+          <Link href={href}>{event.title}</Link>
+        </Title>
+        {event.description && (
+          <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
+        )}
+
+        <Group gap="xs" wrap="wrap">
+          {event.location && (
+            <Badge variant="light" color="teal" leftSection={<IconMapPin size={12} aria-hidden />}>
+              <span className="sr-only">Location: </span>{event.location}
+            </Badge>
+          )}
+          <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
+            <span className="sr-only">Date: </span>{formatLocalDate(event.date)}
+          </Badge>
+          <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
+            <span className="sr-only">Duration: </span>{event.duration} hour{event.duration === 1 ? '' : 's'}
+          </Badge>
+        </Group>
+
+        <Group gap="md" mt="auto" pt={4}>
+          <Group gap={4} wrap="nowrap">
+            <IconMessageCircle size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+            <Text size="xs" c="dimmed">
+              {event._count.comments}<span className="sr-only"> comments</span>
+            </Text>
+          </Group>
+          <Group gap={4} wrap="nowrap">
+            <IconHeart size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+            <Text size="xs" c="dimmed">
+              {event._count.eventLikes}<span className="sr-only"> likes</span>
+            </Text>
+          </Group>
+        </Group>
+      </Stack>
+    </Card>
   );
 }

@@ -8,6 +8,7 @@ import {
   Paper,
   Stack,
   Text,
+  Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -20,6 +21,7 @@ import Link from "next/link";
 
 import { formatLocalDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -74,7 +76,7 @@ export default function BookingCard({
         logger.error("Error updating booking status", { error });
         notifications.show({
           color: "red",
-          message: error.message ?? "Something went wrong.",
+          message: userFacingError(error, "Nothing was changed. Please try again."),
           title: "Update Failed",
         });
       },
@@ -112,23 +114,18 @@ export default function BookingCard({
         {/* Header: event info and status badge */}
         <Group justify="space-between" align="flex-start">
           <Stack gap={4} style={{ flex: 1 }}>
-            <Link
-              href={`/app/events/${event.id}`}
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              <Text fw={600} size="md" lineClamp={1}>
-                {event.title}
-              </Text>
-            </Link>
+            <Title order={2} size="h5" style={{ overflowWrap: "anywhere" }}>
+              <Link href={`/app/events/${event.id}`}>{event.title}</Link>
+            </Title>
             <Group gap="xs">
               <Group gap={4}>
-                <IconMapPin size={14} color="var(--mantine-color-dimmed)" />
+                <IconMapPin size={14} color="var(--mantine-color-dimmed)" aria-hidden />
                 <Text size="xs" c="dimmed">
                   {event.location}
                 </Text>
               </Group>
               <Group gap={4}>
-                <IconCalendar size={14} color="var(--mantine-color-dimmed)" />
+                <IconCalendar size={14} color="var(--mantine-color-dimmed)" aria-hidden />
                 <Text size="xs" c="dimmed">
                   {formatLocalDate(event.date)}
                 </Text>
@@ -148,7 +145,7 @@ export default function BookingCard({
         <Group gap="sm">
           <Avatar
             src={user.profilePic}
-            alt={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
+            alt=""
             size="sm"
             radius="xl"
           />

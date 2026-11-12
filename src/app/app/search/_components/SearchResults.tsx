@@ -1,4 +1,4 @@
-import { Stack, Text } from '@mantine/core';
+import { SimpleGrid, Stack, Title } from '@mantine/core';
 
 import type { RouterOutputs } from '~/trpc/react';
 
@@ -10,47 +10,41 @@ type SearchResultsProps = {
   searchType: 'all' | 'photographers' | 'events';
 };
 
+/** Result grids: photographers two-up, events three-up on wide screens. */
 export default function SearchResults({ results, searchType }: SearchResultsProps) {
-  const hasPhotographers = results.photographers.length > 0;
-  const hasEvents = results.events.length > 0;
-
-  if (!hasPhotographers && !hasEvents) {
-    return (
-      <Stack align="center" mt="xl">
-        <Text size="lg" c="dimmed">No results found</Text>
-      </Stack>
-    );
-  }
-
-  const showPhotographers = (searchType === 'all' || searchType === 'photographers') && hasPhotographers;
-  const showEvents = (searchType === 'all' || searchType === 'events') && hasEvents;
+  const showPhotographers = searchType !== 'events' && results.photographers.length > 0;
+  const showEvents = searchType !== 'photographers' && results.events.length > 0;
 
   return (
-    <Stack gap="sm">
+    <Stack gap="xl">
       {showPhotographers && (
-        <>
-          {searchType === 'all' && (
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 1 }}>
-              Photographers
-            </Text>
-          )}
-          {results.photographers.map((photographer) => (
-            <PhotographerCard key={photographer.id} photographer={photographer} />
-          ))}
-        </>
+        <Stack gap="sm" component="section" aria-labelledby="search-photographers">
+          <Title order={2} size="h5" id="search-photographers">
+            Photographers
+          </Title>
+          <SimpleGrid component="ul" cols={{ base: 1, md: 2 }} spacing="md" m={0} p={0}>
+            {results.photographers.map((photographer) => (
+              <li key={photographer.id} style={{ listStyle: 'none', minWidth: 0 }}>
+                <PhotographerCard photographer={photographer} />
+              </li>
+            ))}
+          </SimpleGrid>
+        </Stack>
       )}
 
       {showEvents && (
-        <>
-          {searchType === 'all' && (
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 1 }} mt={showPhotographers ? 'sm' : undefined}>
-              Events
-            </Text>
-          )}
-          {results.events.map((event) => (
-            <EventSearchCard key={event.id} event={event} />
-          ))}
-        </>
+        <Stack gap="sm" component="section" aria-labelledby="search-events">
+          <Title order={2} size="h5" id="search-events">
+            Events
+          </Title>
+          <SimpleGrid component="ul" cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" m={0} p={0}>
+            {results.events.map((event) => (
+              <li key={event.id} style={{ listStyle: 'none', minWidth: 0 }}>
+                <EventSearchCard event={event} />
+              </li>
+            ))}
+          </SimpleGrid>
+        </Stack>
       )}
     </Stack>
   );

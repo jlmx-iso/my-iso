@@ -32,7 +32,8 @@ import {
 import { motion, useMotionValue, useTransform } from "motion/react";
 import { useState } from "react";
 
-import { instagramUrl } from "~/_utils";
+import { instagramUrl } from "~/_utils/instagram";
+import { toSafeWebsiteUrl } from "~/_utils/social";
 
 interface SwipeCardProps {
   user: {
@@ -59,9 +60,11 @@ interface SwipeCardProps {
   };
   onSwipe: (direction: "like" | "pass") => void;
   isTop: boolean;
+  /** Disables the buttons and dragging, e.g. while offline feedback is shown. */
+  disabled?: boolean;
 }
 
-export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
+export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: SwipeCardProps) {
   const [expanded, setExpanded] = useState(false);
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
@@ -76,6 +79,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
 
   const hasPortfolio = photo?.portfolioImages && photo.portfolioImages.length > 0;
   const hasExpandedContent = !!photo;
+  const safeWebsite = photo?.website ? toSafeWebsiteUrl(photo.website) : null;
+  const canDrag = isTop && !disabled;
 
   return (
     <motion.div
@@ -86,9 +91,11 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
         width: "100%",
         top: isTop ? 0 : 0,
         zIndex: isTop ? 2 : 1,
-        cursor: isTop ? "grab" : "default",
+        cursor: canDrag ? "grab" : "default",
       }}
-      drag={isTop ? "x" : false}
+      // The card underneath is a visual hint only.
+      aria-hidden={isTop ? undefined : true}
+      drag={canDrag ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.7}
       onDragEnd={(_e, info) => {
@@ -124,8 +131,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 zIndex: 10,
                 padding: "8px 16px",
                 borderRadius: 8,
-                border: "3px solid var(--mantine-color-teal-5)",
-                color: "var(--mantine-color-teal-5)",
+                border: "3px solid var(--mantine-color-teal-6)",
+                color: "var(--mantine-color-teal-6)",
                 fontWeight: 700,
                 fontSize: 24,
                 transform: "rotate(-15deg)",
@@ -142,8 +149,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 zIndex: 10,
                 padding: "8px 16px",
                 borderRadius: 8,
-                border: "3px solid var(--mantine-color-red-5)",
-                color: "var(--mantine-color-red-5)",
+                border: "3px solid var(--mantine-color-red-6)",
+                color: "var(--mantine-color-red-6)",
                 fontWeight: 700,
                 fontSize: 24,
                 transform: "rotate(15deg)",
@@ -157,11 +164,11 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
         <Stack gap="md">
           {/* Avatar + Name + Location */}
           <Group gap="md" wrap="nowrap">
-            <Avatar src={avatar} size={64} radius="xl" color="orange">
+            <Avatar src={avatar} alt="" size={64} radius="xl" color="orange" aria-hidden={avatar ? undefined : true}>
               {(user.firstName || "U")[0]}
             </Avatar>
             <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-              <Title order={4} lineClamp={1}>{displayName}</Title>
+              <Title order={2} size="h4" lineClamp={1}>{displayName}</Title>
               {location && (
                 <Group gap={4} wrap="nowrap">
                   <IconMapPin size={14} color="var(--mantine-color-dimmed)" />
@@ -176,7 +183,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
             <Group gap="lg">
               {photo.avgRating != null && (
                 <Group gap={4}>
-                  <IconStar size={14} color="var(--mantine-color-yellow-5)" fill="var(--mantine-color-yellow-5)" />
+                  <IconStar size={14} color="var(--mantine-color-tan-6)" fill="var(--mantine-color-tan-6)" />
                   <Text size="sm" fw={500}>{photo.avgRating.toFixed(1)}</Text>
                   <Text size="xs" c="dimmed">({photo.reviewCount})</Text>
                 </Group>
@@ -221,6 +228,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
           {/* Expand/collapse toggle */}
           {isTop && photo && hasExpandedContent && (
             <UnstyledButton
+              aria-expanded={expanded}
+              py={6}
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded((o) => !o);
@@ -228,11 +237,11 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
             >
               <Group gap={4} justify="center">
                 {expanded ? (
-                  <IconChevronUp size={16} color="var(--mantine-color-orange-5)" />
+                  <IconChevronUp size={16} color="var(--mantine-color-orange-7)" aria-hidden />
                 ) : (
-                  <IconChevronDown size={16} color="var(--mantine-color-orange-5)" />
+                  <IconChevronDown size={16} color="var(--mantine-color-orange-7)" aria-hidden />
                 )}
-                <Text size="xs" fw={500} c="orange.5">
+                <Text size="sm" fw={600} c="orange.7">
                   {expanded ? "Show less" : "View full profile"}
                 </Text>
               </Group>
@@ -275,7 +284,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                           justifyContent: "center",
                         }}
                       >
-                        <IconCamera size={24} color="var(--mantine-color-gray-4)" />
+                        <IconCamera size={24} color="var(--mantine-color-gray-6)" />
                       </Box>
                     ))}
                   </SimpleGrid>
@@ -290,8 +299,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                       <IconStar
                         key={star}
                         size={16}
-                        color="var(--mantine-color-yellow-5)"
-                        fill={star <= Math.round(photo.avgRating!) ? "var(--mantine-color-yellow-5)" : "none"}
+                        color="var(--mantine-color-tan-6)"
+                        fill={star <= Math.round(photo.avgRating!) ? "var(--mantine-color-tan-6)" : "none"}
                       />
                     ))}
                   </Group>
@@ -302,12 +311,12 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
               )}
 
               {/* Links */}
-              {(photo?.website || photo?.instagram) && (
+              {(safeWebsite || photo?.instagram) && (
                 <Stack gap="xs">
                   <Text size="sm" fw={600}>Links</Text>
                   <Group gap="md">
-                    {photo.website && (
-                      <Anchor href={photo.website} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
+                    {safeWebsite && (
+                      <Anchor href={safeWebsite} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
                         <Group gap={4}>
                           <ThemeIcon size={20} variant="subtle" color="gray">
                             <IconWorld size={14} />
@@ -316,10 +325,10 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                         </Group>
                       </Anchor>
                     )}
-                    {photo.instagram && instagramUrl(photo.instagram) && (
+                    {photo?.instagram && instagramUrl(photo.instagram) && (
                       <Anchor href={instagramUrl(photo.instagram)!} target="_blank" rel="noopener noreferrer" size="sm" underline="hover">
                         <Group gap={4}>
-                          <ThemeIcon size={20} variant="subtle" color="grape">
+                          <ThemeIcon size={20} variant="subtle" color="purple">
                             <IconBrandInstagram size={14} />
                           </ThemeIcon>
                           Instagram
@@ -341,6 +350,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 color="red"
                 leftSection={<IconX size={18} />}
                 onClick={() => onSwipe("pass")}
+                disabled={disabled}
+                aria-label={`Pass on ${displayName}`}
               >
                 Pass
               </Button>
@@ -349,6 +360,8 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 color="teal"
                 leftSection={<IconHeart size={18} />}
                 onClick={() => onSwipe("like")}
+                disabled={disabled}
+                aria-label={`Like ${displayName}`}
               >
                 Like
               </Button>

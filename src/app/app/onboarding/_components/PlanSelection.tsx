@@ -7,6 +7,7 @@ import {
   Group,
   Paper,
   SegmentedControl,
+  SimpleGrid,
   Stack,
   Text,
   ThemeIcon,
@@ -22,13 +23,14 @@ import {
   IconShieldCheck,
   IconStar,
 } from "@tabler/icons-react";
+import Link from "next/link";
 import { useState } from "react";
 
+import { userFacingError } from "~/_utils/userError";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
-  onSelectFree: () => void;
   pricing: PricingInfo;
 };
 
@@ -48,21 +50,21 @@ const FREE_LIMITS = [
   "Basic profile",
 ];
 
-export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
+export function PlanSelection({ pricing }: PlanSelectionProps) {
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [error, setError] = useState<string | null>(null);
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
     onError: (err) => {
-      setError(err.message ?? "Failed to create checkout session");
+      setError(userFacingError(err, "We couldn't start checkout. Please try again, or start free and upgrade later."));
     },
     onMutate: () => setError(null),
     onSuccess: (data) => {
       if (data.url) {
         setError(null);
-        window.location.href = data.url;
+        window.location.assign(data.url);
       } else {
-        setError("Checkout session created but no redirect URL was returned. Please try again.");
+        setError("We couldn't start checkout. Please try again, or start free and upgrade later.");
       }
     },
   });
@@ -76,7 +78,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
   return (
     <Box maw={700} w="100%" mx="auto">
       <Stack align="center" gap="lg" mb="xl">
-        <Title order={2} ta="center">
+        <Title order={1} size="h2" ta="center">
           Choose your plan
         </Title>
         <Text c="dimmed" ta="center" maw={500}>
@@ -86,6 +88,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
           )}
         </Text>
         <SegmentedControl
+          aria-label="Billing interval"
           value={billingInterval}
           onChange={(value) => setBillingInterval(value)}
           data={[
@@ -95,12 +98,13 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
         />
       </Stack>
 
-      <Group grow align="stretch" gap="lg">
+      {/* One column on phones, side by side from the `sm` breakpoint. */}
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
         {/* Free Plan */}
         <Paper withBorder p="xl" radius="md">
           <Stack gap="md" h="100%" justify="space-between">
             <Stack gap="md">
-              <Title order={3}>Free</Title>
+              <Title order={2} size="h4">Free</Title>
               <Text size="xl" fw={700}>
                 $0
                 <Text span size="sm" fw={400} c="dimmed">/month</Text>
@@ -109,7 +113,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
                 {FREE_LIMITS.map((feature) => (
                   <Group key={feature} gap="xs" wrap="nowrap">
                     <ThemeIcon size={20} radius="xl" variant="light" color="gray">
-                      <IconCheck size={12} />
+                      <IconCheck size={12} aria-hidden />
                     </ThemeIcon>
                     <Text size="sm">{feature}</Text>
                   </Group>
@@ -117,13 +121,13 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
               </Stack>
             </Stack>
             <Button
-              variant="light"
-              color="gray"
+              component={Link}
+              href="/app/onboarding/complete"
+              variant="default"
               size="md"
               fullWidth
-              onClick={onSelectFree}
             >
-              Start Free
+              Start free
             </Button>
           </Stack>
         </Paper>
@@ -141,7 +145,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
           <Stack gap="md" h="100%" justify="space-between">
             <Stack gap="md">
               <Group gap="sm">
-                <Title order={3}>Pro</Title>
+                <Title order={2} size="h4">Pro</Title>
                 <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} />}>
                   Recommended
                 </Badge>
@@ -154,7 +158,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
                 {pricing.isFoundingPrice && (
                   <>
                     <Text size="sm" td="line-through" c="dimmed">
-                      ${pricing.standardMonthlyPrice}
+                      <span className="sr-only">Regular price </span>${pricing.standardMonthlyPrice}
                     </Text>
                     <Badge color="orange" variant="light" size="sm">
                       Founding Price
@@ -171,7 +175,7 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
                 {PRO_FEATURES.map((feature) => (
                   <Group key={feature.label} gap="xs" wrap="nowrap">
                     <ThemeIcon size={20} radius="xl" variant="light" color="orange">
-                      <IconCheck size={12} />
+                      <IconCheck size={12} aria-hidden />
                     </ThemeIcon>
                     <Text size="sm">{feature.label}</Text>
                   </Group>
@@ -180,7 +184,6 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
             </Stack>
             <Stack gap="xs">
               <Button
-                color="orange"
                 size="md"
                 fullWidth
                 loading={createCheckout.isPending}
@@ -196,13 +199,15 @@ export function PlanSelection({ pricing, onSelectFree }: PlanSelectionProps) {
             </Stack>
           </Stack>
         </Paper>
-      </Group>
+      </SimpleGrid>
 
-      {error && (
-        <Text size="sm" c="red" ta="center" mt="md">
-          {error}
-        </Text>
-      )}
+      <div role="alert" aria-live="assertive">
+        {error && (
+          <Text size="sm" c="red" ta="center" mt="md">
+            {error}
+          </Text>
+        )}
+      </div>
     </Box>
   );
 }

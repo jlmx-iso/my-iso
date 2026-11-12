@@ -151,7 +151,7 @@ CREATE TABLE "User" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     "stripeId" TEXT,
-    "isDiscoverable" BOOLEAN NOT NULL DEFAULT false,
+    "isDiscoverable" BOOLEAN NOT NULL DEFAULT true,
     "seekingTypes" TEXT,
     "budgetMin" INTEGER,
     "budgetMax" INTEGER

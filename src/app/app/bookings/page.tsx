@@ -1,6 +1,6 @@
 "use client";
 
-import { Container, Stack, Tabs, Text } from "@mantine/core";
+import { Container, Skeleton, Stack, Tabs, Text } from "@mantine/core";
 import {
   IconBriefcase,
   IconInbox,
@@ -9,9 +9,18 @@ import {
 
 import BookingCard from "~/app/_components/bookings/BookingCard";
 import EmptyState from "~/app/_components/EmptyState";
-import { Loader } from "~/app/_components/Loader";
 import PageHeader from "~/app/_components/PageHeader";
 import { api } from "~/trpc/react";
+
+function BookingsSkeleton({ label }: { label: string }) {
+  return (
+    <Stack gap="sm" aria-busy="true" aria-label={label}>
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} height={132} radius="md" />
+      ))}
+    </Stack>
+  );
+}
 
 export default function BookingsPage() {
   const {
@@ -27,7 +36,7 @@ export default function BookingsPage() {
   } = api.booking.getReceivedApplications.useQuery();
 
   return (
-    <Container size="md" py="md">
+    <Container size="md" py="md" px={0}>
       <Stack gap="lg">
         <PageHeader
           title="Bookings"
@@ -40,7 +49,7 @@ export default function BookingsPage() {
               value="applications"
               leftSection={<IconSend size={16} />}
             >
-              My Applications
+              My applications
               {myApplications && myApplications.length > 0 && (
                 <Text span size="xs" c="dimmed" ml={4}>
                   ({myApplications.length})
@@ -61,11 +70,11 @@ export default function BookingsPage() {
           </Tabs.List>
 
           <Tabs.Panel value="applications" pt="md">
-            {myAppsPending && <Loader />}
+            {myAppsPending && <BookingsSkeleton label="Loading your applications" />}
 
             {myAppsError && (
-              <Text c="red" size="sm">
-                Failed to load your applications. Please try again.
+              <Text c="red" size="sm" role="alert">
+                We couldn&apos;t load your applications. Please try again.
               </Text>
             )}
 
@@ -93,11 +102,11 @@ export default function BookingsPage() {
           </Tabs.Panel>
 
           <Tabs.Panel value="received" pt="md">
-            {receivedPending && <Loader />}
+            {receivedPending && <BookingsSkeleton label="Loading received applications" />}
 
             {receivedError && (
-              <Text c="red" size="sm">
-                Failed to load received applications. Please try again.
+              <Text c="red" size="sm" role="alert">
+                We couldn&apos;t load received applications. Please try again.
               </Text>
             )}
 

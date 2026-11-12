@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 
 import { formatLocalDate } from "~/_lib/dayjs";
+import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import PageHeader from "~/app/_components/PageHeader";
 import { api } from "~/trpc/react";
@@ -40,7 +41,7 @@ export default function Page() {
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <PageHeader title="Invite Friends" description="Loading your invite code..." />
+        <PageHeader title="Invite friends" description="Loading your invite code…" />
         <Stack align="center" py="xl">
           <Loader size="sm" />
         </Stack>
@@ -51,9 +52,11 @@ export default function Page() {
   if (error || !inviteCode) {
     return (
       <Stack gap="lg">
-        <PageHeader title="Invite Friends" />
+        <PageHeader title="Invite friends" />
         <Alert icon={<IconAlertCircle size={16} />} color="red" title="Could not load invite code">
-          {error?.message ?? "No invite code found. Please try refreshing the page."}
+          {error
+            ? userFacingError(error, "Please try refreshing the page.")
+            : "No invite code found. Please try refreshing the page."}
         </Alert>
       </Stack>
     );
@@ -69,7 +72,7 @@ export default function Page() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Invite Friends"
+        title="Invite friends"
         description="Share your invite code with photographers you know"
       />
 
@@ -80,6 +83,7 @@ export default function Page() {
           </Text>
           <Title
             order={2}
+            aria-label={`Your invite code: ${inviteCode.code}`}
             style={{
               fontFamily: "monospace",
               letterSpacing: 2,
@@ -98,7 +102,7 @@ export default function Page() {
                   onClick={copy}
                   color={copied ? "teal" : "orange"}
                 >
-                  {copied ? "Copied!" : "Copy Code"}
+                  {copied ? "Copied!" : "Copy code"}
                 </Button>
               )}
             </CopyButton>
@@ -110,7 +114,7 @@ export default function Page() {
                   onClick={copy}
                   color={copied ? "teal" : "orange"}
                 >
-                  {copied ? "Copied!" : "Copy Link"}
+                  {copied ? "Copied!" : "Copy link"}
                 </Button>
               )}
             </CopyButton>
@@ -125,7 +129,7 @@ export default function Page() {
                 {remaining} remaining
               </Text>
             </Group>
-            <Progress value={progressPct} size="sm" color="orange" />
+            <Progress value={progressPct} size="sm" aria-label="Invites used" />
           </Box>
 
           <Tooltip label="Generate a new code (keeps your redemption count)">

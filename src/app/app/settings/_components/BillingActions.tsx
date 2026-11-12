@@ -4,6 +4,7 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { userFacingError } from "~/_utils/userError";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
@@ -18,22 +19,26 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
     onError: (err) => {
-      setError(err.message ?? "Failed to create checkout session");
+      setError(userFacingError(err, "We couldn't start checkout. Please try again."));
     },
     onSuccess: (data) => {
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
+      } else {
+        setError("We couldn't start checkout. Please try again.");
       }
     },
   });
 
   const createPortal = api.subscription.createPortalSession.useMutation({
     onError: (err) => {
-      setError(err.message ?? "Failed to create portal session");
+      setError(userFacingError(err, "We couldn't open billing. Please try again."));
     },
     onSuccess: (data) => {
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
+      } else {
+        setError("We couldn't open billing. Please try again.");
       }
     },
   });
@@ -48,28 +53,33 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
     return (
       <Stack gap="xs">
         <Button
-          onClick={() => createPortal.mutate()}
+          onClick={() => {
+            setError(null);
+            createPortal.mutate();
+          }}
           loading={createPortal.isPending}
           leftSection={<IconCreditCard size={18} />}
           rightSection={<IconExternalLink size={14} />}
           variant="light"
-          color="orange"
           size="md"
         >
-          Manage Subscription
+          Manage subscription
         </Button>
-        {error && (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        )}
+        <div role="alert" aria-live="assertive">
+          {error && (
+            <Text size="sm" c="red">
+              {error}
+            </Text>
+          )}
+        </div>
       </Stack>
     );
   }
 
   return (
-    <Stack gap="xs" align="flex-end">
+    <Stack gap="xs" align="flex-start">
       <SegmentedControl
+        aria-label="Billing interval"
         value={billingInterval}
         onChange={(value) => setBillingInterval(value)}
         data={[
@@ -79,24 +89,28 @@ export default function BillingActions({ isProUser, pricing }: BillingActionsPro
         size="xs"
       />
       <Button
-        onClick={() => createCheckout.mutate({ billingInterval })}
+        onClick={() => {
+          setError(null);
+          createCheckout.mutate({ billingInterval });
+        }}
         loading={createCheckout.isPending}
         leftSection={<IconCreditCard size={18} />}
-        color="orange"
         size="md"
       >
-        Upgrade to Pro - ${monthlyEquivalent}/mo
+        Upgrade to Pro — ${monthlyEquivalent}/mo
       </Button>
       {billingInterval === "annual" && annualSavings > 0 && (
         <Text size="xs" c="green">
           ${pricing.annualPrice}/yr — save ${annualSavings} vs monthly
         </Text>
       )}
-      {error && (
-        <Text size="sm" c="red">
-          {error}
-        </Text>
-      )}
+      <div role="alert" aria-live="assertive">
+        {error && (
+          <Text size="sm" c="red">
+            {error}
+          </Text>
+        )}
+      </div>
     </Stack>
   );
 }

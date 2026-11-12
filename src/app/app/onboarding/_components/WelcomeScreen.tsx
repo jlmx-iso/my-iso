@@ -23,7 +23,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
     <Box maw={500} w="100%" mx="auto" py={60}>
       <Stack align="center" gap="xl">
         <ThemeIcon size={80} radius="xl" variant="light" color="orange">
-          <IconCamera size={40} />
+          <IconCamera size={40} aria-hidden />
         </ThemeIcon>
 
         <Stack align="center" gap="xs">
@@ -46,7 +46,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           }}
         >
           <Stack align="center" gap="xs">
-            <IconStar size={20} color="var(--mantine-color-orange-6)" />
+            <IconStar size={20} color="var(--mantine-color-orange-7)" aria-hidden />
             <Text size="sm" ta="center" fw={500}>
               As a founding member, you&apos;ll get perks that won&apos;t be
               available later — including a locked-in price that never goes up.
@@ -54,7 +54,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           </Stack>
         </Box>
 
-        <Button size="lg" color="orange" onClick={onContinue} fullWidth>
+        <Button size="lg" onClick={onContinue} fullWidth>
           Let&apos;s set up your profile
         </Button>
       </Stack>

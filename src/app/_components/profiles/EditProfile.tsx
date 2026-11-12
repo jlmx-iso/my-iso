@@ -1,25 +1,39 @@
 "use client";
 
-import { Button, Group, Stack, Text, TextInput, Textarea, type TextInputProps } from "@mantine/core";
-import { schemaResolver, useForm } from "@mantine/form";
+import { Alert, Button, Group, SimpleGrid, Stack, Text, TextInput, Textarea, type TextInputProps, Title } from "@mantine/core";
+import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { type Photographer } from "@prisma/client";
+import { IconAlertCircle } from "@tabler/icons-react";
 import Link from "next/link";
-import { redirect } from 'next/navigation';
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { z } from "zod";
+import { useState } from "react";
 
-
-import { isValidInstagramHandle, isValidSocialHandle, normalizeInstagramHandle, normalizeFacebookHandle, normalizeTwitterHandle, normalizeTikTokHandle, normalizeVimeoHandle, normalizeYouTubeHandle } from "~/_utils";
+import { isValidInstagramHandle, normalizeInstagramHandle } from "~/_utils/instagram";
+import { logger } from "~/_utils/logger";
+import {
+    isValidSocialHandle,
+    normalizeFacebookHandle,
+    normalizeTikTokHandle,
+    normalizeTwitterHandle,
+    normalizeVimeoHandle,
+    normalizeYouTubeHandle,
+} from "~/_utils/social";
+import { userFacingError, zodFieldErrors } from "~/_utils/userError";
+import { parseOptionalWebsite } from "~/_utils/website";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { api } from "~/trpc/react";
 
-import { Loader } from "../Loader";
-
+const MAX_BIO_LENGTH = 1000;
 
 function SocialHandleInput({ prefix, ...props }: TextInputProps & { prefix: string }) {
     return (
         <TextInput
             placeholder="yourhandle"
+            autoCapitalize="none"
+            autoComplete="off"
+            spellCheck={false}
             leftSection={
                 <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", userSelect: "none" }}>
                     {prefix}
@@ -36,176 +50,201 @@ type EditProfileProps = {
     photographer: Photographer;
 }
 
-const handleField = z.string().refine((v) => !v || isValidSocialHandle(v), "Enter a valid handle (e.g. yourhandle)").nullable();
+type FormValues = {
+    bio: string;
+    companyName: string;
+    facebook: string;
+    firstName: string;
+    instagram: string;
+    lastName: string;
+    location: string;
+    tiktok: string;
+    twitter: string;
+    vimeo: string;
+    website: string;
+    youtube: string;
+};
 
-const schema = z.object({
-    bio: z.string().min(1).max(1000, "Bio must be between 0 and 1000 characters"),
-    companyName: z.string().max(100, "Company name must be between 0 and 100 characters"),
-    facebook: handleField,
-    firstName: z.string().min(1, "First name is required"),
-    instagram: z.string().refine((v) => !v || isValidInstagramHandle(v), "Enter a valid Instagram handle (e.g. yourhandle)").nullable(),
-    lastName: z.string().min(1, "Last name is required"),
-    location: z.string().max(100),
-    tiktok: handleField,
-    twitter: handleField,
-    vimeo: handleField,
-    website: z.string().url("Website must be a valid URL"),
-    youtube: handleField,
-});
+const handleError = (value: string) =>
+    !value.trim() || isValidSocialHandle(value) ? null : "Enter just the handle, like yourhandle";
 
+/** `normalize(value)` for a filled-in handle, null for an empty one. */
+const optionalHandle = (value: string, normalize: (handle: string) => string) =>
+    value.trim() ? normalize(value) : null;
+
+/**
+ * Edit form for the member's own profile. The rules match onboarding: only
+ * name, business name and location are required; bio, website and socials
+ * are optional.
+ */
 export default function EditProfile({ photographer }: EditProfileProps) {
+    const router = useRouter();
     const { update: updateSession } = useSession();
-    const { isError, error, isPending, mutateAsync, isSuccess } = api.photographer.update.useMutation();
+    const updateProfile = api.photographer.update.useMutation();
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const nameParts = photographer.name.split(" ");
-    const form = useForm({
+
+    const form = useForm<FormValues>({
         initialValues: {
-            bio: photographer.bio,
+            bio: photographer.bio ?? "",
             companyName: photographer.companyName,
-            facebook: photographer.facebook ? normalizeFacebookHandle(photographer.facebook) : photographer.facebook,
+            facebook: photographer.facebook ? normalizeFacebookHandle(photographer.facebook) : "",
             firstName: nameParts[0] ?? "",
-            instagram: photographer.instagram ? normalizeInstagramHandle(photographer.instagram) : photographer.instagram,
-            lastName: nameParts.slice(1).join(" ") || "",
+            instagram: photographer.instagram ? normalizeInstagramHandle(photographer.instagram) : "",
+            lastName: nameParts.slice(1).join(" "),
             location: photographer.location,
-            tiktok: photographer.tiktok ? normalizeTikTokHandle(photographer.tiktok) : photographer.tiktok,
-            twitter: photographer.twitter ? normalizeTwitterHandle(photographer.twitter) : photographer.twitter,
-            vimeo: photographer.vimeo ? normalizeVimeoHandle(photographer.vimeo) : photographer.vimeo,
-            website: photographer.website,
-            youtube: photographer.youtube ? normalizeYouTubeHandle(photographer.youtube) : photographer.youtube,
+            tiktok: photographer.tiktok ? normalizeTikTokHandle(photographer.tiktok) : "",
+            twitter: photographer.twitter ? normalizeTwitterHandle(photographer.twitter) : "",
+            vimeo: photographer.vimeo ? normalizeVimeoHandle(photographer.vimeo) : "",
+            website: photographer.website ?? "",
+            youtube: photographer.youtube ? normalizeYouTubeHandle(photographer.youtube) : "",
         },
-        mode: "uncontrolled",
-        validate: schemaResolver(schema, { sync: true }),
+        validate: {
+            bio: (value) =>
+                value.length > MAX_BIO_LENGTH ? `Keep your bio under ${MAX_BIO_LENGTH} characters` : null,
+            companyName: (value) => {
+                if (!value.trim()) return "Enter your business name";
+                return value.length > 100 ? "Keep your business name under 100 characters" : null;
+            },
+            facebook: handleError,
+            firstName: (value) => (value.trim() ? null : "Enter your first name"),
+            instagram: (value) =>
+                !value.trim() || isValidInstagramHandle(value)
+                    ? null
+                    : "Enter just the handle, like yourhandle",
+            lastName: (value) => (value.trim() ? null : "Enter your last name"),
+            location: (value) => (value.trim() ? null : "Enter your location"),
+            tiktok: handleError,
+            twitter: handleError,
+            vimeo: handleError,
+            website: (value) =>
+                parseOptionalWebsite(value).ok ? null : "Enter a web address, like yoursite.com",
+            youtube: handleError,
+        },
     });
 
-    const submitForm = async (values: typeof form.values) => {
-        await mutateAsync({
-            ...values,
-            id: photographer.id,
-            facebook: values.facebook ? normalizeFacebookHandle(values.facebook) : values.facebook,
-            instagram: values.instagram ? normalizeInstagramHandle(values.instagram) : values.instagram,
-            tiktok: values.tiktok ? normalizeTikTokHandle(values.tiktok) : values.tiktok,
-            twitter: values.twitter ? normalizeTwitterHandle(values.twitter) : values.twitter,
-            vimeo: values.vimeo ? normalizeVimeoHandle(values.vimeo) : values.vimeo,
-            youtube: values.youtube ? normalizeYouTubeHandle(values.youtube) : values.youtube,
-        });
-        await updateSession();
-    }
+    const handleSubmit = form.onSubmit(async (values) => {
+        setSubmitError(null);
+        const website = parseOptionalWebsite(values.website);
+        try {
+            await updateProfile.mutateAsync({
+                bio: values.bio.trim() || null,
+                companyName: values.companyName.trim(),
+                facebook: optionalHandle(values.facebook, normalizeFacebookHandle),
+                firstName: values.firstName.trim(),
+                id: photographer.id,
+                instagram: optionalHandle(values.instagram, normalizeInstagramHandle),
+                lastName: values.lastName.trim(),
+                location: values.location.trim(),
+                tiktok: optionalHandle(values.tiktok, normalizeTikTokHandle),
+                twitter: optionalHandle(values.twitter, normalizeTwitterHandle),
+                vimeo: optionalHandle(values.vimeo, normalizeVimeoHandle),
+                website: website.ok ? website.value : null,
+                youtube: optionalHandle(values.youtube, normalizeYouTubeHandle),
+            });
+        } catch (error) {
+            // Keep the form (and everything typed into it) and explain inline.
+            logger.error("Profile update failed", { error });
+            const fieldErrors = zodFieldErrors(error);
+            if (Object.keys(fieldErrors).length > 0) {
+                form.setErrors(fieldErrors);
+                setSubmitError("Some details need another look. Check the highlighted fields.");
+            } else {
+                setSubmitError(userFacingError(error, "We couldn't save your profile. Your changes are still here — please try again."));
+            }
+            return;
+        }
 
-    if (isPending) return <Loader />;
-
-    if (isError) {
-        return (
-            <Stack align="center" gap="sm" py="xl">
-                <Text fw={500} c="red">Failed to update profile</Text>
-                <Text size="sm" c="dimmed">{error.message}</Text>
-            </Stack>
+        // The header shows the member's name from the session.
+        await updateSession().catch((error: unknown) =>
+            logger.error("Session refresh failed after profile update", { error }),
         );
-    }
+        notifications.show({ color: "teal", message: "Your changes are live.", title: "Profile updated" });
+        router.push("/app/profile");
+        router.refresh();
+    });
 
-    if (isSuccess) {
-        return redirect("/app/profile?success=true");
-    }
+    const isSaving = updateProfile.isPending;
 
     return (
-        <form onSubmit={form.onSubmit(submitForm)}>
-            <Stack gap="md">
-                <Group grow>
+        <form onSubmit={handleSubmit} noValidate>
+            <Stack gap="md" maw={720}>
+                <Title order={1} size="h2" c="orange.7">Edit profile</Title>
+
+                {/* Always rendered so screen readers announce errors as they appear. */}
+                <div role="alert" aria-live="assertive">
+                    {submitError && (
+                        <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="edit-profile-error">
+                            {submitError}
+                        </Alert>
+                    )}
+                </div>
+
+                <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
                     <TextInput
-                        label="First Name"
-                        placeholder="First name"
+                        label="First name"
+                        autoComplete="given-name"
                         required
-                        key={form.key("firstName")}
                         {...form.getInputProps("firstName")}
                     />
                     <TextInput
-                        label="Last Name"
-                        placeholder="Last name"
+                        label="Last name"
+                        autoComplete="family-name"
                         required
-                        key={form.key("lastName")}
                         {...form.getInputProps("lastName")}
                     />
-                </Group>
+                </SimpleGrid>
                 <TextInput
-                    label="Company Name"
-                    placeholder="Your business name"
+                    label="Business name"
+                    placeholder="Jane Smith Photography"
+                    autoComplete="organization"
                     required
-                    key={form.key("companyName")}
                     {...form.getInputProps("companyName")}
                 />
                 <Textarea
                     label="Bio"
-                    placeholder="Tell us about yourself..."
-                    required
+                    description={`Optional. ${form.values.bio.length}/${MAX_BIO_LENGTH} characters`}
+                    placeholder="What you shoot, how you work, what you're looking for…"
                     autosize
                     minRows={3}
-                    maxRows={6}
-                    key={form.key("bio")}
+                    maxRows={8}
                     {...form.getInputProps("bio")}
                 />
                 <LocationAutocomplete
                     isRequired
                     label="Location"
                     placeholder="City, State"
-                    required
-                    key={form.key("location")}
                     {...form.getInputProps("location")}
                 />
                 <TextInput
                     label="Website"
-                    placeholder="https://yoursite.com"
-                    required
-                    key={form.key("website")}
+                    description="Optional"
+                    placeholder="yoursite.com"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="url"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     {...form.getInputProps("website")}
                 />
 
-                <Text size="sm" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }} mt="xs">
-                    Social Links
-                </Text>
-                <Group grow>
-                    <SocialHandleInput
-                        label="Facebook"
-                        prefix="facebook.com/"
-                        key={form.key("facebook")}
-                        {...form.getInputProps("facebook")}
-                    />
-                    <SocialHandleInput
-                        label="Instagram"
-                        prefix="instagram.com/"
-                        key={form.key("instagram")}
-                        {...form.getInputProps("instagram")}
-                    />
-                </Group>
-                <Group grow>
-                    <SocialHandleInput
-                        label="Twitter / X"
-                        prefix="x.com/"
-                        key={form.key("twitter")}
-                        {...form.getInputProps("twitter")}
-                    />
-                    <SocialHandleInput
-                        label="YouTube"
-                        prefix="youtube.com/@"
-                        key={form.key("youtube")}
-                        {...form.getInputProps("youtube")}
-                    />
-                </Group>
-                <Group grow>
-                    <SocialHandleInput
-                        label="Vimeo"
-                        prefix="vimeo.com/"
-                        key={form.key("vimeo")}
-                        {...form.getInputProps("vimeo")}
-                    />
-                    <SocialHandleInput
-                        label="TikTok"
-                        prefix="tiktok.com/@"
-                        key={form.key("tiktok")}
-                        {...form.getInputProps("tiktok")}
-                    />
-                </Group>
+                <Title order={2} size="h5" mt="xs">
+                    Social links
+                </Title>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <SocialHandleInput label="Instagram" prefix="instagram.com/" {...form.getInputProps("instagram")} />
+                    <SocialHandleInput label="Facebook" prefix="facebook.com/" {...form.getInputProps("facebook")} />
+                    <SocialHandleInput label="Twitter / X" prefix="x.com/" {...form.getInputProps("twitter")} />
+                    <SocialHandleInput label="YouTube" prefix="youtube.com/@" {...form.getInputProps("youtube")} />
+                    <SocialHandleInput label="TikTok" prefix="tiktok.com/@" {...form.getInputProps("tiktok")} />
+                    <SocialHandleInput label="Vimeo" prefix="vimeo.com/" {...form.getInputProps("vimeo")} />
+                </SimpleGrid>
 
                 <Group mt="xs">
-                    <Button type="submit">Save Changes</Button>
-                    <Button variant="subtle" component={Link} href="/app/profile" replace>Cancel</Button>
+                    <Button type="submit" loading={isSaving}>Save changes</Button>
+                    <Button variant="default" component={Link} href="/app/profile" replace disabled={isSaving}>
+                        Cancel
+                    </Button>
                 </Group>
             </Stack>
         </form>

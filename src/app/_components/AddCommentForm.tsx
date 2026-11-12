@@ -1,72 +1,65 @@
 "use client";
 
-import { Button, Textarea } from "@mantine/core";
-import { schemaResolver, useForm } from "@mantine/form";
+import { Button, Group, Textarea } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
-import { z } from "zod";
 
-import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
-
-import { Loader } from "./Loader";
-import { Notification } from "./Notification";
-
-
-
 
 type AddCommentFormProps = {
     eventId: string;
+    eventTitle: string;
 };
 
-const schema = z.object({
-    comment: z.string().min(1, "Comment is required"),
-});
+const MAX_COMMENT_LENGTH = 2000;
 
-export default function AddCommentForm({ eventId }: AddCommentFormProps) {
-    const commentRefetcher = useCommentsRefetch();
+export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormProps) {
+    const utils = api.useUtils();
     const form = useForm({
         initialValues: {
             comment: "",
         },
-        validate: schemaResolver(schema, { sync: true }),
+        validate: {
+            comment: (value: string) => {
+                if (!value.trim()) return "Write a comment first";
+                return value.length > MAX_COMMENT_LENGTH ? `Keep comments under ${MAX_COMMENT_LENGTH} characters` : null;
+            },
+        },
     });
-    const { mutate, isPending, error } = api.event.addCommentToEvent.useMutation({
+    const { mutate, isPending } = api.event.addCommentToEvent.useMutation({
+        // The draft stays in the field so a failed post loses nothing.
+        onError: (error) =>
+            form.setFieldError("comment", userFacingError(error, "Your comment couldn't be posted. Please try again.")),
         onSuccess: () => {
-            commentRefetcher.refetchComments()
-            commentRefetcher.refetchCommentCount()
-        }
+            form.reset();
+            void utils.event.getCommentsByEventId.invalidate({ eventId });
+            void utils.event.getCommentCountByEventId.invalidate({ eventId });
+            void utils.event.getById.invalidate({ id: eventId });
+        },
     });
 
-    const handleSumbit = (form.onSubmit((values) => {
-        mutate({
-            content: values.comment,
-            eventId,
-        });
-        form.reset();
-    }));
-
-    if (isPending) {
-        return <Loader />
-    }
-
+    const handleSubmit = form.onSubmit((values) => {
+        if (isPending) return;
+        mutate({ content: values.comment.trim(), eventId });
+    });
 
     return (
-        <>
-            {error && <Notification type="error" autoDismiss={5000} >Error adding comment</Notification>}
-            <form onSubmit={handleSumbit} style={{ alignItems: "flex-end", display: "flex", flexDirection: "column", gap: 8 }}>
-                <Textarea
-                    {...form.getInputProps("comment")}
-                    w="100%"
-                    placeholder="Add a comment"
-                    required
-                    autosize
-                    minRows={2}
-                    onKeyDown={getHotkeyHandler([
-                        ["mod+Enter", handleSumbit],
-                    ])}
-                />
-                <Button type="submit" size="xs">Add Comment</Button>
-            </form>
-        </>
+        <form onSubmit={handleSubmit} noValidate>
+            <Textarea
+                {...form.getInputProps("comment")}
+                aria-label={`Comment on ${eventTitle}`}
+                placeholder="Add a comment"
+                autosize
+                minRows={2}
+                maxRows={8}
+                onKeyDown={getHotkeyHandler([
+                    ["mod+Enter", () => handleSubmit()],
+                ])}
+            />
+            <Group justify="flex-end" mt="xs">
+                <Button type="submit" size="xs" loading={isPending}>Post comment</Button>
+            </Group>
+        </form>
     )
-};
+}

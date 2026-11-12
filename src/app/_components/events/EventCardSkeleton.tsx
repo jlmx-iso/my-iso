@@ -1,22 +1,18 @@
 import { Group, Skeleton, Stack } from "@mantine/core";
 
-import UserBadgeSkeleton from "../UserBadgeSkeleton";
-
-type EventCardSkeletonProps = {
-    variant?: "feed" | "hero";
-};
-
-export default function EventCardSkeleton({ variant = "feed" }: EventCardSkeletonProps) {
-    const isHero = variant === "hero";
-
+/** Placeholder with the proportions of a feed EventCard. */
+export default function EventCardSkeleton() {
     return (
         <Stack gap="sm">
-            <Skeleton height={isHero ? 280 : 180} radius="md" />
-            <UserBadgeSkeleton />
-            <Skeleton height={isHero ? 24 : 18} radius="sm" width="55%" />
-            <Skeleton height={14} radius="sm" width="35%" />
+            <Skeleton height={180} radius="md" />
+            <Group wrap="nowrap" gap="sm">
+                <Skeleton height={38} width={38} radius="xl" />
+                <Skeleton height={14} radius="sm" width="40%" />
+            </Group>
+            <Skeleton height={20} radius="sm" width="65%" />
+            <Skeleton height={14} radius="sm" width="90%" />
             <Group justify="space-between" mt={4}>
-                <Skeleton height={12} radius="sm" width={80} />
+                <Skeleton height={20} radius="xl" width={180} />
                 <Skeleton height={28} radius="sm" width={90} />
             </Group>
         </Stack>

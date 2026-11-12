@@ -1,17 +1,19 @@
 "use client";
 
 import {
+    Alert,
     Badge,
     Button,
-    Container,
     Group,
     Paper,
+    SegmentedControl,
+    Skeleton,
     Stack,
-    Tabs,
     Text,
     ThemeIcon,
 } from "@mantine/core";
 import {
+    IconAlertCircle,
     IconBell,
     IconCalendarEvent,
     IconCamera,
@@ -21,310 +23,248 @@ import {
     IconStar,
     IconX,
 } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useState } from "react";
 
+import dayjs from "~/_lib/dayjs";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
-import { api } from "~/trpc/react";
+import { type RouterOutputs, api } from "~/trpc/react";
+
+type Notification = RouterOutputs["notification"]["getAll"]["notifications"][number];
+type Filter = "all" | "unread";
 
 const NOTIFICATION_TYPE_ICONS: Record<string, typeof IconBell> = {
-    booking_applied: IconCalendarEvent,
     booking_accepted: IconCheck,
-    booking_declined: IconX,
+    booking_applied: IconCalendarEvent,
     booking_completed: IconCamera,
+    booking_declined: IconX,
     new_message: IconMessageCircle,
-    review_received: IconStar,
     profile_view: IconEye,
+    review_received: IconStar,
 };
 
 const NOTIFICATION_TYPE_COLORS: Record<string, string> = {
-    booking_applied: "orange",
     booking_accepted: "green",
-    booking_declined: "red",
+    booking_applied: "orange",
     booking_completed: "teal",
+    booking_declined: "red",
     new_message: "blue",
-    review_received: "yellow",
-    profile_view: "grape",
+    profile_view: "purple",
+    review_received: "tan",
 };
-
-function timeAgo(date: Date): string {
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (seconds < 60) return "just now";
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `${days}d ago`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return `${months}mo ago`;
-    const years = Math.floor(months / 12);
-    return `${years}y ago`;
-}
 
 const PAGE_SIZE = 20;
 
-export default function NotificationsPage() {
-    const router = useRouter();
-    const [activeTab, setActiveTab] = useState<string | null>("all");
-    const [offset, setOffset] = useState(0);
-
-    const unreadOnly = activeTab === "unread";
-
-    const utils = api.useUtils();
-
-    const { data, isLoading } = api.notification.getAll.useQuery({
-        limit: PAGE_SIZE,
-        offset,
-        unreadOnly,
-    });
-
-    const markAsRead = api.notification.markAsRead.useMutation({
-        onSuccess: () => {
-            void utils.notification.getAll.invalidate();
-            void utils.notification.getUnreadCount.invalidate();
-        },
-    });
-
-    const markAllAsRead = api.notification.markAllAsRead.useMutation({
-        onSuccess: () => {
-            void utils.notification.getAll.invalidate();
-            void utils.notification.getUnreadCount.invalidate();
-        },
-    });
-
-    const handleNotificationClick = (
-        notificationId: string,
-        linkUrl: string | null,
-        isRead: boolean,
-    ) => {
-        if (!isRead) {
-            markAsRead.mutate({ notificationId });
-        }
-        if (linkUrl) {
-            router.push(linkUrl);
-        }
+function NotificationRow({
+    notification,
+    onRead,
+}: {
+    notification: Notification;
+    onRead: (id: string) => void;
+}) {
+    const TypeIcon = NOTIFICATION_TYPE_ICONS[notification.type] ?? IconBell;
+    const markRead = () => {
+        if (!notification.isRead) onRead(notification.id);
     };
 
-    const handleTabChange = (value: string | null) => {
-        setActiveTab(value);
-        setOffset(0);
-    };
+    const content = (
+        <Group wrap="nowrap" align="flex-start" gap="md">
+            <ThemeIcon
+                size="lg"
+                radius="xl"
+                variant="light"
+                color={NOTIFICATION_TYPE_COLORS[notification.type] ?? "gray"}
+                mt={2}
+            >
+                <TypeIcon size={18} aria-hidden />
+            </ThemeIcon>
+            <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Text size="sm" fw={notification.isRead ? 400 : 600} lineClamp={2}>
+                        {notification.title}
+                    </Text>
+                    <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+                        {!notification.isRead && (
+                            <Badge size="sm" variant="filled">
+                                New
+                            </Badge>
+                        )}
+                        <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+                            {dayjs(notification.createdAt).fromNow()}
+                        </Text>
+                    </Group>
+                </Group>
+                <Text size="sm" c="dimmed" lineClamp={3}>
+                    {notification.body}
+                </Text>
+            </Stack>
+        </Group>
+    );
 
-    const notifications = data?.notifications ?? [];
-    const totalCount = data?.totalCount ?? 0;
-    const unreadCount = data?.unreadCount ?? 0;
-    const hasMore = offset + PAGE_SIZE < totalCount;
+    const paperProps = {
+        bg: notification.isRead ? undefined : "orange.0",
+        p: "md",
+        radius: "md",
+        w: "100%",
+        withBorder: true,
+    } as const;
 
     return (
-        <Container size="md" py="xl">
-            <Stack gap="lg">
-                <PageHeader
-                    title="Notifications"
+        <li style={{ listStyle: "none" }} data-testid="notification-row">
+            {notification.linkUrl ? (
+                // Navigates; marked read on the way.
+                <Paper
+                    component={Link}
+                    href={notification.linkUrl}
+                    onClick={markRead}
+                    className="card-interactive"
+                    display="block"
+                    {...paperProps}
+                >
+                    {content}
+                </Paper>
+            ) : notification.isRead ? (
+                <Paper {...paperProps}>{content}</Paper>
+            ) : (
+                // Nowhere to go: activating it marks it read.
+                <Paper
+                    component="button"
+                    type="button"
+                    onClick={markRead}
+                    className="card-interactive"
+                    display="block"
+                    ta="left"
+                    style={{ cursor: "pointer", font: "inherit" }}
+                    {...paperProps}
+                >
+                    <span className="sr-only">Mark as read: </span>
+                    {content}
+                </Paper>
+            )}
+        </li>
+    );
+}
+
+export default function NotificationsPage() {
+    const [filter, setFilter] = useState<Filter>("all");
+    const [pageCount, setPageCount] = useState(1);
+    const unreadOnly = filter === "unread";
+    const utils = api.useUtils();
+
+    // One query per loaded page, so "Load more" appends instead of replacing.
+    const pages = api.useQueries((t) =>
+        Array.from({ length: pageCount }, (_, index) =>
+            t.notification.getAll({ limit: PAGE_SIZE, offset: index * PAGE_SIZE, unreadOnly }),
+        ),
+    );
+
+    const invalidate = () => {
+        void utils.notification.getAll.invalidate();
+        void utils.notification.getUnreadCount.invalidate();
+    };
+    const markAsRead = api.notification.markAsRead.useMutation({ onSuccess: invalidate });
+    const markAllAsRead = api.notification.markAllAsRead.useMutation({ onSuccess: invalidate });
+
+    const firstPage = pages[0];
+    const lastPage = pages[pages.length - 1];
+    // A notification can shift between pages when new ones arrive: keep one copy.
+    const notifications = [
+        ...new Map(
+            pages.flatMap((page) => page.data?.notifications ?? []).map((item) => [item.id, item]),
+        ).values(),
+    ];
+    const totalCount = firstPage?.data?.totalCount ?? 0;
+    const unreadCount = firstPage?.data?.unreadCount ?? 0;
+    const hasMore = pageCount * PAGE_SIZE < totalCount;
+    const isLoadingFirst = !!firstPage?.isPending;
+    const isLoadingMore = pageCount > 1 && !!lastPage?.isPending;
+
+    return (
+        <Stack gap="lg" maw={760} mx="auto">
+            <PageHeader
+                title="Notifications"
+                description={
+                    unreadCount > 0
+                        ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
+                        : "You're all caught up"
+                }
+                action={
+                    unreadCount > 0 ? (
+                        <Button
+                            variant="light"
+                            size="sm"
+                            leftSection={<IconCheck size={16} />}
+                            onClick={() => markAllAsRead.mutate()}
+                            loading={markAllAsRead.isPending}
+                        >
+                            Mark all as read
+                        </Button>
+                    ) : undefined
+                }
+            />
+
+            <SegmentedControl
+                aria-label="Show"
+                value={filter}
+                onChange={(value) => {
+                    setFilter(value);
+                    setPageCount(1);
+                }}
+                data={[
+                    { label: "All", value: "all" },
+                    { label: unreadCount > 0 ? `Unread (${unreadCount})` : "Unread", value: "unread" },
+                ]}
+                w="fit-content"
+            />
+
+            {isLoadingFirst ? (
+                <Stack gap="xs" aria-busy="true" aria-label="Loading notifications">
+                    {[0, 1, 2, 3].map((i) => (
+                        <Skeleton key={i} height={84} radius="md" />
+                    ))}
+                </Stack>
+            ) : firstPage?.isError ? (
+                <Alert color="red" icon={<IconAlertCircle size={16} />} title="We couldn't load your notifications">
+                    <Button variant="default" size="xs" mt="xs" onClick={() => void firstPage.refetch()}>
+                        Try again
+                    </Button>
+                </Alert>
+            ) : notifications.length === 0 ? (
+                <EmptyState
+                    icon={IconBell}
+                    title={unreadOnly ? "No unread notifications" : "No notifications yet"}
                     description={
-                        unreadCount > 0
-                            ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
-                            : "You're all caught up"
-                    }
-                    action={
-                        unreadCount > 0 ? (
-                            <Button
-                                variant="light"
-                                color="orange"
-                                size="sm"
-                                leftSection={<IconCheck size={16} />}
-                                onClick={() => markAllAsRead.mutate()}
-                                loading={markAllAsRead.isPending}
-                            >
-                                Mark all as read
-                            </Button>
-                        ) : undefined
+                        unreadOnly
+                            ? "You've read all your notifications."
+                            : "When you receive bookings, messages, or reviews, they'll show up here."
                     }
                 />
-
-                <Tabs value={activeTab} onChange={handleTabChange}>
-                    <Tabs.List>
-                        <Tabs.Tab value="all">
-                            All
-                            {totalCount > 0 && (
-                                <Badge
-                                    size="xs"
-                                    variant="filled"
-                                    color="gray"
-                                    ml={6}
-                                >
-                                    {totalCount}
-                                </Badge>
-                            )}
-                        </Tabs.Tab>
-                        <Tabs.Tab value="unread">
-                            Unread
-                            {unreadCount > 0 && (
-                                <Badge
-                                    size="xs"
-                                    variant="filled"
-                                    color="orange"
-                                    ml={6}
-                                >
-                                    {unreadCount}
-                                </Badge>
-                            )}
-                        </Tabs.Tab>
-                    </Tabs.List>
-                </Tabs>
-
-                {isLoading ? (
-                    <Text c="dimmed" ta="center" py="xl">
-                        Loading notifications...
-                    </Text>
-                ) : notifications.length === 0 ? (
-                    <EmptyState
-                        icon={IconBell}
-                        title={
-                            unreadOnly
-                                ? "No unread notifications"
-                                : "No notifications yet"
-                        }
-                        description={
-                            unreadOnly
-                                ? "You've read all your notifications."
-                                : "When you receive bookings, messages, or reviews, they'll show up here."
-                        }
-                    />
-                ) : (
-                    <Stack gap="xs">
-                        {notifications.map((notification) => {
-                            const TypeIcon =
-                                NOTIFICATION_TYPE_ICONS[notification.type] ??
-                                IconBell;
-                            const iconColor =
-                                NOTIFICATION_TYPE_COLORS[notification.type] ??
-                                "gray";
-
-                            return (
-                                <Paper
-                                    key={notification.id}
-                                    p="md"
-                                    radius="md"
-                                    withBorder
-                                    style={{
-                                        cursor: notification.linkUrl
-                                            ? "pointer"
-                                            : "default",
-                                        backgroundColor: notification.isRead
-                                            ? "transparent"
-                                            : "var(--mantine-color-orange-0)",
-                                        transition:
-                                            "background-color 150ms ease",
-                                    }}
-                                    onClick={() =>
-                                        handleNotificationClick(
-                                            notification.id,
-                                            notification.linkUrl,
-                                            notification.isRead,
-                                        )
-                                    }
-                                >
-                                    <Group
-                                        wrap="nowrap"
-                                        align="flex-start"
-                                        gap="md"
-                                    >
-                                        <ThemeIcon
-                                            size="lg"
-                                            radius="xl"
-                                            variant="light"
-                                            color={iconColor}
-                                            mt={2}
-                                        >
-                                            <TypeIcon size={18} />
-                                        </ThemeIcon>
-                                        <Stack
-                                            gap={4}
-                                            style={{
-                                                flex: 1,
-                                                minWidth: 0,
-                                            }}
-                                        >
-                                            <Group
-                                                justify="space-between"
-                                                wrap="nowrap"
-                                            >
-                                                <Text
-                                                    size="sm"
-                                                    fw={
-                                                        notification.isRead
-                                                            ? 400
-                                                            : 600
-                                                    }
-                                                    lineClamp={1}
-                                                >
-                                                    {notification.title}
-                                                </Text>
-                                                <Group
-                                                    gap={6}
-                                                    wrap="nowrap"
-                                                    style={{
-                                                        flexShrink: 0,
-                                                    }}
-                                                >
-                                                    {!notification.isRead && (
-                                                        <Badge
-                                                            size="xs"
-                                                            variant="filled"
-                                                            color="orange"
-                                                        >
-                                                            New
-                                                        </Badge>
-                                                    )}
-                                                    <Text
-                                                        size="xs"
-                                                        c="dimmed"
-                                                        style={{
-                                                            whiteSpace:
-                                                                "nowrap",
-                                                        }}
-                                                    >
-                                                        {timeAgo(
-                                                            new Date(
-                                                                notification.createdAt,
-                                                            ),
-                                                        )}
-                                                    </Text>
-                                                </Group>
-                                            </Group>
-                                            <Text
-                                                size="sm"
-                                                c="dimmed"
-                                                lineClamp={2}
-                                            >
-                                                {notification.body}
-                                            </Text>
-                                        </Stack>
-                                    </Group>
-                                </Paper>
-                            );
-                        })}
-
-                        {hasMore && (
-                            <Group justify="center" pt="md">
-                                <Button
-                                    variant="light"
-                                    color="orange"
-                                    onClick={() =>
-                                        setOffset((prev) => prev + PAGE_SIZE)
-                                    }
-                                >
-                                    Load more
-                                </Button>
-                            </Group>
-                        )}
+            ) : (
+                <Stack gap="xs">
+                    <Stack gap="xs" component="ul" m={0} p={0} aria-label="Notifications">
+                        {notifications.map((notification) => (
+                            <NotificationRow
+                                key={notification.id}
+                                notification={notification}
+                                onRead={(notificationId) => markAsRead.mutate({ notificationId })}
+                            />
+                        ))}
                     </Stack>
-                )}
-            </Stack>
-        </Container>
+
+                    {hasMore && (
+                        <Group justify="center" pt="md">
+                            <Button
+                                variant="default"
+                                onClick={() => setPageCount((current) => current + 1)}
+                                loading={isLoadingMore}
+                            >
+                                Load more
+                            </Button>
+                        </Group>
+                    )}
+                </Stack>
+            )}
+        </Stack>
     );
 }

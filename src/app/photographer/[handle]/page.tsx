@@ -1,115 +1,75 @@
-"use client";
+import { Button, Container, Divider, Stack } from "@mantine/core";
+import { IconMessage, IconPencil, IconUserPlus } from "@tabler/icons-react";
+import { notFound } from "next/navigation";
 
-import { Container, Stack } from "@mantine/core";
-import { IconCamera } from "@tabler/icons-react";
-import { useParams } from "next/navigation";
+import { NextLink } from "~/app/_components/NextLink";
+import PortfolioSection from "~/app/_components/portfolio/PortfolioSection";
+import ProfileHeader from "~/app/_components/profiles/ProfileHeader";
+import ReviewsSection, { type ReviewViewer } from "~/app/_components/profiles/ReviewsSection";
+import { auth } from "~/auth";
+import { api } from "~/trpc/server";
 
-import EmptyState from "~/app/_components/EmptyState";
-import { Loader } from "~/app/_components/Loader";
-import PortfolioGrid from "~/app/_components/portfolio/PortfolioGrid";
-import PublicProfileHero from "~/app/_components/profiles/PublicProfileHero";
-import ReviewForm from "~/app/_components/profiles/ReviewForm";
-import ReviewsList from "~/app/_components/profiles/ReviewsList";
-import { api } from "~/trpc/react";
+type PageProps = { params: Promise<{ handle: string }> };
 
-export default function PhotographerProfilePage() {
-  const params = useParams<{ handle: string }>();
-  const handle = params.handle;
+/** Public, shareable profile. Signed-out visitors can browse and are invited to sign in to act. */
+export default async function PhotographerProfilePage({ params }: PageProps) {
+  const { handle } = await params;
+  const caller = await api();
+  const photographer = await caller.photographer.getByUsername({ username: handle });
+  // A real 404 (status and all) rather than a 200 "not found" screen.
+  if (!photographer) notFound();
 
-  const {
-    data: photographer,
-    isLoading: isLoadingPhotographer,
-    error: photographerError,
-  } = api.photographer.getByUsername.useQuery(
-    { username: handle },
-    { enabled: !!handle }
-  );
+  const [session, images] = await Promise.all([
+    auth(),
+    caller.photographer.getPortfolioImages({ photographerId: photographer.id }),
+  ]);
+  const viewerId = session?.user?.id;
+  const viewer: ReviewViewer = !viewerId
+    ? "anonymous"
+    : viewerId === photographer.userId
+      ? "owner"
+      : "member";
 
-  const {
-    data: portfolioImages,
-    isLoading: isLoadingPortfolio,
-    refetch: refetchPortfolio,
-  } = api.photographer.getPortfolioImages.useQuery(
-    { photographerId: photographer?.id ?? "" },
-    { enabled: !!photographer?.id }
-  );
-
-  const {
-    data: reviews,
-    isLoading: isLoadingReviews,
-    refetch: refetchReviews,
-  } = api.review.getByPhotographerId.useQuery(
-    { photographerId: photographer?.id ?? "" },
-    { enabled: !!photographer?.id }
-  );
-
-  const {
-    data: ratingData,
-    refetch: refetchRating,
-  } = api.review.getAverageRating.useQuery(
-    { photographerId: photographer?.id ?? "" },
-    { enabled: !!photographer?.id }
-  );
-
-  const isLoading = isLoadingPhotographer || isLoadingPortfolio || isLoadingReviews;
-
-  if (isLoading) {
-    return (
-      <Container size="lg" py="xl">
-        <Loader />
-      </Container>
-    );
-  }
-
-  if (photographerError || !photographer) {
-    return (
-      <Container size="lg" py="xl">
-        <EmptyState
-          icon={IconCamera}
-          title="Photographer not found"
-          description="The photographer profile you're looking for doesn't exist or may have been removed."
-        />
-      </Container>
-    );
-  }
-
-  const handleReviewSuccess = () => {
-    void refetchReviews();
-    void refetchRating();
-  };
-
-  const handlePortfolioDeleted = () => {
-    void refetchPortfolio();
-  };
+  const messageHref = `/app/messages?new=${photographer.userId}`;
+  const signInHref = (destination: string) => `/login?callbackUrl=${encodeURIComponent(destination)}`;
 
   return (
-    <Container size="lg" py="xl">
+    <Container size="lg" py="md" px={0}>
       <Stack gap="xl">
-        {/* Hero Section */}
-        <PublicProfileHero
+        <ProfileHeader
           photographer={photographer}
-          averageRating={ratingData?.average ?? 0}
-          reviewCount={ratingData?.count ?? 0}
+          coverImage={images[0]?.image}
+          actions={
+            viewer === "owner" ? (
+              <Button component={NextLink} href="/app/profile" variant="light" size="sm" leftSection={<IconPencil size={16} />}>
+                Manage profile
+              </Button>
+            ) : viewer === "member" ? (
+              <Button component={NextLink} href={messageHref} size="sm" leftSection={<IconMessage size={16} />}>
+                Message
+              </Button>
+            ) : (
+              <>
+                <Button component={NextLink} href={signInHref(messageHref)} size="sm" leftSection={<IconMessage size={16} />}>
+                  Sign in to message
+                </Button>
+                <Button component={NextLink} href="/join" variant="default" size="sm" leftSection={<IconUserPlus size={16} />}>
+                  Join ISO
+                </Button>
+              </>
+            )
+          }
         />
 
-        {/* Portfolio Gallery */}
-        <PortfolioGrid
-          images={portfolioImages ?? []}
-          isOwner={false}
-          onImageDeleted={handlePortfolioDeleted}
-        />
+        <Divider />
+        <PortfolioSection photographerId={photographer.id} initialImages={images} isOwner={false} />
 
-        {/* Reviews Section */}
-        <ReviewsList
-          reviews={reviews ?? []}
-          averageRating={ratingData?.average ?? 0}
-          reviewCount={ratingData?.count ?? 0}
-        />
-
-        {/* Review Form */}
-        <ReviewForm
+        <Divider />
+        <ReviewsSection
           photographerId={photographer.id}
-          onSuccess={handleReviewSuccess}
+          photographerName={photographer.name}
+          viewer={viewer}
+          signInHref={signInHref(`/app/photographer/${photographer.userId}`)}
         />
       </Stack>
     </Container>

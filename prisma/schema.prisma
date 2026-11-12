@@ -201,7 +201,7 @@ model User {
   swipesReceived    Swipe[]            @relation("SwipesReceived")
   matchesAsUser1    Match[]            @relation("MatchesAsUser1")
   matchesAsUser2    Match[]            @relation("MatchesAsUser2")
-  isDiscoverable    Boolean            @default(false)
+  isDiscoverable    Boolean            @default(true)
   seekingTypes      String? // JSON array: ["wedding", "portrait", "event", "commercial"]
   budgetMin         Int?
   budgetMax         Int?
