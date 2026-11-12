@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -16,20 +15,20 @@ const repoRoot = path.resolve(__dirname, "../../..");
 
 let schemaSql: string | undefined;
 
-/** DDL for the current Prisma schema, exactly as a fresh D1 would get it. */
+/**
+ * DDL of the database, exactly as D1 gets it: every file in migrations/, in
+ * the order `wrangler d1 migrations apply` runs them. `npm run db:check`
+ * guarantees this is the schema in prisma/schema.prisma.
+ */
 function getSchemaSql(): string {
-  schemaSql ??= execFileSync(
-    path.join(repoRoot, "node_modules/.bin/prisma"),
-    [
-      "migrate",
-      "diff",
-      "--from-empty",
-      "--to-schema",
-      "prisma/schema.prisma",
-      "--script",
-    ],
-    { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-  );
+  if (schemaSql === undefined) {
+    const migrationsDir = path.join(repoRoot, "migrations");
+    schemaSql = readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+  }
   return schemaSql;
 }
 

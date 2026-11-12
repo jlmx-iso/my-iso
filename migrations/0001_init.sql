@@ -1,4 +1,12 @@
-Loaded Prisma config from prisma.config.ts.
+-- Baseline: the complete schema as of this migration.
+--
+-- Generated from prisma/schema.prisma with
+--   prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script
+-- Never edit an applied migration; add a new file (see docs/DATABASE.md).
+--
+-- A database that was created before this baseline already has most of these
+-- tables: follow "Upgrading a database created before the baseline" in
+-- docs/DATABASE.md instead of applying this file to it.
 
 -- CreateTable
 CREATE TABLE "Example" (
@@ -85,6 +93,7 @@ CREATE TABLE "PortfolioImage" (
     "tags" TEXT NOT NULL,
     "isFeatured" BOOLEAN NOT NULL,
     "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT "PortfolioImage_photographerId_fkey" FOREIGN KEY ("photographerId") REFERENCES "Photographer" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -116,7 +125,8 @@ CREATE TABLE "Review" (
 CREATE TABLE "MessageThread" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "updatedAt" DATETIME NOT NULL,
+    "participantKey" TEXT
 );
 
 -- CreateTable
@@ -151,10 +161,13 @@ CREATE TABLE "User" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     "stripeId" TEXT,
+    "role" TEXT NOT NULL DEFAULT 'standard',
+    "invitedByUserId" TEXT,
     "isDiscoverable" BOOLEAN NOT NULL DEFAULT false,
     "seekingTypes" TEXT,
     "budgetMin" INTEGER,
-    "budgetMax" INTEGER
+    "budgetMax" INTEGER,
+    CONSTRAINT "User_invitedByUserId_fkey" FOREIGN KEY ("invitedByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -244,25 +257,70 @@ CREATE TABLE "Notification" (
 );
 
 -- CreateTable
-CREATE TABLE "Referral" (
+CREATE TABLE "InviteCode" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
-    "referrerId" TEXT NOT NULL,
-    "referredId" TEXT,
     "code" TEXT NOT NULL,
+    "creatorId" TEXT NOT NULL,
+    "maxRedemptions" INTEGER NOT NULL DEFAULT 5,
+    "currentRedemptions" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "regeneratedAt" DATETIME,
+    CONSTRAINT "InviteCode_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "InviteRedemption" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "inviteCodeId" TEXT NOT NULL,
+    "redeemedById" TEXT NOT NULL,
+    "redeemedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "InviteRedemption_inviteCodeId_fkey" FOREIGN KEY ("inviteCodeId") REFERENCES "InviteCode" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "InviteRedemption_redeemedById_fkey" FOREIGN KEY ("redeemedById") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Waitlist" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "email" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "instagram" TEXT,
+    "website" TEXT,
+    "userType" TEXT NOT NULL DEFAULT 'both',
+    "referralSource" TEXT,
     "status" TEXT NOT NULL DEFAULT 'pending',
-    "rewardType" TEXT,
-    "rewardedAt" DATETIME,
-    CONSTRAINT "Referral_referrerId_fkey" FOREIGN KEY ("referrerId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Referral_referredId_fkey" FOREIGN KEY ("referredId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "position" INTEGER,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "reviewedAt" DATETIME,
+    "reviewedById" TEXT,
+    "convertedAt" DATETIME,
+    CONSTRAINT "Waitlist_reviewedById_fkey" FOREIGN KEY ("reviewedById") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "PendingInviteValidation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "email" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" DATETIME NOT NULL
 );
 
 -- CreateTable
 CREATE TABLE "VerificationToken" (
     "identifier" TEXT NOT NULL,
     "token" TEXT NOT NULL,
-    "expires" DATETIME NOT NULL
+    "expires" DATETIME NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 0
+);
+
+-- CreateTable
+CREATE TABLE "RateLimit" (
+    "key" TEXT NOT NULL,
+    "windowStart" INTEGER NOT NULL,
+    "count" INTEGER NOT NULL,
+    "expiresAt" INTEGER NOT NULL,
+
+    PRIMARY KEY ("key", "windowStart")
 );
 
 -- CreateTable
@@ -331,6 +389,12 @@ CREATE INDEX "Favorite_targetId_idx" ON "Favorite"("targetId");
 CREATE UNIQUE INDEX "Favorite_userId_targetId_key" ON "Favorite"("userId", "targetId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Review_photographerId_userId_key" ON "Review"("photographerId", "userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MessageThread_participantKey_key" ON "MessageThread"("participantKey");
+
+-- CreateIndex
 CREATE INDEX "Message_threadId_idx" ON "Message"("threadId");
 
 -- CreateIndex
@@ -355,7 +419,13 @@ CREATE INDEX "Event_date_idx" ON "Event"("date");
 CREATE INDEX "Event_isDeleted_date_idx" ON "Event"("isDeleted", "date");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "EventLike_eventId_userId_key" ON "EventLike"("eventId", "userId");
+
+-- CreateIndex
 CREATE INDEX "Comment_eventId_isDeleted_idx" ON "Comment"("eventId", "isDeleted");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CommentLike_commentId_userId_key" ON "CommentLike"("commentId", "userId");
 
 -- CreateIndex
 CREATE INDEX "Booking_applicantId_status_idx" ON "Booking"("applicantId", "status");
@@ -376,19 +446,40 @@ CREATE INDEX "Notification_recipientId_isRead_idx" ON "Notification"("recipientI
 CREATE INDEX "Notification_recipientId_createdAt_idx" ON "Notification"("recipientId", "createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Referral_code_key" ON "Referral"("code");
+CREATE UNIQUE INDEX "InviteCode_code_key" ON "InviteCode"("code");
 
 -- CreateIndex
-CREATE INDEX "Referral_referrerId_idx" ON "Referral"("referrerId");
+CREATE UNIQUE INDEX "InviteCode_creatorId_key" ON "InviteCode"("creatorId");
 
 -- CreateIndex
-CREATE INDEX "Referral_code_idx" ON "Referral"("code");
+CREATE INDEX "InviteCode_code_idx" ON "InviteCode"("code");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "VerificationToken_token_key" ON "VerificationToken"("token");
+CREATE INDEX "InviteRedemption_inviteCodeId_idx" ON "InviteRedemption"("inviteCodeId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "InviteRedemption_redeemedById_key" ON "InviteRedemption"("redeemedById");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Waitlist_email_key" ON "Waitlist"("email");
+
+-- CreateIndex
+CREATE INDEX "Waitlist_status_createdAt_idx" ON "Waitlist"("status", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PendingInviteValidation_email_key" ON "PendingInviteValidation"("email");
+
+-- CreateIndex
+CREATE INDEX "PendingInviteValidation_expiresAt_idx" ON "PendingInviteValidation"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "VerificationToken_expires_idx" ON "VerificationToken"("expires");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VerificationToken_identifier_token_key" ON "VerificationToken"("identifier", "token");
+
+-- CreateIndex
+CREATE INDEX "RateLimit_expiresAt_idx" ON "RateLimit"("expiresAt");
 
 -- CreateIndex
 CREATE INDEX "Swipe_swiperId_idx" ON "Swipe"("swiperId");

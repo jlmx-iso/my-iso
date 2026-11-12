@@ -85,18 +85,19 @@ CREATE INDEX event_search_idx ON "Event" USING GIN(search_vector);
 ### Step 1: Add Basic Indexes (Recommended for All Deployments)
 
 1. Update `prisma/schema.prisma` with the basic indexes shown above
-2. Generate migration:
+2. Generate the migration SQL and save it as the next file in `migrations/`
+   (see [DATABASE.md](./DATABASE.md)):
    ```bash
-   npx prisma migrate dev --name add_search_indexes
+   npm run db:migrate:diff
    ```
-3. Apply migration:
+3. Apply the migration, before deploying the code that needs it:
    ```bash
-   npx prisma migrate deploy
+   npm run db:migrate:staging
    ```
 
 ### Step 2: Full-Text Search (Optional - Production Only)
 
-1. Create a migration file manually: `prisma/migrations/[timestamp]_add_fulltext_search/migration.sql`
+1. Create a migration file manually: `migrations/NNNN_add_fulltext_search.sql` (see [DATABASE.md](./DATABASE.md))
 2. Add the SQL commands from section 3 above
 3. Update search queries to use `@@` operator instead of `LIKE`:
    ```typescript

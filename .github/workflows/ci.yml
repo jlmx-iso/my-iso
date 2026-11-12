@@ -60,6 +60,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Applies every file in migrations/ to a scratch SQLite database and
+      # fails if the result differs from prisma/schema.prisma, so a schema
+      # change cannot merge without its migration (docs/DATABASE.md).
+      - name: Migrations match the Prisma schema
+        run: npm run db:check
+
       - name: Test
         run: npm run test:coverage
 
