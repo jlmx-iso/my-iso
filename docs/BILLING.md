@@ -264,8 +264,11 @@ WHERE s."subscriptionId" IS NOT NULL
 look the subscription up in Stripe, confirm the customer really is that
 user, and then either store the customer id on the user
 (`UPDATE "User" SET "stripeId" = 'cus_...' WHERE "id" = '...'`) and run the
-script again, or leave the row: such a user regains a correct row the next
-time they start checkout or open the portal from the app.
+script again. Do not leave such a row: nothing corrects it later (starting
+checkout creates a new, empty Stripe customer and is then refused because a
+subscription row already exists), so it keeps the access the migration
+back-filled. If the subscription cannot be confirmed as that user's, set the
+row's `status` to `canceled` by hand so it stops granting access.
 
 To see what is still pending afterwards:
 
