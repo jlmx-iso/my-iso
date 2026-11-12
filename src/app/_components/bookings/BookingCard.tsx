@@ -308,13 +308,13 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
               </Text>
             )}
             {booking.notes && (
-              <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-line" }}>
+              <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-line" }} data-replay-block>
                 <Text span fw={600}>{variant === "sent" ? "Your note: " : "Their note: "}</Text>
                 {booking.notes}
               </Text>
             )}
             {booking.ownerNotes && (
-              <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-line" }}>
+              <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-line" }} data-replay-block>
                 <Text span fw={600}>{variant === "sent" ? "Owner's reply: " : "Your reply: "}</Text>
                 {booking.ownerNotes}
               </Text>

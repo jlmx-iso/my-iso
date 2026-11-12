@@ -110,7 +110,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
           </Group>
 
           {photographer.bio && (
-            <Text size="sm" style={{ lineHeight: 1.7, whiteSpace: "pre-line" }} mt={4} maw={640}>
+            <Text size="sm" style={{ lineHeight: 1.7, whiteSpace: "pre-line" }} mt={4} maw={640} data-replay-block>
               {photographer.bio}
             </Text>
           )}

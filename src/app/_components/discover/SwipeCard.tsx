@@ -210,7 +210,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
 
           {/* Bio — always visible, truncated when collapsed */}
           {photo?.bio && (
-            <Text size="sm" c="dimmed" lineClamp={expanded ? undefined : 3}>
+            <Text size="sm" c="dimmed" lineClamp={expanded ? undefined : 3} data-replay-block>
               {photo.bio}
             </Text>
           )}

@@ -39,7 +39,7 @@ const MessageTile = ({ isAuthor, isLastInGroup = false, message }: MessageTilePr
               : "18px 18px 18px 4px",
           }}
         >
-          <Text size="sm" style={{ lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+          <Text size="sm" style={{ lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }} data-replay-block>
             <span className="sr-only">{isAuthor ? "You: " : `${message.sender.firstName}: `}</span>
             {message.content}
           </Text>

@@ -61,7 +61,7 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
         </Group>
 
         {photographer.bio && (
-          <Text size="sm" c="dimmed" lineClamp={2}>
+          <Text size="sm" c="dimmed" lineClamp={2} data-replay-block>
             {photographer.bio}
           </Text>
         )}
