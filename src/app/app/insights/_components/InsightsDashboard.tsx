@@ -94,7 +94,7 @@ function TopEvents({ events }: { events: Insights["topEvents"] }) {
     if (events.length === 0) {
         return (
             <Text size="sm" c="dimmed">
-                No views or applications on your events in this period. <Anchor component={Link} href="/app/events">Post an event</Anchor> to find a second shooter.
+                No views or applications on your events in this period. <Anchor component={Link} href="/app/events" className="tap-link">Post an event</Anchor> to find a second shooter.
             </Text>
         );
     }
@@ -251,8 +251,8 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                     </SimpleGrid>
 
                     <Text size="xs" c="dimmed">
-                        Counts only: ISO does not record who viewed you. Each browser counts once a day per page; your own visits
-                        and automated traffic are not counted.
+                        Counts only: ISO does not record who viewed you. A member counts once a day per page (a signed-out visitor,
+                        once per browser); your own visits and automated traffic are not counted.
                     </Text>
                     <Text size="xs" c="dimmed" data-testid="utc-footnote">
                         * Days run midnight to midnight UTC, so a late-evening view may land on the next day. Every number on

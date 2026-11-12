@@ -40,7 +40,7 @@ export default function SupportCard({ isPro, replyTo }: SupportCardProps) {
                     <>
                         <Text size="sm" c="dimmed">
                             Questions about your account, a booking or billing? Email{" "}
-                            <Anchor href={MAILTO} size="sm">{SUPPORT_EMAIL}</Anchor> and a person on the team will read it.
+                            <Anchor href={MAILTO} size="sm" className="tap-link">{SUPPORT_EMAIL}</Anchor> and a person on the team will read it.
                             Pro members get priority support.
                         </Text>
                         <Button component="a" href={MAILTO} variant="default" size="sm" leftSection={<IconMail size={16} aria-hidden />}>
