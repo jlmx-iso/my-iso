@@ -45,10 +45,15 @@ test.afterEach(() => {
   expect(externalRequests, "requests to hosts other than the Worker under test").toEqual([]);
 });
 
-/** Loads `path`, lets its scripts settle, and checks the policy it came with. */
-async function visit(page: Page, path: string) {
+/**
+ * Loads `path`, lets its scripts settle, and checks the status and the policy
+ * it came with: a page that fails with 500 must not pass for lack of a
+ * violation.
+ */
+async function visit(page: Page, path: string, status = 200) {
   const response = await page.goto(path);
   expect(response, path).not.toBeNull();
+  expect(response?.status(), `${path} status`).toBe(status);
   const policy = await response?.headerValue("content-security-policy");
   expect(policy, `${path} is served with an enforced policy`).toMatch(
     /script-src 'self' 'nonce-[A-Za-z0-9+/]{22}==' 'strict-dynamic'/,
@@ -72,10 +77,10 @@ test("public pages load without a policy violation", async ({ page }) => {
     "/terms",
     "/contact",
     "/photographer/marcusrivera",
-    "/no-such-page",
   ]) {
     await visit(page, path);
   }
+  await visit(page, "/no-such-page", 404);
   // Client-side navigation loads further chunks.
   await page.goto("/");
   await page.locator('a[href="/login"]:visible').first().click();

@@ -316,15 +316,26 @@ Every page is served with an enforced `Content-Security-Policy` carrying a
 fresh nonce (`src/middleware.ts`, `src/securityHeaders.js`; why it is built
 this way: [adr/0002-csp.md](adr/0002-csp.md)). Browsers report violations to
 `/api/csp-report`, which forwards the ones that matter to PostHog as
-`csp_violation` events.
+`csp_violation` events. They reach PostHog only when
+`NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` is set: without it the endpoint accepts
+reports and discards them, and nothing else records them. Set the token
+before relying on this section to investigate violations.
 
 If a release makes the policy block something the app needs, switch it to
-report-only without a deploy, then fix the policy:
+report-only without a deploy, then fix the policy. In the Cloudflare
+dashboard: Workers & Pages → `my-iso` (or `my-iso-staging`) → Settings →
+Variables and Secrets. If `CSP_MODE` is already listed, edit its value to
+`report-only`; otherwise add it as a plain-text variable with that value.
+Use the dashboard rather than `wrangler secret put`: a variable that already
+exists as plain text cannot be overwritten as a secret
+(`Binding name 'CSP_MODE' already in use`). Nothing here is secret, so a
+plain-text variable is right.
 
-```sh
-wrangler secret put CSP_MODE --env staging     # enter: report-only
-# production: the same with --env=""; or add CSP_MODE = "report-only" to [vars] and deploy
-```
+The dashboard value lasts only until the next deploy: `wrangler.toml` does
+not set `keep_vars`, so every deploy replaces the Worker's plain-text
+variables with its `[vars]`, which leave `CSP_MODE` unset (enforce). To keep
+report-only across deploys while the policy is being fixed, add
+`CSP_MODE = "report-only"` to that environment's `[vars]` in the same change.
 
 Changing a variable or secret makes Cloudflare roll out a new Worker version,
 which serves requests within seconds; no code deploy is needed. Delete the

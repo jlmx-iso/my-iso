@@ -6,6 +6,9 @@ import { encode } from "next-auth/jwt";
 import { E2E_AUTH_SECRET, E2E_MEMBER, E2E_PORT } from "./config.mjs";
 
 export const ORIGIN = `http://localhost:${E2E_PORT}`;
+
+/** The Worker under test, by either loopback name; any other origin (another local port included) is refused. */
+const WORKER_ORIGINS = new Set([ORIGIN, `http://127.0.0.1:${E2E_PORT}`]);
 // On plain http Auth.js uses the unprefixed cookie name, which is also the
 // salt of the encrypted token.
 const SESSION_COOKIE = "authjs.session-token";
@@ -35,7 +38,7 @@ export async function signIn(context: BrowserContext) {
 
 /**
  * No real outbound calls. The browser may only talk to the Worker under
- * test: any other host is refused and recorded in `externalRequests`, which
+ * test: any other origin, another port on this machine included, is refused and recorded in `externalRequests`, which
  * the spec asserts is empty. The Worker's own outbound calls are kept away
  * the same way: the only one a test can trigger is Google Places
  * autocomplete (typing a location), so the browser's request for
@@ -47,7 +50,7 @@ export async function signIn(context: BrowserContext) {
  */
 export async function isolate(context: BrowserContext, externalRequests: string[]) {
   await context.route(
-    (url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1",
+    (url) => !WORKER_ORIGINS.has(url.origin),
     async (route) => {
       externalRequests.push(route.request().url());
       await route.abort("blockedbyclient");
