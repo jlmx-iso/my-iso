@@ -77,7 +77,7 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
 
         <Stack align="center" gap="xs">
           <Title order={1} ta="center">
-            You&apos;re in!
+            Your profile is ready
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={440}>
             {isActive

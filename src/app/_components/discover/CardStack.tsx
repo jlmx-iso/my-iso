@@ -146,11 +146,11 @@ export default function CardStack() {
         {liveRegion}
         <EmptyState
           icon={isHidden ? IconEyeOff : IconHeartHandshake}
-          title="You've seen everyone for now"
+          title="No more photographers to show"
           description={
             isHidden
-              ? "New photographers join every week. While you wait: you're hidden from Discover, so nobody can match with you. Turn on \"Show me in Discover\" above."
-              : "New photographers join every week. In the meantime, check your matches, loosen your preferences above, or search by name or city."
+              ? "You've seen everyone who fits your preferences. You're also hidden from Discover, so nobody can match with you: turn on \"Show my profile in Discover\" above. New photographers join every week."
+              : "You've seen everyone who fits your preferences. New photographers join every week. Meanwhile, widen your matching preferences above, check your matches, or search by name or city."
           }
           action={
             <Group justify="center">

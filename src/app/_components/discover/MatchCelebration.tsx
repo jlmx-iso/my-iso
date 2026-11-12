@@ -26,7 +26,7 @@ export default function MatchCelebration({
     <Modal
       opened
       onClose={onClose}
-      title="It's a match!"
+      title="You matched"
       centered
       size="sm"
       overlayProps={{ backgroundOpacity: 0.7, blur: 4 }}
@@ -34,7 +34,6 @@ export default function MatchCelebration({
       closeButtonProps={{ "aria-label": "Close and keep swiping" }}
       styles={{
         title: {
-          color: "var(--mantine-color-orange-7)",
           fontSize: "var(--mantine-h2-font-size)",
           fontWeight: 700,
         },

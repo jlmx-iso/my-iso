@@ -113,12 +113,12 @@ describe("CardStack", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Like Bea Cole" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "It's a match!" });
+    const dialog = await screen.findByRole("dialog", { name: "You matched" });
     expect(within(dialog).getByText("Bea Cole")).toBeTruthy();
     expect(within(dialog).getByRole("link", { name: "Send a message" }).getAttribute("href")).toBe("/app/messages/thread-9");
     await userEvent.click(within(dialog).getByRole("button", { name: "Keep swiping" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "It's a match!" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "You matched" })).toBeNull());
     expect(screen.getByRole("button", { name: "Like Cal Diaz" })).toBeTruthy();
   });
 
@@ -161,7 +161,7 @@ describe("CardStack", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Pass on Bea Cole" }));
 
-    expect(await screen.findByText("You've seen everyone for now")).toBeTruthy();
+    expect(await screen.findByText("No more photographers to show")).toBeTruthy();
     expect(screen.getByRole("link", { name: "See your matches" }).getAttribute("href")).toBe("/app/discover/matches");
     expect(screen.getByRole("link", { name: "Search photographers" }).getAttribute("href")).toBe("/app/search");
     expect(view.callsTo("discover.getCardDeck")).toHaveLength(2);
@@ -188,7 +188,7 @@ describe("CardStack", () => {
       },
     });
 
-    expect(await screen.findByText(/you're hidden from Discover, so nobody can match with you/)).toBeTruthy();
+    expect(await screen.findByText(/You're also hidden from Discover, so nobody can match with you/)).toBeTruthy();
   });
 
   it("says the deck could not load, and Try again loads it", async () => {

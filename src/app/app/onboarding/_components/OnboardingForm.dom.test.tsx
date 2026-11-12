@@ -118,7 +118,7 @@ describe("OnboardingForm", () => {
   it("welcomes the member by name, then shows the first of three steps", async () => {
     renderForm();
 
-    expect(screen.getByRole("heading", { name: "Welcome to ISO, Ann!" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Welcome to ISO, Ann" })).toBeTruthy();
     await start();
     expect(screen.getByText("Step 1 of 3")).toBeTruthy();
     // A name from the invite is shown, not offered as a field.
@@ -160,13 +160,9 @@ describe("OnboardingForm", () => {
     expect(screen.getByText("Enter a 10-digit US phone number, or leave this blank")).toBeTruthy();
   });
 
-  // KNOWN GAP (reported, not fixed here): with several problems, focus goes
-  // to the first one in STEPS' field list (firstName, lastName, phoneNumber,
-  // handle, location), not the first on screen (Location, Username, Phone).
-  // A keyboard or screen-reader user lands on Phone, below the Location
-  // field that also needs fixing. CreateEventForm keeps its FIELD_ORDER in
-  // screen order; STEPS[0].fields should too. Drop `.fails` once it does.
-  it.fails("takes the keyboard to the first problem on screen", async () => {
+  // With several problems, focus goes to the first one ON SCREEN (Location,
+  // above Phone), not the first in some other list.
+  it("takes the keyboard to the first problem on screen", async () => {
     renderForm();
     await start();
 

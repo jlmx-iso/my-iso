@@ -51,7 +51,7 @@ export default function MatchesList() {
       <EmptyState
         icon={IconHeartHandshake}
         title="No matches yet"
-        description="When you and another photographer both like each other, you'll match and can start talking."
+        description="When you and another photographer both like each other on Discover, they appear here and you can message them."
         action={
           <Button component={Link} href="/app/discover">
             Go to Discover
