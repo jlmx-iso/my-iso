@@ -28,6 +28,7 @@
     "test:coverage": "vitest run --coverage",
     "coverage:ratchet": "node scripts/coverage-ratchet.mjs",
     "coverage:diff": "node scripts/diff-coverage.mjs",
+    "coverage:guard": "node scripts/coverage-guard.mjs",
     "test:mutation": "stryker run",
     "test:e2e": "playwright test",
     "postinstall": "prisma generate",

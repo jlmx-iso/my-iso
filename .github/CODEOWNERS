@@ -1,0 +1,13 @@
+# The test bar: changes to what coverage measures, its thresholds, and the
+# scripts and workflows that enforce them need the owner's review
+# (docs/TESTING.md). Takes effect with branch protection's "Require review
+# from Code Owners".
+/coverage-thresholds.json       @jlmx-iso
+/coverage.config.mjs            @jlmx-iso
+/vitest.config.ts               @jlmx-iso
+/scripts/coverage-guard.mjs     @jlmx-iso
+/scripts/coverage-ratchet.mjs   @jlmx-iso
+/scripts/diff-coverage.mjs      @jlmx-iso
+/stryker.config.mjs             @jlmx-iso
+/.github/workflows/             @jlmx-iso
+/.github/CODEOWNERS             @jlmx-iso
