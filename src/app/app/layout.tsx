@@ -1,4 +1,5 @@
 import { Container } from "@mantine/core";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { auth } from "~/auth";
@@ -7,6 +8,10 @@ import { api } from "~/trpc/server";
 import { OnboardingCheck } from "./_components/OnboardingCheck";
 import { Providers } from "./providers";
 
+// The signed-in app is private: keep it out of search results.
+export const metadata: Metadata = {
+    robots: { follow: false, index: false },
+};
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
     const session = await auth();
@@ -18,7 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const needsOnboarding = !photographer;
 
     return (
-        <Container maw={1200} w="100%" px="2em">
+        // The app shell already pads the page; no extra gutter on phones.
+        <Container maw={1200} w="100%" px={{ base: 0, sm: "md" }}>
             <Providers params={{ session }}>
                 <OnboardingCheck needsOnboarding={needsOnboarding}>
                     {children}

@@ -341,6 +341,11 @@ export const RateLimits = {
   MEMBER_SEARCH: { limit: 90, name: "member-search", onError: "allow", windowSeconds: MINUTE },
   EVENT_SEARCH: { limit: 60, name: "event-search", onError: "allow", windowSeconds: MINUTE },
   RECIPIENT_SEARCH: { limit: 120, name: "recipient-search", onError: "allow", windowSeconds: MINUTE },
+  // "Is this username free?" while a member types one in onboarding or the
+  // profile editor: debounced (400 ms), so a person typing a handle or two
+  // uses a few dozen. Its own budget, so it neither eats into member search
+  // nor lets the check be used as a free search of every handle.
+  HANDLE_CHECK: { limit: 40, name: "handle-check", onError: "allow", windowSeconds: MINUTE },
   // Opening a match (asks the AI provider for icebreakers).
   MATCH_DETAIL: { limit: 60, name: "match-detail", onError: "allow", windowSeconds: MINUTE },
   // Billing: each call talks to Stripe.

@@ -1,3 +1,4 @@
+import { SITE_URL } from "~/_lib/site";
 import {
   actionableViolations,
   CSP_REPORT_LIMIT,
@@ -48,7 +49,10 @@ export async function POST(request: Request): Promise<Response> {
   // Known probes are dropped before the rate-limit write: they come with
   // every page view of some pages and need neither a database write nor an
   // event.
-  const violations = actionableViolations(parseCspReports(payload));
+  // The app's own origins: the public one, and the one this request came to
+  // (they differ only locally or on a preview address).
+  const appOrigins = new Set([new URL(SITE_URL).origin, new URL(request.url).origin]);
+  const violations = actionableViolations(parseCspReports(payload), appOrigins);
   if (violations.length === 0) return empty(204);
 
   const limit = await checkRateLimit(db, CSP_REPORT_LIMIT, `ip:${getClientIp(request.headers)}`);

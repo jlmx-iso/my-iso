@@ -4,6 +4,8 @@
 # docs/DEPLOYMENT.md lists every variable and secret and how to set them.
 
 name = "my-iso"
+# MyISO, LLC's own Cloudflare account. Inherited by [env.staging].
+account_id = "226364f158456c8782dff3fe9b021bd3"
 compatibility_date = "2025-12-29"
 compatibility_flags = ["nodejs_compat"]
 

@@ -6,7 +6,10 @@ import {
   Hr,
 } from "@react-email/components";
 import { render } from "@react-email/render";
+import { Fragment } from "react";
 import type * as React from "react";
+
+import { PRO_PLAN, proFeaturesFor } from "~/_utils/plans";
 
 import { Layout } from "./components/Layout";
 import {
@@ -27,6 +30,8 @@ type UpgradePitchEmailProps = {
   messageCount: number;
   upgradeUrl: string;
   unsubscribeUrl?: string;
+  /** Founding members are told their price stays while they stay subscribed. */
+  isFoundingPrice?: boolean;
 };
 
 export function UpgradePitchEmail({
@@ -36,6 +41,7 @@ export function UpgradePitchEmail({
   messageCount,
   upgradeUrl,
   unsubscribeUrl,
+  isFoundingPrice = false,
 }: UpgradePitchEmailProps) {
   return (
     <Layout
@@ -68,31 +74,40 @@ export function UpgradePitchEmail({
       </Section>
 
       <Text style={paragraph}>
-        You&apos;re clearly building something here. ISO Pro can help you take it
-        further.
+        You&apos;re clearly building something here. If you&apos;d like to back
+        ISO while it grows, there&apos;s ISO Pro.
       </Text>
 
+      {/* The same list as the site (PRO_PLAN): what Pro gives today, and what
+          is planned under its own heading, never as a current benefit. */}
       <Section style={calloutBox}>
         <Text style={{ ...calloutText, fontWeight: "600", marginBottom: "8px" }}>
-          With ISO Pro, you get:
+          With ISO Pro today:
         </Text>
-        <Text style={calloutText}>
-          Priority placement in search results
-          <br />
-          Featured profile badge
-          <br />
-          Advanced analytics on your portfolio
-          <br />
-          Unlimited event applications
-          <br />
-          Early access to new features
+        <Text style={calloutText} data-section="pro-now">
+          {proFeaturesFor({ isFoundingPrice }).map((feature, index) => (
+            <Fragment key={feature}>
+              {index > 0 && <br />}
+              {feature}
+            </Fragment>
+          ))}
+        </Text>
+        <Text style={{ ...calloutText, fontWeight: "600", margin: "16px 0 8px" }}>
+          Coming soon (not yet available):
+        </Text>
+        <Text style={calloutText} data-section="pro-coming-soon">
+          {PRO_PLAN.comingSoon.map((feature, index) => (
+            <Fragment key={feature}>
+              {index > 0 && <br />}
+              {feature}
+            </Fragment>
+          ))}
         </Text>
       </Section>
 
       <Text style={paragraph}>
-        No pressure — ISO will always have a free tier. But if you&apos;re serious
-        about growing your photography business, Pro is built for people like
-        you.
+        No pressure: everything you use on ISO today is free, and the free plan
+        is here to stay.
       </Text>
 
       <Section style={ctaSection}>

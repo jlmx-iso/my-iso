@@ -1,0 +1,26 @@
+/* A suggested opening line: reads as a quote to pick up, not as a button row. */
+.suggestion {
+  display: block;
+  /* Comfortable to tap on a phone. */
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--mantine-color-orange-3);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--mantine-color-orange-0);
+  color: var(--mantine-color-black);
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.4;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .suggestion:hover {
+    background: var(--mantine-color-orange-1);
+  }
+}
+
+.suggestion:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}

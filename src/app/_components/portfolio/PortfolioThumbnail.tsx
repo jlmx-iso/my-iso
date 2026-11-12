@@ -5,7 +5,17 @@ import { IconCamera } from "@tabler/icons-react";
 import Image from "next/image";
 import { useState } from "react";
 
-export function PortfolioThumbnail({ src, alt }: { src: string; alt: string }) {
+type PortfolioThumbnailProps = {
+  src: string;
+  /** Empty when the image is decorative. */
+  alt: string;
+  /** Load eagerly: for images above the fold. */
+  priority?: boolean;
+  sizes?: string;
+};
+
+/** Cover-fit image filling its (positioned) parent, with a broken-image fallback. */
+export function PortfolioThumbnail({ src, alt, priority, sizes = "(min-width: 75em) 1200px, 100vw" }: PortfolioThumbnailProps) {
   // Track which src failed so a new image gets a fresh attempt.
   const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   const broken = brokenSrc === src;
@@ -22,16 +32,21 @@ export function PortfolioThumbnail({ src, alt }: { src: string; alt: string }) {
           background: "var(--mantine-color-gray-1)",
         }}
       >
-        <IconCamera size={24} color="var(--mantine-color-gray-4)" />
+        <IconCamera size={24} color="var(--mantine-color-gray-6)" aria-hidden />
+        {alt && <span className="sr-only">{alt} (image unavailable)</span>}
       </Box>
     );
   }
 
   return (
     <Image
+      // A member's photograph: session replay records an empty box instead.
+      data-replay-block
       src={src}
       alt={alt}
       fill
+      sizes={sizes}
+      priority={priority}
       style={{ objectFit: "cover" }}
       onError={() => setBrokenSrc(src)}
     />

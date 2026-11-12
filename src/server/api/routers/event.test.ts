@@ -81,6 +81,30 @@ describe("events feed", () => {
     });
   });
 
+  it("carries each event's count of live comments, from one query for the page", async () => {
+    const quiet = await createEvent("quiet", DAY_MS);
+    const busy = await createEvent("busy", 2 * DAY_MS);
+    for (const [content, isDeleted] of [["one", false], ["two", false], ["gone", true]] as const) {
+      await testDb.db.comment.create({ data: { content, eventId: busy.id, isDeleted, userId: viewer.id } });
+    }
+    // A comment on another event counts for that event only.
+    const other = await createEvent("other", 3 * DAY_MS);
+    await testDb.db.comment.create({ data: { content: "hi", eventId: other.id, userId: owner.id } });
+
+    const page = await as(viewer).getFeedPage({});
+
+    expect(page.items.map((event) => [event.title, event.commentCount])).toEqual([
+      ["quiet", 0],
+      ["busy", 2],
+      ["other", 1],
+    ]);
+    expect(page.items[0]).not.toHaveProperty("_count");
+    expect(page.items.map((event) => event.id)).toEqual([quiet.id, busy.id, other.id]);
+    // Past events carry it too.
+    await testDb.db.comment.create({ data: { content: "late", eventId: (await createEvent("last week", -7 * DAY_MS)).id, userId: viewer.id } });
+    expect((await as(viewer).getFeedPage({ when: "past" })).items.map((event) => event.commentCount)).toEqual([1]);
+  });
+
   it("returns past events, most recent first, on request", async () => {
     await createEvent("tomorrow", DAY_MS);
     await createEvent("last week", -7 * DAY_MS);

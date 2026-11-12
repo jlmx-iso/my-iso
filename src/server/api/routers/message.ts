@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { MAX_MESSAGE_LENGTH } from "~/_utils/limits";
 import {
   classifyRecipients,
   countUnreadByThread,
@@ -17,6 +18,7 @@ import {
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { markMatchMessaged } from "~/server/_jobs/expireStaleMatches";
+import { runAfterResponse } from "~/server/_lib/background";
 import { captureEvent } from "~/server/_lib/posthog";
 import { publishThreadMessage } from "~/server/_lib/realtime";
 import { checkRateLimit, RateLimits, refundRateLimit } from "~/server/_utils/rateLimit";
@@ -26,17 +28,14 @@ import { createTRPCRouter, protectedProcedure, rateLimit } from "../trpc";
 
 
 /**
- * A message in a match's conversation keeps the match from expiring.
- * Runs after the message is stored, as its own statement (D1 has no
- * transactions). A failure is logged, not thrown: the message is already
- * sent, and an error here would make the client send it again.
+ * Stores "messaged" on the match whose conversation this is, after the
+ * response (waitUntil): the send does not wait for it. An optimisation, not
+ * a guard: the stored message already keeps the match from expiring
+ * (~/server/_jobs/expireStaleMatches). A failure is logged and reported,
+ * never thrown: the message is already sent.
  */
-async function recordMatchMessaged(db: Pick<ExtendedPrismaClient, "match">, threadId: string): Promise<void> {
-  try {
-    await markMatchMessaged(db, threadId);
-  } catch (error) {
-    logger.error("Could not record that a match was messaged", { error, threadId });
-  }
+function recordMatchMessaged(db: Pick<ExtendedPrismaClient, "match">, threadId: string): void {
+  runAfterResponse("match-messaged", () => markMatchMessaged(db, threadId));
 }
 
 const recipientSelect = {
@@ -64,8 +63,7 @@ const idInput = z.string().min(1).max(64);
 /** Number of most recent messages a thread query returns. */
 const THREAD_PAGE_SIZE = 50;
 
-/** Longest message body, in characters. */
-export const MAX_MESSAGE_LENGTH = 5000;
+export { MAX_MESSAGE_LENGTH };
 
 /** Threads returned by one page of the conversation list. */
 const THREAD_LIST_PAGE_SIZE = 50;
@@ -204,13 +202,13 @@ export const messageRouter = createTRPCRouter({
 
         // The thread's activity time moved with the insert (database
         // trigger), so the conversation list is already in the right order.
-        await recordMatchMessaged(ctx.db, input.threadId);
         publishThreadMessage(input.threadId, {
           content: message.content,
           createdAt: message.createdAt,
           id: message.id,
           sender: message.sender,
         });
+        recordMatchMessaged(ctx.db, input.threadId);
 
         captureEvent(ctx.session.user.id, 'message_sent', { platform: input.platform, thread_id: input.threadId });
 
@@ -327,7 +325,6 @@ export const messageRouter = createTRPCRouter({
           include: { sender: { select: senderSelect } },
           omit: { isRead: true },
         });
-        await recordMatchMessaged(ctx.db, thread.id);
         if (created) {
           captureEvent(userId, 'thread_created', { platform: input.platform, thread_id: thread.id });
         } else {
@@ -338,6 +335,7 @@ export const messageRouter = createTRPCRouter({
             sender: message.sender,
           });
         }
+        recordMatchMessaged(ctx.db, thread.id);
 
         return ctx.db.messageThread.findUniqueOrThrow({ where: { id: thread.id } });
       } catch (error) {

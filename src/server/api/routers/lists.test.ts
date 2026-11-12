@@ -370,6 +370,31 @@ describe("lists against SQLite", () => {
   });
 
   // -------------------------------------------------------------------------
+  describe("user.isHandleAvailable", () => {
+    it("says whether the caller could take a handle", async () => {
+      await testDb.db.user.update({ data: { handle: "olive_owner" }, where: { id: owner.id } });
+
+      const check = (user: TestUser, handle: string) => usersAs(user).isHandleAvailable({ handle });
+      // Someone else's, however it is typed.
+      await expect(check(visitor, "olive_owner")).resolves.toEqual({ available: false });
+      await expect(check(visitor, " @Olive_Owner ")).resolves.toEqual({ available: false });
+      // The caller's own handle stays theirs.
+      await expect(check(owner, "olive_owner")).resolves.toEqual({ available: true });
+      await expect(check(visitor, "free_handle")).resolves.toEqual({ available: true });
+      // Against the rules: too short, bad characters, reserved.
+      for (const handle of ["ab", "has space", "admin", ""]) {
+        await expect(check(visitor, handle)).resolves.toEqual({ available: false });
+      }
+    });
+
+    it("needs a session", async () => {
+      await expect(usersAs().isHandleAvailable({ handle: "anything" })).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   describe("user.isFavorite", () => {
     it("answers for one target without loading the favourites list", async () => {
       await expect(usersAs(visitor).isFavorite({ targetId: photographerId })).resolves.toEqual({

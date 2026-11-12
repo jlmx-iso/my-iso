@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { type AcceptedImageType, MAX_IMAGE_BYTES } from "~/_utils/limits";
 import { env } from "~/env";
 
 /**
@@ -8,13 +9,13 @@ import { env } from "~/env";
  * the app stores or fetches.
  */
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export { MAX_IMAGE_BYTES };
 
 /** Base64 length of MAX_IMAGE_BYTES, plus room for a `data:` URL prefix. */
 export const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 const MAX_IMAGE_INPUT_LENGTH = MAX_IMAGE_BASE64_LENGTH + 64;
 
-export type ImageMime = "image/jpeg" | "image/png" | "image/webp";
+export type ImageMime = AcceptedImageType;
 
 export type ValidImage = {
   /** Bare base64 payload (no `data:` prefix). */

@@ -10,6 +10,8 @@ import {
 } from "@mantine/core";
 import Image from "next/image";
 
+import { NextLink } from "~/app/_components/NextLink";
+
 import logo from "../../../public/img/logo.webp";
 
 const companyLinks = [
@@ -23,6 +25,30 @@ const legalLinks = [
   { href: "/privacy", label: "Privacy Policy" },
 ];
 
+function FooterLinks({ title, links }: { title: string; links: typeof companyLinks }) {
+  return (
+    <Stack component="nav" aria-label={title} gap="xs">
+      <Text size="sm" fw={600} tt="uppercase" c="dimmed">
+        {title}
+      </Text>
+      {links.map((link) => (
+        <Anchor
+          key={link.href}
+          component={NextLink}
+          href={link.href}
+          size="sm"
+          c="dimmed"
+          underline="hover"
+          w="fit-content"
+        >
+          {link.label}
+        </Anchor>
+      ))}
+    </Stack>
+  );
+}
+
+/** Footer of the public marketing pages. */
 export function Footer() {
   return (
     <Box
@@ -30,17 +56,16 @@ export function Footer() {
       mt={60}
       py="xl"
       style={{
-        borderTop: "1px solid var(--mantine-color-default-border)",
+        borderTop: "1px solid var(--mantine-color-gray-3)",
       }}
     >
       <Container size="lg">
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="xl" mb="xl">
-          {/* Logo + tagline */}
           <Stack gap="xs">
             <Image
               src={logo}
-              alt="ISO logo"
-              style={{ height: "2rem", width: "auto", objectFit: "contain" }}
+              alt="ISO"
+              style={{ height: "2rem", width: "auto", objectFit: "contain", alignSelf: "flex-start" }}
               width={100}
               height={36}
             />
@@ -48,44 +73,8 @@ export function Footer() {
               The photographer second shooter network.
             </Text>
           </Stack>
-
-          {/* Company links */}
-          <Stack gap="xs">
-            <Text size="sm" fw={600} tt="uppercase" c="dimmed">
-              Company
-            </Text>
-            {companyLinks.map((link) => (
-              <Anchor
-                key={link.href}
-                href={link.href}
-                component="a"
-                size="sm"
-                c="dimmed"
-                underline="hover"
-              >
-                {link.label}
-              </Anchor>
-            ))}
-          </Stack>
-
-          {/* Legal links */}
-          <Stack gap="xs">
-            <Text size="sm" fw={600} tt="uppercase" c="dimmed">
-              Legal
-            </Text>
-            {legalLinks.map((link) => (
-              <Anchor
-                key={link.href}
-                href={link.href}
-                component="a"
-                size="sm"
-                c="dimmed"
-                underline="hover"
-              >
-                {link.label}
-              </Anchor>
-            ))}
-          </Stack>
+          <FooterLinks title="Company" links={companyLinks} />
+          <FooterLinks title="Legal" links={legalLinks} />
         </SimpleGrid>
 
         <Divider mb="md" />
@@ -96,6 +85,27 @@ export function Footer() {
           </Text>
         </Group>
       </Container>
+    </Box>
+  );
+}
+
+/**
+ * Footer of the signed-in app: one quiet legal line on desktop. Phones have
+ * the tab bar at the bottom of the screen instead.
+ */
+export function AppFooter() {
+  return (
+    <Box component="footer" visibleFrom="sm" h="var(--app-footer-height)">
+      <Group justify="center" align="flex-end" gap="md" h="100%">
+        <Text size="xs" c="dimmed">
+          &copy; {new Date().getFullYear()} ISO
+        </Text>
+        {[...legalLinks, { href: "/contact", label: "Contact" }].map((link) => (
+          <Anchor key={link.href} component={NextLink} href={link.href} size="xs" c="dimmed" underline="hover">
+            {link.label}
+          </Anchor>
+        ))}
+      </Group>
     </Box>
   );
 }

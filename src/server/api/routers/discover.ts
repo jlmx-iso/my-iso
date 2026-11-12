@@ -420,6 +420,8 @@ export const discoverRouter = createTRPCRouter({
             icebreakers: true,
             expiresAt: true,
             messageThreadId: true,
+            // Whether anyone has written yet (see isMatchExpired).
+            messageThread: { select: { messages: { select: { id: true }, take: 1 } } },
             user1: {
               select: {
                 id: true,
@@ -478,7 +480,8 @@ export const discoverRouter = createTRPCRouter({
         }
 
         const otherUser = match.user1.id === userId ? match.user2 : match.user1;
-        const expired = isMatchExpired(match);
+        const hasMessage = (match.messageThread?.messages.length ?? 0) > 0;
+        const expired = isMatchExpired(match, new Date(), hasMessage);
 
         // Icebreakers are generated once per match and stored. A match made
         // before that existed (or whose generation failed) gets them now,

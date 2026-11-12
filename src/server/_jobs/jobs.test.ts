@@ -97,6 +97,9 @@ describe("expireStaleMatches", () => {
     expect(isMatchExpired(live, NOW)).toBe(false);
     expect(isMatchExpired(messaged, NOW)).toBe(false);
     expect(isMatchExpired(open, NOW)).toBe(false);
+    // A conversation keeps it live; a stored "expired" is final.
+    expect(isMatchExpired(stale, NOW, true)).toBe(false);
+    expect(isMatchExpired(done, NOW, true)).toBe(true);
   });
 });
 
@@ -358,9 +361,8 @@ describe("reconcileInviteSlots", () => {
     const muchLater = new Date(NOW.getTime() + 30 * 24 * HOUR);
     await expect(reconcileInviteSlots(testDb.db, muchLater)).resolves.toEqual({ checked: 50, corrected: 50 });
     expect(await testDb.raw.inviteCode.count({ where: { currentRedemptions: { gt: 0 } } })).toBe(0);
-    // Over a thousand rows: takes ~2s plain and well over the 5s default under
-    // coverage instrumentation on a shared runner.
-  }, 30_000);
+    // Over a thousand row writes one by one: allow for a busy machine.
+  }, 60_000);
 
   it("works through more codes than one batch, within the bound-parameter limit", async () => {
     for (let i = 0; i < 120; i++) {

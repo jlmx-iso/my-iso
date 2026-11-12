@@ -522,16 +522,20 @@ describe("messageRouter against SQLite", () => {
       return rows.map((row) => row.id);
     }
 
+    async function statusOf(matchId: string) {
+      return (await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } })).status;
+    }
+
     it("a message before the deadline survives the expiry job", async () => {
       const deadline = new Date(Date.now() + HOUR);
       const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
 
       await as(bob).create({ content: "hello", threadId });
+      // Stored after the response.
+      await vi.waitFor(async () => expect(await statusOf(matchId)).toBe("messaged"));
 
       const later = new Date(deadline.getTime() + HOUR);
       await expect(expireStaleMatches(testDb.db, later)).resolves.toEqual({ expired: 0 });
-      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
-      expect(stored.status).toBe("messaged");
       expect(await liveMatchIds(later)).toContain(matchId);
     });
 
@@ -542,20 +546,43 @@ describe("messageRouter against SQLite", () => {
       const thread = await as(alice).createThread({ initialMessage: "hi", participants: [bob.id] });
       expect(thread.id).toBe(threadId);
 
+      await vi.waitFor(async () => expect(await statusOf(matchId)).toBe("messaged"));
       await expireStaleMatches(testDb.db, new Date(deadline.getTime() + HOUR));
-      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
-      expect(stored.status).toBe("messaged");
+      expect(await statusOf(matchId)).toBe("messaged");
     });
 
-    it("a message after the deadline does not revive the match", async () => {
+    it("the message alone keeps the match live when the status was never stored", async () => {
+      const deadline = new Date(Date.now() + HOUR);
+      const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+      // The message is stored; the "messaged" update did not happen (failed
+      // or was cut off).
+      await testDb.db.message.create({ data: { content: "hello", senderId: bob.id, threadId } });
+      expect(await statusOf(matchId)).toBe("matched");
+
+      const later = new Date(deadline.getTime() + HOUR);
+      await expect(expireStaleMatches(testDb.db, later)).resolves.toEqual({ expired: 0 });
+      expect(await statusOf(matchId)).toBe("matched");
+      expect(await liveMatchIds(later)).toContain(matchId);
+    });
+
+    it("a soft-deleted message still counts: the pair did write", async () => {
+      const deadline = new Date(Date.now() + HOUR);
+      const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+      await testDb.db.message.create({ data: { content: "x", isDeleted: true, senderId: bob.id, threadId } });
+      const later = new Date(deadline.getTime() + HOUR);
+      await expect(expireStaleMatches(testDb.db, later)).resolves.toEqual({ expired: 0 });
+      expect(await liveMatchIds(later)).toContain(matchId);
+    });
+
+    it("once the job has stored expired, a later message does not revive the match", async () => {
       const deadline = new Date(Date.now() - HOUR);
       const { matchId, threadId } = await matchWithThread(alice, bob, deadline);
+      await expect(expireStaleMatches(testDb.db)).resolves.toEqual({ expired: 1 });
 
       await as(bob).create({ content: "too late", threadId });
-
-      const stored = await testDb.db.match.findUniqueOrThrow({ where: { id: matchId } });
-      expect(stored.status).toBe("matched");
-      await expect(expireStaleMatches(testDb.db)).resolves.toEqual({ expired: 1 });
+      // Give the after-response update its chance, then check it changed nothing.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(await statusOf(matchId)).toBe("expired");
       expect(await liveMatchIds(new Date())).not.toContain(matchId);
     });
 

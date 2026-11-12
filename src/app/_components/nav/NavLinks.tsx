@@ -1,8 +1,15 @@
 "use client";
 
-import { Anchor, Group } from "@mantine/core";
+import { Group } from "@mantine/core";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import { unreadBadgeLabel, unreadConversationsLabel } from "~/_utils/unread";
+import { useUnreadConversations } from "~/app/_hooks/useUnreadMessages";
+
+import classes from "./NavLinks.module.css";
+
+const MESSAGES_HREF = "/app/messages";
 
 type NavLink = {
     href: string;
@@ -15,47 +22,29 @@ type NavLinksProps = {
 
 export default function NavLinks({ links }: NavLinksProps) {
     const pathname = usePathname();
+    // Only the signed-in navigation has a Messages link to badge.
+    const unread = useUnreadConversations(links.some((link) => link.href === MESSAGES_HREF));
 
     return (
-        <Group gap={4}>
+        <Group component="nav" aria-label="Primary" gap={4} wrap="nowrap">
             {links.map((link) => {
-                const isActive = pathname.startsWith(link.href);
+                // "/#features" style links never match a pathname.
+                const isActive = !link.href.includes("#") && pathname.startsWith(link.href);
                 return (
-                    <Anchor
+                    <Link
                         key={link.href}
-                        component={Link}
                         href={link.href}
-                        px="md"
-                        py={6}
-                        fw={500}
-                        fz="sm"
-                        style={{
-                            borderRadius: "var(--mantine-radius-xl)",
-                            textDecoration: "none",
-                            transition: "background-color 150ms ease",
-                            ...(isActive
-                                ? {
-                                      backgroundColor: "var(--mantine-color-orange-1)",
-                                      color: "var(--mantine-color-orange-7)",
-                                  }
-                                : {
-                                      color: "var(--mantine-color-gray-7)",
-                                  }),
-                        }}
-                        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
-                            if (!isActive) {
-                                e.currentTarget.style.backgroundColor =
-                                    "var(--mantine-color-gray-1)";
-                            }
-                        }}
-                        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
-                            if (!isActive) {
-                                e.currentTarget.style.backgroundColor = "transparent";
-                            }
-                        }}
+                        className={classes.link}
+                        aria-current={isActive ? "page" : undefined}
                     >
                         {link.label}
-                    </Anchor>
+                        {link.href === MESSAGES_HREF && unread > 0 && (
+                            <span className={classes.badge} data-testid="nav-unread">
+                                <span aria-hidden>{unreadBadgeLabel(unread)}</span>
+                                <span className="sr-only">, {unreadConversationsLabel(unread)}</span>
+                            </span>
+                        )}
+                    </Link>
                 );
             })}
         </Group>

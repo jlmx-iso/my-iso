@@ -5,12 +5,12 @@ import Timemarker from "~/app/_components/Timemarker";
 
 type MessageTileProps = {
   isAuthor: boolean;
+  /** Last of a run of messages from the same sender: shows the time. */
   isLastInGroup?: boolean;
-  message: Pick<ThreadMessage, "content" | "createdAt">;
-  showTimestamp?: boolean;
+  message: Pick<ThreadMessage, "content" | "createdAt" | "sender">;
 };
 
-const MessageTile = ({ isAuthor, isLastInGroup = false, message, showTimestamp = true }: MessageTileProps) => {
+const MessageTile = ({ isAuthor, isLastInGroup = false, message }: MessageTileProps) => {
   return (
     <Flex
       w="100%"
@@ -19,35 +19,35 @@ const MessageTile = ({ isAuthor, isLastInGroup = false, message, showTimestamp =
       px="xs"
       mb={isLastInGroup ? 8 : 0}
       style={{
-        animation: "messageIn 1s cubic-bezier(0.16, 1, 0.3, 1) both",
+        animation: "messageIn 300ms cubic-bezier(0.16, 1, 0.3, 1) both",
       }}
+      data-testid="message-tile"
     >
       <Flex
         align={isAuthor ? "end" : "start"}
         direction="column"
-        maw="70%"
+        maw={{ base: "85%", sm: "70%" }}
         gap={2}
       >
         <Box
           px="md"
-          py="sm"
+          py="xs"
+          bg={isAuthor ? "orange.1" : "gray.1"}
           style={{
             borderRadius: isAuthor
               ? "18px 18px 4px 18px"
               : "18px 18px 18px 4px",
-            backgroundColor: isAuthor
-              ? "var(--mantine-color-orange-1)"
-              : "var(--mantine-color-gray-1)",
           }}
         >
-          <Text size="sm" style={{ lineHeight: 1.5 }}>
+          <Text size="sm" style={{ lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+            <span className="sr-only">{isAuthor ? "You: " : `${message.sender.firstName}: `}</span>
             {message.content}
           </Text>
         </Box>
-        {showTimestamp && (
-          <Text size="xs" c="dimmed" px={4}>
+        {isLastInGroup && (
+          <Box px={4}>
             <Timemarker date={message.createdAt} />
-          </Text>
+          </Box>
         )}
       </Flex>
     </Flex>

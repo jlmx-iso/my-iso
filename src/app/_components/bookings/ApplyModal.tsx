@@ -9,61 +9,64 @@ import {
   Textarea,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
-import { IconCheck, IconSend } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconSend } from "@tabler/icons-react";
+import { type FormEvent, useState } from "react";
 
-import { logger } from "~/_utils";
+import { logger } from "~/_utils/logger";
+import { isClientError, userFacingError } from "~/_utils/userError";
+import DialogError from "~/app/_components/DialogError";
+import { dialogLock, routeFailure } from "~/app/_components/dialogFailure";
+import { useLatestRef } from "~/app/_hooks/useLatestRef";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
-
-import { applyButtonState, type ApplicationStatus } from "./applyButton";
 
 type ApplyModalProps = {
   eventId: string;
   eventTitle: string;
-  hasApplied: boolean;
-  /** From booking.hasApplied: the application was withdrawn and may be sent again. */
-  canReapply?: boolean;
-  /** From booking.hasApplied: why the event takes no applications now, if it does not. */
-  applyBlockedBy?: ApplicationStatus["applyBlockedBy"];
+  /** The trigger's text: "Apply", "Apply again". */
+  label: string;
+  /** Detail page: the trigger is the page's primary action, full width on phones. */
+  prominent?: boolean;
   onSuccess?: () => void;
 };
 
 export default function ApplyModal({
   eventId,
   eventTitle,
-  hasApplied,
-  canReapply = false,
-  applyBlockedBy = null,
+  label,
+  prominent = false,
   onSuccess,
 }: ApplyModalProps) {
-  const button = applyButtonState({ applyBlockedBy, canReapply, hasApplied });
   const [opened, { open, close }] = useDisclosure(false);
   const [rate, setRate] = useState("");
   const [notes, setNotes] = useState("");
 
   const utils = api.useUtils();
 
-  const { mutate, isPending } = api.booking.applyToEvent.useMutation({
+  // Whether the dialog is open when a failure arrives.
+  const isOpen = useLatestRef(opened);
+  const { mutate, isPending, error, reset } = api.booking.applyToEvent.useMutation({
     onError: (error) => {
       logger.error("Error applying to event", { error });
-      notifications.show({
-        color: "red",
-        message: error.message ?? "Something went wrong. Please try again.",
-        title: "Application Failed",
-      });
-      // A refusal means this button was out of date (the event filled or
-      // started meanwhile): show what the server says now.
-      void utils.booking.hasApplied.invalidate({ eventId });
+      // Shown in the dialog (DialogError, from `error`) while it is open;
+      // if it is gone, a toast, so the failure is never silent.
+      if (routeFailure({ dialogOpen: isOpen.current, stale: false }).show === "toast") {
+        notify.error({
+          message: userFacingError(error, "Your application couldn't be sent. Please try again."),
+          title: "Application not sent",
+        });
+      }
+      // Refused because of how things stand now (already applied, filled,
+      // started): the card behind this dialog should say so too.
+      if (isClientError(error)) void utils.booking.hasApplied.invalidate({ eventId });
     },
     onSuccess: () => {
-      notifications.show({
-        color: "teal",
-        icon: <IconCheck size={16} />,
+      notify.success({
         message: "Your application has been sent to the event owner.",
-        title: "Application Sent",
+        title: "Application sent",
       });
       void utils.booking.hasApplied.invalidate({ eventId });
+      void utils.booking.getMyApplicationsPage.invalidate();
       void utils.booking.getMyApplications.invalidate();
       setRate("");
       setNotes("");
@@ -72,7 +75,8 @@ export default function ApplyModal({
     },
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     mutate({
       eventId,
       notes: notes.trim() || undefined,
@@ -80,28 +84,20 @@ export default function ApplyModal({
     });
   };
 
-  if (button.kind === "disabled") {
-    return (
-      <Button
-        size="xs"
-        variant="light"
-        color={button.label === "Applied" ? "teal" : "gray"}
-        leftSection={button.label === "Applied" ? <IconCheck size={14} /> : undefined}
-        disabled
-      >
-        {button.label}
-      </Button>
-    );
-  }
-
   return (
     <>
       <Modal
         opened={opened}
-        onClose={close}
+        onClose={() => {
+          if (isPending) return;
+          close();
+          reset();
+        }}
+        {...dialogLock(isPending)}
         title={`Apply to "${eventTitle}"`}
         size="md"
       >
+        <form onSubmit={handleSubmit}>
         <Stack gap="md">
           <Text size="sm" c="dimmed">
             Let the event owner know you are interested in second shooting this
@@ -109,7 +105,8 @@ export default function ApplyModal({
           </Text>
 
           <TextInput
-            label="Your Rate"
+            label="Your rate"
+            description="Optional"
             placeholder="e.g. $50/hr, $200 flat, negotiable"
             value={rate}
             onChange={(e) => setRate(e.currentTarget.value)}
@@ -118,6 +115,7 @@ export default function ApplyModal({
 
           <Textarea
             label="Notes"
+            description="Optional"
             placeholder="Introduce yourself, share relevant experience, or ask questions about the event..."
             value={notes}
             onChange={(e) => setNotes(e.currentTarget.value)}
@@ -127,18 +125,30 @@ export default function ApplyModal({
             maxRows={6}
           />
 
+          <DialogError
+            message={error ? userFacingError(error, "Your application couldn't be sent. Please try again.") : null}
+            title="Application not sent"
+            data-testid="apply-error"
+          />
+
           <Button
-            onClick={handleSubmit}
+            type="submit"
             loading={isPending}
             leftSection={<IconSend size={16} />}
           >
-            Send Application
+            Send application
           </Button>
         </Stack>
+        </form>
       </Modal>
 
-      <Button size="xs" variant="light" onClick={open}>
-        {button.label}
+      <Button
+        size={prominent ? "md" : "sm"}
+        w={prominent ? { base: "100%", xs: "auto" } : undefined}
+        onClick={open}
+        data-testid="apply-button"
+      >
+        {label}
       </Button>
     </>
   );

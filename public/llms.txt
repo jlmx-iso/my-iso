@@ -1,24 +1,24 @@
 # ISO — The Photographer Network
 
 ## What is ISO?
-ISO connects lead photographers with skilled second shooters for weddings, events, and sessions. It's a two-sided marketplace built by photographers, for photographers.
+ISO connects lead photographers with skilled second shooters for weddings, events, and sessions. It is an invite-only network built by photographers, for photographers.
 
 ## Who is it for?
 - Lead photographers who need a second shooter for an event
-- Second shooters looking for work opportunities
+- Second shooters looking for work
 - Wedding, event, and portrait photographers
 
 ## Key Features
-- Create a professional photographer profile with portfolio
-- Search for second shooters by location, specialty, and availability
-- Discover photographers near you with swipe-based matching
-- Direct messaging to coordinate shoots
-- Booking management with application tracking
-- Reviews and ratings to build trust
+- A photographer profile with a portfolio
+- Search for photographers and events by name and city
+- Discover: photographers near you, matched when both like each other
+- Direct messaging between members who are connected
+- Post events, apply to them, and accept or decline applications
+- Reviews from photographers you have completed a booking with
 
 ## Pricing
-- Basic (Free): Create profile, browse listings, direct messaging
-- Pro ($10-19/mo): Priority search, advanced booking, analytics
+- Free: profile, portfolio, events, Discover, messaging and reviews
+- Pro ($10/mo founding price, $19/mo standard): supports ISO while the network is being built. Pro does not unlock any features yet; priority search placement, a Pro profile badge, profile analytics and priority support are planned.
 
 ## Markets
 Currently focused on Austin, TX and Denver, CO with plans to expand nationwide.
