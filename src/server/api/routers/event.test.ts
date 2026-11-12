@@ -81,6 +81,22 @@ describe("events feed", () => {
     });
   });
 
+  it("carries each event's count of live comments", async () => {
+    const quiet = await createEvent("quiet", DAY_MS);
+    const busy = await createEvent("busy", 2 * DAY_MS);
+    for (const [content, isDeleted] of [["one", false], ["two", false], ["gone", true]] as const) {
+      await testDb.db.comment.create({ data: { content, eventId: busy.id, isDeleted, userId: viewer.id } });
+    }
+
+    const page = await as(viewer).getFeedPage({});
+
+    expect(page.items.map((event) => [event.id, event.commentCount])).toEqual([
+      [quiet.id, 0],
+      [busy.id, 2],
+    ]);
+    expect(page.items[0]).not.toHaveProperty("_count");
+  });
+
   it("returns past events, most recent first, on request", async () => {
     await createEvent("tomorrow", DAY_MS);
     await createEvent("last week", -7 * DAY_MS);

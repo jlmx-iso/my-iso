@@ -50,6 +50,8 @@ const onLiveEvent = { event: { isDeleted: false } } as const;
 
 const bookingEventSelect = {
   date: true,
+  // With the date, when the event ends: clients offer "complete" from then.
+  duration: true,
   id: true,
   location: true,
   title: true,

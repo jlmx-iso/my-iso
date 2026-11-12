@@ -4,7 +4,8 @@ import { z } from "zod";
 import { phoneSchemaOptional } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { handleInput } from "~/server/_utils/handle";
-import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 export const userRouter = createTRPCRouter({
   /**
@@ -69,6 +70,25 @@ export const userRouter = createTRPCRouter({
         }
         throw error;
       }
+    }),
+
+  /**
+   * Whether the caller could take `handle` right now, for checking a
+   * username as it is typed: false when it breaks the handle rules or
+   * belongs to someone else, true when it is free or already the caller's.
+   * Advisory only: `updateProfile` (and the unique index) decides.
+   */
+  isHandleAvailable: protectedProcedure
+    .use(rateLimit(RateLimits.MEMBER_SEARCH))
+    .input(z.object({ handle: z.string().max(64) }))
+    .query(async ({ ctx, input }) => {
+      const handle = handleInput.safeParse(input.handle);
+      if (!handle.success) return { available: false };
+      const holder = await ctx.db.user.findUnique({
+        select: { id: true },
+        where: { handle: handle.data },
+      });
+      return { available: holder === null || holder.id === ctx.session.user.id };
     }),
 
   /**

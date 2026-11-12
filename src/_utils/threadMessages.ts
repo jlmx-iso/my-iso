@@ -65,3 +65,28 @@ export function mergeThreadMessages<T extends { createdAt: Date; id: string }>(
       a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id),
   );
 }
+
+/**
+ * Whether the thread has messages older than the ones on screen.
+ *
+ * `snapshotTotal` is the thread's message count when the thread query last
+ * answered, and `snapshot` the messages that answer held. Messages that have
+ * arrived since (over the socket, or sent from here) are on screen but not in
+ * that total, so they are left out of the comparison: otherwise a busy
+ * conversation would stop offering "Load earlier messages" while there are
+ * still earlier ones.
+ */
+export function hasEarlierMessages({
+  snapshotTotal,
+  snapshot,
+  shown,
+}: {
+  snapshotTotal: number;
+  snapshot: ReadonlyArray<{ createdAt: Date }>;
+  shown: ReadonlyArray<{ createdAt: Date }>;
+}): boolean {
+  const newestInSnapshot = snapshot.reduce((latest, message) => Math.max(latest, message.createdAt.getTime()), -Infinity);
+  // On screen and already counted in the total: nothing newer than the snapshot.
+  const counted = shown.filter((message) => message.createdAt.getTime() <= newestInSnapshot).length;
+  return snapshotTotal > counted;
+}

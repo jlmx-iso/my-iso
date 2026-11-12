@@ -108,7 +108,6 @@ export function validateHandle(input: string): string | null {
   return problem ? HANDLE_MESSAGES[problem] : null;
 }
 
-/** Public profile URL for a handle, exactly as the route matches it (no "@"). */
 /**
  * Message for a handle the server refused: taken (CONFLICT), or failing its
  * validation. Null when the failure has nothing to do with the handle.
@@ -122,6 +121,41 @@ export function refusedHandleMessage(
   return validateHandle(handle) ?? HANDLE_MESSAGES.refused;
 }
 
+/** Public profile URL for a handle, exactly as the route matches it (no "@"). */
 export function publicProfileUrl(baseUrl: string, handle: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/photographer/${normalizeHandle(handle)}`;
+}
+
+/**
+ * Where the "is this username free?" check stands while it is being typed:
+ *
+ * - `idle`: nothing to check (empty, or it breaks the rules: the field
+ *   already says how).
+ * - `checking`: waiting for the typing to pause, or for the server.
+ * - `available` / `taken`: the server's answer for exactly what is typed.
+ * - `unknown`: the check failed; saving will still catch a taken handle.
+ */
+export type HandleAvailability = "idle" | "checking" | "available" | "taken" | "unknown";
+
+export function handleAvailability({
+  handle,
+  checkedHandle,
+  result,
+  isFetching,
+  isError,
+}: {
+  /** The normalised handle as typed now. */
+  handle: string;
+  /** The (debounced) handle the latest answer is for. */
+  checkedHandle: string;
+  result: { available: boolean } | undefined;
+  isFetching: boolean;
+  isError: boolean;
+}): HandleAvailability {
+  if (handle === "" || handleProblem(handle) !== null) return "idle";
+  // Still typing: the answer on hand is for an earlier spelling.
+  if (handle !== checkedHandle) return "checking";
+  if (isError) return "unknown";
+  if (isFetching || !result) return "checking";
+  return result.available ? "available" : "taken";
 }

@@ -430,7 +430,8 @@ export const eventRouter = createTRPCRouter({
    * `locations` narrows to events in those places (city match, as
    * getRecentByLocation); empty or omitted means everywhere. Pass
    * `nextCursor` back as `cursor` for the next page; it is null on the last.
-   * Deleted events never appear.
+   * Deleted events never appear. Each event carries its photographer and
+   * `commentCount` (live comments), as getById does.
    */
   getFeedPage: protectedProcedure
     .input(z.object({
@@ -447,6 +448,9 @@ export const eventRouter = createTRPCRouter({
       const rows = await ctx.db.event.findMany({
         ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
         include: {
+          // For the card's comment button, so the feed needs no request per
+          // event. An include is not filtered by the soft-delete extension.
+          _count: { select: { comments: { where: { isDeleted: false } } } },
           photographer: { select: eventPhotographerSelect },
         },
         // The id breaks ties between events at the same time, so pages
@@ -458,7 +462,11 @@ export const eventRouter = createTRPCRouter({
           ...(filters.length > 0 ? { OR: filters } : {}),
         },
       });
-      return toPage(rows, input.limit);
+      const { items, nextCursor } = toPage(rows, input.limit);
+      return {
+        items: items.map(({ _count, ...event }) => ({ ...event, commentCount: _count.comments })),
+        nextCursor,
+      };
     }),
 
   /**

@@ -49,3 +49,48 @@ export function checkoutBannerState({
   if (isSubscriptionActive) return "confirmed";
   return attempts >= maxAttempts ? "delayed" : "confirming";
 }
+
+/**
+ * Whether a subscription answer (`subscription.getStatus` / `syncStatus`)
+ * says the member is on Pro. Reads `hasProAccess`; the deprecated `isActive`
+ * is not consulted.
+ */
+export function isSubscriptionConfirmed(subscription: unknown): boolean {
+  return (
+    typeof subscription === "object" &&
+    subscription !== null &&
+    "hasProAccess" in subscription &&
+    subscription.hasProAccess === true
+  );
+}
+
+/** Where the re-checks after a successful checkout stand. */
+export type ConfirmationState = { attempts: number; isActive: boolean };
+
+/** Whether to check (again): only while wanted, not yet active, and within the limit. */
+export function shouldCheckAgain(
+  { attempts, isActive }: ConfirmationState,
+  enabled: boolean,
+  maxAttempts: number = CHECKOUT_MAX_ATTEMPTS,
+): boolean {
+  return enabled && !isActive && attempts < maxAttempts;
+}
+
+/** The first check runs straight away; later ones wait. */
+export function checkDelay(attempts: number): number {
+  return attempts === 0 ? 0 : CHECKOUT_RETRY_DELAY_MS;
+}
+
+/**
+ * The state after one re-check: active as soon as the server says so (and it
+ * stays active), otherwise one more attempt used. A failed request counts as
+ * an attempt too, so a server that is down cannot be polled for ever.
+ */
+export function afterCheck(
+  state: ConfirmationState,
+  outcome: { ok: true; subscription: unknown } | { ok: false },
+): ConfirmationState {
+  if (state.isActive) return state;
+  if (outcome.ok && isSubscriptionConfirmed(outcome.subscription)) return { ...state, isActive: true };
+  return { ...state, attempts: state.attempts + 1 };
+}

@@ -25,6 +25,29 @@ export const NEW_CONVERSATION_LIMIT_MESSAGE =
 export const PORTFOLIO_FULL_MESSAGE =
   "Your portfolio is full. Remove an image to add another.";
 
+/**
+ * Copy for the reasons whose wording is the client's to choose. The server's
+ * own sentence is only a fallback for these: what the person can do next
+ * depends on the screen they are on.
+ */
+export const REASON_MESSAGES: Partial<Record<ErrorReason, string>> = {
+  [ErrorReason.BILLING_UNAVAILABLE]:
+    "Billing isn't available right now. You haven't been charged. Please try again in a few minutes.",
+  [ErrorReason.BOOKING_EVENT_FILLED]:
+    "This event already has its second shooter, so another application can't be accepted.",
+  [ErrorReason.BOOKING_EVENT_STARTED]:
+    "This event has already started, so the booking can't be changed this way anymore.",
+  [ErrorReason.BOOKING_INVALID_TRANSITION]:
+    "This booking changed while you had it open. We've refreshed it so you can see where it stands.",
+  [ErrorReason.BOOKING_NOT_ALLOWED]: "Only the other person in this booking can do that.",
+  [ErrorReason.BOOKING_NOT_YET_COMPLETABLE]:
+    "You can mark this booking as completed once the event is over.",
+  [ErrorReason.NO_BILLING_ACCOUNT]:
+    "You don't have a subscription to manage yet. You can start one from this page.",
+  [ErrorReason.SUBSCRIPTION_EXISTS]:
+    "You already have a subscription. You can manage it in the billing portal.",
+};
+
 /** tRPC codes whose messages are written for the user. */
 const USER_FACING_CODES = new Set([
   "BAD_REQUEST",
@@ -197,6 +220,9 @@ export function userFacingError(
     default:
       break;
   }
+  const reason = getErrorReason(error);
+  const reasonMessage = reason ? REASON_MESSAGES[reason] : undefined;
+  if (reasonMessage) return reasonMessage;
   if (code === "TOO_MANY_REQUESTS") {
     return isPlainSentence(message) ? message : RATE_LIMIT_MESSAGE;
   }

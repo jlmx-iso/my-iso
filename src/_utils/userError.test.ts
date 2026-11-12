@@ -129,6 +129,23 @@ describe("userFacingError: error reasons and rate limits", () => {
     expect(userFacingError(reasoned("", "BAD_REQUEST", ErrorReason.PORTFOLIO_FULL))).toBe(PORTFOLIO_FULL_MESSAGE);
   });
 
+  it("has its own copy for every booking and billing reason, whatever the server wrote", () => {
+    const cases: Array<[string, string, RegExp]> = [
+      ["FORBIDDEN", ErrorReason.BOOKING_NOT_ALLOWED, /other person/],
+      ["CONFLICT", ErrorReason.BOOKING_INVALID_TRANSITION, /changed while you had it open/],
+      ["CONFLICT", ErrorReason.BOOKING_EVENT_FILLED, /already has its second shooter/],
+      ["BAD_REQUEST", ErrorReason.BOOKING_EVENT_STARTED, /already started/],
+      ["BAD_REQUEST", ErrorReason.BOOKING_NOT_YET_COMPLETABLE, /once the event is over/],
+      ["CONFLICT", ErrorReason.SUBSCRIPTION_EXISTS, /already have a subscription/],
+      ["PRECONDITION_FAILED", ErrorReason.NO_BILLING_ACCOUNT, /don't have a subscription to manage/],
+      // A 503: without the reason this would be the generic fallback.
+      ["SERVICE_UNAVAILABLE", ErrorReason.BILLING_UNAVAILABLE, /haven't been charged/],
+    ];
+    for (const [code, reason, expected] of cases) {
+      expect(userFacingError(reasoned("Server wording.", code, reason), "Fallback")).toMatch(expected);
+    }
+  });
+
   it("shows a rate limit's wait time as the server gave it", () => {
     const error = trpcError("Too many requests. Try again in 12 minutes.", "TOO_MANY_REQUESTS");
     expect(userFacingError(error, "Fallback")).toBe("Too many requests. Try again in 12 minutes.");

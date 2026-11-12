@@ -4,6 +4,7 @@ import {
   HANDLE_MESSAGES,
   HANDLE_PATTERN,
   RESERVED_HANDLES,
+  handleAvailability,
   handleProblem,
   normalizeHandle,
   publicProfileUrl,
@@ -103,5 +104,31 @@ describe("refusedHandleMessage", () => {
   it("stays out of failures that are not about the handle", () => {
     expect(refusedHandleMessage("fine_name", { code: "BAD_REQUEST", invalidFields: ["phone"] })).toBeNull();
     expect(refusedHandleMessage("fine_name", { code: undefined, invalidFields: [] })).toBeNull();
+  });
+});
+
+describe("handleAvailability", () => {
+  const answered = { checkedHandle: "sarah_shoots", handle: "sarah_shoots", isError: false, isFetching: false };
+
+  it("has nothing to check for an empty or invalid handle", () => {
+    expect(handleAvailability({ ...answered, checkedHandle: "", handle: "", result: undefined })).toBe("idle");
+    expect(handleAvailability({ ...answered, checkedHandle: "ab", handle: "ab", result: { available: true } })).toBe("idle");
+    expect(handleAvailability({ ...answered, checkedHandle: "admin", handle: "admin", result: { available: false } })).toBe("idle");
+  });
+
+  it("is checking while typing continues or the server has not answered", () => {
+    // The answer on hand is for an earlier spelling.
+    expect(handleAvailability({ ...answered, handle: "sarah_shoots2", result: { available: true } })).toBe("checking");
+    expect(handleAvailability({ ...answered, isFetching: true, result: undefined })).toBe("checking");
+    expect(handleAvailability({ ...answered, result: undefined })).toBe("checking");
+  });
+
+  it("reports the server's answer for exactly what is typed", () => {
+    expect(handleAvailability({ ...answered, result: { available: true } })).toBe("available");
+    expect(handleAvailability({ ...answered, result: { available: false } })).toBe("taken");
+  });
+
+  it("does not guess when the check failed", () => {
+    expect(handleAvailability({ ...answered, isError: true, result: undefined })).toBe("unknown");
   });
 });
