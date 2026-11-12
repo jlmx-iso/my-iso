@@ -160,6 +160,28 @@ export function contentSecurityPolicyHeader(options) {
  *
  * @returns {Array<{ key: string; value: string }>}
  */
+/**
+ * Paths that skip the middleware (and so get no per-request page policy):
+ * API routes, Next.js internals and images. Next.js can still render its
+ * HTML not-found page for an unknown path under them, so they get a static
+ * policy that allows nothing; it also hardens JSON responses.
+ */
+export const NON_PAGE_PATH_PREFIXES = ["/api", "/_next", "/img"];
+
+/** The static policy for NON_PAGE_PATH_PREFIXES. */
+export const NON_PAGE_CONTENT_SECURITY_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+
+/**
+ * next.config.js `headers()` entries that give every non-page path the
+ * static policy.
+ */
+export function nonPageHeaderRules() {
+  return NON_PAGE_PATH_PREFIXES.map((prefix) => ({
+    source: `${prefix}/:path*`,
+    headers: [{ key: "Content-Security-Policy", value: NON_PAGE_CONTENT_SECURITY_POLICY }],
+  }));
+}
+
 export function buildSecurityHeaders() {
   return [
     { key: "Reporting-Endpoints", value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` },

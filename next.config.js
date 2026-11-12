@@ -6,7 +6,7 @@ await import("./src/env.js");
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { buildSecurityHeaders } from "./src/securityHeaders.js";
+import { buildSecurityHeaders, nonPageHeaderRules } from "./src/securityHeaders.js";
 import { TELEMETRY_FALLBACK_ROUTE, TELEMETRY_PROXY_PATH } from "./src/telemetryConfig.js";
 
 /** Commit this build was made from, for /api/health. "unknown" outside git. */
@@ -93,6 +93,9 @@ const config = {
         // per-request nonce and is set by src/middleware.ts.
         headers: buildSecurityHeaders(),
       },
+      // Paths the middleware skips get a static policy that allows nothing
+      // (an unknown path there can still render the HTML not-found page).
+      ...nonPageHeaderRules(),
       {
         source: "/login",
         headers: [

@@ -15,7 +15,7 @@ import { env } from "~/env";
 // Keep this file as an edge middleware until that support is stable.
 const { auth } = NextAuth(authConfig);
 
-/** Read per request: CSP_MODE is a runtime variable (the kill switch). */
+/** CSP_MODE is a runtime variable (the kill switch): a changed value takes effect once the new Worker version is live, without a code deploy. */
 function cspOptions(): ContentSecurityPolicyOptions {
   return {
     baseUrl: env.NEXT_PUBLIC_BASE_URL,
@@ -51,6 +51,6 @@ export const config = {
   // Pages only: not API routes, Next.js assets, the telemetry proxy or the
   // files in public/ (served by the asset store, or the Worker entry).
   matcher: [
-    "/((?!api/|_next/|lens(?:/|$)|img/|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|llms\\.txt$).*)",
+    "/((?!api/|_next/|webhooks/|lens(?:/|$)|img/|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$|llms\\.txt$).*)",
   ],
 };

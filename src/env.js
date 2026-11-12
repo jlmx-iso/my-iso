@@ -2,7 +2,7 @@ import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
 import { AI_MODELS } from "./aiModels.js";
-import { CSP_MODES, DEFAULT_CSP_MODE } from "./securityHeaders.js";
+import { cspModeSchema } from "./cspModeSchema.js";
 
 // Every variable the app reads. docs/DEPLOYMENT.md says what each one is for
 // and where it is set; .env.example and .dev.vars.example must list exactly
@@ -94,7 +94,10 @@ export const env = createEnv({
     // Content-Security-Policy kill switch: "enforce" (default) blocks what
     // the policy does not allow; "report-only" only reports it
     // (src/securityHeaders.js, docs/adr/0002-csp.md).
-    CSP_MODE: z.enum(CSP_MODES).default(DEFAULT_CSP_MODE),
+    // A mistyped value must not take the site down (env validation throws
+    // at module load): it is trimmed and lower-cased, and anything else
+    // falls back to enforcing.
+    CSP_MODE: cspModeSchema,
     // Local SQLite file for `next dev`. Unused on Cloudflare (D1 binding).
     DATABASE_URL: z.string().url().optional(),
     // Sender of every transactional email.

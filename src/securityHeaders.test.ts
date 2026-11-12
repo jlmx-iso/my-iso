@@ -187,3 +187,16 @@ describe("buildSecurityHeaders", () => {
     }
   });
 });
+
+describe("nonPageHeaderRules", () => {
+  it("gives API, Next.js internal and image paths a policy that allows nothing", async () => {
+    const { nonPageHeaderRules, NON_PAGE_CONTENT_SECURITY_POLICY } = await import("./securityHeaders.js");
+    const rules = nonPageHeaderRules();
+    expect(rules.map((rule) => rule.source)).toEqual(["/api/:path*", "/_next/:path*", "/img/:path*"]);
+    for (const rule of rules) {
+      expect(rule.headers).toEqual([{ key: "Content-Security-Policy", value: NON_PAGE_CONTENT_SECURITY_POLICY }]);
+    }
+    expect(NON_PAGE_CONTENT_SECURITY_POLICY).toContain("default-src 'none'");
+    expect(NON_PAGE_CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'");
+  });
+});

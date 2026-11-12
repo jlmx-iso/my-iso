@@ -326,8 +326,11 @@ wrangler secret put CSP_MODE --env staging     # enter: report-only
 # production: the same with --env=""; or add CSP_MODE = "report-only" to [vars] and deploy
 ```
 
-The change applies to the next request. Delete the variable (or set it to
-`enforce`) to enforce the policy again.
+Changing a variable or secret makes Cloudflare roll out a new Worker version,
+which serves requests within seconds; no code deploy is needed. Delete the
+variable (or set it to `enforce`) to enforce the policy again. The value is
+trimmed and lower-cased; anything other than `report-only` enforces, so a
+typo can't turn the policy off or stop the Worker from starting.
 
 ## Rollback
 
