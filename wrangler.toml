@@ -43,15 +43,22 @@ database_id = "aad00920-a190-4144-b414-c17ff5388755"
 # SQL files applied in order by `wrangler d1 migrations apply` (docs/DATABASE.md).
 migrations_dir = "migrations"
 
-# Admits counted profile and event views (Pro insights) without writing to
-# D1: per signed-in member or per client address, 20 a minute (per
-# Cloudflare location). Must match VIEW_RATE_LIMIT in
-# src/server/_lib/viewCounter.ts. `namespace_id` is any integer unique to
-# this account; staging uses its own.
+# Admit counted profile and event views (Pro insights) without writing to
+# D1 (docs/DATABASE.md, "View counters"). VIEW_COUNT_LIMIT: per signed-in
+# member or per client address, 20 a minute. VIEW_ANON_LIMIT: all signed-out
+# views together, 120 a minute. Both per Cloudflare location, and must match
+# VIEW_RATE_LIMIT and VIEW_ANON_LIMIT in src/server/_lib/viewCounter.ts (a
+# test checks). `namespace_id` is any integer unique to this account; staging
+# uses its own.
 [[ratelimits]]
 name = "VIEW_COUNT_LIMIT"
 namespace_id = "1001"
 simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "VIEW_ANON_LIMIT"
+namespace_id = "1003"
+simple = { limit = 120, period = 60 }
 
 # Scheduled jobs. Each expression must have an entry in CRON_JOBS
 # (src/worker/scheduled.ts); a test fails when they drift.
@@ -113,6 +120,11 @@ migrations_dir = "migrations"
 name = "VIEW_COUNT_LIMIT"
 namespace_id = "1002"
 simple = { limit = 20, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "VIEW_ANON_LIMIT"
+namespace_id = "1004"
+simple = { limit = 120, period = 60 }
 
 [env.staging.observability.logs]
 enabled = true

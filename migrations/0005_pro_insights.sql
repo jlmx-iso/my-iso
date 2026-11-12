@@ -3,7 +3,7 @@
 -- One row per (profile owner, UTC day, source) and per (event, UTC day),
 -- each holding a count that src/server/_lib/viewCounter.ts raises with a
 -- single atomic upsert (INSERT ... ON CONFLICT DO UPDATE SET count = count + 1).
--- No viewer is ever stored: these tables cannot say who looked, only how
+-- No viewer is stored with a count: these tables cannot say who looked, only how
 -- often and (for profiles) from which part of the app.
 --
 -- Pro status itself needs no column: search ranks with the entitlement rule
@@ -11,7 +11,7 @@
 -- (src/server/_billing/proStatus.ts), so a lapsed subscription stops ranking
 -- the moment its access ends.
 --
--- Additive only (two new tables and their indexes): safe to apply before the code that uses
+-- Additive only (three new tables and their indexes): safe to apply before the code that uses
 -- them is deployed.
 
 -- CreateTable
@@ -40,3 +40,15 @@ CREATE INDEX "ProfileView_day_idx" ON "ProfileView"("day");
 
 -- CreateIndex
 CREATE INDEX "EventView_day_idx" ON "EventView"("day");
+
+-- CreateTable
+-- Signed-in viewers already counted today (an opaque keyed hash of viewer,
+-- target and day), so a member counts once a day on any device. Rows of past
+-- days are deleted by the purge-expired job.
+CREATE TABLE "ViewSeen" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "day" TEXT NOT NULL
+);
+
+-- CreateIndex
+CREATE INDEX "ViewSeen_day_idx" ON "ViewSeen"("day");

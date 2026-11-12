@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
@@ -8,9 +11,12 @@ import {
   encodeViewCookie,
   isLikelyBot,
   memoryViewLimiter,
+  memoryViewLimiters,
+  purgeViewSeen,
   secondsToEndOfDay,
   targetToken,
   utcDay,
+  VIEW_ANON_LIMIT,
   VIEW_COOKIE_MAX_TARGETS,
   VIEW_RATE_LIMIT,
   viewSourceFromReferer,
@@ -70,8 +76,21 @@ describe("viewSourceFromReferer", () => {
     [`${ORIGIN}/photographer/olive`, "profile"],
     [`${ORIGIN}/app/searchlight`, "other"],
     [`${ORIGIN}/`, "other"],
+    // Compared as the router serves it: case, escapes and a trailing slash
+    // do not change the answer.
+    ["HTTPS://MyISO.app/App/Search", "search"],
+    [`${ORIGIN}/app/%73earch?q=x`, "search"],
+    [`${ORIGIN}/app/search/`, "search"],
+    [`${ORIGIN}/photographer/%40Olive`, "profile"],
+    [`${ORIGIN}/app/%E0%A4%A`, "other"],
+    [`${ORIGIN}:443/app/events/1`, "event"],
   ] as const)("%j is %s", (referer, source) => {
     expect(viewSourceFromReferer(referer, ORIGIN)).toBe(source);
+  });
+
+  it("knows only the configured origin: the same path on another host is external", () => {
+    expect(viewSourceFromReferer("https://preview.myiso.app/app/search", ORIGIN)).toBe("external");
+    expect(viewSourceFromReferer("http://myiso.app/app/search", ORIGIN)).toBe("external");
   });
 });
 
@@ -126,6 +145,17 @@ describe("memoryViewLimiter", () => {
     clock = 1000;
     expect((await limiter.limit({ key: "a" })).success).toBe(true);
   });
+
+  it("stands in for both bindings with the limits wrangler.toml gives them", () => {
+    const toml = readFileSync(path.resolve(__dirname, "../../../wrangler.toml"), "utf8");
+    const limitOf = (name: string) =>
+      [...toml.matchAll(new RegExp(`name = "${name}"\\s+namespace_id = "\\d+"\\s+simple = \\{ limit = (\\d+), period = (\\d+) \\}`, "g"))].map(
+        (match) => ({ limit: Number(match[1]), periodSeconds: Number(match[2]) }),
+      );
+    // Production and staging.
+    expect(limitOf("VIEW_COUNT_LIMIT")).toEqual([VIEW_RATE_LIMIT, VIEW_RATE_LIMIT]);
+    expect(limitOf("VIEW_ANON_LIMIT")).toEqual([VIEW_ANON_LIMIT, VIEW_ANON_LIMIT]);
+  });
 });
 
 describe("countView against SQLite", () => {
@@ -165,7 +195,7 @@ describe("countView against SQLite", () => {
   const total = async () => (await testDb.db.profileView.aggregate({ _sum: { count: true } }))._sum.count ?? 0;
 
   it("two identical requests from one browser count once", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const first = await countView(testDb.db, limiter, profileView());
     expect(first.outcome).toBe("counted");
     const second = await countView(testDb.db, limiter, profileView({ cookie: first.cookie }));
@@ -174,7 +204,7 @@ describe("countView against SQLite", () => {
   });
 
   it("counts again the next UTC day", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const first = await countView(testDb.db, limiter, profileView());
     const nextDay = await countView(testDb.db, limiter, profileView({ cookie: first.cookie, now: new Date("2030-06-16T08:00:00Z") }));
     expect(nextDay.outcome).toBe("counted");
@@ -182,7 +212,7 @@ describe("countView against SQLite", () => {
   });
 
   it("a cookie-less loop from one address writes at most the rate limit", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const execute = vi.spyOn(testDb.db, "$executeRaw");
     const outcomes = [];
     for (let index = 0; index < 100; index += 1) {
@@ -194,15 +224,56 @@ describe("countView against SQLite", () => {
     expect(await total()).toBe(VIEW_RATE_LIMIT.limit);
   });
 
+  it("a member counts once a day per target on any device, and the database learns no name", async () => {
+    const limiter = memoryViewLimiters();
+    // Two devices: neither sends the other's cookie.
+    expect((await countView(testDb.db, limiter, profileView())).outcome).toBe("counted");
+    const otherDevice = await countView(testDb.db, limiter, profileView({ source: "direct" }));
+    expect(otherDevice.outcome).toBe("already_counted");
+    // The second device is told too, so it does not ask again today.
+    expect(await decodeViewCookie(otherDevice.cookie, DAY)).toEqual([await targetToken({ id: owner.id, kind: "profile" })]);
+    expect(await total()).toBe(1);
+
+    const seen = await testDb.raw.viewSeen.findMany();
+    expect(seen).toEqual([{ day: DAY, key: expect.stringMatching(/^[0-9a-f]{32}$/) }]);
+    expect(JSON.stringify(seen)).not.toContain(viewer.id);
+    expect(JSON.stringify(seen)).not.toContain(owner.id);
+
+    // Another member, and the next day, count again.
+    const someoneElse = await createTestUser(testDb.db);
+    expect((await countView(testDb.db, limiter, profileView({ viewerId: someoneElse.id }))).outcome).toBe("counted");
+    expect((await countView(testDb.db, limiter, profileView({ now: new Date("2030-06-16T09:00:00Z") }))).outcome).toBe("counted");
+    expect(await total()).toBe(3);
+
+    // Yesterday's keys go; today's stay.
+    expect(await purgeViewSeen(testDb.db, new Date("2030-06-16T09:00:00Z"))).toBe(2);
+    expect(await testDb.raw.viewSeen.count()).toBe(1);
+  });
+
+  it("all signed-out views together write at most the anonymous cap, however many addresses send them", async () => {
+    const limiter = memoryViewLimiters();
+    const execute = vi.spyOn(testDb.db, "$executeRaw");
+    let counted = 0;
+    for (let index = 0; index < VIEW_ANON_LIMIT.limit + 30; index += 1) {
+      const result = await countView(testDb.db, limiter, profileView({ clientIp: `198.51.${Math.floor(index / 250)}.${index % 250}`, viewerId: null }));
+      if (result.outcome === "counted") counted += 1;
+    }
+    expect(counted).toBe(VIEW_ANON_LIMIT.limit);
+    expect(execute).toHaveBeenCalledTimes(VIEW_ANON_LIMIT.limit);
+    // Members are not held back by it.
+    expect((await countView(testDb.db, limiter, profileView())).outcome).toBe("counted");
+  });
+
   it("a refused request touches no table at all", async () => {
-    const refuseAll = { limit: async () => ({ success: false }) };
+    const refuse = { limit: async () => ({ success: false }) };
+    const refuseAll = { anonymous: refuse, perClient: refuse };
     const find = vi.spyOn(testDb.db.photographer, "findFirst");
     expect((await countView(testDb.db, refuseAll, profileView())).outcome).toBe("rate_limited");
     expect(find).not.toHaveBeenCalled();
   });
 
   it("does not count the signed-in owner, and remembers that in the cookie", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const own = await countView(testDb.db, limiter, profileView({ viewerId: owner.id }));
     expect(own.outcome).toBe("self");
     expect((await countView(testDb.db, limiter, profileView({ cookie: own.cookie, viewerId: owner.id }))).outcome).toBe(
@@ -212,7 +283,7 @@ describe("countView against SQLite", () => {
   });
 
   it("the owner signed out with the same visitor cookie is not counted again that day", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const signedIn = await countView(testDb.db, limiter, profileView({ viewerId: owner.id }));
     const signedOut = await countView(testDb.db, limiter, profileView({ cookie: signedIn.cookie, viewerId: null }));
     expect(signedOut.outcome).toBe("already_counted");
@@ -220,7 +291,7 @@ describe("countView against SQLite", () => {
   });
 
   it("does not count bots, nor a profile that does not exist", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     expect((await countView(testDb.db, limiter, profileView({ userAgent: "Googlebot/2.1" }))).outcome).toBe("bot");
     expect((await countView(testDb.db, limiter, profileView({ target: { id: "nobody", kind: "profile" } }))).outcome).toBe("not_found");
     expect(await total()).toBe(0);
@@ -231,11 +302,11 @@ describe("countView against SQLite", () => {
       Array.from({ length: VIEW_COOKIE_MAX_TARGETS }, (_, index) => targetToken({ id: `p${index}`, kind: "profile" })),
     );
     const full = await encodeViewCookie(DAY, tokens);
-    expect((await countView(testDb.db, memoryViewLimiter(), profileView({ cookie: full }))).outcome).toBe("cookie_full");
+    expect((await countView(testDb.db, memoryViewLimiters(), profileView({ cookie: full }))).outcome).toBe("cookie_full");
   });
 
   it("counts event views per (event, day) for signed-in members only", async () => {
-    const limiter = memoryViewLimiter();
+    const limiter = memoryViewLimiters();
     const event = (overrides: Partial<ViewRequest> = {}) => profileView({ target: { id: eventId, kind: "event" }, ...overrides });
     expect((await countView(testDb.db, limiter, event({ viewerId: null }))).outcome).toBe("sign_in_required");
     const first = await countView(testDb.db, limiter, event());
@@ -253,7 +324,7 @@ describe("countView against SQLite", () => {
   });
 
   it("counts concurrent views from different browsers without losing any", async () => {
-    const limiter = memoryViewLimiter(100);
+    const limiter = memoryViewLimiters();
     await Promise.all(Array.from({ length: 20 }, (_, index) => countView(testDb.db, limiter, profileView({ clientIp: `198.51.100.${index}`, viewerId: null }))));
     expect(await total()).toBe(20);
   });

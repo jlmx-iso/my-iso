@@ -9,25 +9,32 @@ import { keyedHash } from "~/server/_utils/hash";
  *
  * Privacy, by construction:
  * - One row per (profile, UTC day, source) or (event, UTC day) holding a
- *   count. Nothing about the viewer is stored in the database: not an id,
- *   an address, a user agent or the referring URL. The source is a fixed
+ *   count. Nothing about the viewer is stored with it: not an id, an
+ *   address, a user agent or the referring URL. The source is a fixed
  *   category derived from the PATH of a referrer on this site; any other
  *   site is just "external".
  * - The dedupe cookie (VIEW_COOKIE) lives only in the viewer's browser and
  *   holds the UTC day and short keyed hashes of what that browser has
  *   already been counted for today, signed so it cannot be forged. No
  *   identity, no profile ids in the clear; it expires at the end of the day.
+ * - For a signed-in viewer, "ViewSeen" holds one opaque keyed hash of
+ *   (viewer, target, day) until the day is over (purge-expired deletes it):
+ *   it can confirm a guess with the server's secret, never list who looked.
  *
  * Counting, bounded:
  * - A view is counted by a request the page makes once it is on screen
  *   (POST /api/views), so crawlers that do not run JavaScript never count.
- * - At most once per browser, per target, per UTC day (the cookie).
+ * - At most once per viewer, per target, per UTC day: per signed-in member
+ *   (ViewSeen, on any device), and per browser (the cookie, which also
+ *   covers signed-out visits).
  * - Never the owner's own (signed in), never a bot user agent.
- * - Every write is first admitted by a rate limiter that writes nothing to
- *   the database (Cloudflare's Rate Limiting binding; in-memory off
- *   Cloudflare), per signed-in member or, signed out, per client address.
- *   A client that discards or replays the cookie is still held to that
- *   limit, so anonymous traffic cannot cause unbounded writes.
+ * - Every write is first admitted by rate limiters that write nothing to
+ *   the database (Cloudflare's Rate Limiting binding; in memory off
+ *   Cloudflare): per signed-in member or, signed out, per client address
+ *   (an IPv6 /64), and for signed-out views also one cap shared by all of
+ *   them. A client that discards or replays the cookie is held to those
+ *   limits, so anonymous traffic can write at most VIEW_ANON_LIMIT counts a
+ *   period per Cloudflare location, whatever addresses it uses.
  *
  * Each count is one atomic statement (INSERT ... ON CONFLICT DO UPDATE SET
  * count = count + 1): concurrent views never lose an increment, and D1 needs
@@ -40,8 +47,18 @@ export const VIEW_COOKIE = "iso_views";
 /** How many targets one browser is counted for per day; beyond that, no more counts. */
 export const VIEW_COOKIE_MAX_TARGETS = 40;
 
-/** Counted views admitted per minute per member or client address (per Cloudflare location). */
+/**
+ * Counted views admitted per minute per member or client address (per
+ * Cloudflare location). wrangler.toml's VIEW_COUNT_LIMIT must say the same.
+ */
 export const VIEW_RATE_LIMIT = { limit: 20, periodSeconds: 60 } as const;
+
+/**
+ * Signed-out views admitted per minute in all, whoever sends them (per
+ * Cloudflare location): the hard bound on what anonymous traffic can write.
+ * wrangler.toml's VIEW_ANON_LIMIT must say the same.
+ */
+export const VIEW_ANON_LIMIT = { limit: 120, periodSeconds: 60 } as const;
 
 /**
  * User agents that announce automation. Deliberately simple: it only has
@@ -75,9 +92,10 @@ export function viewSourceFromReferer(referer: string | null | undefined, ownOri
   } catch {
     return "direct";
   }
+  // URL lowercases the scheme and host and drops default ports, on both sides.
   if (url.origin !== new URL(ownOrigin).origin) return "external";
 
-  const path = url.pathname;
+  const path = normalizedPath(url.pathname);
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
   if (under("/app/search")) return "search";
   if (under("/app/events")) return "event";
@@ -86,6 +104,18 @@ export function viewSourceFromReferer(referer: string | null | undefined, ownOri
   if (under("/app/bookings")) return "bookings";
   if (under("/app/photographer") || under("/photographer") || under("/app/profile")) return "profile";
   return "other";
+}
+
+/** A path compared as the router would serve it: percent-decoded, lower case, no trailing slash. */
+function normalizedPath(pathname: string): string {
+  let path = pathname;
+  try {
+    path = decodeURIComponent(pathname);
+  } catch {
+    // A malformed escape: compare it as written.
+  }
+  path = path.toLowerCase();
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +164,9 @@ export function secondsToEndOfDay(now: Date): number {
 /** Cloudflare's Rate Limiting binding, or a stand-in with the same shape. */
 export type ViewLimiter = { limit: (options: { key: string }) => Promise<{ success: boolean }> };
 
+/** The two limiters countView consults: per member or address, and one for all signed-out views. */
+export type ViewLimiters = { perClient: ViewLimiter; anonymous: ViewLimiter };
+
 /**
  * A fixed-window limiter in this process's memory, for `next dev`, `next
  * start` and tests, where the Cloudflare binding does not exist. Bounded:
@@ -159,6 +192,17 @@ export function memoryViewLimiter(
   };
 }
 
+/** In-memory stand-ins for both limiters, with the production limits. */
+export function memoryViewLimiters(now: () => number = Date.now): ViewLimiters {
+  return {
+    anonymous: memoryViewLimiter(VIEW_ANON_LIMIT.limit, VIEW_ANON_LIMIT.periodSeconds * 1000, now),
+    perClient: memoryViewLimiter(VIEW_RATE_LIMIT.limit, VIEW_RATE_LIMIT.periodSeconds * 1000, now),
+  };
+}
+
+/** The key every signed-out view shares in the anonymous limiter. */
+const ANONYMOUS_KEY = "anonymous";
+
 // ---------------------------------------------------------------------------
 // Counting
 // ---------------------------------------------------------------------------
@@ -174,7 +218,7 @@ export type ViewRequest = {
   source: ViewSource;
   /** Signed-in member, or null. */
   viewerId: string | null;
-  /** The client address (already trusted per clientIp.ts); keys the limiter when signed out. */
+  /** The client address (already trusted, an IPv6 address as its /64, per clientIp.ts); keys the limiter when signed out. */
   clientIp: string;
   userAgent: string | null;
   /** The VIEW_COOKIE value the browser sent. */
@@ -199,11 +243,23 @@ export type ViewResult = {
 };
 
 /**
- * Decides whether this request is a new view and, if so, counts it. Writes
- * to the database only when it returns "counted", and only after the
- * limiter admitted it.
+ * Whether `viewerId` is seen for `target` on `day` for the first time:
+ * inserts the opaque (viewer, target, day) key and says whether it was new.
+ * One statement, so two devices racing insert it once.
  */
-export async function countView(db: ViewCounterDb, limiter: ViewLimiter, request: ViewRequest): Promise<ViewResult> {
+async function firstSeenToday(db: ViewCounterDb, viewerId: string, target: ViewTarget, day: string): Promise<boolean> {
+  const key = await keyedHash("view-seen", `${viewerId}|${target.kind}:${target.id}|${day}`);
+  const inserted = await db.$executeRaw(Prisma.sql`
+    INSERT INTO "ViewSeen" ("key", "day") VALUES (${key}, ${day}) ON CONFLICT ("key") DO NOTHING`);
+  return inserted > 0;
+}
+
+/**
+ * Decides whether this request is a new view and, if so, counts it. Reads
+ * or writes the database only after the limiters admitted it, and writes a
+ * count only when it returns "counted".
+ */
+export async function countView(db: ViewCounterDb, limiters: ViewLimiters, request: ViewRequest): Promise<ViewResult> {
   const now = request.now ?? new Date();
   const day = utcDay(now);
   const unchanged = (outcome: ViewOutcome): ViewResult => ({ cookie: null, outcome });
@@ -218,8 +274,11 @@ export async function countView(db: ViewCounterDb, limiter: ViewLimiter, request
   if (tokens.length >= VIEW_COOKIE_MAX_TARGETS) return unchanged("cookie_full");
 
   // Before any database access: a refused request costs nothing.
-  const limiterKey = request.viewerId ? `member:${request.viewerId}` : `ip:${await keyedHash("view-ip", request.clientIp)}`;
-  if (!(await limiter.limit({ key: limiterKey })).success) return unchanged("rate_limited");
+  const clientKey = request.viewerId ? `member:${request.viewerId}` : `ip:${await keyedHash("view-ip", request.clientIp)}`;
+  if (!(await limiters.perClient.limit({ key: clientKey })).success) return unchanged("rate_limited");
+  if (!request.viewerId && !(await limiters.anonymous.limit({ key: ANONYMOUS_KEY })).success) {
+    return unchanged("rate_limited");
+  }
 
   const ownerId =
     request.target.kind === "profile"
@@ -230,6 +289,10 @@ export async function countView(db: ViewCounterDb, limiter: ViewLimiter, request
 
   const cookie = await encodeViewCookie(day, [...tokens, token]);
   if (ownerId === request.viewerId) return { cookie, outcome: "self" };
+  // A member counts once a day per target on any device, not once per browser.
+  if (request.viewerId && !(await firstSeenToday(db, request.viewerId, request.target, day))) {
+    return { cookie, outcome: "already_counted" };
+  }
 
   if (request.target.kind === "profile") {
     await db.$executeRaw(Prisma.sql`
@@ -241,4 +304,9 @@ export async function countView(db: ViewCounterDb, limiter: ViewLimiter, request
       ON CONFLICT ("eventId", "day") DO UPDATE SET "count" = "count" + 1`);
   }
   return { cookie, outcome: "counted" };
+}
+
+/** Deletes the ViewSeen keys of days before `now`'s UTC day: they decide nothing any more. */
+export async function purgeViewSeen(db: Pick<ViewCounterDb, "$executeRaw">, now: Date): Promise<number> {
+  return db.$executeRaw(Prisma.sql`DELETE FROM "ViewSeen" WHERE "day" < ${utcDay(now)}`);
 }

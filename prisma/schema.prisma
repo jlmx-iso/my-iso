@@ -631,3 +631,15 @@ model EventView {
   @@id([eventId, day])
   @@index([day])
 }
+
+// Which signed-in members were already counted today for a profile or event
+// (src/server/_lib/viewCounter.ts), so a member counts once a day per target
+// on any device. `key` is an HMAC (AUTH_SECRET) of viewer, target and day:
+// opaque, it can confirm a guess with the secret but never list who looked.
+// Rows of past days are deleted by the purge-expired job.
+model ViewSeen {
+  key String @id
+  day String
+
+  @@index([day])
+}

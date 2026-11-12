@@ -6,7 +6,8 @@ export interface CloudflareEnv {
   ASSETS: Fetcher;
   CHAT_ROOM: DurableObjectNamespace<ChatRoom>;
   DB: D1Database;
-  /** Admits counted page views (wrangler.toml `ratelimits`); absent off Cloudflare. */
+  /** Admit counted page views (wrangler.toml `ratelimits`); absent off Cloudflare. */
+  VIEW_ANON_LIMIT?: RateLimit;
   VIEW_COUNT_LIMIT?: RateLimit;
 
   // Variables and secrets the Worker entry itself reads (worker.ts). The

@@ -114,10 +114,16 @@ export const photographerRouter = createTRPCRouter({
   getByUsername: publicProcedure
     .input(z.object({ username: z.string().trim().min(1).max(64) }))
     .query(async ({ ctx, input }) => {
-      // Tolerate "@name" and capitals in the URL; stored handles are
-      // lowercase without "@" (older ones are matched as typed).
-      const bare = input.username.replace(/^@/, "");
-      const handles = [...new Set([input.username, bare, bare.toLowerCase()])];
+      // Tolerate "@name", "%40name" and capitals in the URL; stored handles
+      // are lowercase without "@" (older ones are matched as typed).
+      let typed = input.username;
+      try {
+        typed = decodeURIComponent(input.username);
+      } catch {
+        // A malformed escape: match it as typed.
+      }
+      const bare = typed.trim().replace(/^@/, "");
+      const handles = [...new Set([input.username, typed, bare, bare.toLowerCase()])];
       const photographer = await ctx.db.photographer.findFirst({
         select: publicPhotographerSelect,
         where: { user: { handle: { in: handles } } },

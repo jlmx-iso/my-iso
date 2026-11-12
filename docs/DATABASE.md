@@ -166,55 +166,75 @@ What follows from Prisma not knowing about it:
 (`src/server/_lib/viewCounter.ts`), so concurrent views never lose an
 increment and nothing needs a transaction. There is no viewer column, by
 design: these tables cannot say who looked. `source` is a fixed category
-(`src/_utils/viewSources.ts`) derived from the referrer's path on this site;
-other sites are just `external`. Rows go when the profile's user or the
-event is deleted (`ON DELETE CASCADE`).
+(`src/_utils/viewSources.ts`) derived from the referrer's path on this site
+(percent-decoded and lower-cased before it is compared); other sites are
+just `external`. Rows go when the profile's user or the event is deleted
+(`ON DELETE CASCADE`).
 
 ### What counts as a view, and why anonymous traffic cannot flood D1
 
 A profile or event page renders `ViewBeacon`, which, once the page is on
 screen, sends `POST /api/views` with the target and the source (the server
 worked the source out from the page request's `Referer`, compared with
-`NEXT_PUBLIC_BASE_URL`'s origin only). `countView` in
-`src/server/_lib/viewCounter.ts` then decides, in this order, and touches
-the database only at the end:
+`NEXT_PUBLIC_BASE_URL`'s origin only, never a forwarded host). The endpoint
+accepts only requests whose `Origin` is that origin. `countView` then
+decides, in this order, and touches the database only at the end:
 
 1. A bot user agent, or an event view by someone signed out: not counted.
 2. **Once per browser, per target, per UTC day.** The `iso_views` cookie
-   (HttpOnly, SameSite=Lax, Secure on https, path `/api/views`, expires at
-   the end of the UTC day) lists what this browser has been counted for
-   today: the day, and up to 40 twelve-character keyed hashes
-   (HMAC with `AUTH_SECRET`) of "profile:<id>" / "event:<id>", signed so a
-   client cannot forge a list. It holds **no identity**: no user id, no
-   random visitor id, no profile id in the clear. A target already listed
-   is not counted and nothing is written; a full list stops counting for
-   the day.
-3. **A limiter that writes nothing to D1**: Cloudflare's Rate Limiting
-   binding `VIEW_COUNT_LIMIT` (`wrangler.toml` `[[ratelimits]]`, 20 per 60
-   seconds), keyed by the signed-in member's id or, signed out, a keyed
-   hash of the client address. Off Cloudflare (`next dev`, tests) an
-   in-memory limiter with the same shape stands in.
+   (below) lists what this browser has been counted for today. A target
+   already listed is not counted and nothing is read or written; a full
+   list (40) stops counting for the day.
+3. **Limiters that write nothing to D1**: Cloudflare's Rate Limiting
+   bindings (`wrangler.toml` `[[ratelimits]]`). `VIEW_COUNT_LIMIT`, 20 a
+   minute, keyed by the signed-in member's id or, signed out, a keyed hash
+   of the client address (an IPv6 address by its /64). Signed out, also
+   `VIEW_ANON_LIMIT`, 120 a minute shared by every signed-out view. Off
+   Cloudflare (`next dev`, tests) in-memory limiters with the same limits
+   stand in (`memoryViewLimiters`; a test checks the numbers against
+   `wrangler.toml`).
 4. The target must exist (a read), and is not the signed-in viewer's own.
-5. One upsert.
+5. **Once per member, per target, per UTC day, on any device**: for a
+   signed-in viewer, `INSERT ... ON CONFLICT DO NOTHING` into `ViewSeen` of
+   an HMAC (`AUTH_SECRET`) of viewer, target and day; a row that already
+   existed means "already counted".
+6. One upsert of the count.
 
-So a client that ignores or replays the cookie (curl in a loop) is still
-held to 20 counted views a minute per address per Cloudflare location,
-and every refused request costs no database access at all. Reloads,
-back-navigation and a second visit the same day are not counted again in
-the same browser.
+So a client that ignores or replays the cookie (curl in a loop) is held to
+20 counted views a minute per address, and all signed-out traffic together
+to 120 a minute, per Cloudflare location; a refused request costs no
+database access at all. A signed-in member can cause at most 20 writes of
+each kind a minute. Reloads, back-navigation and a second visit the same
+day are not counted again.
+
+**The cookie.** `iso_views`: HttpOnly, SameSite=Lax, Secure on https, path
+`/api/views` (sent nowhere else), expires at the end of the UTC day. Its
+value is the day, up to 40 twelve-character keyed hashes of
+"profile:<id>" / "event:<id>", and a signature, so a client cannot forge a
+list. It holds **no identity**: no user id, no visitor id, no profile id in
+the clear, nothing that lasts past the day or links one day to the next. It
+is set only by a page view, and only to stop that same view counting twice:
+a strictly necessary cookie, not tracking, so it needs no consent and is set
+whatever the analytics consent says.
+
+**`ViewSeen`.** `key` (HMAC of viewer id, target and day) and `day`. With
+the server's secret a row can confirm a guess ("did member X look at Y
+today?"); it cannot be listed back into names, and nothing joins it to the
+counts. It is needed only for the current day: the daily `purge-expired` job deletes
+rows of earlier days.
 
 Limits, accepted:
 
-- The binding is per Cloudflare location and eventually consistent, and
-  its period is 10 or 60 seconds: a distributed client (many addresses)
-  can still add views, at most 20 a minute per address. These are
-  insight numbers, not money.
-- Dedupe is per browser: one member on two devices, or someone clearing
-  cookies, counts again (within the limiter). Signed-in members are not
-  deduped across devices, because that would need a write per view.
-- The owner viewing their own profile while signed out cannot be told
-  apart from anyone else. Signed in, they are never counted; the cookie
-  then also stops their signed-out visits in the same browser that day.
+- The bindings are per Cloudflare location and eventually consistent, and
+  their period is 10 or 60 seconds: a client spread over many locations
+  can add up to 120 signed-out views a minute in each. These are insight
+  numbers, not money. When the anonymous cap is spent, real signed-out
+  views in that minute and location are not counted either.
+- Signed out, dedupe is per browser: someone clearing cookies, or a
+  cookie-less client within the limits, counts again.
+- The owner viewing their own profile while signed out, in a browser where
+  they never visited it signed in that day, cannot be told apart from
+  anyone else, nor can a second account. Signed in, they are never counted.
 
 ## Timestamps are text: one spelling
 

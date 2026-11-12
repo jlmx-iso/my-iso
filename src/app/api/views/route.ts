@@ -5,7 +5,14 @@ import { SITE_URL } from "~/_lib/site";
 import { logger } from "~/_utils";
 import { VIEW_SOURCES } from "~/_utils/viewSources";
 import { auth } from "~/auth";
-import { countView, memoryViewLimiter, secondsToEndOfDay, VIEW_COOKIE, type ViewLimiter } from "~/server/_lib/viewCounter";
+import {
+  countView,
+  memoryViewLimiters,
+  secondsToEndOfDay,
+  VIEW_COOKIE,
+  type ViewLimiter,
+  type ViewLimiters,
+} from "~/server/_lib/viewCounter";
 import { getClientIp } from "~/server/_utils/clientIp";
 import { db } from "~/server/db";
 
@@ -17,18 +24,27 @@ const bodySchema = z.object({
   source: z.enum(VIEW_SOURCES),
 });
 
-/** Off Cloudflare (next dev, next start) the limiter lives in this process. */
-const fallbackLimiter = memoryViewLimiter();
+/**
+ * Off Cloudflare (next dev, next start, tests) the limiters live in this
+ * process: bounded maps that forget each window, never a store that must
+ * survive between requests.
+ */
+const fallbackLimiters = memoryViewLimiters();
 
-/** Cloudflare's Rate Limiting binding (wrangler.toml `ratelimits`), else the in-process one. */
-function limiter(): ViewLimiter {
+type LimiterBindings = { VIEW_ANON_LIMIT?: ViewLimiter; VIEW_COUNT_LIMIT?: ViewLimiter };
+
+/** Cloudflare's Rate Limiting bindings (wrangler.toml `ratelimits`), else the in-process ones. */
+function viewLimiters(): ViewLimiters {
+  let bindings: LimiterBindings = {};
   try {
-    const binding = (getCloudflareContext().env as { VIEW_COUNT_LIMIT?: ViewLimiter }).VIEW_COUNT_LIMIT;
-    if (binding) return binding;
+    bindings = getCloudflareContext().env as LimiterBindings;
   } catch {
     // Not running on Cloudflare.
   }
-  return fallbackLimiter;
+  return {
+    anonymous: bindings.VIEW_ANON_LIMIT ?? fallbackLimiters.anonymous,
+    perClient: bindings.VIEW_COUNT_LIMIT ?? fallbackLimiters.perClient,
+  };
 }
 
 function noContent(cookie?: string | null): Response {
@@ -75,7 +91,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const session = await auth();
-    const result = await countView(db, limiter(), {
+    const result = await countView(db, viewLimiters(), {
       clientIp: getClientIp(request.headers),
       cookie: cookieValue(request.headers.get("cookie")),
       source: parsed.data.source,
