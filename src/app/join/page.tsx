@@ -109,7 +109,7 @@ function JoinContent() {
       code: otpCode,
       redirect: false,
     });
-    if (result?.ok) {
+    if (result?.ok && !result.error) {
       // Full page load (not router.push) so the server-rendered layout picks up
       // the session cookie that signIn() just set.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- see above

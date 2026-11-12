@@ -73,7 +73,7 @@ export default function LoginForm({ callbackUrl }: LoginFormProps) {
       code,
       redirect: false,
     });
-    if (result?.ok) {
+    if (result?.ok && !result.error) {
       // Full page load (not router.push) so the server-rendered layout picks up
       // the session cookie that signIn() just set.
        

@@ -29,5 +29,10 @@ export function sanitizeCallbackUrl(
   }
   if (url.origin !== PLACEHOLDER_ORIGIN) return fallback;
 
-  return `${url.pathname}${url.search}${url.hash}`;
+  // Dot-segment removal can itself produce a protocol-relative path
+  // (`/.//host` normalises to `//host`), so the result is checked again.
+  const result = `${url.pathname}${url.search}${url.hash}`;
+  if (result.startsWith("//") || url.pathname.includes("\\")) return fallback;
+
+  return result;
 }
