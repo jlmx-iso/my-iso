@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   backupPath,
   baselineSchema,
+  bookmarkPath,
   classifyDatabase,
   compareSchemas,
   describeDifference,
   normaliseSql,
+  parseBookmark,
   parseUpgradeArgs,
   parseWranglerJson,
   preBaselineSchema,
+  restoreCommand,
   schemaOfSql,
   WRANGLER_ENV_ARGS,
 } from "./legacyDb.mjs";
@@ -43,6 +46,36 @@ describe("backupPath", () => {
   it("is under backups/, named by environment and time, without colons", () => {
     expect(backupPath("staging", new Date("2026-11-12T09:08:07.006Z"))).toBe(
       "backups/staging-2026-11-12T09-08-07-006Z.sql",
+    );
+  });
+});
+
+describe("Time Travel bookmark", () => {
+  it("is saved next to the backup", () => {
+    expect(bookmarkPath("backups/staging-2026-11-12T09-08-07-006Z.sql")).toBe(
+      "backups/staging-2026-11-12T09-08-07-006Z.bookmark",
+    );
+  });
+
+  it("is read from `wrangler d1 time-travel info --json`, past any log lines", () => {
+    const json = JSON.stringify({ bookmark: "00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683" }, null, 2);
+    expect(parseBookmark(json)).toBe("00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683");
+    expect(parseBookmark(`Some notice\n${json}`)).toBe("00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683");
+  });
+
+  it("refuses output without a usable bookmark: no upgrade without a way back", () => {
+    expect(() => parseBookmark("Time Traveling...")).toThrow(/No JSON/);
+    expect(() => parseBookmark("{}")).toThrow(/No bookmark/);
+    expect(() => parseBookmark('{"bookmark": ""}')).toThrow(/No bookmark/);
+    expect(() => parseBookmark('{"bookmark": "a b; rm -rf"}')).toThrow(/No bookmark/);
+  });
+
+  it("gives the restore command wrangler documents, per environment", () => {
+    expect(restoreCommand("staging", "abc-123")).toBe(
+      "npx wrangler d1 time-travel restore DB --bookmark=abc-123 --env staging",
+    );
+    expect(restoreCommand("production", "abc-123")).toBe(
+      "npx wrangler d1 time-travel restore DB --bookmark=abc-123 --env=",
     );
   });
 });

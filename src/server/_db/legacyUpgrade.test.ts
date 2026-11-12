@@ -8,11 +8,11 @@ import {
   baselineSchema,
   BASELINE_MIGRATION,
   compareSchemas,
-  DUPLICATE_COUNTS_SQL,
   migrationFiles,
   MIGRATIONS_DIR,
   PRE_BASELINE_SCHEMA_FILE,
   REPO_ROOT,
+  ROWS_REMOVED_SQL,
   schemaOfDatabase,
   schemaOfSql,
   UPGRADE_FILE,
@@ -41,10 +41,13 @@ const SEEDED_SAMPLES = {
 
 /** Rows added on purpose: each clashes with a unique index the baseline adds. */
 const DUPLICATES = `
+-- Three rows of one pair: two go. el_other is in the +00:00 form but without
+-- milliseconds, which is not Prisma's exact form either.
 INSERT INTO "EventLike" (id, createdAt, updatedAt, eventId, userId, isDeleted) VALUES
   ('el_old_deleted', '2026-03-01T09:00:00.000Z', '2026-03-01T09:00:00.000Z', 'seed_e1', 'seed_u2', 1),
+  ('el_old_deleted2', '2026-03-01T08:00:00.000Z', '2026-03-01T08:00:00.000Z', 'seed_e1', 'seed_u2', 1),
   ('el_live',        '2026-03-01T10:00:00.000Z', '2026-03-01T10:00:00.000Z', 'seed_e1', 'seed_u2', 0),
-  ('el_other',       '2026-03-01T10:00:00.000Z', '2026-03-01T10:00:00.000Z', 'seed_e2', 'seed_u2', 0);
+  ('el_other',       '2026-03-01T10:00:00+00:00', '2026-03-01T10:00:00+00:00', 'seed_e2', 'seed_u2', 0);
 -- Same pair, both live. The first is LATER in time but written in SQLite's
 -- CURRENT_TIMESTAMP form, which sorts before any ISO 'T' form as text: only
 -- normalising timestamps first makes "keep the oldest" keep cl_older.
@@ -62,8 +65,8 @@ INSERT INTO "VerificationToken" (identifier, token, expires) VALUES
 `;
 
 /** Rows each deliberate duplicate group loses. */
-const REMOVED = { CommentLike: 1, EventLike: 1, InviteRedemption: 1, Review: 1, VerificationToken: 1 } as const;
-const ADDED = { CommentLike: 2, EventLike: 3, InviteRedemption: 2, Review: 2, VerificationToken: 1 } as const;
+const REMOVED = { CommentLike: 1, EventLike: 2, InviteRedemption: 1, Review: 1, VerificationToken: 1 } as const;
+const ADDED = { CommentLike: 2, EventLike: 4, InviteRedemption: 2, Review: 2, VerificationToken: 1 } as const;
 
 /** wrangler 4's own CREATE TABLE for its migrations table (getCreateMigrationsTableQuery). */
 const WRANGLER_MIGRATIONS_TABLE = `CREATE TABLE IF NOT EXISTS "d1_migrations"(
@@ -123,9 +126,20 @@ describe("migrations/legacy", () => {
 
   it("the fixture holds the pre-baseline schema and the old staging seed loads into it", () => {
     expect(rowCounts()).toMatchObject({ Event: 30, InviteCode: 10, User: 10, Waitlist: 3 });
-    // The upgrade's preview query runs on it and finds every deliberate duplicate.
-    const preview = db.prepare(DUPLICATE_COUNTS_SQL).all() as { duplicatedGroups: number }[];
-    expect(preview.map((row) => row.duplicatedGroups)).toEqual([1, 1, 1, 1, 1]);
+    // The upgrade's preview query counts the rows that will go (not groups).
+    const preview = db.prepare(ROWS_REMOVED_SQL).all() as { rowsRemoved: number; table: string }[];
+    expect(preview.map((row) => row.rowsRemoved)).toEqual([2, 1, 1, 1, 1]);
+  });
+
+  it("the preview says exactly how many rows the upgrade removes from each table", () => {
+    const preview = db.prepare(ROWS_REMOVED_SQL).all() as { rowsRemoved: number; table: string }[];
+    const before = rowCounts();
+    db.exec(read(UPGRADE_FILE));
+    const after = rowCounts();
+    for (const { rowsRemoved, table } of preview) {
+      const name = table.split(" ")[0] ?? "";
+      expect({ removed: (before[name] ?? 0) - (after[name] ?? 0), table: name }).toEqual({ removed: rowsRemoved, table: name });
+    }
   });
 });
 
@@ -201,6 +215,10 @@ describe("upgrade-pre-baseline.sql", () => {
         .get() as { n: number };
       expect({ column: `${table}.${column}`, off: off.n }).toEqual({ column: `${table}.${column}`, off: 0 });
     }
+    // The +00:00 form without milliseconds was rewritten too.
+    expect(db.prepare(`SELECT createdAt FROM "EventLike" WHERE id = 'el_other'`).get()).toEqual({
+      createdAt: "2026-03-01T10:00:00.000+00:00",
+    });
     // Normalised, not shifted.
     const event = db.prepare(`SELECT date FROM "Event" WHERE id = 'seed_e1'`).get() as { date: string };
     const seeded = (/'seed_e1'(?:, '[^']*'){6}, '([^']+)'/.exec(read(SEED)))?.[1];

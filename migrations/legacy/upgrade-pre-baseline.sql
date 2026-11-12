@@ -18,101 +18,103 @@
 -- last as well.
 
 -- 1. Timestamps: one spelling (docs/DATABASE.md, "Timestamps are text").
---    Text written as ...Z, or in SQLite's CURRENT_TIMESTAMP form, becomes
---    Prisma's ...+00:00 form, so comparisons and ORDER BY agree with time.
---    The old staging seed wrote ...Z. Rows already in the right form, and
---    non-text values, are not touched. First, so that the de-duplication
+--    Any text not already in Prisma's exact form (milliseconds and
+--    +00:00, e.g. 2026-02-24T12:00:00.000+00:00) is rewritten into it:
+--    ...Z, other offsets, no milliseconds, SQLite's CURRENT_TIMESTAMP form.
+--    Comparisons and ORDER BY then agree with time. The old staging seed
+--    wrote ...Z. Rows already in the exact form, values strftime cannot read,
+--    and non-text values are not touched. First, so that the de-duplication
 --    below orders by time.
 UPDATE "Booking" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Booking" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Comment" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Comment" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "CommentLike" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "CommentLike" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Event" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Event" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Event" SET "date" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "date")
-  WHERE typeof("date") = 'text' AND "date" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "date") IS NOT NULL;
+  WHERE typeof("date") = 'text' AND "date" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "date") IS NOT NULL;
 UPDATE "EventLike" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "EventLike" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Example" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Example" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Favorite" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Favorite" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "InviteCode" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "InviteCode" SET "regeneratedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "regeneratedAt")
-  WHERE typeof("regeneratedAt") = 'text' AND "regeneratedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "regeneratedAt") IS NOT NULL;
+  WHERE typeof("regeneratedAt") = 'text' AND "regeneratedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "regeneratedAt") IS NOT NULL;
 UPDATE "InviteRedemption" SET "redeemedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "redeemedAt")
-  WHERE typeof("redeemedAt") = 'text' AND "redeemedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "redeemedAt") IS NOT NULL;
+  WHERE typeof("redeemedAt") = 'text' AND "redeemedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "redeemedAt") IS NOT NULL;
 UPDATE "Match" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Match" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Match" SET "expiresAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt")
-  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
+  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
 UPDATE "Message" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Message" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "MessageThread" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "MessageThread" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Notification" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "PendingInviteValidation" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "PendingInviteValidation" SET "expiresAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt")
-  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
+  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
 UPDATE "Photographer" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Photographer" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "PortfolioImage" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "PortfolioImage" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Review" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Review" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Session" SET "expires" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "expires")
-  WHERE typeof("expires") = 'text' AND "expires" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expires") IS NOT NULL;
+  WHERE typeof("expires") = 'text' AND "expires" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expires") IS NOT NULL;
 UPDATE "Subscription" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Subscription" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Subscription" SET "expiresAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt")
-  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
+  WHERE typeof("expiresAt") = 'text' AND "expiresAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "expiresAt") IS NOT NULL;
 UPDATE "Swipe" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "User" SET "emailVerified" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "emailVerified")
-  WHERE typeof("emailVerified") = 'text' AND "emailVerified" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "emailVerified") IS NOT NULL;
+  WHERE typeof("emailVerified") = 'text' AND "emailVerified" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "emailVerified") IS NOT NULL;
 UPDATE "User" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "User" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt")
-  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
+  WHERE typeof("updatedAt") = 'text' AND "updatedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "updatedAt") IS NOT NULL;
 UPDATE "Waitlist" SET "createdAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt")
-  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
+  WHERE typeof("createdAt") = 'text' AND "createdAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "createdAt") IS NOT NULL;
 UPDATE "Waitlist" SET "reviewedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "reviewedAt")
-  WHERE typeof("reviewedAt") = 'text' AND "reviewedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "reviewedAt") IS NOT NULL;
+  WHERE typeof("reviewedAt") = 'text' AND "reviewedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "reviewedAt") IS NOT NULL;
 UPDATE "Waitlist" SET "convertedAt" = strftime('%Y-%m-%dT%H:%M:%f+00:00', "convertedAt")
-  WHERE typeof("convertedAt") = 'text' AND "convertedAt" NOT LIKE '%+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "convertedAt") IS NOT NULL;
+  WHERE typeof("convertedAt") = 'text' AND "convertedAt" NOT GLOB '????-??-??T??:??:??.???+00:00' AND strftime('%Y-%m-%dT%H:%M:%f+00:00', "convertedAt") IS NOT NULL;
 
 -- 2. De-duplicate, so the new unique indexes can be created.
 

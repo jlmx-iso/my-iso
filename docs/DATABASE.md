@@ -329,15 +329,36 @@ npm run deploy:staging                              # applies 0003 onwards, depl
    a database it was not written for;
 3. exports a full backup to `backups/<env>-<timestamp>.sql` (gitignored:
    real data; keep it somewhere safe and delete it when no longer needed);
-4. prints how many duplicated rows the new unique indexes force out, and
-   without `--yes` stops there;
-5. runs `migrations/legacy/upgrade-pre-baseline.sql`
+4. prints how many rows the upgrade will remove from each table (of each
+   duplicated group it keeps one row; all pending `VerificationToken` rows
+   go), and without `--yes` stops there;
+5. takes a D1 Time Travel bookmark of the database as it is now, prints it
+   and saves it next to the backup (`backups/<env>-<timestamp>.bookmark`),
+   then runs `migrations/legacy/upgrade-pre-baseline.sql`
    (`wrangler d1 execute --remote --file`);
 6. exports the schema again and checks it is exactly the baseline, and that
    `0001_init.sql` is recorded.
 
-D1 is briefly unavailable while it exports. Run it when a short pause in
-service is acceptable.
+**Availability.** D1 is unavailable to the app while it exports and while
+it runs the upgrade file. Every run takes at least two exports (the schema
+check and the full backup), the dry run without `--yes` included: on
+production, run even the dry run off-peak.
+
+**Rollback.** The `.sql` backup cannot be replayed over the existing
+database (its `CREATE TABLE`s would collide). The way back is D1 Time
+Travel, to the bookmark taken just before the upgrade, within 30 days:
+
+```sh
+npx wrangler d1 time-travel restore DB --bookmark=<id from backups/<env>-<timestamp>.bookmark> --env staging
+# production: ... --env=
+```
+
+The script prints this command, with the bookmark filled in, whenever a step
+fails after the upgrade has started and when it finishes. If the upgrade
+step itself fails (a timeout, a dropped connection, Ctrl-C), whether it was
+applied is not known: run the script again without `--yes`. It reports
+"already has the baseline recorded" (applied) or checks the pre-baseline
+schema again (not applied).
 
 What `upgrade-pre-baseline.sql` does (`src/server/_db/legacyUpgrade.test.ts`
 runs it on the pre-baseline schema with the old staging seed and checks the
@@ -345,9 +366,10 @@ result against `0001_init.sql` on an empty database, then against the full
 migration chain):
 
 - **Timestamps to one spelling** (see "Timestamps are text"): every
-  `DATETIME` column, text values not already in Prisma's `+00:00` form. The
-  old staging seed wrote `...Z`; production rows written by the app are
-  already right and are not touched.
+  `DATETIME` column, every text value not already in Prisma's exact form
+  (`2026-02-24T12:00:00.000+00:00`: milliseconds and `+00:00`). The old
+  staging seed wrote `...Z`; production rows written by the app are already
+  in that form and are not touched.
 - **De-duplicates** for the unique indexes the baseline adds: one
   `EventLike` per (event, user), keeping a live one, else the oldest; one
   `CommentLike` per (comment, user), the same rule; one `Review` per
@@ -355,7 +377,10 @@ migration chain):
   `InviteRedemption` per member, keeping the first
   (`InviteCode.currentRedemptions` is left to the reconcile job).
 - **Sign-in codes**: drops the unique index `VerificationToken_token_key` (a
-  code is unique per address, not globally) and discards pending codes.
+  code is unique per address, not globally) and discards pending codes. That
+  also discards any outstanding email-verification links (the code at
+  `2d1d630` kept those in the same table): those members have to request a
+  new link.
 - Adds what the baseline has and the old schema lacks
   (`VerificationToken.attempts`, `MessageThread.participantKey`, the
   `RateLimit` table, the new indexes), with `ALTER TABLE`: no table is
@@ -380,27 +405,28 @@ For a database that is neither of the two above (`db:upgrade-legacy` refuses
 anything whose schema differs from the expected one), the same steps by
 hand. Staging first.
 
-1. **Back up.**
+1. **Back up, and note a Time Travel bookmark** (the rollback; see above).
 
    ```sh
    wrangler d1 export DB --remote --env staging --output backups/staging-manual.sql
+   wrangler d1 time-travel info DB --env staging
    ```
 
-2. **Look at what would be removed.** Duplicated groups per new unique
-   index:
+2. **Look at what would be removed.** Rows the de-duplication removes, per
+   table (each duplicated group keeps one row):
 
    ```sql
-   SELECT 'EventLike' AS "table", COUNT(*) AS "duplicatedGroups" FROM (
-     SELECT 1 FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
+   SELECT 'EventLike' AS "table", COALESCE(SUM("n" - 1), 0) AS "rowsRemoved" FROM (
+     SELECT COUNT(*) AS "n" FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
    )
-   UNION ALL SELECT 'CommentLike', COUNT(*) FROM (
-     SELECT 1 FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
+   UNION ALL SELECT 'CommentLike', COALESCE(SUM("n" - 1), 0) FROM (
+     SELECT COUNT(*) AS "n" FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
    )
-   UNION ALL SELECT 'Review', COUNT(*) FROM (
-     SELECT 1 FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
+   UNION ALL SELECT 'Review', COALESCE(SUM("n" - 1), 0) FROM (
+     SELECT COUNT(*) AS "n" FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
    )
-   UNION ALL SELECT 'InviteRedemption', COUNT(*) FROM (
-     SELECT 1 FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
+   UNION ALL SELECT 'InviteRedemption', COALESCE(SUM("n" - 1), 0) FROM (
+     SELECT COUNT(*) AS "n" FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
    );
    ```
 

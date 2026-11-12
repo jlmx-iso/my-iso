@@ -70,6 +70,48 @@ export function backupPath(env, date) {
   return path.join("backups", `${env}-${stamp}.sql`);
 }
 
+/**
+ * Where the Time Travel bookmark taken just before the upgrade is saved:
+ * next to the backup, same name, `.bookmark`.
+ *
+ * @param {string} backup  a path from backupPath
+ */
+export function bookmarkPath(backup) {
+  return backup.replace(/\.sql$/, ".bookmark");
+}
+
+/**
+ * The bookmark in the output of `wrangler d1 time-travel info DB --json`,
+ * which prints `{ "bookmark": "..." }` (wrangler 4: JSON.stringify of the
+ * API's result). Tolerates log lines before it; throws on anything else,
+ * since an upgrade must not start without a way back.
+ *
+ * @param {string} stdout
+ */
+export function parseBookmark(stdout) {
+  const start = stdout.indexOf("{");
+  if (start === -1) throw new Error(`No JSON in wrangler's time-travel output:\n${stdout}`);
+  /** @type {unknown} */
+  const parsed = JSON.parse(stdout.slice(start));
+  const bookmark = isRecord(parsed) ? parsed.bookmark : undefined;
+  if (typeof bookmark !== "string" || !/^[\w-]+$/.test(bookmark)) {
+    throw new Error(`No bookmark in wrangler's time-travel output:\n${stdout}`);
+  }
+  return bookmark;
+}
+
+/**
+ * The command that puts the database back to `bookmark`: the rollback for
+ * the upgrade (D1 Time Travel; the .sql backup cannot be replayed over the
+ * existing database).
+ *
+ * @param {DeployEnv} env
+ * @param {string} bookmark
+ */
+export function restoreCommand(env, bookmark) {
+  return ["npx wrangler d1 time-travel restore DB", `--bookmark=${bookmark}`, ...WRANGLER_ENV_ARGS[env]].join(" ");
+}
+
 /** The state of a database as far as migrations are concerned. */
 export const PROBE_TABLES_SQL =
   "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('User', 'd1_migrations') ORDER BY name";
@@ -127,22 +169,23 @@ function isRecord(value) {
 }
 
 /**
- * Number of duplicated groups per new unique index of the baseline: what
- * the upgrade's de-duplication will remove (docs/DATABASE.md).
+ * How many rows the upgrade removes, per table: for each new unique index,
+ * every row of a duplicated group but the one kept; and every pending
+ * VerificationToken (docs/DATABASE.md).
  */
-export const DUPLICATE_COUNTS_SQL = `SELECT 'EventLike (eventId, userId)' AS "index", COUNT(*) AS "duplicatedGroups" FROM (
-  SELECT 1 FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
+export const ROWS_REMOVED_SQL = `SELECT 'EventLike (one per event and user)' AS "table", COALESCE(SUM("n" - 1), 0) AS "rowsRemoved" FROM (
+  SELECT COUNT(*) AS "n" FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
 )
-UNION ALL SELECT 'CommentLike (commentId, userId)', COUNT(*) FROM (
-  SELECT 1 FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
+UNION ALL SELECT 'CommentLike (one per comment and user)', COALESCE(SUM("n" - 1), 0) FROM (
+  SELECT COUNT(*) AS "n" FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
 )
-UNION ALL SELECT 'Review (photographerId, userId)', COUNT(*) FROM (
-  SELECT 1 FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
+UNION ALL SELECT 'Review (one per photographer and reviewer)', COALESCE(SUM("n" - 1), 0) FROM (
+  SELECT COUNT(*) AS "n" FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
 )
-UNION ALL SELECT 'InviteRedemption (redeemedById)', COUNT(*) FROM (
-  SELECT 1 FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
+UNION ALL SELECT 'InviteRedemption (one per member)', COALESCE(SUM("n" - 1), 0) FROM (
+  SELECT COUNT(*) AS "n" FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
 )
-UNION ALL SELECT 'VerificationToken (pending codes, all discarded)', COUNT(*) FROM "VerificationToken"`;
+UNION ALL SELECT 'VerificationToken (all pending codes and links)', COUNT(*) FROM "VerificationToken"`;
 
 /**
  * Objects that are not part of the app's schema.
