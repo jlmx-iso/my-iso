@@ -111,6 +111,13 @@ describe("parseDiff", () => {
     expect(unquoteGitPath('"b/src/\\346\\227\\245.ts"')).toBe("b/src/日.ts");
   });
 
+  it("keeps literal astral characters whole (core.quotePath=false leaves them unescaped)", () => {
+    expect(unquoteGitPath('"b/src/😀\\"x.ts"')).toBe('b/src/😀"x.ts');
+    // Octal escapes (raw UTF-8 bytes) mixed with literal astral characters.
+    expect(unquoteGitPath('"b/src/caf\\303\\251-😀-\\360\\237\\230\\200-𝄞\\t.ts"')).toBe("b/src/café-😀-😀-𝄞\t.ts");
+    expect(unquoteGitPath("b/src/😀.ts")).toBe("b/src/😀.ts");
+  });
+
   it("returns nothing for an empty diff", () => {
     expect(parseDiff("").size).toBe(0);
   });
@@ -199,9 +206,11 @@ describe("computeDiffCoverage", () => {
     expect(passes({ ...result, percent: 100 }, 90)).toBe(true);
   });
 
-  it("ignores changed files under src/ that coverage does not include at all", () => {
+  it("lists changed files under src/ that coverage does not include, as a warning, not a failure", () => {
     const result = computeDiffCoverage(new Map([["src/styles/x.css", new Set([1])]]), coverage, () => "outside");
-    expect(result).toMatchObject({ excluded: [], failures: [], missing: [], total: 0 });
+    expect(result).toMatchObject({ excluded: [], failures: [], missing: [], outside: ["src/styles/x.css"], total: 0 });
+    expect(passes(result, 90)).toBe(true);
+    expect(formatReport(result, 90)).toMatch(/WARNING: changed under src\/ but not matched[\s\S]*src\/styles\/x\.css/);
   });
 
   it("passes when no executable line changed", () => {
@@ -244,7 +253,7 @@ describe("parseThreshold", () => {
 });
 
 describe("formatReport", () => {
-  const base = { excluded: [], failures: [], missing: [] };
+  const base = { excluded: [], failures: [], missing: [], outside: [] };
 
   it("names each uncovered range and the verdict, and warns about excluded files", () => {
     const report = formatReport(

@@ -46,22 +46,28 @@ export function unquoteGitPath(text) {
   /** @type {number[]} */
   const bytes = [];
   const body = text.slice(1, -1);
-  for (let i = 0; i < body.length; i++) {
-    const char = body[i];
+  let i = 0;
+  while (i < body.length) {
+    // By code point, not UTF-16 unit: a literal astral character (😀) is
+    // one character of two units and must not be split into surrogates.
+    const char = String.fromCodePoint(/** @type {number} */ (body.codePointAt(i)));
     if (char !== "\\") {
-      bytes.push(...Buffer.from(/** @type {string} */ (char), "utf8"));
+      bytes.push(...Buffer.from(char, "utf8"));
+      i += char.length;
       continue;
     }
     const next = body[i + 1] ?? "";
     const octal = /^[0-7]{3}/.exec(body.slice(i + 1));
     if (octal) {
+      // One raw byte of the UTF-8 encoding.
       bytes.push(parseInt(octal[0], 8));
-      i += 3;
+      i += 4;
     } else if (next in C_ESCAPES) {
       bytes.push(/** @type {number} */ (C_ESCAPES[next]));
-      i += 1;
+      i += 2;
     } else {
       bytes.push(0x5c);
+      i += 1;
     }
   }
   return Buffer.from(bytes).toString("utf8");
@@ -199,6 +205,7 @@ export function formatRanges(lines) {
  *   failures: string[],
  *   files: FileResult[],
  *   missing: string[],
+ *   outside: string[],
  *   percent: number,
  *   total: number,
  * }} DiffCoverage
@@ -235,6 +242,8 @@ export function computeDiffCoverage(changed, coverage, status) {
   /** @type {string[]} */
   const excluded = [];
   /** @type {string[]} */
+  const outside = [];
+  /** @type {string[]} */
   const missing = [];
   /** @type {string[]} */
   const failures = [];
@@ -248,7 +257,10 @@ export function computeDiffCoverage(changed, coverage, status) {
   for (const [file, lines] of [...changed].sort(([a], [b]) => a.localeCompare(b))) {
     if (!isMeasuredSource(file)) continue;
     const kind = status(file);
-    if (kind === "outside") continue;
+    if (kind === "outside") {
+      outside.push(file);
+      continue;
+    }
     if (kind === "excluded") {
       excluded.push(file);
       continue;
@@ -282,7 +294,7 @@ export function computeDiffCoverage(changed, coverage, status) {
     );
   }
 
-  return { covered, excluded, failures, files, missing, percent: total === 0 ? 100 : (100 * covered) / total, total };
+  return { covered, excluded, failures, files, missing, outside, percent: total === 0 ? 100 : (100 * covered) / total, total };
 }
 
 /**
@@ -329,6 +341,11 @@ export function formatReport(result, threshold) {
     );
     for (const f of result.excluded) lines.push(`  ${f}`);
   }
+  if (result.outside.length) {
+    lines.push("");
+    lines.push("WARNING: changed under src/ but not matched by coverage.config.mjs COVERAGE_INCLUDE, so not measured:");
+    for (const f of result.outside) lines.push(`  ${f}`);
+  }
   return lines.join("\n");
 }
 
@@ -361,7 +378,10 @@ function main() {
   // Three dots: changes on this branch since it left the base.
   const diff = execFileSync(
     "git",
-    ["diff", "--unified=0", "--no-color", "--no-ext-diff", "--find-renames", `${values.base}...HEAD`, "--", "src/"],
+    // core.quotePath=false: non-ASCII names come through as they are; quotes,
+    // backslashes and control characters are still C-quoted (unquoteGitPath
+    // handles both forms).
+    ["-c", "core.quotePath=false", "diff", "--unified=0", "--no-color", "--no-ext-diff", "--find-renames", `${values.base}...HEAD`, "--", "src/"],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
 
