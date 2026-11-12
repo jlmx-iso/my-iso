@@ -94,6 +94,9 @@ function Search() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const query = draft.trim();
+    // From here the box belongs to this query: Back to an earlier search
+    // shows that search's words, not these.
+    setTyped({ forQuery: query, value: query });
     if (query === submittedQuery) return;
     // A history entry per search, so Back returns to the previous results.
     router.push(query ? `${pathname}?q=${encodeURIComponent(query)}` : pathname, { scroll: false });

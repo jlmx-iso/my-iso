@@ -147,50 +147,6 @@ html {
 }
 
 /*
- * One focus ring everywhere. Mantine draws its ring in the primary colour
- * and gives text fields only a border colour change, which next to a red
- * error border is hard to tell apart: fields get the same ring, outside the
- * border, so a focused field in error shows both.
- */
-.mantine-focus-auto:focus-visible,
-.mantine-focus-always:focus,
-a:focus-visible,
-button:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
-.mantine-Input-input:focus,
-.mantine-Input-input:focus-within,
-.mantine-PinInput-input:focus {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 1px;
-}
-
-.mantine-Input-input:focus:not([data-error]),
-.mantine-Input-input:focus-within:not([data-error]) {
-  --input-bd: var(--focus-ring-color);
-  border-color: var(--focus-ring-color);
-}
-
-/*
- * Touch targets. Compact controls (icon buttons, "like", close buttons,
- * small actions) are fine for a mouse; on a phone or any touch screen they
- * get the 44px a fingertip needs. `.touch-target` opts a control in.
- */
-@media (pointer: coarse), (max-width: 47.99em) {
-  .touch-target,
-  .mantine-Modal-close,
-  .mantine-Drawer-close,
-  .mantine-Notification-closeButton,
-  .mantine-Alert-closeButton {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/*
  * A row of exactly three cards: one column on a phone, three across as soon
  * as they fit. Never two and one (auto-fit leaves an orphan around 768px).
  */

@@ -3,6 +3,8 @@ import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 import '@mantine/notifications/styles.css';
+// Last: overrides of the Mantine styles above.
+import "~/styles/overrides.css";
 
 import { ColorSchemeScript } from '@mantine/core';
 import type { Metadata, Viewport } from "next";

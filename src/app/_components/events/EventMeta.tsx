@@ -1,7 +1,7 @@
 import { Badge, Group } from "@mantine/core";
 import { IconCalendar, IconClock, IconMapPin } from "@tabler/icons-react";
 
-import { formatDate } from "~/_lib/dayjs";
+import LocalDate from "~/app/_components/LocalDate";
 
 function formatDuration(hours: number) {
     return `${hours} hour${hours === 1 ? "" : "s"}`;
@@ -24,8 +24,11 @@ export default function EventMeta({ date, duration, location, withTime = false }
                     <span className="sr-only">Location: </span>{location}
                 </Badge>
             )}
-            <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />} suppressHydrationWarning>
-                <span className="sr-only">Date: </span>{formatDate(date, withTime ? "dayTime" : "date")}
+            <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
+                <span className="sr-only">Date: </span>
+                {/* Written in the browser, in the reader's own time zone: the
+                    server's would be a different day (or hour) for many. */}
+                <LocalDate date={new Date(date).toISOString()} format={withTime ? "dayTime" : "date"} />
             </Badge>
             <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
                 <span className="sr-only">Duration: </span>{formatDuration(duration)}
