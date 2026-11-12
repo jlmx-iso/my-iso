@@ -13,6 +13,7 @@ import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
 import { api } from "~/trpc/react";
 
 import ComposeMessage from "./ComposeMessage";
+import { markReadRetryDelayMs } from "./markReadRetry";
 import MessageTile from "./MessageTile";
 
 /** How often to refetch the thread while the realtime socket is not open. */
@@ -97,14 +98,32 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     // has loaded, and again when a message arrives while it is open. Only
     // while the tab is visible, at most once per MARK_READ_MIN_INTERVAL_MS
     // (a burst of messages is one call, for the last of them), and never
-    // twice for the same message: a failure is not retried, the next
-    // message or visit marks the thread anyway.
+    // twice for the same message once it has SUCCEEDED. A call that fails
+    // is tried again while the thread stays open, after a growing delay and
+    // a bounded number of times (markReadRetryDelayMs): otherwise the
+    // unread badge would stay until another message arrived.
     const isThreadLoaded = data != null;
     const newestMessageId = messages.at(-1)?.id;
     const isDocumentVisible = useDocumentVisibility() === "visible";
-    const lastMarkReadAttempt = useRef<{ at: number; messageId: string } | null>(null);
+    const lastMarkReadAttempt = useRef<{ at: number; failed: boolean; messageId: string } | null>(null);
+    const markReadFailures = useRef(0);
+    const markReadRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const [markReadRetry, setMarkReadRetry] = useState(0);
     const { mutate: markThreadRead } = api.message.markThreadRead.useMutation({
+        onError: (_error, variables) => {
+            markReadFailures.current += 1;
+            const delay = markReadRetryDelayMs(markReadFailures.current);
+            if (delay === null) return;
+            clearTimeout(markReadRetryTimer.current);
+            markReadRetryTimer.current = setTimeout(() => {
+                const last = lastMarkReadAttempt.current;
+                // Still the attempt that failed (no newer message took over): let the effect make it again.
+                if (last && last.messageId === variables.upToMessageId) last.failed = true;
+                setMarkReadRetry((count) => count + 1);
+            }, delay);
+        },
         onSuccess: (_result, variables) => {
+            markReadFailures.current = 0;
             if (userId && variables.upToMessageId) {
                 setMarkedRead(markedReadKey(userId, threadId), variables.upToMessageId);
             }
@@ -117,16 +136,19 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     useEffect(() => {
         if (!userId || !isThreadLoaded || !newestMessageId || !isDocumentVisible) return;
         const last = lastMarkReadAttempt.current;
-        if (last?.messageId === newestMessageId) return;
+        if (last?.messageId === newestMessageId && !last.failed) return;
         if (getMarkedRead(markedReadKey(userId, threadId)) === newestMessageId) return;
 
         const wait = last ? Math.max(0, last.at + MARK_READ_MIN_INTERVAL_MS - Date.now()) : 0;
         const timer = setTimeout(() => {
-            lastMarkReadAttempt.current = { at: Date.now(), messageId: newestMessageId };
+            lastMarkReadAttempt.current = { at: Date.now(), failed: false, messageId: newestMessageId };
             markThreadRead({ threadId, upToMessageId: newestMessageId });
         }, wait);
         return () => clearTimeout(timer);
-    }, [isDocumentVisible, isThreadLoaded, markThreadRead, newestMessageId, threadId, userId]);
+    }, [isDocumentVisible, isThreadLoaded, markReadRetry, markThreadRead, newestMessageId, threadId, userId]);
+
+    // No retry outlives the open thread.
+    useEffect(() => () => clearTimeout(markReadRetryTimer.current), [threadId]);
 
     const hideScrollButton = () => setIsScrollButtonHidden(true);
 

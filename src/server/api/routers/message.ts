@@ -135,22 +135,13 @@ async function withUnreadCounts<T extends { id: string }>(
   });
 }
 
-/**
- * The sender has, by sending, seen the thread up to their own message.
- * Read state only: a failure is logged and does not fail the send.
- */
-async function markReadBySender(
-  db: Pick<ExtendedPrismaClient, "$queryRaw">,
-  threadId: string,
-  userId: string,
-  message: { createdAt: Date; id: string },
-): Promise<void> {
-  try {
-    await markThreadReadAt(db, threadId, userId, message.createdAt, message.id);
-  } catch (error) {
-    logger.warn("Failed to update the sender's read state", { error, threadId });
-  }
-}
+// Sending does NOT move the sender's read state. A message can be posted
+// without the thread being on screen (the "New Message" modal lands in an
+// existing conversation), and "read up to my own message" would then mark
+// earlier incoming messages read unseen. The sender's own messages never
+// count as unread for them anyway (the unread queries leave them out), so
+// nothing is lost: what a user has seen is said only by markThreadRead,
+// which the open thread calls.
 
 const messageContent = z.string().trim().min(1).max(MAX_MESSAGE_LENGTH);
 
@@ -198,8 +189,6 @@ export const messageRouter = createTRPCRouter({
 
         // The thread's activity time moved with the insert (database
         // trigger), so the conversation list is already in the right order.
-        await markReadBySender(ctx.db, input.threadId, ctx.session.user.id, message);
-
         publishThreadMessage(input.threadId, {
           content: message.content,
           createdAt: message.createdAt,
@@ -322,8 +311,6 @@ export const messageRouter = createTRPCRouter({
           include: { sender: { select: senderSelect } },
           omit: { isRead: true },
         });
-        await markReadBySender(ctx.db, thread.id, userId, message);
-
         if (created) {
           captureEvent(userId, 'thread_created', { platform: input.platform, thread_id: thread.id });
         } else {
@@ -649,7 +636,8 @@ export const messageRouter = createTRPCRouter({
    *   of this thread (BAD_REQUEST otherwise). Exact: a message with the
    *   same timestamp that comes after it in the thread stays unread.
    * - `upTo`: a timestamp instead (the `createdAt` of that message). A
-   *   time in the future is treated as now.
+   *   time in the future is treated as now (a message id is not subject
+   *   to that: it marks the message's own place).
    * - neither: everything up to now.
    *
    * Read state never moves backwards: the returned `lastReadAt` is the
@@ -702,11 +690,12 @@ export const messageRouter = createTRPCRouter({
       } else if (input.upTo) {
         readUpTo = input.upTo;
       }
-      // Nothing can have been seen that does not exist yet.
-      if (readUpTo.getTime() > now.getTime()) {
-        readUpTo = now;
-        readMessageId = null;
-      }
+      // A time the CALLER supplied cannot be ahead of now: nothing can have
+      // been seen that does not exist yet. A message looked up by id keeps
+      // its own time, whatever the clock says (a row dated ahead by clock
+      // skew or an import is a real message that was really seen; clamping
+      // it would leave it counted as unread for ever).
+      if (!readMessageId && readUpTo.getTime() > now.getTime()) readUpTo = now;
 
       const lastReadAt = await markThreadReadAt(ctx.db, thread.id, userId, readUpTo, readMessageId);
       return { lastReadAt, threadId: thread.id };

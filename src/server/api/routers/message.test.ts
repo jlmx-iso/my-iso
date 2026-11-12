@@ -888,15 +888,6 @@ describe("messageRouter against SQLite", () => {
       expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
     });
 
-    it("sending in a thread marks it read for the sender", async () => {
-      const thread = await as(alice).createThread({ initialMessage: "question", participants: [bob.id] });
-      await tick();
-
-      await as(bob).create({ content: "answer", threadId: thread.id });
-
-      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
-    });
-
     it("does not count deleted messages", async () => {
       const thread = await as(alice).createThread({ initialMessage: "oops", participants: [bob.id] });
       const message = await testDb.db.message.findFirstOrThrow({ where: { threadId: thread.id } });
@@ -931,6 +922,68 @@ describe("messageRouter against SQLite", () => {
 
       expect(await testDb.raw.threadRead.count({ where: { userId: carol.id } })).toBe(0);
       expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+    });
+
+    describe("sending does not say what the sender has seen", () => {
+      it("a message sent into an existing thread without opening it (the New Message modal) leaves earlier incoming messages unread", async () => {
+        const thread = await as(bob).createThread({ initialMessage: "are you free on the 5th?", participants: [alice.id] });
+        await tick();
+        await as(bob).create({ content: "and the 6th?", threadId: thread.id });
+        expect(await unreadOf(alice, thread.id)).toMatchObject({ unreadCount: 2 });
+
+        // Alice writes to Bob from the modal: it lands in the same thread,
+        // which she has not looked at.
+        await tick();
+        const landed = await as(alice).createThread({ initialMessage: "hi Bob, about that shoot", participants: [bob.id] });
+
+        expect(landed.id).toBe(thread.id);
+        expect(await unreadOf(alice, thread.id)).toMatchObject({ hasUnread: true, unreadCount: 2 });
+        expect(await as(alice).getUnreadCount()).toEqual({ unreadMessages: 2, unreadThreads: 1 });
+        expect(await testDb.raw.threadRead.count({ where: { threadId: thread.id, userId: alice.id } })).toBe(0);
+      });
+
+      it("the same for a reply sent with `create`: only markThreadRead moves the reader's place", async () => {
+        const thread = await as(bob).createThread({ initialMessage: "one", participants: [alice.id] });
+        await tick();
+
+        await as(alice).create({ content: "a reply typed without the thread having been marked", threadId: thread.id });
+        expect(await unreadOf(alice, thread.id)).toMatchObject({ unreadCount: 1 });
+
+        const newest = (await as(alice).getThreadById({ threadId: thread.id }))?.messages.at(-1);
+        await as(alice).markThreadRead({ threadId: thread.id, upToMessageId: newest?.id });
+        expect(await unreadOf(alice, thread.id)).toMatchObject({ unreadCount: 0 });
+      });
+
+      it("a user's own messages never count as unread for them, read state or not", async () => {
+        const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+        await as(alice).create({ content: "two", threadId: thread.id });
+        await as(alice).create({ content: "three", threadId: thread.id });
+
+        // Alice has no read state at all in this thread.
+        expect(await testDb.raw.threadRead.count({ where: { userId: alice.id } })).toBe(0);
+        expect(await unreadOf(alice, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
+        expect(await as(alice).getUnreadCount()).toEqual({ unreadMessages: 0, unreadThreads: 0 });
+        expect(await countUnreadByThread(testDb.db, alice.id, [thread.id])).toEqual(new Map());
+        // And they are unread for Bob, all three.
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 3 });
+      });
+    });
+
+    it("a message looked up by id keeps its own time, even one dated ahead of the clock; a supplied time is still capped at now", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+      const ahead = new Date(Date.now() + 60 * 60 * 1000);
+      await testDb.raw.message.create({ data: { content: "dated an hour ahead", createdAt: ahead, id: "m_ahead", senderId: alice.id, threadId: thread.id } });
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 2 });
+
+      // A supplied time in the future is treated as now: the message ahead stays unread.
+      const capped = await as(bob).markThreadRead({ threadId: thread.id, upTo: new Date(Date.now() + 2 * 60 * 60 * 1000) });
+      expect(capped.lastReadAt.getTime()).toBeLessThanOrEqual(Date.now());
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+
+      // Marking that very message, which is on screen, reads it.
+      const marked = await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: "m_ahead" });
+      expect(marked.lastReadAt).toEqual(ahead);
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
     });
 
     describe("messages with the same timestamp", () => {
@@ -997,8 +1050,8 @@ describe("messageRouter against SQLite", () => {
         const earlier = new Date("2031-05-05T10:00:05.000Z");
 
         expect(await markThreadReadAt(testDb.db, thread.id, bob.id, later)).toEqual(later);
-        // The delayed write of an earlier read (for instance the sender's
-        // own "read up to my message", overtaken by an explicit mark-read).
+        // The delayed write of an earlier read (a slow mark-read overtaken
+        // by a later one).
         expect(await markThreadReadAt(testDb.db, thread.id, bob.id, earlier)).toEqual(later);
         expect(await lastReadAt(bob, thread.id)).toEqual(later);
 
