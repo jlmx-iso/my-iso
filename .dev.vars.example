@@ -13,6 +13,9 @@
 
 # Overrides the "production" in wrangler.toml while developing.
 APP_ENV=development
+# Content-Security-Policy: "enforce" (default) or "report-only" (kill switch:
+# block nothing, only report). See docs/DEPLOYMENT.md.
+CSP_MODE=
 
 # ---- Auth.js -----------------------------------------------------------------
 # Generate with: openssl rand -base64 32

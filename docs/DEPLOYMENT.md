@@ -35,7 +35,7 @@ Workers Builds, so every push to `main` deploys production. Its settings
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| Build command | `npm ci` | Install only; the deploy command builds. |
+| Build command | *(empty)* | Workers Builds installs dependencies itself (`npm clean-install`) before the build command; a build command of `npm run build` fails, because a plain `next build` validates runtime secrets that do not exist at build time. The deploy command builds. |
 | Deploy command | `npm run deploy:production` | The default, `npx wrangler deploy`, skips the database check and the migrations above: new code would go live against a database that lacks its tables. |
 | Build variables | The build-time values below (`NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY`, `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY`, …) | On Workers Builds (`WORKERS_CI=1`) the deploy script reads them from the build environment instead of `.env.deploy.production`. A missing one stops the deploy before anything changes. |
 | API token | One with **Workers Scripts: Edit** and **D1: Edit** on the account | The script queries the database and applies migrations with it. Without D1 access the deploy stops at step 1. |
@@ -100,6 +100,7 @@ secret, but they are yours to choose):
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
 | `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
+| `CSP_MODE` | Optional. The Content-Security-Policy kill switch: `enforce` (the default) blocks what the policy does not allow; `report-only` blocks nothing and only reports. Violations are reported in both modes (`csp_violation` events). See "Content-Security-Policy" below. | Leave unset; `report-only` only to stop the policy breaking pages |
 | `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
 
 ### 3. Secrets: `wrangler secret put`
@@ -308,6 +309,39 @@ sync ([BILLING.md](BILLING.md)), not by a scheduled job.
 
 To run the jobs locally: `npx wrangler dev --test-scheduled`, then
 `npm run jobs:local`.
+
+## Content-Security-Policy
+
+Every page is served with an enforced `Content-Security-Policy` carrying a
+fresh nonce (`src/middleware.ts`, `src/securityHeaders.js`; why it is built
+this way: [adr/0002-csp.md](adr/0002-csp.md)). Browsers report violations to
+`/api/csp-report`, which forwards the ones that matter to PostHog as
+`csp_violation` events. They reach PostHog only when
+`NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` is set: without it the endpoint accepts
+reports and discards them, and nothing else records them. Set the token
+before relying on this section to investigate violations.
+
+If a release makes the policy block something the app needs, switch it to
+report-only without a deploy, then fix the policy. In the Cloudflare
+dashboard: Workers & Pages → `my-iso` (or `my-iso-staging`) → Settings →
+Variables and Secrets. If `CSP_MODE` is already listed, edit its value to
+`report-only`; otherwise add it as a plain-text variable with that value.
+Use the dashboard rather than `wrangler secret put`: a variable that already
+exists as plain text cannot be overwritten as a secret
+(`Binding name 'CSP_MODE' already in use`). Nothing here is secret, so a
+plain-text variable is right.
+
+The dashboard value lasts only until the next deploy: `wrangler.toml` does
+not set `keep_vars`, so every deploy replaces the Worker's plain-text
+variables with its `[vars]`, which leave `CSP_MODE` unset (enforce). To keep
+report-only across deploys while the policy is being fixed, add
+`CSP_MODE = "report-only"` to that environment's `[vars]` in the same change.
+
+Changing a variable or secret makes Cloudflare roll out a new Worker version,
+which serves requests within seconds; no code deploy is needed. Delete the
+variable (or set it to `enforce`) to enforce the policy again. The value is
+trimmed and lower-cased; anything other than `report-only` enforces, so a
+typo can't turn the policy off or stop the Worker from starting.
 
 ## Rollback
 
