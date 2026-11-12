@@ -101,7 +101,7 @@ export function parseStripeApiBaseUrl(
 export function createStripeClient(
   secretKey: string,
   override: HostOverride | null = null,
-  options: { maxNetworkRetries?: number } = {},
+  options: { maxNetworkRetries?: number; timeoutMs?: number } = {},
 ): Stripe {
   return new Stripe(secretKey, {
     apiVersion: STRIPE_API_VERSION,
@@ -111,7 +111,7 @@ export function createStripeClient(
     // every POST), so a retry can never create a second object.
     maxNetworkRetries: options.maxNetworkRetries ?? 2,
     // A Worker request must not hang on Stripe.
-    timeout: 15_000,
+    timeout: options.timeoutMs ?? 15_000,
     ...(override ?? {}),
   });
 }
@@ -138,6 +138,32 @@ export function getStripe(): Stripe {
     }),
   );
   return client;
+}
+
+let accessCheckClient: Stripe | null = null;
+
+/**
+ * A Stripe client for work done inside someone's request with a small time
+ * budget (the lazy first sync of a subscription row, ./lazySync.ts): each
+ * call gives up after three seconds and is not retried. A sync that runs
+ * past the request's budget is finished after the response (`waitUntil`,
+ * at most 30 seconds on Workers); with these limits its handful of calls
+ * fits in that, so it ends, and releases its lease, on its own.
+ */
+export function getAccessCheckStripe(): Stripe {
+  accessCheckClient ??= createStripeClient(
+    env.STRIPE_SECRET_KEY,
+    parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL, {
+      production: isProductionDeployment({
+        baseUrl: env.NEXT_PUBLIC_BASE_URL,
+        isWorkerRuntime: isCloudflareRuntime(),
+        nodeEnv: env.NODE_ENV,
+        secretKey: env.STRIPE_SECRET_KEY,
+      }),
+    }),
+    { maxNetworkRetries: 0, timeoutMs: 3000 },
+  );
+  return accessCheckClient;
 }
 
 /** Whether a webhook signing secret is configured at all. */

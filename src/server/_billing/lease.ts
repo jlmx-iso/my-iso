@@ -24,6 +24,8 @@ export type LeaseDb = RateLimitDb;
 export type LeaseOptions = {
   /** The clock in milliseconds, for tests. */
   now?: () => number;
+  /** Decides whether this acquisition also sweeps old rows (see purgeExpiredLeases); for tests. */
+  random?: () => number;
   /** Pause between attempts, for tests. */
   sleep?: (ms: number) => Promise<void>;
   /** How long the lease is held at most before others may take it over. */
@@ -66,7 +68,43 @@ export class LeaseLostError extends LeaseBusyError {
   }
 }
 
-const RETRY_EVERY_MS = 150;
+/**
+ * Pauses between attempts to take a busy lease: short at first (most
+ * holders are done within a few hundred milliseconds), doubling up to a
+ * second. Each attempt is one D1 statement, so a waiter costs about seven
+ * statements over 3.5 s and about fourteen over 10 s, not one every 150 ms.
+ */
+const FIRST_RETRY_MS = 150;
+const MAX_RETRY_MS = 1000;
+
+export const retryDelayMs = (attempt: number): number =>
+  Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** Math.max(0, attempt - 1));
+
+/** Share of acquisitions that also delete long-expired rows. */
+const CLEANUP_PROBABILITY = 0.02;
+/**
+ * Only rows expired for this long are swept: a holder that overran its
+ * lease by a moment can still renew it (nobody took it over), and must not
+ * lose it to housekeeping.
+ */
+const PURGE_GRACE_SECONDS = 60 * 60;
+
+/**
+ * Deletes leases and claims that expired more than PURGE_GRACE_SECONDS ago:
+ * what crashed holders left behind, and first-sync claims of rows that have
+ * long been settled. An expired row means nothing (anyone may take the key),
+ * so removing it changes no outcome. Returns how many were removed.
+ */
+export function purgeExpiredLeases(db: LeaseDb, nowMs: number = Date.now()): Promise<number> {
+  const before = Math.floor(nowMs / 1000) - PURGE_GRACE_SECONDS;
+  return db.$executeRaw`DELETE FROM "BillingLease" WHERE "expiresAt" <= ${before}`;
+}
+
+/** After a successful acquisition, now and then: never fails the caller. */
+async function maybePurge(db: LeaseDb, nowMs: number, random: () => number): Promise<void> {
+  if (random() >= CLEANUP_PROBABILITY) return;
+  await purgeExpiredLeases(db, nowMs).catch(() => undefined);
+}
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -98,11 +136,14 @@ export async function withLease<T>(
   const holder = crypto.randomUUID();
   const deadline = now() + options.waitMs;
 
-  for (;;) {
+  for (let attempt = 1; ; attempt += 1) {
     if (await tryAcquire(db, key, holder, Math.floor(now() / 1000), options.ttlSeconds)) break;
-    if (now() >= deadline) throw new LeaseBusyError(key);
-    await sleep(RETRY_EVERY_MS);
+    const remaining = deadline - now();
+    if (remaining <= 0) throw new LeaseBusyError(key);
+    // Never past the deadline: the last attempt is made when the wait ends.
+    await sleep(Math.min(retryDelayMs(attempt), remaining));
   }
+  await maybePurge(db, now(), options.random ?? Math.random);
 
   const handle: LeaseHandle = {
     heldCondition: () =>
@@ -136,8 +177,11 @@ export async function claimFor(
   key: string,
   ttlSeconds: number,
   nowMs: number = Date.now(),
+  random: () => number = Math.random,
 ): Promise<boolean> {
-  return tryAcquire(db, key, crypto.randomUUID(), Math.floor(nowMs / 1000), ttlSeconds);
+  const claimed = await tryAcquire(db, key, crypto.randomUUID(), Math.floor(nowMs / 1000), ttlSeconds);
+  if (claimed) await maybePurge(db, nowMs, random);
+  return claimed;
 }
 
 export async function extendClaim(

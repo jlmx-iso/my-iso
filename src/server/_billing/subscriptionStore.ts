@@ -373,7 +373,13 @@ export type SyncOptions = {
    */
   customerId?: string | null;
   /** How the customer's lease is waited for; for tests. */
-  lease?: Pick<LeaseOptions, "now" | "sleep">;
+  lease?: Pick<LeaseOptions, "now" | "random" | "sleep">;
+  /**
+   * How long to wait for the customer's lease (default
+   * SYNC_LEASE_WAIT_MS). A caller with a time budget of its own (the lazy
+   * first sync) waits less: a busy lease means someone else is syncing.
+   */
+  leaseWaitMs?: number;
   /** Page size and page limit when listing a customer's subscriptions; for tests. */
   listing?: { maxPages: number; pageSize: number };
   /** The local clock in milliseconds. */
@@ -384,15 +390,21 @@ export type SyncOptions = {
    * subscription from Stripe and store it, under the same lease.
    */
   standing?: boolean;
+  /**
+   * With `standing`: the payment intent a dispute or refund event is about,
+   * whose charges are then read directly (see readPaymentStanding).
+   */
+  standingPaymentIntentId?: string | null;
 };
 
 /**
  * The per-customer lease: held for one read-and-store sequence (a handful
  * of Stripe calls), waited for by the next. A webhook that cannot get it in
- * time answers 409 and is redelivered.
+ * time answers 409 and is redelivered, which costs less than waiting long:
+ * 3.5 s is about seven attempts (see retryDelayMs in ./lease.ts).
  */
 const SYNC_LEASE_SECONDS = 90;
-const SYNC_LEASE_WAIT_MS = 10_000;
+export const SYNC_LEASE_WAIT_MS = 3500;
 
 const customerLeaseKey = (customerId: string) => `customer:${customerId}`;
 
@@ -405,13 +417,13 @@ function withCustomerLease<T>(
   return withLease(
     db,
     customerLeaseKey(customerId),
-    { ...options.lease, ttlSeconds: SYNC_LEASE_SECONDS, waitMs: SYNC_LEASE_WAIT_MS },
+    { ...options.lease, ttlSeconds: SYNC_LEASE_SECONDS, waitMs: options.leaseWaitMs ?? SYNC_LEASE_WAIT_MS },
     work,
   );
 }
 
 /** Readings of one subscription taken to get past a same-second tie. */
-const MAX_READINGS = 3;
+export const MAX_READINGS = 3;
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -455,7 +467,7 @@ export type SubscriptionSyncResult =
       /**
        * With `options.standing`: the standing derived and stored for this
        * subscription; null when it was not stored (the row shows another
-       * subscription, or the charge history was too long to read).
+       * subscription).
        */
       standing?: PaymentStanding | null;
       state: SubscriptionState;
@@ -477,11 +489,22 @@ async function storePaymentStanding(
   stripe: Stripe,
   lease: LeaseHandle,
   subscription: Stripe.Subscription,
+  paymentIntentId: string | null = null,
 ): Promise<PaymentStanding | null> {
-  const standing = await readPaymentStanding(stripe, subscription);
+  const standing = await readPaymentStanding(stripe, subscription, { paymentIntentId });
   if (!standing) return null;
   const written = await writePaymentStanding(db, lease, subscription.id, standing);
-  return written === "recorded" ? standing : null;
+  if (written !== "recorded") return null;
+  if (standing.incomplete) {
+    // Never silently: the row is named, here and in the re-sync's list.
+    const row = await db.subscription.findFirst({ select: { id: true }, where: { subscriptionId: subscription.id } });
+    reportBillingError("Payment standing derived from an incomplete history: the row needs review", {
+      accessWithheld: standing.disputeStatus !== null,
+      subscriptionId: subscription.id,
+      subscriptionRowId: row?.id ?? null,
+    });
+  }
+  return standing;
 }
 
 /** syncSubscriptionById, for a caller that holds the lease of `leasedCustomerId`. */
@@ -560,7 +583,13 @@ async function syncSubscriptionLocked(
   }
 
   if (!options.standing || !read.subscription) return { outcome, state, userId };
-  const standing = await storePaymentStanding(db, stripe, lease, read.subscription);
+  const standing = await storePaymentStanding(
+    db,
+    stripe,
+    lease,
+    read.subscription,
+    options.standingPaymentIntentId ?? null,
+  );
   return { outcome, standing, state, userId };
 }
 
@@ -618,6 +647,8 @@ export type UserSyncResult =
       /** The customer has a subscription that has not ended (any of them). */
       hasLiveSubscription: boolean;
       outcome: "applied" | "stale";
+      /** With `options.standing`: as on SubscriptionSyncResult. */
+      standing?: PaymentStanding | null;
       state: SubscriptionState;
     }
   | { outcome: "no_customer" | "no_subscription" }
@@ -630,7 +661,7 @@ export type UserSyncResult =
 
 /** Page size, and the most pages read, when listing a customer's subscriptions. */
 const SUBSCRIPTIONS_PAGE_SIZE = 100;
-const MAX_SUBSCRIPTION_PAGES = 5;
+export const MAX_SUBSCRIPTION_PAGES = 5;
 
 type CustomerSubscriptions = {
   canceled: Stripe.Subscription[];
@@ -755,9 +786,10 @@ async function syncUserLocked(
     options,
   );
   if (!isReading(result)) return result;
-  if (options.standing) await storePaymentStanding(db, stripe, lease, result.primary);
+  const standing = options.standing ? await storePaymentStanding(db, stripe, lease, result.primary) : undefined;
   return {
     hasLiveSubscription: result.hasLiveSubscription,
+    ...(options.standing ? { standing } : {}),
     // An authoritative write is only ever refused for being older.
     outcome: result.outcome === "applied" ? "applied" : "stale",
     state: result.state,

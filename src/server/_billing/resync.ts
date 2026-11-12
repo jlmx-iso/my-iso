@@ -3,8 +3,9 @@ import type Stripe from "stripe";
 
 import { refreshBillingState, type RefreshOutcome } from "./checkout";
 import { ENTITLING_STATUSES, entitlementsFor } from "./entitlements";
+import { MAX_STANDING_STRIPE_CALLS } from "./paymentStanding";
 import { reportBillingError } from "./report";
-import type { BillingDb, SyncOptions } from "./subscriptionStore";
+import { MAX_READINGS, MAX_SUBSCRIPTION_PAGES, type BillingDb, type SyncOptions } from "./subscriptionStore";
 
 /**
  * Re-derives stored subscription rows from Stripe in bounded batches: the
@@ -16,8 +17,38 @@ import type { BillingDb, SyncOptions } from "./subscriptionStore";
  * that Stripe does not say, and a row that fails is counted and skipped.
  */
 
-/** Rows per call: each costs a handful of Stripe requests, and a Worker invocation has a subrequest budget. */
-export const RESYNC_MAX_BATCH = 10;
+/**
+ * What one batch may cost, against the Worker's subrequest limit (every
+ * `fetch`, so every Stripe request, and every D1 statement counts).
+ *
+ * The app runs on the Workers PAID plan (its bundle is over the Free
+ * plan's size limit), where an invocation may make 10,000 subrequests by
+ * default. SUBREQUEST_BUDGET is what a batch is held to, well inside that
+ * and inside the 1,000 that was the Paid limit until 2026. The Free plan's
+ * 50 external subrequests would NOT be enough for one batch.
+ *
+ * Per row, at the very worst:
+ *
+ * - Stripe, the customer's subscriptions: two listings (not cancelled,
+ *   cancelled) of up to MAX_SUBSCRIPTION_PAGES pages, read up to
+ *   MAX_READINGS times if readings tie;
+ * - Stripe, the row's own subscription when the list is empty: up to
+ *   MAX_READINGS readings, one to learn its customer, one for the customer;
+ * - Stripe, the payment standing: MAX_STANDING_STRIPE_CALLS;
+ * - D1: the lease (up to about eight attempts to take it, one to release),
+ *   the guarded writes and the reads around them: under
+ *   D1_STATEMENTS_PER_ROW.
+ *
+ * A row normally costs four or five Stripe requests and a dozen statements.
+ */
+export const SUBREQUEST_BUDGET = 1000;
+export const D1_STATEMENTS_PER_ROW = 30;
+export const MAX_STRIPE_CALLS_PER_ROW =
+  2 * MAX_SUBSCRIPTION_PAGES * MAX_READINGS + (MAX_READINGS + 2) + MAX_STANDING_STRIPE_CALLS;
+export const MAX_SUBREQUESTS_PER_ROW = MAX_STRIPE_CALLS_PER_ROW + D1_STATEMENTS_PER_ROW;
+
+/** Rows per call: the most that fit in SUBREQUEST_BUDGET at the worst case per row, and no more than ten. */
+export const RESYNC_MAX_BATCH = Math.min(10, Math.floor(SUBREQUEST_BUDGET / MAX_SUBREQUESTS_PER_ROW));
 
 /**
  * Which rows a batch looks at.
@@ -88,6 +119,13 @@ export function rowNeedsFirstSync(row: {
 export type ResyncOutcome = RefreshOutcome | "failed";
 
 /**
+ * Why a row is listed as unresolved. "standing_incomplete": the row was
+ * brought up to date, but its payment standing was derived from an
+ * incomplete history (./paymentStanding.ts) and needs a person.
+ */
+export type UnresolvedReason = ResyncOutcome | "standing_incomplete";
+
+/**
  * Whether a row is settled after a sync that ended in `outcome`. Not
  * settled: the sync failed or could not read everything, the row's
  * subscription cannot be matched to the user or does not exist at Stripe,
@@ -118,7 +156,7 @@ export type ResyncBatchResult = {
    * retried by running the batch again; the others need a person
    * (docs/BILLING.md).
    */
-  unresolved: Array<{ id: string; outcome: ResyncOutcome }>;
+  unresolved: Array<{ id: string; outcome: UnresolvedReason }>;
 };
 
 /**
@@ -152,17 +190,24 @@ export async function resyncSubscriptionBatch(
   const unresolved: ResyncBatchResult["unresolved"] = [];
   for (const row of batch) {
     let outcome: ResyncOutcome;
+    let standingIncomplete = false;
     try {
       // With the payment standing: disputes and refunds are derived from
       // Stripe along with the subscription.
-      outcome = (await refreshBillingState(db, stripe, row.userId, { ...options, standing: true })).outcome;
+      const refreshed = await refreshBillingState(db, stripe, row.userId, { ...options, standing: true });
+      outcome = refreshed.outcome;
+      standingIncomplete = refreshed.standingIncomplete === true;
     } catch (error) {
       outcome = "failed";
       reportBillingError("Subscription re-sync failed for a row", { error, subscriptionRowId: row.id });
     }
     outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
 
-    if (outcome === "applied" || outcome === "stale") continue;
+    if (outcome === "applied" || outcome === "stale") {
+      // Already reported, with the row's id, where the standing was stored.
+      if (standingIncomplete) unresolved.push({ id: row.id, outcome: "standing_incomplete" });
+      continue;
+    }
     const stored = outcome === "nothing_at_stripe" ? await db.subscription.findUnique({ where: { id: row.id } }) : null;
     const grantsAccess = entitlementsFor(stored, new Date()).hasProAccess;
     if (!isUnresolved(outcome, grantsAccess)) continue;

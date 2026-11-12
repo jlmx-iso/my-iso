@@ -98,6 +98,8 @@ export function buildSubscription(input: StubSubscriptionInput): Json {
 
 /** An invoice of `subscriptionId`, pointing at it the way this API version does. */
 export function buildInvoice(input: {
+  /** What was actually collected; defaults to the full amount when `paid`. */
+  amountPaid?: number;
   attemptCount?: number;
   created?: number;
   customer: string;
@@ -106,6 +108,8 @@ export function buildInvoice(input: {
   subscriptionId: string | null;
 }): Json {
   return {
+    amount_due: 1900,
+    amount_paid: input.amountPaid ?? (input.status === "paid" ? 1900 : 0),
     attempt_count: input.attemptCount ?? 1,
     billing_reason: "subscription_cycle",
     created: input.created ?? 1_800_000_000,
@@ -452,9 +456,10 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
     }
 
     if (resource === "charges" && method === "GET" && !second) {
-      liveCustomer(params.customer ?? "", "customer");
+      if (params.payment_intent === undefined) liveCustomer(params.customer ?? "", "customer");
       const data = [...charges.values()]
-        .filter((charge) => charge.customer === params.customer)
+        .filter((charge) => params.customer === undefined || charge.customer === params.customer)
+        .filter((charge) => params.payment_intent === undefined || charge.payment_intent === params.payment_intent)
         // Like Stripe: a charge says so once a dispute exists on it.
         .map((charge): Json => ({
           ...charge,

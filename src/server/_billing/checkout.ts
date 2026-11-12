@@ -108,10 +108,19 @@ export async function refreshBillingState(
   stripe: Stripe,
   userId: string,
   options: SyncOptions = {},
-): Promise<{ hasLiveSubscription: boolean; outcome: RefreshOutcome }> {
+): Promise<{
+  hasLiveSubscription: boolean;
+  outcome: RefreshOutcome;
+  /** With `options.standing`: the payment standing was derived from an incomplete history. */
+  standingIncomplete?: boolean;
+}> {
   const result = await syncUserFromStripe(db, stripe, userId, options);
   if ("state" in result) {
-    return { hasLiveSubscription: result.hasLiveSubscription, outcome: result.outcome };
+    return {
+      hasLiveSubscription: result.hasLiveSubscription,
+      outcome: result.outcome,
+      standingIncomplete: result.standing?.incomplete === true,
+    };
   }
   if (result.outcome === "listing_truncated") {
     // Unknown, and reported. "Live" is the answer that cannot lead to a
@@ -137,7 +146,11 @@ export async function refreshBillingState(
   if (single.outcome === "unknown_customer") {
     return { hasLiveSubscription: false, outcome: "unknown_customer" };
   }
-  return { hasLiveSubscription: !isTerminalStatus(single.state.status), outcome: single.outcome };
+  return {
+    hasLiveSubscription: !isTerminalStatus(single.state.status),
+    outcome: single.outcome,
+    standingIncomplete: single.standing?.incomplete === true,
+  };
 }
 
 /** Open Checkout sessions read per page, and the most pages, when starting a new one. */

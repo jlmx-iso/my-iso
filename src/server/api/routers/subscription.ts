@@ -19,7 +19,7 @@ import { loadSubscriptionForAccess } from "~/server/_billing/lazySync";
 import { LeaseBusyError } from "~/server/_billing/lease";
 import { reportBillingError } from "~/server/_billing/report";
 import { RESYNC_MAX_BATCH, resyncSubscriptionBatch } from "~/server/_billing/resync";
-import { getStripe } from "~/server/_billing/stripe";
+import { getAccessCheckStripe, getStripe } from "~/server/_billing/stripe";
 import { captureEvent } from "~/server/_lib/posthog";
 import { getPricingForRole, PriceNotConfiguredError } from "~/server/_utils/pricing";
 import { RateLimits } from "~/server/_utils/rateLimit";
@@ -116,13 +116,27 @@ export function toSubscriptionView(row: Subscription, now: Date): SubscriptionVi
   };
 }
 
-/** Stripe (or its configuration here) failed: nothing was charged. */
-function billingUnavailable(message: string, context: Record<string, unknown>): TRPCError {
+/**
+ * Stripe (or its configuration here) failed.
+ *
+ * `nothingCharged`: only for a failure to START checkout, where it is true
+ * by construction (no session was created, so there was nothing to pay).
+ * Everywhere else the message makes no claim about charges: a refresh, the
+ * portal or a re-sync failing says nothing about what Stripe has or has not
+ * collected.
+ */
+function billingUnavailable(
+  message: string,
+  context: Record<string, unknown>,
+  options: { nothingCharged?: boolean } = {},
+): TRPCError {
   reportBillingError(message, context);
   return reasonedError(
     "SERVICE_UNAVAILABLE",
     ErrorReason.BILLING_UNAVAILABLE,
-    "Billing is temporarily unavailable. You have not been charged. Please try again in a few minutes.",
+    options.nothingCharged
+      ? "Billing is temporarily unavailable. You have not been charged. Please try again in a few minutes."
+      : "Billing is temporarily unavailable. Please try again in a few minutes.",
   );
 }
 
@@ -146,7 +160,7 @@ export const subscriptionRouter = createTRPCRouter({
    * was never read from Stripe is synced first (see _billing/lazySync.ts).
    */
   getStatus: protectedProcedure.query(async ({ ctx }): Promise<SubscriptionView | null> => {
-    const row = await loadSubscriptionForAccess(ctx.db, getStripe, ctx.session.user.id);
+    const row = await loadSubscriptionForAccess(ctx.db, getAccessCheckStripe, ctx.session.user.id);
     return row ? toSubscriptionView(row, new Date()) : null;
   }),
 
@@ -196,6 +210,7 @@ export const subscriptionRouter = createTRPCRouter({
             ? "Checkout is not available: a Stripe price id is not configured"
             : "Error creating Stripe checkout session",
           { error, userId },
+          { nothingCharged: true },
         );
       }
 
@@ -266,7 +281,10 @@ export const subscriptionRouter = createTRPCRouter({
     .mutation(async ({ ctx }): Promise<SubscriptionView | null> => {
       const userId = ctx.session.user.id;
       try {
-        await refreshBillingState(ctx.db, getStripe(), userId);
+        // With the payment standing: someone held back by a lost dispute
+        // who has paid since must be able to put that right from here if
+        // the `invoice.paid` event is late.
+        await refreshBillingState(ctx.db, getStripe(), userId, { standing: true });
       } catch (error) {
         throw billingUnavailable("Error syncing subscription from Stripe", { error, userId });
       }

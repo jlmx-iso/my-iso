@@ -107,6 +107,11 @@ type Outcome =
   | "not_a_subscription"
   | "dispute_recorded"
   | "refund_recorded"
+  /**
+   * Stored, but derived from an incomplete payment history: reported with
+   * the row's id for review (a retry would read the same and help nothing).
+   */
+  | "standing_incomplete"
   | "customer_forgotten";
 
 const respond = (status: WebhookResponse["status"], result: string): WebhookResponse => ({
@@ -120,6 +125,8 @@ type SyncExtras = {
   hintUserId?: string | null;
   /** Also re-derive the payment standing (invoice, dispute and refund events). */
   standing?: boolean;
+  /** The payment a dispute or refund event is about: its charges are read directly. */
+  standingPaymentIntentId?: string | null;
 };
 
 /** Reads and stores the subscription an event is about; reports what cannot be matched. */
@@ -134,7 +141,12 @@ async function syncForEvent(
     deps.getStripe(),
     subscriptionId,
     extras.hintUserId ?? null,
-    { ...deps.sync, customerId: extras.customerId ?? null, standing: extras.standing ?? false },
+    {
+      ...deps.sync,
+      customerId: extras.customerId ?? null,
+      standing: extras.standing ?? false,
+      standingPaymentIntentId: extras.standingPaymentIntentId ?? null,
+    },
   );
 
   if (result.outcome === "unknown_customer") {
@@ -164,7 +176,8 @@ async function syncFromEvent(
   extras: SyncExtras = {},
 ): Promise<Outcome> {
   if (!subscriptionId) return "not_a_subscription";
-  return (await syncForEvent(deps, event, subscriptionId, extras)).outcome;
+  const result = await syncForEvent(deps, event, subscriptionId, extras);
+  return "standing" in result && result.standing?.incomplete ? "standing_incomplete" : result.outcome;
 }
 
 /**
@@ -187,10 +200,12 @@ async function handlePaymentChange(
   const invoice = await findSubscriptionInvoice(deps.getStripe(), paymentIntentId);
   if (!invoice) return "not_a_subscription";
 
-  const result = await syncForEvent(deps, event, invoice.subscriptionId, { standing: true });
+  const result = await syncForEvent(deps, event, invoice.subscriptionId, {
+    standing: true,
+    standingPaymentIntentId: paymentIntentId,
+  });
   if (result.outcome !== "applied" && result.outcome !== "stale") return result.outcome;
-  // Not stored: the user's row shows another subscription of theirs (or
-  // the charge history was too long to read, which was reported).
+  // Not stored: the user's row shows another subscription of theirs.
   if (!result.standing) return "stale";
 
   const { standing } = result;
@@ -208,6 +223,7 @@ async function handlePaymentChange(
       subscriptionId: invoice.subscriptionId,
     });
   }
+  if (standing.incomplete) return "standing_incomplete";
   return kind === "dispute" ? "dispute_recorded" : "refund_recorded";
 }
 

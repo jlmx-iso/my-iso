@@ -17,6 +17,7 @@ import {
 
 import { entitlementsFor } from "./entitlements";
 import { CLAIM_LEASE_SECONDS } from "./eventLog";
+import { MAX_DISPUTED_CHARGES, MAX_STANDING_STRIPE_CALLS } from "./paymentStanding";
 import { constructWebhookEvent } from "./stripe";
 import { subscriptionStateFromStripe } from "./subscriptionState";
 import { applySubscriptionState } from "./subscriptionStore";
@@ -654,6 +655,170 @@ describe("disputes and refunds", () => {
 
     expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeInvoiceId: null, disputeStatus: null });
     expect(await access(user.id)).toMatchObject({ hasProAccess: true, isDisputed: false });
+  });
+
+  it("a later invoice that is `paid` without any money (a trial, a credit) does not lift a lost dispute", async () => {
+    const user = await paidSubscription();
+    await deliver(buildEvent("charge.dispute.closed", disputeIs("lost")));
+    expect((await access(user.id)).hasProAccess).toBe(false);
+
+    const free = buildInvoice({ amountPaid: 0, created: T0 + 30 * DAY, customer: "cus_alice", id: "in_2", status: "paid", subscriptionId: "sub_1" });
+    stub.invoices.set("in_2", free);
+    stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", status: "active" });
+    await deliver(buildEvent("invoice.paid", free));
+
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeInvoiceId: "in_1", disputeStatus: "lost", latestInvoiceId: "in_2" });
+    expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+
+    // An invoice that money was paid for does.
+    const paidFor = buildInvoice({ created: T0 + 60 * DAY, customer: "cus_alice", id: "in_3", status: "paid", subscriptionId: "sub_1" });
+    stub.invoices.set("in_3", paidFor);
+    stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_3", status: "active" });
+    await deliver(buildEvent("invoice.paid", paidFor));
+
+    expect((await access(user.id)).hasProAccess).toBe(true);
+  });
+
+  describe("bounds on what one derivation reads", () => {
+    const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+    /** `count` more paid invoices of sub_1, each with a charge that was disputed and WON; newest last. */
+    function wonDisputes(count: number, createdFrom: number) {
+      for (let i = 1; i <= count; i += 1) {
+        stub.invoices.set(`in_old_${i}`, buildInvoice({ created: createdFrom + i, customer: "cus_alice", id: `in_old_${i}`, status: "paid", subscriptionId: "sub_1" }));
+        stub.invoicePayments.set(`inpay_old_${i}`, buildInvoicePayment({ id: `inpay_old_${i}`, invoice: `in_old_${i}`, paymentIntent: `pi_old_${i}` }));
+        stub.charges.set(`ch_old_${i}`, buildCharge({ created: createdFrom + i, customer: "cus_alice", id: `ch_old_${i}`, paymentIntent: `pi_old_${i}` }));
+        stub.disputes.set(`dp_old_${i}`, buildDispute({ charge: `ch_old_${i}`, id: `dp_old_${i}`, paymentIntent: `pi_old_${i}`, status: "won" }));
+      }
+    }
+
+    const disputeLists = () => stub.requests.filter((request) => request.path === "/v1/disputes").length;
+    const errorText = () => vi.mocked(console.error).mock.calls.flat().join(" ");
+
+    const stripeCallsDuring = async (work: () => Promise<unknown>) => {
+      const before = stub.requests.length;
+      await work();
+      return stub.requests.length - before;
+    };
+
+    it("examines at most five disputed charges, in a bounded number of Stripe requests; with more, access is withheld and it is reported", async () => {
+      const user = await paidSubscription();
+      wonDisputes(MAX_DISPUTED_CHARGES, nowSeconds() - 100 * DAY);
+      const invoice = buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" });
+
+      // Five, all won: nothing is withheld.
+      await deliver(buildEvent("invoice.paid", invoice));
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeStatus: null });
+      expect((await access(user.id)).hasProAccess).toBe(true);
+
+      // A sixth and a seventh: the two oldest are not looked at, and may be open.
+      wonDisputes(7, nowSeconds() - 100 * DAY);
+      const disputeListsBefore = disputeLists();
+      let withheld: Awaited<ReturnType<typeof deliver>> | undefined;
+      const calls = await stripeCallsDuring(async () => {
+        withheld = await deliver(buildEvent("invoice.payment_succeeded", invoice));
+      });
+
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: "open" });
+      expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+      // Not passed off as handled-and-settled: the outcome says so, and the row is named for review.
+      expect(withheld).toMatchObject({ result: "standing_incomplete", status: 200 });
+      expect(errorText()).toContain("incomplete history");
+      expect(errorText()).toContain((await subscriptionRow(user.id))?.id);
+      // The subscription itself, then the standing within its bound: the
+      // disputes of five charges were read, not of seven.
+      expect(calls).toBeLessThanOrEqual(1 + MAX_STANDING_STRIPE_CALLS);
+      expect(disputeLists() - disputeListsBefore).toBe(MAX_DISPUTED_CHARGES);
+    });
+
+    it("an open dispute among the newest is recorded as itself, however many older ones there are", async () => {
+      const user = await paidSubscription();
+      wonDisputes(9, nowSeconds() - 100 * DAY);
+      stub.charges.set("ch_1", buildCharge({ created: nowSeconds(), customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+
+      await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response")));
+
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_1", disputeInvoiceId: "in_1", disputeStatus: "open" });
+    });
+
+    it("leaves disputed charges of more than two years ago out of it", async () => {
+      const user = await paidSubscription();
+      wonDisputes(9, nowSeconds() - 3 * 365 * DAY);
+
+      await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeStatus: null });
+      expect((await access(user.id)).hasProAccess).toBe(true);
+      expect(stub.requests.filter((request) => request.path === "/v1/disputes")).toHaveLength(0);
+    });
+
+    describe("a customer with more charges than are listed (an incomplete charge history)", () => {
+      /** 320 charges of the last year and a bit; the listing reads the newest 300. */
+      function longHistory() {
+        for (let i = 1; i <= 320; i += 1) {
+          stub.charges.set(`ch_bulk_${i}`, buildCharge({ created: nowSeconds() - 400 * DAY + i, customer: "cus_alice", id: `ch_bulk_${i}`, paymentIntent: `pi_bulk_${i}` }));
+        }
+      }
+      const chargeLists = () => stub.requests.filter((request) => request.path === "/v1/charges" && request.params.customer !== undefined).length;
+
+      it("a NEW dispute is recorded, not left out because the previous standing was kept: on a recent charge", async () => {
+        const user = await paidSubscription();
+        longHistory();
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds(), customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeStatus: null, status: "active" });
+
+        const opened = await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response")));
+
+        expect(opened).toMatchObject({ result: "dispute_recorded", status: 200 });
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_1", disputeStatus: "open" });
+        expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+        expect(chargeLists()).toBe(3);
+      });
+
+      it("and on a charge OLDER than everything listed: the event's own charge is read directly", async () => {
+        const user = await paidSubscription();
+        longHistory();
+        // ch_1 paid in_1 five hundred days ago: behind all 320 newer charges.
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+
+        const opened = await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response")));
+
+        expect(opened).toMatchObject({ result: "dispute_recorded", status: 200 });
+        expect(stub.requests.some((request) => request.path === "/v1/charges" && request.params.payment_intent === "pi_1")).toBe(true);
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_1", disputeInvoiceId: "in_1", disputeStatus: "open" });
+        expect((await access(user.id)).hasProAccess).toBe(false);
+      });
+
+      it("a WON dispute clears, and the paying customer is not left blocked; what could not be read is reported with the row's id", async () => {
+        const user = await paidSubscription();
+        longHistory();
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+        await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response")));
+        expect((await access(user.id)).hasProAccess).toBe(false);
+
+        const closed = await deliver(buildEvent("charge.dispute.closed", disputeIs("won")));
+
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeInvoiceId: null, disputeStatus: null });
+        expect(await access(user.id)).toMatchObject({ hasProAccess: true, isDisputed: false });
+        // Twenty charges of the last two years were not read: said, not hidden.
+        expect(closed).toMatchObject({ result: "standing_incomplete", status: 200 });
+        expect(errorText()).toContain("incomplete history");
+        expect(errorText()).toContain((await subscriptionRow(user.id))?.id);
+      });
+
+      it("is not called incomplete when the unread charges are older than any dispute can be", async () => {
+        const user = await paidSubscription();
+        for (let i = 1; i <= 320; i += 1) {
+          stub.charges.set(`ch_old_${i}`, buildCharge({ created: nowSeconds() - 3 * 365 * DAY + i, customer: "cus_alice", id: `ch_old_${i}`, paymentIntent: `pi_old_${i}` }));
+        }
+
+        const paid = await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+        expect(paid.result).not.toBe("standing_incomplete");
+        expect(paid.status).toBe(200);
+        expect((await access(user.id)).hasProAccess).toBe(true);
+      });
+    });
   });
 
   it("winning one dispute does not hide another that is still open, in either order of arrival", async () => {

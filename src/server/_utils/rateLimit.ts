@@ -349,7 +349,8 @@ export const RateLimits = {
   BILLING_CHECKOUT: { limit: 10, name: "billing-checkout", onError: "allow", windowSeconds: HOUR },
   BILLING_PORTAL: { limit: 20, name: "billing-portal", onError: "allow", windowSeconds: HOUR },
   BILLING_SYNC: { limit: 6, name: "billing-sync", onError: "allow", windowSeconds: 5 * MINUTE },
-  // Admin re-sync batches (each is up to 40 Stripe requests).
+  // Admin re-sync batches: up to RESYNC_MAX_BATCH rows each; what a batch
+  // may cost in Stripe requests is bounded in _billing/resync.ts.
   BILLING_RESYNC: { limit: 120, name: "billing-resync", onError: "allow", windowSeconds: 5 * MINUTE },
   BOOKING_UPDATE: { limit: 60, name: "booking-update", onError: "allow", windowSeconds: HOUR },
   PLACES_AUTOCOMPLETE: { limit: 60, name: "places-autocomplete", onError: "allow", windowSeconds: MINUTE },
