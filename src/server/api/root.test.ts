@@ -53,6 +53,35 @@ const PUBLIC_PROCEDURES = [
   "waitlist.submit",
 ];
 
+/**
+ * Every procedure that only a Pro member may call. Each must be built on
+ * `proProcedure` (checked below: a signed-in member without Pro gets
+ * FORBIDDEN before anything else happens), and every procedure that is
+ * Pro-only must be listed here.
+ */
+const PRO_PROCEDURES = ["insights.getSummary", "support.contact"];
+
+/** Calls `path` as a signed-in member with no subscription; returns the error code. */
+async function nonProErrorCode(procedurePath: string): Promise<string | undefined> {
+  const createCaller = appRouter.createCaller as unknown as (
+    context: unknown,
+  ) => Record<string, Record<string, (input: unknown) => Promise<unknown>>>;
+  const caller = createCaller({
+    cloudinaryClient: null,
+    // The Pro check reads the member's subscription row (none) and nothing else.
+    db: { subscription: { findUnique: async () => null } },
+    headers: new Headers(),
+    session: { expires: new Date(Date.now() + 60_000).toISOString(), user: { email: "m@example.com", id: "member" } },
+  });
+  const [router = "", name = ""] = procedurePath.split(".");
+  try {
+    await caller[router]?.[name]?.(undefined);
+    return undefined;
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+}
+
 describe("appRouter surface", () => {
   it("has removed the dead, dangerous endpoints", () => {
     const paths = procedurePaths;
@@ -63,6 +92,28 @@ describe("appRouter surface", () => {
     expect(paths.filter((p) => p.startsWith("favorite."))).toEqual([]);
     // Favorites live on the user router, scoped to the session.
     expect(paths).toEqual(expect.arrayContaining(["user.addFavorite", "user.removeFavorite"]));
+    // A mutation that changed nothing (matches expire at read time and by a
+    // scheduled job), and a name that said "by user id" for "the caller's own".
+    expect(paths).not.toContain("discover.expireStaleMatches");
+    expect(paths).not.toContain("message.getLatestThreadByUserId");
+    expect(paths).toContain("message.getMyLatestThread");
+  });
+
+  it("refuses a signed-in member without Pro on every Pro procedure, before reading the input", async () => {
+    for (const procedurePath of PRO_PROCEDURES) {
+      expect(procedurePaths).toContain(procedurePath);
+      expect([procedurePath, await nonProErrorCode(procedurePath)]).toEqual([procedurePath, "FORBIDDEN"]);
+    }
+  });
+
+  it("lists every procedure that refuses members without Pro", async () => {
+    // With a database that holds only "no subscription", the Pro check is
+    // the only thing that can answer FORBIDDEN before failing on the stub.
+    const refusing: string[] = [];
+    for (const procedurePath of procedurePaths) {
+      if ((await nonProErrorCode(procedurePath)) === "FORBIDDEN") refusing.push(procedurePath);
+    }
+    expect(refusing.sort()).toEqual([...PRO_PROCEDURES].sort());
   });
 
   it("rejects anonymous callers on every procedure outside the public list", async () => {
