@@ -205,6 +205,33 @@ When a subscription exists and `canStartCheckout` is false, the client offers
 the billing portal, whether or not there is access: that is where a failed
 payment is fixed and a paused or unfinished subscription is resumed or ended.
 
+## What Pro gives, and where it is enforced
+
+The list members see is `PRO_PLAN.features` in `src/_utils/plans.ts` (the
+landing page, onboarding, Settings and the upgrade email all render it).
+Each item is backed by the server:
+
+| Benefit | Where | How "is Pro" is decided |
+| --- | --- | --- |
+| Priority placement in search | `search.searchAll` (`rankedPhotographerIds`) | `proAccessSql`: the access table above as a SQL condition on `Subscription`, evaluated at read time |
+| Pro badge | `isPro` on profiles, search results, event owners, applicants and message participants | `proUserIds`: `entitlementsFor` over the stored rows, one query per page |
+| Profile analytics | `insights.getSummary`, page `/app/insights` | `proProcedure` |
+| Priority support | `support.contact` (email to `SUPPORT_INBOX_EMAIL`, subject `[Pro] ...`) | `proProcedure` |
+
+All three forms are the one rule in `entitlements.ts`.
+`src/server/_billing/proStatus.test.ts` runs `proAccessSql` and
+`entitlementsFor` over the same rows at moments either side of every time
+limit and fails if they disagree: change them together. Nothing about Pro
+status is stored outside `Subscription`, so a subscription that lapses
+(cancellation date, end of the past-due grace, end of a paid period) stops
+ranking and loses its badge at that instant, with no job or webhook needed.
+
+The badge and the ranking read the stored row only; unlike `proProcedure`
+they never start a lazy first sync (below), which would be a Stripe call per
+name on a page. The list of `proProcedure`s is `PRO_PROCEDURES` in
+`src/server/api/root.test.ts`, which fails when a procedure refuses members
+without Pro and is not on it, or is on it and does not.
+
 ## Events handled
 
 `HANDLED_EVENT_TYPES` in `webhook.ts`. Subscribe the endpoint to exactly
