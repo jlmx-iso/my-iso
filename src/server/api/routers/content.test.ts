@@ -69,6 +69,14 @@ describe("content routers against SQLite", () => {
     });
   }
 
+  /** `user` has completed a booking on one of the owner's events: they may review. */
+  async function workedTogether(user: TestUser) {
+    const event = await createEvent({ title: "Past job" });
+    await testDb.db.booking.create({
+      data: { applicantId: user.id, eventId: event.id, ownerId: owner.id, status: "completed" },
+    });
+  }
+
   beforeAll(async () => {
     testDb = await createTestDb();
   });
@@ -190,7 +198,7 @@ describe("content routers against SQLite", () => {
     });
 
     it("is rate limited per user", async () => {
-      for (let i = 0; i < RateLimits.SEARCH.limit; i++) {
+      for (let i = 0; i < RateLimits.MEMBER_SEARCH.limit; i++) {
         await searchAs(visitor).searchAll({ query: "o" });
       }
       await expect(searchAs(visitor).searchAll({ query: "o" })).rejects.toMatchObject({
@@ -261,6 +269,7 @@ describe("content routers against SQLite", () => {
     });
 
     it("public reviews carry the reviewer's name, not their user id or email", async () => {
+      await workedTogether(visitor);
       await reviewsAs(visitor).create({ photographerId, rating: 5, title: "Great" });
 
       const reviews = await reviewsAs().getByPhotographerId({ photographerId });
@@ -646,6 +655,10 @@ describe("content routers against SQLite", () => {
   describe("reviews", () => {
     const review = { photographerId: "", rating: 5, title: "Great to work with" };
 
+    beforeEach(async () => {
+      await workedTogether(visitor);
+    });
+
     it("allows one review per reviewer per photographer", async () => {
       await reviewsAs(visitor).create({ ...review, photographerId });
 
@@ -681,6 +694,7 @@ describe("content routers against SQLite", () => {
 
     it("computes the average in the database", async () => {
       const third = await createTestUser(testDb.db);
+      await workedTogether(third);
       await reviewsAs(visitor).create({ ...review, photographerId, rating: 5 });
       await reviewsAs(third).create({ ...review, photographerId, rating: 4 });
 

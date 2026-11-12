@@ -127,9 +127,10 @@ export type OtpSignInResult =
 /**
  * Email-code sign-in for the web (`POST /api/auth/callback/otp`).
  *
- * Applies the same per-IP and per-email limits (15-minute and daily) and the
- * same attempt-capped, constant-time verification as the mobile tRPC
- * procedure. An invitee has no
+ * Applies the same limits (per client, per client-and-address, and per
+ * address; 15-minute and daily, see otpVerifyLimits) and the same
+ * attempt-capped, constant-time verification as the mobile tRPC procedure.
+ * An invitee has no
  * account until their first code checks out; it is created here.
  */
 export async function signInWithOtp(
@@ -142,8 +143,9 @@ export async function signInWithOtp(
   if (!parsed.success) return { status: "rejected" };
   const { code, email } = parsed.data;
 
-  // The client's own limit first: once it is over, the address's counters
-  // are not touched (see checkRateLimitsInOrder).
+  // The client's own limits first: once it is over any of them, the
+  // counters it shares with the address's owner are not touched (see
+  // otpVerifyLimits), so it cannot lock the owner out.
   const refused = await checkRateLimitsInOrder(db, otpVerifyLimits(clientIp, email));
   if (refused) return { status: "rate_limited" };
 

@@ -182,9 +182,17 @@ export const authConfig = {
 
       return session;
     },
-    signIn: async ({ user, account }) => {
+    signIn: async ({ user, account, profile }) => {
       if (!user.email) {
         logger.info("No email provided");
+        return false;
+      }
+
+      // Accounts here are keyed on the email address, so Google must vouch
+      // for it: an unverified address on a Google account proves nothing
+      // about who owns the mailbox.
+      if (account?.provider === "google" && profile?.email_verified !== true) {
+        logger.warn("Google sign-in refused: email address not verified by Google");
         return false;
       }
 
