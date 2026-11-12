@@ -1,8 +1,8 @@
 {
-  "branches": 71,
-  "functions": 74,
+  "branches": 72,
+  "functions": 75,
   "lines": 77,
-  "statements": 76,
+  "statements": 77,
   "src/server/_billing/**": {
     "branches": 91,
     "functions": 95,
@@ -19,7 +19,7 @@
     "branches": 78,
     "functions": 91,
     "lines": 87,
-    "statements": 86
+    "statements": 87
   },
   "src/server/_jobs/**": {
     "branches": 96,
@@ -28,9 +28,9 @@
     "statements": 98
   },
   "src/_lib/**": {
-    "branches": 88,
-    "functions": 90,
-    "lines": 78,
-    "statements": 81
+    "branches": 89,
+    "functions": 92,
+    "lines": 82,
+    "statements": 84
   }
 }
