@@ -214,7 +214,9 @@ export const waitlistRouter = createTRPCRouter({
         },
       });
 
-      captureEvent(await hashEmail(entry.email), "waitlist_approved", {});
+      // Attributed to the reviewer, whose request (and consent) this is; nothing
+      // about the applicant is sent.
+      captureEvent(ctx.session.user.id, "waitlist_approved", {});
 
       // Send approval email (I1)
       // Include email so the join page can show "Sign in with the Google account matching {email}"

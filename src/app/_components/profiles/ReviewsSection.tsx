@@ -268,7 +268,7 @@ export default function ReviewsSection({
                       {review.title}
                     </Text>
                     {review.description && (
-                      <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }}>
+                      <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }} data-replay-block>
                         {review.description}
                       </Text>
                     )}

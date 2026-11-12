@@ -209,21 +209,25 @@ describe("scrubProperties", () => {
 });
 
 describe("scrubPersonProperties", () => {
-  it("keeps the email and name set on purpose, scrubs everything else", () => {
+  it("drops name and email (any case, with or without \$) and scrubs everything else", () => {
     expect(
       scrubPersonProperties({
+        $email: "sarah@example.com",
         $initial_current_url: WAITLIST_RAW,
         $initial_referrer: INVITE,
-        email: "sarah@example.com",
+        Email: "sarah@example.com",
+        first_name: "Sarah",
+        last_name: "Chen",
         name: "Sarah Chen",
         note: "reach me at sarah@example.com",
+        phone: "555 0100",
+        plan: "pro",
       }),
     ).toEqual({
       $initial_current_url: "https://myiso.app/join",
       $initial_referrer: "https://myiso.app/join",
-      email: "sarah@example.com",
-      name: "Sarah Chen",
       note: "reach me at [email]",
+      plan: "pro",
     });
   });
 
@@ -233,7 +237,7 @@ describe("scrubPersonProperties", () => {
       $set_once: { $initial_current_url: WAITLIST_RAW },
     });
     expect(scrubbed).toEqual({
-      $set: { email: "sarah@example.com", last_url: "https://myiso.app/join" },
+      $set: { last_url: "https://myiso.app/join" },
       $set_once: { $initial_current_url: "https://myiso.app/join" },
     });
   });
@@ -292,14 +296,14 @@ describe("scrubbing edge cases", () => {
     expect(scrubProperties({ $snapshot_bytes: bytes }).$snapshot_bytes).toBe(bytes);
   });
 
-  it("keeps email and name only directly under $set and $set_once", () => {
+  it("drops email and name under $set and $set_once, and scrubs them elsewhere", () => {
     expect(
       scrubProperties({
         $set_once: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
         other: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
       }),
     ).toEqual({
-      $set_once: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
+      $set_once: {},
       other: { email: "[email]", name: "Sarah <[email]>" },
     });
   });

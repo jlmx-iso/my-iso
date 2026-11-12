@@ -2,13 +2,14 @@ import type { User } from "@prisma/client";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { isUniqueViolation } from "~/server/_db/errors";
 import {
   applyInviteGrant,
   releaseInviteGrant,
   reserveInviteGrant,
   type InviteGrant,
 } from "~/server/_db/invite";
-import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
+import { type ExtendedPrismaClient, INCLUDING_DELETED } from "~/server/_db/softDelete";
 import { verifyOtp } from "~/server/_db/verificationToken";
 import { checkRateLimitsInOrder, otpVerifyLimits } from "~/server/_utils/rateLimit";
 
@@ -28,6 +29,23 @@ type SignupDb = Pick<
   | "user"
   | "verificationToken"
 >;
+
+/**
+ * The address belongs to an account whose deletion has started but not
+ * finished: its row still holds the address until the last step
+ * anonymises it (~/server/_lib/account/deletion).
+ */
+export class AccountDeletionPendingError extends Error {
+  constructor() {
+    super("This account is still being deleted.");
+    this.name = "AccountDeletionPendingError";
+  }
+}
+
+/** Whether `email` is held by an account that is being deleted. */
+export async function isDeletionPending(db: Pick<SignupDb, "user">, email: string): Promise<boolean> {
+  return (await db.user.count({ where: { ...INCLUDING_DELETED, email, isDeleted: true } })) > 0;
+}
 
 export type NewUserProfile = {
   email: string;
@@ -82,6 +100,9 @@ export async function createInvitedUser(
     user = await db.user.create({ data: profile });
   } catch (error) {
     if (grant) await releaseInviteGrant(db, grant);
+    if (isUniqueViolation(error) && (await isDeletionPending(db, profile.email))) {
+      throw new AccountDeletionPendingError();
+    }
     throw error;
   }
 
@@ -122,7 +143,9 @@ export type OtpSignInResult =
   /** Wrong/expired/used code, malformed input, or a sign-up without invite. */
   | { status: "rejected" }
   /** Over the limit, or the limiter itself failed (fail closed). */
-  | { status: "rate_limited" };
+  | { status: "rate_limited" }
+  /** The address belongs to an account still being deleted. */
+  | { status: "deletion_pending" };
 
 /**
  * Email-code sign-in for the web (`POST /api/auth/callback/otp`).
@@ -151,8 +174,10 @@ export async function signInWithOtp(
 
   if (!(await verifyOtp(db, email, code))) return { status: "rejected" };
 
+  const existing = await db.user.findUnique({ where: { email } });
+  if (!existing && (await isDeletionPending(db, email))) return { status: "deletion_pending" };
   const user =
-    (await db.user.findUnique({ where: { email } })) ??
+    existing ??
     (await createInvitedUser(
       db,
       { email, emailVerified: new Date(), firstName: "", lastName: "" },

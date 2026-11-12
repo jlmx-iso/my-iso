@@ -83,19 +83,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Person properties set on purpose, with consent (see ~/app/providers).
- * Everything else under `$set` / `$set_once` is scrubbed like any property.
- * Both SDKs' `before_send` hooks apply this to an event's `$set` and
- * `$set_once`, and `scrubProperties` to its `properties`.
+ * Person properties that identify someone directly. They are never sent:
+ * the app identifies a member by user id only, so one of these could only
+ * arrive by mistake (or from the SDK), and is dropped, in any letter case
+ * and with or without PostHog's `$` prefix. Everything else under `$set` /
+ * `$set_once` is scrubbed like any property. Both SDKs' `before_send` hooks
+ * apply this to an event's `$set` and `$set_once`, and `scrubProperties`
+ * to its `properties`.
  */
-const INTENDED_PERSON_PROPERTIES = new Set(["email", "name"]);
+const IDENTIFYING_PERSON_PROPERTIES = new Set(["email", "name", "first_name", "last_name", "phone"]);
 
 export function scrubPersonProperties(
   properties: Record<string, unknown>,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(properties)) {
-    result[key] = INTENDED_PERSON_PROPERTIES.has(key) ? item : scrubValue(item, false, 1);
+    if (IDENTIFYING_PERSON_PROPERTIES.has(key.replace(/^\$/, "").toLowerCase())) continue;
+    result[key] = scrubValue(item, false, 1);
   }
   return result;
 }

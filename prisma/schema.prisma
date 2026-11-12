@@ -184,6 +184,10 @@ model Photographer {
   reviews         Review[]
   companyName     String
   events          Event[]
+  // Set when the member deletes their account: the row is anonymised and
+  // hidden from every read (soft-delete extension), kept only so that
+  // their past events still have an owner in other members' booking history.
+  isDeleted       Boolean          @default(false)
 
   // Search performance indexes
   @@index([name])
@@ -343,10 +347,31 @@ model User {
   seekingTypes      String? // JSON array: ["wedding", "portrait", "event", "commercial"]
   budgetMin         Int?
   budgetMax         Int?
+  // Account deletion (src/server/_lib/account/deletion.ts). `isDeleted` is
+  // set the moment the member asks: the soft-delete extension then hides
+  // the row from every read, which also ends their sessions. The row stays,
+  // anonymised, so that what others keep (messages they received, booking
+  // history) can show "Deleted member". `deletionRequestedAt` is when they
+  // asked; `deletedAt` is when every step finished (null while a step is
+  // still to be retried by the finish-deletions job).
+  isDeleted           Boolean   @default(false)
+  deletionRequestedAt DateTime?
+  deletedAt           DateTime?
+  // Runs of the deletion so far and when the last one started: the job
+  // retries the least recently tried first, and gives up (and reports)
+  // after a few failures, so one broken account cannot stall the others.
+  deletionAttempts    Int       @default(0)
+  deletionAttemptedAt DateTime?
+  // Optional steps that could not be done, comma-separated (e.g.
+  // "posthog" when PostHog erasure is not configured), for the owner to
+  // finish by hand.
+  deletionSkipped     String?
   profileViews      ProfileView[]
 
   // The Discover deck and recipient search filter on it.
   @@index([isDiscoverable])
+  // The finish-deletions job: unfinished deletions, least recently tried first.
+  @@index([isDeleted, deletedAt, deletionAttemptedAt])
 }
 
 model Event {

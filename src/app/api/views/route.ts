@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { z } from "zod";
 
+import { consentFromHeaders } from "~/_lib/consent";
 import { SITE_URL } from "~/_lib/site";
 import { logger } from "~/_utils";
 import { VIEW_SOURCES } from "~/_utils/viewSources";
@@ -157,7 +158,10 @@ export async function POST(request: Request): Promise<Response> {
       userAgent: request.headers.get("user-agent"),
       viewerId: session?.user?.id ?? null,
     });
-    return noContent(result.cookie);
+    // The dedupe cookie is a browser-stored identifier of sorts: none for a
+    // visitor who refused analytics (or has not yet accepted where that is
+    // required). ViewSeen still dedupes them on the server.
+    return noContent(consentFromHeaders(request.headers) === "denied" ? null : result.cookie);
   } catch (error) {
     // A lost view is not worth an error page or a retry storm.
     logger.warn("Could not count a view", { error });

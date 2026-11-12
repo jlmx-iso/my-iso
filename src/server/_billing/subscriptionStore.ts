@@ -3,8 +3,9 @@ import type Stripe from "stripe";
 
 import { logger } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
-import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
+import { type ExtendedPrismaClient, INCLUDING_DELETED } from "~/server/_db/softDelete";
 
+import { endBillingForClosedAccount, isClosedAccount } from "./accountClosure";
 import { isSubscriptionStatus, isTerminalStatus, TERMINAL_STATUSES } from "./entitlements";
 import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
 import {
@@ -348,9 +349,12 @@ export async function writePaymentStanding(
   throw new LeaseLostError(lease.key);
 }
 
-/** The user a Stripe customer id is stored on, or null. */
+/**
+ * The user a Stripe customer id is stored on, or null. A deleted account
+ * counts: its billing still has to be recorded and ended (./accountClosure).
+ */
 export async function findUserIdByCustomer(db: BillingDb, customerId: string): Promise<string | null> {
-  const user = await db.user.findUnique({ select: { id: true }, where: { stripeId: customerId } });
+  const user = await db.user.findFirst({ select: { id: true }, where: { ...INCLUDING_DELETED, stripeId: customerId } });
   return user?.id ?? null;
 }
 
@@ -419,12 +423,16 @@ export async function resolveUserForSubscription(
   }
   if (!candidate) return null;
 
-  const user = await db.user.findUnique({ select: { id: true }, where: { id: candidate } });
+  const user = await db.user.findFirst({
+    select: { id: true, isDeleted: true },
+    where: { ...INCLUDING_DELETED, id: candidate },
+  });
   if (!user) return null;
 
   // Remember the customer for next time, but only for a subscription that
-  // is still running: the customer of a finished one may have been deleted.
-  if (!isTerminalStatus(subscription.status)) {
+  // is still running (the customer of a finished one may have been
+  // deleted), and never for a deleted account.
+  if (!isTerminalStatus(subscription.status) && !user.isDeleted) {
     const link = await linkCustomerToUser(db, user.id, customerId);
     if (link === "conflict") {
       reportBillingError("Stripe subscription names a user who has a different Stripe customer", {
@@ -696,6 +704,14 @@ async function syncSubscriptionLocked(
   );
   if (!isReading(result)) return result;
 
+  // A deleted account: its state is stored above (the row is the billing
+  // record), and nothing may be charged any more. Whatever the status: a
+  // canceled subscription can still have an open invoice whose voiding
+  // failed before, and this redelivery is the chance to finish it.
+  if (read.subscription && (await isClosedAccount(db, result.userId))) {
+    await endBillingForClosedAccount(stripe, subscriptionId);
+  }
+
   const { state, userId } = result;
   let outcome: "applied" | "stale";
   if (result.outcome === "applied" || result.outcome === "stale") {
@@ -705,7 +721,7 @@ async function syncSubscriptionLocked(
     outcome = result.outcome;
   } else {
     // other_subscription: let the customer's complete list decide.
-    const user = await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } });
+    const user = await db.user.findFirst({ select: { stripeId: true }, where: { ...INCLUDING_DELETED, id: userId } });
     if (user?.stripeId && user.stripeId !== state.stripeCustomerId) {
       // Already reported by resolveUserForSubscription when it matters.
       logger.warn("Stripe subscription of a customer other than the user's stored one: row left as it is", {
@@ -965,7 +981,7 @@ export async function syncUserFromStripe(
 ): Promise<UserSyncResult> {
   const customer =
     customerId ??
-    (await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } }))?.stripeId ??
+    (await db.user.findFirst({ select: { stripeId: true }, where: { ...INCLUDING_DELETED, id: userId } }))?.stripeId ??
     null;
   if (!customer) return { outcome: "no_customer" };
   return withCustomerLease(db, customer, options, (lease) =>

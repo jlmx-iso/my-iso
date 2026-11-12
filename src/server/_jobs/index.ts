@@ -9,6 +9,7 @@ import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { captureServerException } from "~/server/_lib/posthog";
 
 import { expireStaleMatches } from "./expireStaleMatches";
+import { finishAccountDeletions } from "./finishAccountDeletions";
 import { purgeExpired } from "./purgeExpired";
 import { reconcileInviteSlots } from "./reconcileInviteSlots";
 
@@ -17,6 +18,7 @@ type Job = (db: ExtendedPrismaClient, now: Date) => Promise<JobSummary>;
 
 export const JOBS = {
   "expire-matches": expireStaleMatches,
+  "finish-deletions": finishAccountDeletions,
   "purge-expired": purgeExpired,
   "reconcile-invites": reconcileInviteSlots,
 } as const satisfies Record<string, Job>;

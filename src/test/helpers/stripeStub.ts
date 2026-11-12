@@ -416,6 +416,21 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
     }
 
     if (resource === "subscriptions") {
+      // Cancel now (DELETE /v1/subscriptions/:id). Like Stripe, a
+      // subscription that has already ended cannot be cancelled again.
+      if (method === "DELETE" && second) {
+        const subscription = subscriptions.get(second);
+        if (!subscription) throw missing("subscription", second, "id");
+        if (subscription.status === "canceled" || subscription.status === "incomplete_expired") {
+          throw new StubError(400, {
+            error: { message: "This subscription has already been canceled.", type: "invalid_request_error" },
+          });
+        }
+        const endedAt = Math.floor(now().getTime() / 1000);
+        const canceled: Json = { ...subscription, canceled_at: endedAt, ended_at: endedAt, status: "canceled" };
+        subscriptions.set(second, canceled);
+        return canceled;
+      }
       if (method === "GET" && second) {
         const subscription = subscriptions.get(second);
         if (!subscription) throw missing("subscription", second, "id");
@@ -447,6 +462,17 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
         .filter((invoice) => params.status === undefined || invoice.status === params.status)
         .sort((a, b) => Number(b.created) - Number(a.created));
       return page(data, params, "/v1/invoices");
+    }
+
+    if (resource === "invoices" && method === "POST" && second && third === "void") {
+      const invoice = invoices.get(second);
+      if (!invoice) throw missing("invoice", second, "id");
+      if (invoice.status !== "open") {
+        throw new StubError(400, { error: { message: "Only open invoices can be voided.", type: "invalid_request_error" } });
+      }
+      const voided: Json = { ...invoice, status: "void" };
+      invoices.set(second, voided);
+      return voided;
     }
 
     if (resource === "invoices" && method === "GET" && second) {

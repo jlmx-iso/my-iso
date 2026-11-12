@@ -1,0 +1,49 @@
+/* Non-blocking: fixed to the bottom, never covering the whole page. */
+.banner {
+  position: fixed;
+  z-index: 190;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  left: 16px;
+  max-width: 560px;
+  margin-inline: auto;
+}
+
+/* The page makes room for the banner (its height is set on <html> by the
+   component), so the bottom of every page can scroll clear of it. */
+:global(body) {
+  padding-bottom: var(--consent-banner-h, 0px);
+}
+
+/* Accept and Decline always share a row at the same width; Choose takes
+   its own row on phones and an equal third on wider screens. */
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--mantine-spacing-xs);
+}
+
+.choose {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 36em) {
+  .actions {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .choose {
+    grid-column: auto;
+  }
+}
+
+/* Where the phone tab bar is shown (AppShell marks the slot), sit above it. */
+:global([data-above-tab-bar="true"]) .banner {
+  bottom: calc(var(--tab-bar-height) + 12px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 48em) {
+  :global([data-above-tab-bar="true"]) .banner {
+    bottom: calc(var(--app-footer-height) + 16px);
+  }
+}

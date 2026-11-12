@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { userFacingError, zodFieldErrors } from "~/_utils/userError";
+import LegalConsentNote from "~/app/_components/legal/LegalConsentNote";
 import { api } from "~/trpc/react";
 
 import logo from "../../../public/img/logo.webp";
@@ -209,6 +210,7 @@ export default function Page() {
           </Stack>
         </form>
       </Paper>
+      <LegalConsentNote />
 
       <Text ta="center" mt="md" size="sm">
         Have an invite code?{" "}

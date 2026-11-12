@@ -15,7 +15,8 @@ import { scrubErrorForLog } from "../_lib/telemetryScrub";
  */
 export const CRON_JOBS: Readonly<Record<string, readonly string[]>> = {
   // Every 15 minutes: matches expire 72 hours after they are made.
-  "*/15 * * * *": ["expire-matches"],
+  // Also: account deletions that did not finish in the request.
+  "*/15 * * * *": ["expire-matches", "finish-deletions"],
   // Daily, 03:17 UTC: housekeeping.
   "17 3 * * *": ["purge-expired", "reconcile-invites"],
 };

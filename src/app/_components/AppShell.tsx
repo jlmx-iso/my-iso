@@ -12,12 +12,14 @@ type AppShellProps = {
     marketingFooter: React.ReactNode;
     /** Slim footer for the signed-in app. */
     appFooter: React.ReactNode;
+    /** The consent banner: right after the skip link in the tab order. */
+    consent?: React.ReactNode;
     children: React.ReactNode;
 };
 
 const TAB_BAR_HEIGHT = "calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px))";
 
-export default function AppShell({ children, header, bottomNav, marketingFooter, appFooter }: AppShellProps) {
+export default function AppShell({ children, header, bottomNav, marketingFooter, appFooter, consent }: AppShellProps) {
     const pathname = usePathname();
     const inApp = isAppPath(pathname);
     // Not during onboarding: every tab would bounce straight back to it.
@@ -32,6 +34,7 @@ export default function AppShell({ children, header, bottomNav, marketingFooter,
             <a href="#main-content" className="skip-link">
                 Skip to content
             </a>
+            {consent && <div data-above-tab-bar={showBottomNav ? "true" : "false"}>{consent}</div>}
             <MantineAppShell.Header withBorder={false}>
                 {header}
             </MantineAppShell.Header>

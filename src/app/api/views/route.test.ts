@@ -71,6 +71,21 @@ describe("POST /api/views", () => {
     expect(await count()).toBe(1);
   });
 
+  it("sets no cookie for a visitor who refused analytics, and still counts them once a day", async () => {
+    for (const headers of [
+      { "sec-gpc": "1" },
+      { cookie: "iso_consent=denied" },
+      // No choice yet where analytics need a yes.
+      { "x-iso-country": "DE" },
+    ] as Array<Record<string, string>>) {
+      const response = await POST(view(profile(), headers));
+      expect(response.status).toBe(204);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    // The server-side dedupe (ViewSeen) still holds them to one count.
+    expect(await count()).toBe(1);
+  });
+
   it("two identical requests from a signed-in member count once, even without the cookie (another device)", async () => {
     const member = await createTestUser(testDb.db);
     holder.session = { user: { id: member.id } };

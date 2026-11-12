@@ -22,12 +22,10 @@ export function CSPostHogProvider({
     user?: AnalyticsUser | null
 }) {
     const id = user?.id ?? null
-    const email = user?.email ?? null
-    const name = user?.name ?? null
 
     useEffect(() => {
-        syncAnalyticsUser(id === null ? null : { email, id, name })
-    }, [id, email, name])
+        syncAnalyticsUser(id === null ? null : { id })
+    }, [id])
 
     return <PostHogProvider client={posthog}>{children}</PostHogProvider>
 }

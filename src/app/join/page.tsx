@@ -28,6 +28,7 @@ import { type FormEvent, Suspense, useState } from "react";
 import { DEFAULT_SIGNED_IN_PATH } from "~/_utils/callbackUrl";
 import { NETWORK_ERROR_MESSAGE, trpcErrorCode, userFacingError } from "~/_utils/userError";
 import { OtpCodeStep } from "~/app/_components/auth/OtpCodeStep";
+import LegalConsentNote from "~/app/_components/legal/LegalConsentNote";
 import { api } from "~/trpc/react";
 
 import logo from "../../../public/img/logo.webp";
@@ -357,6 +358,7 @@ function JoinContent() {
           </Stack>
         </Paper>
       )}
+      <LegalConsentNote />
 
       <Text ta="center" mt="md" size="sm">
         Already have an account?{" "}
