@@ -242,6 +242,10 @@ describe("waitlistRouter.approve", () => {
         data: expect.objectContaining({ status: "approved" }),
       }),
     );
+    // The event is the reviewer's: nothing about the applicant (not even a
+    // hash of their address) is sent.
+    expect(mockCaptureEvent).toHaveBeenCalledWith(expect.any(String), "waitlist_approved", {});
+    expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toContain("user@example.com");
   });
 });
 

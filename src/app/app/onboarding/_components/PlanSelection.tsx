@@ -22,6 +22,7 @@ import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { type BillingInterval, FREE_PLAN, type PlanPricing, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import ProFeatures from "~/app/_components/plans/ProFeatures";
+import { chargedPrice, renewalTerms } from "~/app/_components/plans/renewalTerms";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
@@ -60,6 +61,9 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
   });
 
   const price = proPriceView(pricing, billingInterval);
+  const annual = billingInterval === "annual";
+  // What is charged each time: the yearly total for an annual plan.
+  const charged = chargedPrice(pricing, annual);
 
   return (
     <Box maw={700} w="100%" mx="auto">
@@ -141,9 +145,14 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
               </Group>
               <Group gap="xs" align="baseline">
                 <Text size="xl" fw={700} c="var(--iso-accent-text)" data-testid="pro-price">
-                  {price.perMonth}
-                  <Text span size="sm" fw={400} c="dimmed">/month</Text>
+                  {charged}
+                  <Text span size="sm" fw={400} c="dimmed">{annual ? "/year" : "/month"}</Text>
                 </Text>
+                {annual && (
+                  <Text size="sm" c="dimmed">
+                    ({price.perMonth}/month)
+                  </Text>
+                )}
                 {price.regularPerMonth && (
                   <>
                     <Text size="sm" td="line-through" c="dimmed">
@@ -166,8 +175,11 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                 loading={createCheckout.isPending}
                 onClick={() => createCheckout.mutate({ billingInterval, successPath: "/app/onboarding/complete?plan=pro" })}
               >
-                {price.cta}
+                {annual ? `Upgrade to Pro — ${charged}/year` : price.cta}
               </Button>
+              <Text size="xs" c="dimmed" ta="center" data-testid="renewal-terms">
+                {renewalTerms(pricing, annual)}
+              </Text>
               {pricing.isFoundingPrice && (
                 <Text size="xs" c="dimmed" ta="center">
                   Your founding price stays while you stay subscribed

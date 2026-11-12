@@ -17,10 +17,12 @@ import { TRPCReactProvider } from "~/trpc/react";
 
 import { REVEAL_SCRIPT } from "./_components/animations/revealScript";
 import AppShell from "./_components/AppShell";
+import ConsentBanner from "./_components/consent/ConsentBanner";
 import { AppFooter, Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
 import Toasts from "./_components/Toasts";
+import { requestRequiresOptIn } from "./_lib/consentRegion";
 import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -79,6 +81,8 @@ export default async function RootLayout({
   // Set by src/middleware.ts on every page request; the Content-Security-
   // Policy lets inline scripts run only with it.
   const nonce = await requestNonce();
+  // Opt-in regions (OPT_IN_COUNTRIES in ~/_lib/consent): no analytics until the visitor accepts.
+  const optInRequired = await requestRequiresOptIn();
 
   return (
     // Light or dark follows the visitor's system setting: ColorSchemeScript
@@ -91,6 +95,8 @@ export default async function RootLayout({
       className={inter.variable}
       data-mantine-color-scheme="light"
       data-scroll-behavior="smooth"
+      // Read by the analytics start-up before hydration (~/_lib/analyticsBrowser).
+      data-consent-region={optInRequired ? "opt-in" : "default"}
       suppressHydrationWarning
     >
       <head>
@@ -101,7 +107,7 @@ export default async function RootLayout({
         <CSPostHogProvider
           user={
             session?.user
-              ? { email: session.user.email, id: session.user.id, name: session.user.name }
+              ? { id: session.user.id }
               : null
           }
         >
@@ -113,6 +119,7 @@ export default async function RootLayout({
                 bottomNav={isAuthed ? <BottomTabBar /> : undefined}
                 marketingFooter={<Footer />}
                 appFooter={<AppFooter />}
+                consent={<ConsentBanner optInRequired={optInRequired} />}
               >
                 {children}
               </AppShell>

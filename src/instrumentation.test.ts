@@ -112,6 +112,16 @@ describe("onRequestError", () => {
     expect(gpc.options).toEqual({ consent: "denied" });
   });
 
+  it("never attaches a visitor from an opt-in region who has not accepted", async () => {
+    const { context, options } = await report({ cookie: IDENTIFIED, "x-iso-country": "DE" });
+    expect(context.distinctId).toBeUndefined();
+    expect(options).toEqual({ consent: "denied" });
+
+    vi.clearAllMocks();
+    const accepted = await report({ cookie: `${IDENTIFIED}; iso_consent=analytics`, "x-iso-country": "DE" });
+    expect(accepted.context.distinctId).toBe("user_1");
+  });
+
   it("reports anonymously when there is no session", async () => {
     const { context } = await report({});
     expect(context.distinctId).toBeUndefined();

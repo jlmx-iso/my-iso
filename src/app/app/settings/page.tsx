@@ -22,9 +22,11 @@ import PageHeader from "~/app/_components/PageHeader";
 import ProFeatures from "~/app/_components/plans/ProFeatures";
 import SupportCard from "~/app/_components/support/SupportCard";
 import { auth } from "~/auth";
+import { canSendDeletionEmail } from "~/server/_lib/account/deletionDeps";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
+import AccountDataSettings from "./_components/AccountDataSettings";
 import CheckoutBanner from "./_components/CheckoutBanner";
 import PlanStatus from "./_components/PlanStatus";
 
@@ -160,6 +162,12 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         </Stack>
 
         <SupportCard isPro={isProUser} replyTo={user.email} />
+        <AccountDataSettings
+          confirmation={
+            user.handle ? { kind: "username", value: user.handle } : { kind: "email", value: user.email }
+          }
+          confirmationEmail={canSendDeletionEmail()}
+        />
       </Stack>
     </Container>
   );

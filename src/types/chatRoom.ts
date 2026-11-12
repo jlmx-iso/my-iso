@@ -8,6 +8,8 @@ import type { DurableObjectNamespace, Rpc } from "@cloudflare/workers-types";
 export interface ChatRoomRpc extends Rpc.DurableObjectBranded {
   /** Sends `payload` to every socket in the room. */
   broadcast(payload: string): Promise<void>;
+  /** Closes every socket of `userId` in the room; returns how many. */
+  revokeUser(userId: string): Promise<number>;
 }
 
 export type ChatRoomNamespace = DurableObjectNamespace<ChatRoomRpc>;

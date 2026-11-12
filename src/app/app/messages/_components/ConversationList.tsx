@@ -139,6 +139,7 @@ export default function ConversationList({ initialThreads, initialNextCursor, cu
                                         fw={unread > 0 ? 600 : undefined}
                                         lineClamp={1}
                                         style={{ flex: 1, minWidth: 0 }}
+                                        data-replay-block
                                     >
                                         {lastMessage
                                             ? `${lastMessage.sender.id === currentUserId ? "You: " : ""}${lastMessage.content}`

@@ -360,6 +360,11 @@ export const RateLimits = {
   BILLING_RESYNC: { limit: 120, name: "billing-resync", onError: "allow", windowSeconds: 5 * MINUTE },
   BOOKING_UPDATE: { limit: 60, name: "booking-update", onError: "allow", windowSeconds: HOUR },
   PLACES_AUTOCOMPLETE: { limit: 60, name: "places-autocomplete", onError: "allow", windowSeconds: MINUTE },
+  // "Download your data": a few dozen queries each; a handful an hour is
+  // plenty for a person and keeps a stolen session from scraping it.
+  ACCOUNT_EXPORT: { limit: 5, name: "account-export", onError: "deny", windowSeconds: HOUR },
+  // Account deletion: typing the confirmation wrong a few times is fine.
+  ACCOUNT_DELETE: { limit: 10, name: "account-delete", onError: "deny", windowSeconds: HOUR },
   // Pro insights: a page load is one request; polling is what this stops.
   INSIGHTS: { limit: 30, name: "insights", onError: "allow", windowSeconds: MINUTE },
   // Pro support requests: each sends an email to the support inbox. "deny":

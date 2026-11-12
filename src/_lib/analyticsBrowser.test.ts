@@ -21,6 +21,10 @@ import {
   beforeSend,
   buildPostHogConfig,
   captureBoundaryError,
+  hasGlobalPrivacyControl,
+  isOptInRegion,
+  readBrowserConsent,
+  readConsentChoice,
   REPLAY_BLOCK_SELECTOR,
   setAnalyticsConsent,
   startAnalytics,
@@ -28,7 +32,7 @@ import {
 } from "~/_lib/analyticsBrowser";
 
 /** A minimal browser: a cookie jar, localStorage and a navigator. */
-function installBrowser(options: { cookie?: string; gpc?: boolean } = {}) {
+function installBrowser(options: { cookie?: string; gpc?: boolean; region?: string } = {}) {
   const cookies = new Map<string, string>();
   const jar = {
     get cookie() {
@@ -42,6 +46,10 @@ function installBrowser(options: { cookie?: string; gpc?: boolean } = {}) {
     },
   };
   if (options.cookie) jar.cookie = options.cookie;
+  if (options.region !== undefined) {
+    const region = options.region;
+    Object.assign(jar, { documentElement: { getAttribute: (name: string) => (name === "data-consent-region" ? region : null) } });
+  }
 
   const storage = new Map<string, string>();
   vi.stubGlobal("document", jar);
@@ -114,6 +122,24 @@ describe("startAnalytics", () => {
     expect(startAnalytics()).toBe(false);
     expect(posthog.init).not.toHaveBeenCalled();
     expect(posthog.opt_out_capturing).not.toHaveBeenCalled();
+  });
+
+  it("does not start in an opt-in region until the visitor accepts", () => {
+    installBrowser({ region: "opt-in" });
+    expect(startAnalytics()).toBe(false);
+    expect(posthog.init).not.toHaveBeenCalled();
+
+    installBrowser({ cookie: "iso_consent=analytics", region: "opt-in" });
+    expect(startAnalytics()).toBe(true);
+    const [, config] = posthog.init.mock.calls[0] as [string, ReturnType<typeof buildPostHogConfig>];
+    expect(config.disable_session_recording).toBe(true);
+    expect(config.persistence).toBe("localStorage+cookie");
+  });
+
+  it("keeps the pseudonymous default in the default region", () => {
+    installBrowser({ region: "default" });
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", undefined);
+    expect(startAnalytics()).toBe(true);
   });
 
   it("does nothing without a project token", () => {
@@ -201,7 +227,7 @@ describe("buildPostHogConfig", () => {
   it("tags events with the environment once loaded", () => {
     const register = vi.fn();
     config.loaded?.({ register } as unknown as Parameters<NonNullable<typeof config.loaded>>[0]);
-    expect(register).toHaveBeenCalledWith({ environment: "staging" });
+    expect(register).toHaveBeenCalledWith({ $geoip_disable: true, environment: "staging" });
   });
 });
 
@@ -230,18 +256,40 @@ describe("beforeSend", () => {
     expect(waitlist?.$set_once?.$initial_current_url).toBe("https://myiso.app/join");
   });
 
-  it("keeps the event's identity and the person properties set on purpose", () => {
+  it("keeps the event's identity and drops a name or email in $set", () => {
     const identify = beforeSend(
       event({ $set: { email: "sarah@example.com", name: "Sarah" }, event: "$identify", properties: { distinct_id: "user_1" } }),
     );
     expect(identify?.event).toBe("$identify");
     expect(identify?.uuid).toBe("u");
     expect(identify?.properties.distinct_id).toBe("user_1");
-    expect(identify?.$set).toEqual({ email: "sarah@example.com", name: "Sarah" });
+    expect(identify?.$set).toEqual({});
   });
 
   it("passes a dropped event through as dropped", () => {
     expect(beforeSend(null)).toBeNull();
+  });
+});
+
+describe("reading consent in the browser", () => {
+  it("reads the stored choice and the GPC signal", () => {
+    installBrowser({ cookie: "iso_consent=analytics", gpc: true });
+    expect(readConsentChoice()).toBe("analytics");
+    expect(hasGlobalPrivacyControl()).toBe(true);
+    expect(isOptInRegion()).toBe(false);
+  });
+
+  it("has no choice, no signal and no region outside a browser", () => {
+    expect(readBrowserConsent()).toBe("unknown");
+    expect(() => setAnalyticsConsent("granted")).not.toThrow();
+    expect(readConsentChoice()).toBeNull();
+    expect(hasGlobalPrivacyControl()).toBe(false);
+    expect(isOptInRegion()).toBe(false);
+  });
+
+  it("reads the region from the page", () => {
+    installBrowser({ region: "opt-in" });
+    expect(isOptInRegion()).toBe(true);
   });
 });
 
@@ -263,6 +311,28 @@ describe("setAnalyticsConsent", () => {
     // And nothing identifies the visitor again afterwards.
     syncAnalyticsUser({ id: "user_1" });
     expect(posthog.identify).not.toHaveBeenCalled();
+  });
+
+  it("analytics only: starts analytics with storage but keeps replay off", () => {
+    const { jar } = installBrowser({ region: "opt-in" });
+    expect(startAnalytics()).toBe(false);
+
+    setAnalyticsConsent("analytics");
+
+    expect(jar.cookie).toContain("iso_consent=analytics");
+    expect(posthog.init).toHaveBeenCalledOnce();
+    expect(posthog.stopSessionRecording).toHaveBeenCalled();
+    expect(posthog.startSessionRecording).not.toHaveBeenCalled();
+  });
+
+  it("forgetting the choice in an opt-in region stops analytics", () => {
+    installBrowser({ cookie: "iso_consent=analytics", region: "opt-in" });
+    startAnalytics();
+    vi.clearAllMocks();
+
+    setAnalyticsConsent("unknown");
+
+    expect(posthog.opt_out_capturing).toHaveBeenCalledOnce();
   });
 
   it("denied before anything started: nothing is started", () => {
@@ -339,23 +409,20 @@ describe("setAnalyticsConsent", () => {
 });
 
 describe("syncAnalyticsUser", () => {
-  it("identifies by user id only, without person properties, until consent is explicit", () => {
+  it("identifies by user id only", () => {
     const { storage } = installBrowser();
     startAnalytics();
-    syncAnalyticsUser({ email: "sarah@example.com", id: "user_1", name: "Sarah" });
+    syncAnalyticsUser({ id: "user_1" });
     expect(posthog.identify).toHaveBeenCalledExactlyOnceWith("user_1");
     // Remembered for this page only, not in the browser's storage.
     expect(storage.size).toBe(0);
   });
 
-  it("adds email and name with explicit consent", () => {
+  it("never sends a name or email, even with every consent given", () => {
     installBrowser({ cookie: "iso_consent=granted" });
     startAnalytics();
-    syncAnalyticsUser({ email: "sarah@example.com", id: "user_1", name: "Sarah" });
-    expect(posthog.identify).toHaveBeenCalledExactlyOnceWith("user_1", {
-      email: "sarah@example.com",
-      name: "Sarah",
-    });
+    syncAnalyticsUser({ id: "user_1" });
+    expect(posthog.identify).toHaveBeenCalledExactlyOnceWith("user_1");
   });
 
   it("resets on sign-out, once", () => {

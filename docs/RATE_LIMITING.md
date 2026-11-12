@@ -103,6 +103,15 @@ check cannot be turned into an unmetered way to test which handles exist
 (handles are public on profile URLs, so the exposure is small; the limit
 keeps it from being a bulk lookup).
 
+## Your data: export and deletion
+
+`account.exportData` (`ACCOUNT_EXPORT`, 5 per member per hour) builds the
+member's whole data export, a few dozen queries each time, so a stolen
+session cannot scrape it in a loop. `account.deleteAccount`
+(`ACCOUNT_DELETE`, 10 per member per hour) allows a few mistyped
+confirmations. Both use `onError: "deny"`: neither is urgent enough to run
+unmetered while the limiter is down.
+
 ## Related controls
 
 - Sign-in codes carry their own attempt counter (`VerificationToken.attempts`):

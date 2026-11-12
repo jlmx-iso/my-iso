@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   admitSocket,
+  CLOSE_ACCOUNT_DELETED,
+  closeSockets,
   MAX_SOCKETS_PER_ROOM,
   MAX_SOCKETS_PER_USER,
   partitionByExpiry,
@@ -85,5 +87,22 @@ describe("partitionByExpiry", () => {
 describe("userTag", () => {
   it("namespaces the user id", () => {
     expect(userTag("abc")).toBe("user:abc");
+  });
+});
+
+describe("closeSockets", () => {
+  it("closes each socket with the code and counts those it closed", () => {
+    const closed: Array<[number, string]> = [];
+    const open = { close: (code: number, reason: string) => void closed.push([code, reason]) };
+    const gone = {
+      close: () => {
+        throw new Error("already closed");
+      },
+    };
+    expect(closeSockets([open, gone, open], CLOSE_ACCOUNT_DELETED, "Account deleted")).toBe(2);
+    expect(closed).toEqual([
+      [CLOSE_ACCOUNT_DELETED, "Account deleted"],
+      [CLOSE_ACCOUNT_DELETED, "Account deleted"],
+    ]);
   });
 });

@@ -13,7 +13,7 @@ import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import { freezeRateLimitClock, spendOtpVerifyLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
-import { createInvitedUser, signInWithOtp } from "./signup";
+import { AccountDeletionPendingError, createInvitedUser, signInWithOtp } from "./signup";
 
 const inviteOnly = async () => true;
 const openRegistration = async () => false;
@@ -254,6 +254,18 @@ describe("invite redemption against SQLite", () => {
       await expect(testDb.db.inviteRedemption.count()).resolves.toBe(0);
     });
 
+    it("says so when the address belongs to an account still being deleted", async () => {
+      await createInvite("ISO-PENNY-AAAAAAAA", 1);
+      const leaving = await createTestUser(testDb.db, { email: "leaving@example.com" });
+      await testDb.raw.user.update({ data: { isDeleted: true }, where: { id: leaving.id } });
+      await prepare(leaving.email, "ISO-PENNY-AAAAAAAA");
+
+      await expect(createInvitedUser(testDb.db, profile(leaving.email), inviteOnly)).rejects.toBeInstanceOf(
+        AccountDeletionPendingError,
+      );
+      expect((await invite("ISO-PENNY-AAAAAAAA")).currentRedemptions).toBe(0);
+    });
+
     it("admits a waitlist-approved address without using an invite slot", async () => {
       await prepare("nina@example.com", WAITLIST_APPROVED_CODE, 60);
 
@@ -287,6 +299,16 @@ describe("invite redemption against SQLite", () => {
       );
 
       expect(result).toMatchObject({ status: "ok", user: { id: user.id } });
+    });
+
+    it("answers deletion_pending for the address of an account still being deleted", async () => {
+      const leaving = await createTestUser(testDb.db, { email: "leaving@example.com" });
+      await testDb.raw.user.update({ data: { isDeleted: true }, where: { id: leaving.id } });
+      await issueOtp(testDb.db, leaving.email, { code: "123456" });
+
+      await expect(
+        signInWithOtp(testDb.db, { code: "123456", email: leaving.email }, IP, openRegistration),
+      ).resolves.toEqual({ status: "deletion_pending" });
     });
 
     it("rejects malformed credentials without touching the code", async () => {

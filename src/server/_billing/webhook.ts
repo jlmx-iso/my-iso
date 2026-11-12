@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 
 import { logger } from "~/_utils";
+import { INCLUDING_DELETED } from "~/server/_db/softDelete";
 
 import {
   claimStripeEvent,
@@ -241,8 +242,14 @@ async function handleEvent(deps: WebhookDeps, event: HandledEvent): Promise<Outc
       const userId = session.client_reference_id ?? session.metadata?.userId ?? null;
       const customerId = stripeId(session.customer);
       if (userId && customerId) {
-        const user = await deps.db.user.findUnique({ select: { id: true }, where: { id: userId } });
-        if (user) {
+        // A deleted account is looked up too: the sync below still records
+        // the subscription and then ends it (./accountClosure), but its
+        // customer is not linked.
+        const user = await deps.db.user.findFirst({
+          select: { id: true, isDeleted: true },
+          where: { ...INCLUDING_DELETED, id: userId },
+        });
+        if (user && !user.isDeleted) {
           const link = await linkCustomerToUser(deps.db, user.id, customerId);
           if (link === "conflict") {
             reportBillingError("Checkout completed with a customer other than the user's stored one", {

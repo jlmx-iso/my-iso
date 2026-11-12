@@ -138,4 +138,27 @@ describe("soft-delete extension against SQLite", () => {
       db.comment.count({ where: { eventId, isDeleted: true } }),
     ).resolves.toBe(1);
   });
+
+  it("hides deleted accounts and their profiles, but relations still load them", async () => {
+    const { db } = testDb;
+    const gone = await createTestUser(db);
+    const photographer = await db.photographer.create({
+      data: { companyName: "", isDeleted: true, location: "", name: "Deleted member", userId: gone.id },
+    });
+    await db.user.update({ data: { isDeleted: true }, where: { id: gone.id } });
+
+    await expect(db.user.findUnique({ where: { id: gone.id } })).resolves.toBeNull();
+    await expect(db.user.findUnique({ where: { email: gone.email } })).resolves.toBeNull();
+    await expect(db.photographer.findFirst({ where: { userId: gone.id } })).resolves.toBeNull();
+    await expect(db.user.count({ where: { id: gone.id, isDeleted: true } })).resolves.toBe(1);
+
+    const loaded = await db.photographer.findMany({ select: { id: true } });
+    expect(loaded.map((row) => row.id)).not.toContain(photographer.id);
+    // Through a relation the anonymised row is still there.
+    const viaAccount = await testDb.raw.photographer.findUnique({
+      include: { user: true },
+      where: { id: photographer.id },
+    });
+    expect(viaAccount?.user.id).toBe(gone.id);
+  });
 });

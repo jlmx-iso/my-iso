@@ -110,6 +110,11 @@ const SOCIALS = { facebook: null, instagram: null, tiktok: null, twitter: null, 
 
 // One row per procedure, grouped by router as in src/server/api/routers.
 const POLICY: Record<string, Row> = {
+  // account: the caller's own data only (no user id in the input). A wrong
+  // confirmation is BAD_REQUEST before anything is changed.
+  "account.deleteAccount": { access: "member", input: { confirmation: "not-the-handle" } },
+  "account.exportData": { access: "member" },
+
   // auth: sign-in for the mobile app, before there is a session.
   "auth.exchangeMobileToken": { access: "public", input: { idToken: "not-a-real-token" } },
   "auth.requestMobileOtp": { access: "public", input: { email: "otp@example.com" } },

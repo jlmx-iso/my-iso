@@ -39,7 +39,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
                 <Timemarker date={comment.createdAt} />
             </Group>
             <Stack gap={4} pl={50}>
-                <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{comment.content}</Text>
+                <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }} data-replay-block>{comment.content}</Text>
                 <LikeButton
                     isLiked={comment.isLiked}
                     onToggle={() => mutate({ targetId: comment.id })}

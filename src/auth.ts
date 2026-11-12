@@ -9,7 +9,8 @@ import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
 import { providers, sessionConfig } from "~/auth.config";
 import { env } from "~/env";
 import { isInviteRedeemable } from "~/server/_db/invite";
-import { createInvitedUser, findPendingInvite, signInWithOtp } from "~/server/_lib/signup";
+import { isAccountActive } from "~/server/_lib/account/session";
+import { createInvitedUser, findPendingInvite, isDeletionPending, signInWithOtp } from "~/server/_lib/signup";
 import { getClientIp } from "~/server/_utils/clientIp";
 import { hashEmail } from "~/server/_utils/hash";
 import { db } from "~/server/db";
@@ -34,6 +35,11 @@ class OtpRateLimited extends CredentialsSignin {
   code = "rate_limited";
 }
 
+/** The address belongs to an account whose deletion has not finished. */
+class OtpDeletionPending extends CredentialsSignin {
+  code = "deletion_pending";
+}
+
 /**
  * Whether new accounts currently need an invite (PostHog feature flag).
  * Fail-closed: if the flag cannot be fetched, invites stay required.
@@ -51,6 +57,23 @@ async function isInviteOnly(email: string): Promise<boolean> {
 
 const prismaAdapter = PrismaAdapter(db);
 
+/** The account link as stored: who and which provider, never a token. */
+export function withoutOAuthTokens<T extends Record<string, unknown>>(account: T): T {
+  return {
+    ...account,
+    access_token: undefined,
+    expires_at: undefined,
+    id_token: undefined,
+    refresh_token: undefined,
+    scope: undefined,
+    session_state: undefined,
+    token_type: undefined,
+  };
+}
+
+const linkWithoutTokens: NonNullable<Adapter["linkAccount"]> = (account) =>
+  prismaAdapter.linkAccount?.(withoutOAuthTokens(account));
+
 /**
  * PrismaAdapter with sign-up routed through `createInvitedUser`. Auth.js
  * swallows errors thrown from `events.createUser`, so the invite cannot be
@@ -66,6 +89,12 @@ const adapter: Adapter = {
   ...prismaAdapter,
   createVerificationToken: undefined,
   useVerificationToken: undefined,
+  /**
+   * Links a Google account without its OAuth tokens: nothing in the app
+   * calls Google on the member's behalf, so access, refresh and ID tokens
+   * are not kept (migrations/0006 cleared the ones stored before).
+   */
+  linkAccount: linkWithoutTokens,
   createUser: async (data) => {
     const firstName = data.firstName || data.name?.split(" ")[0] || "";
     const user = await createInvitedUser(
@@ -115,6 +144,7 @@ export const authConfig = {
           isInviteOnly,
         );
         if (result.status === "rate_limited") throw new OtpRateLimited();
+        if (result.status === "deletion_pending") throw new OtpDeletionPending();
         if (result.status !== "ok") return null;
         const { user } = result;
 
@@ -133,6 +163,9 @@ export const authConfig = {
       // The provider's OAuth tokens are never copied into the session JWT.
       // Drop the one that sessions minted before this change still carry.
       delete token.accessToken;
+      // A deleted account's sessions end here (null clears the cookie).
+      const userId = user?.id ?? token.id;
+      if (typeof userId === "string" && !(await isAccountActive(db, userId))) return null;
       if (user) {
         token.id = user.id;
         token.firstName = user.firstName;
@@ -201,6 +234,11 @@ export const authConfig = {
       // Existing users always pass
       const existing = await db.user.findUnique({ where: { email: normalizedEmail } });
       if (existing) return true;
+
+      // The address of an account still being deleted: not until it is done.
+      if (await isDeletionPending(db, normalizedEmail)) {
+        return account?.provider === "google" ? "/login?error=deletion_pending" : false;
+      }
 
       // Open registration (invite-only switched off): anyone may sign up.
       if (!(await isInviteOnly(normalizedEmail))) return true;

@@ -5,7 +5,9 @@ import { DurableObject } from "cloudflare:workers";
 
 import {
   admitSocket,
+  CLOSE_ACCOUNT_DELETED,
   CLOSE_SESSION_EXPIRED,
+  closeSockets,
   isSocketAttachment,
   partitionByExpiry,
   readConnection,
@@ -100,6 +102,15 @@ export class ChatRoom extends DurableObject<CloudflareEnv> implements ChatRoomRp
     } catch {
       // Already closed.
     }
+  }
+
+  /**
+   * Closes every socket of `userId` in this room (account deletion, see
+   * ~/server/_lib/account/realtime). A reconnect is refused by the gateway,
+   * which no longer finds a session for the account. Returns how many closed.
+   */
+  async revokeUser(userId: string): Promise<number> {
+    return closeSockets(this.ctx.getWebSockets(userTag(userId)), CLOSE_ACCOUNT_DELETED, "Account deleted");
   }
 
   /** Called over RPC by message.create (see publishThreadMessage). */

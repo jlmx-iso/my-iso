@@ -53,6 +53,9 @@ GOOGLE_PLACES_API_KEY=
 # Override the region set in wrangler.toml, or point at a local stub.
 POSTHOG_HOST=
 POSTHOG_ASSETS_HOST=
+# Account deletion: the PostHog person and events (person:write key, project id).
+POSTHOG_PERSONAL_API_KEY=
+POSTHOG_PROJECT_ID=
 
 # ---- AI (Anthropic) ----------------------------------------------------------
 ANTHROPIC_API_KEY=

@@ -74,6 +74,15 @@ Claude returns and the UI renders it as plain text. Keep it that way; never
 use `dangerouslySetInnerHTML` with it. Generation happens after the response
 and is stored (`src/server/_lib/matchInsights.ts`), never per page view.
 
+**Member data can be exported and deleted.** A new model (or column) that
+stores something about a member goes into the export's `EXPORT_COVERAGE`
+and the deletion steps (`src/server/_lib/account/`, policy in
+`docs/DATABASE.md`, "Account deletion"); the export test fails for a model
+that is in neither. A deleted account is hidden by the soft-delete
+extension (`User.isDeleted`). Anything that shows a member's photo or
+writing carries `data-replay-block`. Analytics consent depends on region
+(`consentRequiresOptIn` in `~/_lib/consent`).
+
 **Rate limits** are policies in `src/server/_utils/rateLimit.ts`, applied
 with `.use(rateLimit(RateLimits.X))` (`docs/RATE_LIMITING.md`).
 

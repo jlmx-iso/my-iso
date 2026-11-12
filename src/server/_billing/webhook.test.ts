@@ -1543,3 +1543,85 @@ describe("other events", () => {
     expect((await testDb.db.user.findUniqueOrThrow({ where: { id: user.id } })).stripeId).toBeNull();
   });
 });
+
+describe("a deleted account", () => {
+  const closeAccount = (userId: string) =>
+    testDb.raw.user.update({ data: { deletionRequestedAt: new Date(), isDeleted: true }, where: { id: userId } });
+  const cancellations = () => stub.requests.filter((request) => request.method === "DELETE");
+
+  it("records a webhook after deletion, then cancels the subscription and voids its open invoice", async () => {
+    const user = await createCustomerUser("cus_alice");
+    await closeAccount(user.id);
+    stripeHas({ customer: "cus_alice", id: "sub_1", status: "past_due" });
+    stub.invoices.set("in_due", buildInvoice({ customer: "cus_alice", id: "in_due", status: "open", subscriptionId: "sub_1" }));
+    stub.invoices.set("in_old", buildInvoice({ customer: "cus_alice", id: "in_old", status: "paid", subscriptionId: "sub_1" }));
+
+    const response = await deliver(
+      buildEvent("customer.subscription.updated", buildSubscription({ customer: "cus_alice", id: "sub_1", status: "past_due" })),
+    );
+
+    expect(response).toMatchObject({ result: "applied", status: 200 });
+    expect((await subscriptionRow(user.id))?.subscriptionId).toBe("sub_1");
+    expect(stub.subscriptions.get("sub_1")?.status).toBe("canceled");
+    expect(stub.invoices.get("in_due")?.status).toBe("void");
+    expect(stub.invoices.get("in_old")?.status).toBe("paid");
+  });
+
+  it("cancels a checkout completed in another tab after deletion, without linking the customer", async () => {
+    const user = await createTestUser(testDb.db);
+    await closeAccount(user.id);
+    stub.customers.set("cus_late", { id: "cus_late", metadata: {}, object: "customer" });
+    stripeHas({ customer: "cus_late", id: "sub_late", metadata: { userId: user.id }, status: "active" });
+
+    const response = await deliver(
+      buildEvent("checkout.session.completed", {
+        client_reference_id: user.id,
+        customer: "cus_late",
+        id: "cs_late",
+        metadata: { userId: user.id },
+        mode: "subscription",
+        object: "checkout.session",
+        subscription: "sub_late",
+      }),
+    );
+
+    expect(response).toMatchObject({ result: "applied", status: 200 });
+    expect(stub.subscriptions.get("sub_late")?.status).toBe("canceled");
+    expect((await testDb.raw.user.findUniqueOrThrow({ where: { id: user.id } })).stripeId).toBeNull();
+    expect(await testDb.raw.subscription.count({ where: { userId: user.id } })).toBe(1);
+  });
+
+  it("does not cancel again once the subscription has ended", async () => {
+    const user = await createCustomerUser("cus_alice");
+    await closeAccount(user.id);
+    stripeHas({ customer: "cus_alice", endedAt: T0, id: "sub_1", status: "canceled" });
+
+    await deliver(
+      buildEvent("customer.subscription.deleted", buildSubscription({ customer: "cus_alice", id: "sub_1", status: "canceled" })),
+    );
+
+    expect(cancellations()).toHaveLength(0);
+    expect((await subscriptionRow(user.id))?.status).toBe("canceled");
+  });
+
+  it("voids an open invoice on a redelivery after voiding failed, without cancelling twice", async () => {
+    const user = await createCustomerUser("cus_alice");
+    await closeAccount(user.id);
+    stripeHas({ customer: "cus_alice", endedAt: T0, id: "sub_1", status: "canceled" });
+    stub.invoices.set("in_due", buildInvoice({ customer: "cus_alice", id: "in_due", status: "open", subscriptionId: "sub_1" }));
+    const event = buildEvent(
+      "customer.subscription.deleted",
+      buildSubscription({ customer: "cus_alice", id: "sub_1", status: "canceled" }),
+    );
+
+    stub.failWhen((request) => request.path === "/v1/invoices/in_due/void", 503);
+    expect((await deliver(event)).status).toBe(500);
+    expect(stub.invoices.get("in_due")?.status).toBe("open");
+
+    // Stripe delivers the event again.
+    stub.failWhen(null);
+    expect((await deliver(event)).status).toBe(200);
+    expect(stub.invoices.get("in_due")?.status).toBe("void");
+    expect(cancellations()).toHaveLength(0);
+  });
+});

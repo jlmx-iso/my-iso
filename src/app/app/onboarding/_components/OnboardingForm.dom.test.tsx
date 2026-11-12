@@ -434,4 +434,18 @@ describe("OnboardingForm", () => {
     expect(screen.queryByRole("heading", { name: "The basics" })).toBeNull();
     expect(screen.queryByRole("heading", { name: /Welcome to ISO/ })).toBeNull();
   });
+
+  it("says how Pro renews before checkout, with the yearly total for an annual plan", async () => {
+    renderWithProviders(
+      <OnboardingForm initialStage="plan" photographerCount={3} pricing={PRICING} user={USER} />,
+    );
+    expect(screen.getByTestId("renewal-terms").textContent).toBe(
+      "Renews automatically every month at $10 until you cancel. Cancel anytime in Settings → Current plan → Manage subscription.",
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: /Annual/ }));
+    expect(screen.getByTestId("pro-price").textContent).toBe("$99/year");
+    expect(screen.getByTestId("renewal-terms").textContent).toMatch(/every year at \$99/);
+    expect(screen.getByRole("button", { name: "Upgrade to Pro — $99/year" })).toBeTruthy();
+  });
 });

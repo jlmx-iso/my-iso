@@ -1,0 +1,11 @@
+/* The section that deletes the account. */
+.danger {
+  border-color: var(--mantine-color-red-outline);
+}
+
+/* "download your data" inside a sentence: a button that reads as a link. */
+.inlineButton {
+  height: auto;
+  vertical-align: baseline;
+  text-decoration: underline;
+}

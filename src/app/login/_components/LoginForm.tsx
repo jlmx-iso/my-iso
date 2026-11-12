@@ -18,8 +18,10 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
+import { DELETION_PENDING_MESSAGE } from "~/_utils/otp";
 import { NETWORK_ERROR_MESSAGE, userFacingError } from "~/_utils/userError";
 import { OtpCodeStep } from "~/app/_components/auth/OtpCodeStep";
+import LegalConsentNote from "~/app/_components/legal/LegalConsentNote";
 import { api } from "~/trpc/react";
 
 import logo from "../../../../public/img/logo.webp";
@@ -39,6 +41,8 @@ function describeAuthError(code: string): string {
   switch (code) {
     case "AccessDenied":
       return "That account doesn't have access to ISO yet. Join with an invite code first.";
+    case "deletion_pending":
+      return DELETION_PENDING_MESSAGE;
     case "OAuthAccountNotLinked":
       return "That email is already registered with a different sign-in method. Use the method you signed up with.";
     default:
@@ -192,6 +196,7 @@ export default function LoginForm({ callbackUrl, signInRequired, authError }: Lo
           )}
         </Stack>
       </Paper>
+      <LegalConsentNote />
 
       <Text ta="center" mt="md" size="sm">
         Don&apos;t have an account?{" "}
