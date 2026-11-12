@@ -1,18 +1,3 @@
-import { logger } from "~/_utils";
-import { db } from "~/server/db";
-
-export const checkIfUserExists = async (email: string) => {
-  const user = await db.user.findFirst({
-    where: {
-      email,
-    },
-  });
-
-  logger.info("Checking if user exists", { userExists: !!user });
-
-  return !!user;
-}
-
 /**
  * Generate a cryptographically secure verification code
  * Uses Web Crypto API for edge-compatible random generation
