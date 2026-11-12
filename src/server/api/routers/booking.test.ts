@@ -267,7 +267,7 @@ describe("booking state machine", () => {
         const { booking, event } = await applied();
         await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
         const accept = await rivalIsAccepted(event.id);
-        const racing = asWithInterference(applicant, (model) => model === "booking.updateMany", accept);
+        const racing = asWithInterference(applicant, isTheReopen, accept);
 
         const error = await errorOf(racing.applyToEvent({ eventId: event.id, notes: "Back again" }));
 
@@ -332,13 +332,34 @@ describe("booking state machine", () => {
         const { booking, event } = await applied();
         await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
         await testDb.raw.booking.update({ data: { ownerNotes: "Kept for my records" }, where: { id: booking.id } });
-        const db = readsFailAfter((model) => model === "booking.updateMany");
+        const db = readsFailAfter(isTheReopen);
 
         const again = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Back again", rate: "$350" });
 
         const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } });
         expect(again).toEqual(stored);
         expect(again).toMatchObject({ cancelOrigin: null, notes: "Back again", ownerNotes: "Kept for my records", rate: "$350", status: "applied" });
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(2);
+      });
+
+      const isTheReopen = (model: string, args: unknown[]) =>
+        model === "booking.updateMany" || (model === "$queryRaw" && sqlOf(args).includes('UPDATE "Booking"'));
+
+      it("a booking created and withdrawn by another request just before the re-open is re-applied, answered and notified, not refused as already applied", async () => {
+        const event = await createEvent();
+        // This request starts with no booking on record. Before its write,
+        // another request of the same applicant applies and withdraws.
+        const racing = asWithInterference(applicant, isTheReopen, async () => {
+          const other = await as(applicant).applyToEvent({ eventId: event.id, notes: "first try" });
+          await as(applicant).updateStatus({ bookingId: other.id, status: "canceled" });
+        });
+
+        const booking = await racing.applyToEvent({ eventId: event.id, notes: "second try", rate: "$200" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { eventId_applicantId: { applicantId: applicant.id, eventId: event.id } } });
+        expect(booking).toEqual(stored);
+        expect(booking).toMatchObject({ cancelOrigin: null, notes: "second try", ownerId: owner.id, rate: "$200", status: "applied" });
+        // One notification for the other request's application, one for this re-application.
         expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(2);
       });
 
