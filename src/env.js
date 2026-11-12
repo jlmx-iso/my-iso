@@ -63,7 +63,6 @@ export const env = createEnv({
     STRIPE_STANDARD_ANNUAL_PRICE_ID: process.env.STRIPE_STANDARD_ANNUAL_PRICE_ID,
     STRIPE_STANDARD_MONTHLY_PRICE_ID: process.env.STRIPE_STANDARD_MONTHLY_PRICE_ID,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-    KEY_WRAPPING_SECRET: process.env.KEY_WRAPPING_SECRET,
   },
 
 
@@ -115,7 +114,6 @@ export const env = createEnv({
     STRIPE_STANDARD_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_STANDARD_MONTHLY_PRICE_ID: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string(),
-    KEY_WRAPPING_SECRET: z.string().min(64, "KEY_WRAPPING_SECRET must be a 32-byte hex string (64 hex characters)").regex(/^[0-9a-fA-F]+$/, "KEY_WRAPPING_SECRET must be a hex string"),
   },
 
   /**

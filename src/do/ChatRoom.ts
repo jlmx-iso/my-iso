@@ -1,53 +1,79 @@
 // ChatRoom Durable Object. Bundled by wrangler (see worker.ts), not Next.js,
 // and type-checked against the Workers runtime via tsconfig.worker.json.
-// Uses the Hibernation API to keep connections alive across DO sleep cycles.
+
+import { DurableObject } from "cloudflare:workers";
+
+import type { CloudflareEnv } from "../../cloudflare-env";
+import type { ChatRoomRpc } from "../types/chatRoom";
 
 /**
- * ChatRoom manages one WebSocket room per message thread.
- * One DO instance per threadId (keyed via CHAT_ROOM.idFromName(threadId)).
+ * Upper bound for one broadcast frame. A message body is at most 5000
+ * characters (see message.create), which stays far below this even when every
+ * character is JSON-escaped.
  */
-export class ChatRoom {
-  private readonly ctx: DurableObjectState;
+export const MAX_BROADCAST_BYTES = 64 * 1024;
 
-  constructor(ctx: DurableObjectState, _env: unknown) {
-    this.ctx = ctx;
-  }
+const CLOSE_NORMAL = 1000;
+const CLOSE_POLICY_VIOLATION = 1008;
 
+/**
+ * One room per message thread (keyed via CHAT_ROOM.idFromName(threadId)).
+ *
+ * The room is a fan-out only: worker.ts authenticates and authorises the
+ * WebSocket upgrade before it reaches this object, and message.create pushes
+ * new messages in through `broadcast` (Durable Object RPC). Sockets are
+ * accepted with the Hibernation API, so an idle room is evicted from memory
+ * and stops accruing duration charges while its connections stay open.
+ */
+export class ChatRoom extends DurableObject<CloudflareEnv> implements ChatRoomRpc {
   async fetch(request: Request): Promise<Response> {
-    const upgradeHeader = request.headers.get("Upgrade");
-    if (upgradeHeader?.toLowerCase() !== "websocket") {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket upgrade", { status: 426 });
     }
 
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
-
-    // Hibernation API: the DO can sleep between messages without dropping connections
+    const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): Promise<void> {
-    // Server never decrypts or forwards payloads — broadcast is triggered via RPC only
+  /** Clients only listen. Anything they send is a protocol violation. */
+  async webSocketMessage(ws: WebSocket): Promise<void> {
+    ws.close(CLOSE_POLICY_VIOLATION, "Client frames are not accepted");
   }
 
-  async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
-    ws.close();
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    // Complete the closing handshake. The peer's code may be a reserved one
+    // (1005/1006) that cannot be echoed, so always answer with a normal close.
+    try {
+      ws.close(CLOSE_NORMAL, "Closing");
+    } catch {
+      // Already closed.
+    }
   }
 
-  async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-    ws.close(1011, "WebSocket error");
+  async webSocketError(ws: WebSocket): Promise<void> {
+    try {
+      ws.close(1011, "WebSocket error");
+    } catch {
+      // Already closed.
+    }
   }
 
-  /** Called via DO RPC from tRPC message.create — broadcasts ciphertext to all connected clients */
+  /** Called over RPC by message.create (see publishThreadMessage). */
   async broadcast(payload: string): Promise<void> {
-    const sockets = this.ctx.getWebSockets();
-    for (const ws of sockets) {
+    const size = new TextEncoder().encode(payload).byteLength;
+    if (size > MAX_BROADCAST_BYTES) {
+      throw new RangeError(
+        `Broadcast payload is ${size} bytes; the limit is ${MAX_BROADCAST_BYTES}`,
+      );
+    }
+
+    for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(payload);
       } catch {
-        // Socket may have already closed; ignore
+        // The socket closed between getWebSockets() and send().
       }
     }
   }

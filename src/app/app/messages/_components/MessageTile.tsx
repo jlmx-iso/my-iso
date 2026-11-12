@@ -1,15 +1,16 @@
 import { Box, Flex, Text } from "@mantine/core";
-import { type Message } from "@prisma/client";
 
+import { type ThreadMessage } from "~/_utils/threadMessages";
 import Timemarker from "~/app/_components/Timemarker";
 
-type TrimmedMessage = Pick<Message, "id" | "content" | "senderId" | "createdAt"> & {
+type MessageTileProps = {
   isAuthor: boolean;
+  isLastInGroup?: boolean;
+  message: Pick<ThreadMessage, "content" | "createdAt">;
+  showTimestamp?: boolean;
 };
 
-const MessageTile = ({ message, showTimestamp = true, isLastInGroup = false }: { message: TrimmedMessage; showTimestamp?: boolean; isLastInGroup?: boolean }) => {
-  const isAuthor = message.isAuthor;
-
+const MessageTile = ({ isAuthor, isLastInGroup = false, message, showTimestamp = true }: MessageTileProps) => {
   return (
     <Flex
       w="100%"

@@ -31,6 +31,6 @@ export default async function Page({ params }: { params: Promise<{ threadId?: st
   }
 
   return (
-    <MessageFeed threadId={threadId} />
+    <MessageFeed key={threadId} threadId={threadId} />
   );
 }
