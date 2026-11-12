@@ -15,15 +15,37 @@ npm run deploy:production
 Each command (`scripts/deploy.mjs`) does, in this order, and stops at the
 first failure:
 
-1. builds the Worker for that environment (and uploads source maps, if
+1. checks that the database is not one created before the migration
+   baseline (it stops and names the one-time upgrade command if it is);
+2. builds the Worker for that environment (and uploads source maps, if
    configured);
-2. checks the bundle (`npm run check:bundle`);
-3. applies pending D1 migrations;
-4. deploys the Worker.
+3. checks the bundle (`npm run check:bundle`);
+4. applies pending D1 migrations;
+5. deploys the Worker.
 
 Migrations go first because they are written to be safe for the code that is
 already deployed, while new code may not work without them
-([DATABASE.md](DATABASE.md)). CI never deploys.
+([DATABASE.md](DATABASE.md)). GitHub Actions CI never deploys.
+
+### Production deploys from `main`: Workers Builds
+
+The repository is connected to the `my-iso` Worker through Cloudflare
+Workers Builds, so every push to `main` deploys production. Its settings
+(Workers & Pages → `my-iso` → Settings → Build) must be:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Build command | `npm ci` | Install only; the deploy command builds. |
+| Deploy command | `npm run deploy:production` | The default, `npx wrangler deploy`, skips the database check and the migrations above: new code would go live against a database that lacks its tables. |
+| Build variables | The build-time values below (`NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY`, `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY`, …) | On Workers Builds (`WORKERS_CI=1`) the deploy script reads them from the build environment instead of `.env.deploy.production`. A missing one stops the deploy before anything changes. |
+| API token | One with **Workers Scripts: Edit** and **D1: Edit** on the account | The script queries the database and applies migrations with it. Without D1 access the deploy stops at step 1. |
+| Preview builds (non-production branches) | Off, until staging is wired | A preview version uses the production bindings, including the production database. |
+
+Staging is deployed by hand with `npm run deploy:staging`.
+
+A failed deploy changes nothing: the previous version keeps serving. In
+particular, while the database still predates the baseline, every deploy
+from `main` stops at step 1 and names `npm run db:upgrade-legacy`.
 
 **Plan.** The app assumes the **Workers Paid** plan: the bundle is over the
 Free plan's size limit, and the billing code is sized for the Paid plan's
@@ -41,7 +63,8 @@ read, not by how secret it is.
 `NEXT_PUBLIC_*` values are inlined into the JavaScript when the app is built.
 Staging and production therefore need **separate builds**, which the deploy
 script does. Create `.env.deploy.staging` and `.env.deploy.production` from
-[`.env.deploy.example`](../.env.deploy.example) (both are gitignored).
+[`.env.deploy.example`](../.env.deploy.example) (both are gitignored). On
+Workers Builds the same values are set as Build variables instead.
 
 | Variable | What it is for | Where to get it |
 | --- | --- | --- |
@@ -213,8 +236,12 @@ Do staging completely, then production.
    (`wrangler d1 create my-iso-db-staging`, `wrangler d1 create my-iso-db`)
    and put the ids in `wrangler.toml`.
 2. **Database.** A new database is created by the first deploy's migration
-   step. A database that existed before `migrations/0001_init.sql` needs the
-   one-time upgrade in [DATABASE.md](DATABASE.md) first.
+   step. The existing staging and production databases predate
+   `migrations/0001_init.sql`: run `npm run db:upgrade-legacy -- --env staging`
+   (then `--yes`) once before the first deploy to staging, and the same for
+   production after staging has been checked
+   ([DATABASE.md](DATABASE.md), "Upgrading a database created before the
+   baseline"). The deploy stops with this command if it is forgotten.
 3. **Custom domain.** Uncomment `routes` in `wrangler.toml` (both
    environments) once the zone is on the account. Do this before launch: on
    a `workers.dev` address content blockers defeat the telemetry proxy.

@@ -24,64 +24,75 @@ import {
   IconStar,
   IconUsers,
 } from "@tabler/icons-react";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { FREE_PLAN, proPriceView } from "~/_utils/plans";
 import {
   FadeInOnScroll,
   StaggerContainer,
-  SmoothScroll,
 } from "~/app/_components/animations";
+import { NextLink } from "~/app/_components/NextLink";
+import ProFeatures from "~/app/_components/plans/ProFeatures";
 import { auth } from "~/auth";
+import { getPricingForRole } from "~/server/_utils/pricing";
+import { USER_ROLES } from "~/server/_utils/roles";
+
+import { pageMetadata, SITE_DESCRIPTION } from "./_lib/siteMetadata";
+
+export const metadata: Metadata = {
+  ...pageMetadata({
+    description: SITE_DESCRIPTION,
+    path: "/",
+    socialTitle: "ISO — The Photographer Network",
+    title: "ISO — Find second shooters and photography gigs",
+  }),
+  // The root layout's template would append "| ISO" to a title that already
+  // starts with the brand.
+  title: { absolute: "ISO — Find second shooters and photography gigs" },
+};
 
 function HeroSection() {
+  // Above the fold: rendered visible in the server HTML, never scroll-revealed.
   return (
     <Box py={60}>
       <Stack align="center" gap="lg" maw={720} mx="auto">
-        <FadeInOnScroll>
-          <Badge size="lg" variant="light" radius="sm">
-            The Photographer Network
-          </Badge>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.1}>
-          <Title
-            order={1}
-            ta="center"
-            style={{ fontSize: "clamp(2.25rem, 5vw, 3.5rem)", lineHeight: 1.15 }}
-          >
-            Never shoot alone{" "}
-            <Text
-              span
-              inherit
-              variant="gradient"
-              gradient={{ from: "orange.5", to: "orange.8", deg: 135 }}
-            >
-              again
-            </Text>
-          </Title>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.2}>
+        <Badge size="lg" variant="light" radius="sm">
+          The Photographer Network
+        </Badge>
+        <Title
+          order={1}
+          ta="center"
+          style={{ fontSize: "clamp(2.25rem, 5vw, 3.5rem)", lineHeight: 1.15 }}
+        >
+          Never shoot alone{" "}
           <Text
-            c="dimmed"
-            size="lg"
-            ta="center"
-            maw={540}
-            style={{ lineHeight: 1.6 }}
+            span
+            inherit
+            variant="gradient"
+            gradient={{ from: "orange.6", to: "orange.8", deg: 135 }}
           >
-            ISO connects photographers with skilled second shooters for weddings,
-            events, and sessions. Build your team, grow your network, and deliver
-            more for every client.
+            again
           </Text>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.3}>
-          <Group mt="md">
-            <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
-              Join the Founding Class
-            </Button>
-            <Button component="a" href="/login" size="lg" variant="default">
-              Sign In
-            </Button>
-          </Group>
-        </FadeInOnScroll>
+        </Title>
+        <Text
+          c="dimmed"
+          size="lg"
+          ta="center"
+          maw={540}
+          style={{ lineHeight: 1.6 }}
+        >
+          ISO connects photographers with skilled second shooters for weddings,
+          events, and sessions. Build your team and grow your network.
+        </Text>
+        <Group mt="md" justify="center">
+          <Button component={NextLink} href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+            Join the Founding Class
+          </Button>
+          <Button component={NextLink} href="/login" size="lg" variant="default">
+            Sign In
+          </Button>
+        </Group>
       </Stack>
     </Box>
   );
@@ -92,19 +103,19 @@ const steps = [
     icon: IconCameraPlus,
     title: "Create your profile",
     description:
-      "Showcase your portfolio, set your rates, and list the services you offer. Let the right people find you.",
+      "Show your portfolio, where you work and the kind of shoots you do, so the right photographers find you.",
   },
   {
     icon: IconSearch,
     title: "Find your match",
     description:
-      "Search by location, specialty, and availability. Browse portfolios and reviews to find your perfect fit.",
+      "Search by name and city, or let Discover suggest photographers near you. Look at portfolios and reviews before you reach out.",
   },
   {
     icon: IconCalendarEvent,
     title: "Book & shoot",
     description:
-      "Coordinate directly, confirm the details, and show up ready. ISO handles the connection so you can focus on the craft.",
+      "Agree on the details in messages, accept the booking, and show up ready.",
   },
 ];
 
@@ -121,29 +132,22 @@ function HowItWorksSection() {
           </Title>
         </Stack>
       </FadeInOnScroll>
-      <StaggerContainer
-        stagger={0.15}
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
-          gap: "var(--mantine-spacing-xl)",
-        }}
-      >
+      <StaggerContainer stagger={0.15} className="grid-three-up">
         {steps.map((step, i) => (
           <Stack key={step.title} align="center" ta="center" gap="md">
             <Box pos="relative">
               <ThemeIcon size={56} radius="xl" variant="light">
-                <step.icon size={28} />
+                <step.icon size={28} aria-hidden />
               </ThemeIcon>
               <Text
                 fw={700}
                 size="xs"
-                c="orange"
+                c="orange.8"
                 pos="absolute"
                 top={-6}
                 right={-6}
                 style={{
-                  background: "var(--mantine-color-orange-0)",
+                  background: "var(--mantine-color-orange-1)",
                   borderRadius: "50%",
                   width: 22,
                   height: 22,
@@ -155,7 +159,7 @@ function HowItWorksSection() {
                 {i + 1}
               </Text>
             </Box>
-            <Title order={4} fw={500}>
+            <Title order={3} size="h4">
               {step.title}
             </Title>
             <Text c="dimmed" size="sm" maw={280}>
@@ -177,33 +181,33 @@ const features = [
   },
   {
     icon: IconUsers,
-    title: "Client connections",
+    title: "Get discovered",
     description:
-      "Get discovered by lead photographers and clients looking for your exact skill set and style.",
+      "Lead photographers find you in Discover and search, by name and city, and can see your work before they write.",
   },
   {
     icon: IconCalendarEvent,
     title: "Booking management",
     description:
-      "Track your availability, manage requests, and keep your schedule organized in one place.",
+      "Apply to events, accept or decline applications, and see where every booking stands in one place.",
   },
   {
     icon: IconMessageCircle,
     title: "Direct messaging",
     description:
-      "Coordinate shoot details, share mood boards, and align on expectations before the big day.",
+      "Agree on the schedule, the gear and the rate before the big day, in one conversation.",
   },
   {
     icon: IconCamera,
     title: "Event discovery",
     description:
-      "Browse open calls for second shooters near you. Filter by event type, date, and pay.",
+      "Browse open second-shooter calls near you, by date and location.",
   },
   {
     icon: IconStar,
     title: "Reviews & ratings",
     description:
-      "Build your reputation with verified reviews. Stand out with a track record clients trust.",
+      "Reviews come only from photographers you have completed a booking with: a track record other photographers trust.",
   },
 ];
 
@@ -235,11 +239,11 @@ function FeaturesSection() {
         {features.map((feature) => (
           <Paper key={feature.title} p="lg" radius="md" withBorder>
             <ThemeIcon size={40} radius="md" variant="light" mb="sm">
-              <feature.icon size={22} />
+              <feature.icon size={22} aria-hidden />
             </ThemeIcon>
-            <Text fw={500} mb={4}>
+            <Title order={3} size="h5" mb={4}>
               {feature.title}
-            </Text>
+            </Title>
             <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }}>
               {feature.description}
             </Text>
@@ -251,6 +255,8 @@ function FeaturesSection() {
 }
 
 function PricingPreviewSection() {
+  // The same plan descriptions and prices as onboarding and Settings.
+  const foundingPrice = proPriceView(getPricingForRole(USER_ROLES.FOUNDING_MEMBER), "monthly");
   return (
     <Box id="pricing" py={60}>
       <FadeInOnScroll>
@@ -266,9 +272,9 @@ function PricingPreviewSection() {
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl" maw={640} mx="auto">
         <FadeInOnScroll direction="left" delay={0.1}>
           <Paper p="xl" radius="md" withBorder style={{ height: "100%" }}>
-            <Text fw={600} size="lg">
-              Basic
-            </Text>
+            <Title order={3} size="h4">
+              {FREE_PLAN.name}
+            </Title>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
                 $0
@@ -278,18 +284,14 @@ function PricingPreviewSection() {
               </Text>
             </Group>
             <Stack gap="xs" mb="lg">
-              {[
-                "Create your profile",
-                "Browse second shooter listings",
-                "Direct messaging",
-              ].map((item) => (
+              {FREE_PLAN.features.map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-5)" />
+                  <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
                   <Text size="sm">{item}</Text>
                 </Group>
               ))}
             </Stack>
-            <Button component="a" href="/join" variant="default" fullWidth>
+            <Button component={NextLink} href="/join" variant="default" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -306,38 +308,30 @@ function PricingPreviewSection() {
             }}
           >
             <Group justify="space-between" align="center">
-              <Text fw={600} size="lg">
+              <Title order={3} size="h4">
                 Pro
-              </Text>
+              </Title>
               <Badge size="sm" variant="light" color="orange">
                 Founding Price
               </Badge>
             </Group>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
-                $10
+                {foundingPrice.perMonth}
               </Text>
-              <Text c="dimmed" size="sm" td="line-through">
-                $19
-              </Text>
+              {foundingPrice.regularPerMonth && (
+                <Text c="dimmed" size="sm" td="line-through">
+                  <span className="sr-only">Regular price </span>{foundingPrice.regularPerMonth}
+                </Text>
+              )}
               <Text c="dimmed" size="sm">
                 / month
               </Text>
             </Group>
-            <Stack gap="xs" mb="lg">
-              {[
-                "Everything in Basic",
-                "Priority in search results",
-                "Advanced booking tools",
-                "Analytics dashboard",
-              ].map((item) => (
-                <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-5)" />
-                  <Text size="sm">{item}</Text>
-                </Group>
-              ))}
-            </Stack>
-            <Button component="a" href="/join" fullWidth>
+            <Box mb="lg">
+              <ProFeatures pricing={{ isFoundingPrice: true }} />
+            </Box>
+            <Button component={NextLink} href="/join" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -367,7 +361,7 @@ function CtaSection() {
             Join the founding class of photographers building their teams
             and booking more work on ISO.
           </Text>
-          <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+          <Button component={NextLink} href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
             Join the founding class
           </Button>
         </Stack>
@@ -384,7 +378,6 @@ export default async function Home() {
 
   return (
     <Container size="lg" w="100%">
-      <SmoothScroll />
       <Stack gap={0}>
         <HeroSection />
         <Divider />

@@ -2,13 +2,13 @@ import { Box, Container, Group } from "@mantine/core";
 import Image from "next/image";
 import Link from "next/link";
 
+import { logger } from "~/_utils/logger";
 import { auth } from "~/auth";
+import { ADMIN_ROLES } from "~/server/_utils/roles";
+import { db } from "~/server/db";
 
-import { LoginButton } from "./buttons/LoginButton";
-import { UserProfileButton } from "./buttons/UserProfileButton";
-import MobileSearchButton from "./nav/MobileSearchButton";
+import { HeaderActions } from "./nav/HeaderActions";
 import NavLinks from "./nav/NavLinks";
-import { NotificationBell } from "./nav/NotificationBell";
 import logo from "../../../public/img/logo.webp";
 
 const authLinks = [
@@ -25,47 +25,51 @@ const publicLinks = [
     { href: "/about", label: "About" },
 ];
 
+/**
+ * Whether to show the waitlist admin entry in the account menu. Only decides
+ * what is shown: the admin procedures check the role themselves.
+ */
+async function canManageWaitlist(userId: string): Promise<boolean> {
+    try {
+        const user = await db.user.findUnique({ select: { role: true }, where: { id: userId } });
+        return ADMIN_ROLES.some((role) => role === user?.role);
+    } catch (error) {
+        // The header must render whatever happens to this lookup.
+        logger.warn("Could not read the member's role for the account menu", { error });
+        return false;
+    }
+}
+
 export async function Navbar() {
     const session = await auth();
-    const isAuthed = !!session?.user;
+    const user = session?.user
+        ? {
+            canManageWaitlist: await canManageWaitlist(session.user.id),
+            name: session.user.name ?? "Your account",
+            profilePic: session.user.profilePic,
+        }
+        : null;
 
     return (
         <Container size="lg" w="100%" h="100%">
             <Group h="100%" justify="space-between" wrap="nowrap">
-                {/* Logo */}
-                <Link href="/">
+                <Link href={user ? "/app/events" : "/"} aria-label="ISO home" className="tap-link">
                     <Image
                         priority
                         src={logo}
-                        alt="ISO logo"
+                        alt=""
                         style={{ height: "2.25rem", width: "auto" }}
                         width={100}
                         height={100}
                     />
                 </Link>
 
-                {/* Desktop nav links — hidden on mobile */}
+                {/* Desktop section links; phones use the bottom tab bar. */}
                 <Box visibleFrom="sm">
-                    <NavLinks links={isAuthed ? authLinks : publicLinks} />
+                    <NavLinks links={user ? authLinks : publicLinks} />
                 </Box>
 
-                {/* Right side: notification bell + avatar (desktop) or login button */}
-                <Box visibleFrom="sm">
-                    <Group gap="sm">
-                        {isAuthed && <NotificationBell />}
-                        <UserProfileButton session={session} />
-                    </Group>
-                </Box>
-
-                {/* Mobile: search for signed-in users (the other sections are in
-                    the bottom tab bar), login button otherwise */}
-                <Box hiddenFrom="sm">
-                    {isAuthed ? (
-                        <MobileSearchButton />
-                    ) : (
-                        <LoginButton />
-                    )}
-                </Box>
+                <HeaderActions user={user} />
             </Group>
         </Container>
     );

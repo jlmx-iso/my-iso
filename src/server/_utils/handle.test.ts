@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 
+import { handleProblem, normalizeHandle } from "~/_utils/handle";
+
 import { handleInput, RESERVED_HANDLES } from "./handle";
 
 describe("handleInput", () => {
+  it("normalises exactly as the forms do (one shared function)", () => {
+    for (const typed of ["  @Jane_Doe99 ", "@ann", "@@ann", "ANN", " ann "]) {
+      const parsed = handleInput.safeParse(typed);
+      const client = normalizeHandle(typed);
+      // Same normalisation; and the server accepts exactly what the form's rules accept.
+      if (parsed.success) expect(parsed.data).toBe(client);
+      expect(parsed.success).toBe(handleProblem(client) === null);
+    }
+    expect(handleInput.safeParse("@@ann").success).toBe(false);
+    expect(normalizeHandle("@@ann")).toBe("@ann");
+  });
+
   it("lowercases, trims and drops a leading @", () => {
     expect(handleInput.parse("  @Jane_Doe99 ")).toBe("jane_doe99");
   });

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~/server/_lib/posthog", () => ({ captureEvent: mocks.captureEvent }));
 vi.mock("~/server/_utils/rateLimit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("~/server/db", () => ({ db: {} }));
+vi.mock("~/_lib/site", () => ({ SITE_URL: "https://myiso.app" }));
 
 import { POST } from "./route";
 
@@ -38,6 +39,24 @@ describe("POST /api/csp-report", () => {
     expect(response.status).toBe(204);
     expect(mocks.checkRateLimit).not.toHaveBeenCalled();
     expect(mocks.captureEvent).not.toHaveBeenCalled();
+  });
+
+  it("records an eval probe from a /_next/static/ script on another origin", async () => {
+    const response = await POST(
+      report({ ...probe, "source-file": "https://cdn.example/_next/static/chunks/5678-ef01.js" }),
+    );
+    expect(response.status).toBe(204);
+    expect(mocks.checkRateLimit).toHaveBeenCalledOnce();
+    expect(mocks.captureEvent).toHaveBeenCalledOnce();
+  });
+
+  it("drops a probe without a source file only for the app's own page", async () => {
+    const { "source-file": _source, ...withoutSource } = probe;
+    await POST(report(withoutSource));
+    expect(mocks.captureEvent).not.toHaveBeenCalled();
+
+    await POST(report({ ...withoutSource, "document-uri": "https://elsewhere.example/page" }));
+    expect(mocks.captureEvent).toHaveBeenCalledOnce();
   });
 
   it("still records a real violation", async () => {

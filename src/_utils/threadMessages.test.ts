@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeThreadMessages, parseThreadMessageEvent } from "./threadMessages";
+import { hasEarlierMessages, mergeThreadMessages, parseThreadMessageEvent } from "./threadMessages";
 
 const sender = { firstName: "Sarah", id: "user-1", lastName: "Chen", profilePic: null };
 
@@ -83,5 +83,31 @@ describe("parseThreadMessageEvent", () => {
     ["an invalid date", JSON.stringify({ ...frame, message: { ...frame.message, createdAt: "yesterday" } })],
   ])("returns null for %s", (_label, data) => {
     expect(parseThreadMessageEvent(data)).toBeNull();
+  });
+});
+
+describe("hasEarlierMessages", () => {
+  const at = (minute: number) => ({ createdAt: new Date(Date.UTC(2026, 0, 1, 10, minute)) });
+  // The thread query answered with the newest 3 of 5 messages.
+  const snapshot = [at(3), at(4), at(5)];
+
+  it("offers earlier messages while the total exceeds what is shown", () => {
+    expect(hasEarlierMessages({ shown: snapshot, snapshot, snapshotTotal: 5 })).toBe(true);
+  });
+
+  it("stops once the earlier pages have been loaded", () => {
+    expect(hasEarlierMessages({ shown: [at(1), at(2), ...snapshot], snapshot, snapshotTotal: 5 })).toBe(false);
+  });
+
+  it("does not count messages that arrived after the snapshot", () => {
+    // Two live messages make five on screen, but the two oldest are still missing.
+    const shown = [...snapshot, at(6), at(7)];
+    expect(hasEarlierMessages({ shown, snapshot, snapshotTotal: 5 })).toBe(true);
+    expect(hasEarlierMessages({ shown: [at(1), at(2), ...shown], snapshot, snapshotTotal: 5 })).toBe(false);
+  });
+
+  it("has nothing earlier in an empty thread, even after a first message is sent", () => {
+    expect(hasEarlierMessages({ shown: [], snapshot: [], snapshotTotal: 0 })).toBe(false);
+    expect(hasEarlierMessages({ shown: [at(1)], snapshot: [], snapshotTotal: 0 })).toBe(false);
   });
 });

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 
 import { SITE_URL } from "~/_lib/site";
-import { Providers } from "~/app/app/providers";
-import { auth } from "~/auth";
+import { defaultOpenGraph } from "~/app/_lib/siteMetadata";
 import { db } from "~/server/db";
 
 type Props = {
@@ -17,7 +16,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   });
 
   if (!photographer) {
-    return { title: "Photographer Not Found" };
+    return { robots: { index: false }, title: "Photographer not found" };
   }
 
   const name = photographer.name || "Photographer";
@@ -30,9 +29,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const ogImageUrl = `${SITE_URL}/api/og/photographer?handle=${encodeURIComponent(handle)}`;
 
+  const path = `/photographer/${encodeURIComponent(handle)}`;
+
   return {
+    alternates: { canonical: path },
     description,
     openGraph: {
+      ...defaultOpenGraph,
       description,
       images: [
         {
@@ -44,6 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ],
       title,
       type: "profile",
+      url: path,
     },
     title,
     twitter: {
@@ -55,12 +59,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function PhotographerLayout({
+export default function PhotographerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // The page asks whether the viewer is signed in (to offer the review form).
-  const session = await auth();
-  return <Providers params={{ session }}>{children}</Providers>;
+  return children;
 }

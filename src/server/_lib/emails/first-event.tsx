@@ -68,8 +68,7 @@ export function FirstEventEmail({
       </Text>
       <Text style={paragraph}>
         Browse open calls and events near you. Apply to the ones that match
-        your style and availability. Some of the best collaborations start
-        with a simple &quot;I&apos;m interested.&quot;
+        your style and your calendar, and propose your rate when you apply.
       </Text>
       <Section style={ctaSection}>
         <Button style={secondaryButton} href={browseEventsUrl}>

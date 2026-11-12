@@ -1,27 +1,21 @@
-import { Button, Container, Stack, Text, Title } from "@mantine/core";
-import { IconUserOff } from "@tabler/icons-react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import { ProfilePage } from "~/app/_components/profiles/ProfilePage";
 import { api } from "~/trpc/server";
 
-export default async function Page({ params }: { params: Promise<{ userId: string; }>; }) {
+type PageProps = { params: Promise<{ userId: string }> };
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { userId } = await params;
   const photographer = await (await api()).photographer.getByUserId({ userId });
+  return { title: photographer?.name ?? "Photographer not found" };
+}
 
-  if (!photographer) {
-    return (
-      <Container size="sm" py="xl">
-        <Stack align="center" gap="md">
-          <IconUserOff size={64} color="var(--mantine-color-gray-4)" />
-          <Title order={2}>Photographer not found</Title>
-          <Text c="dimmed">This profile doesn&apos;t exist or may have been removed.</Text>
-          <Button component="a" href="/app/discover" variant="light">
-            Browse Photographers
-          </Button>
-        </Stack>
-      </Container>
-    );
-  };
+export default async function Page({ params }: PageProps) {
+  const { userId } = await params;
+  const photographer = await (await api()).photographer.getByUserId({ userId });
+  if (!photographer) notFound();
 
-  return <ProfilePage userId={photographer.userId} photographer={photographer} />;
+  return <ProfilePage photographer={photographer} />;
 }

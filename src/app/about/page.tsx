@@ -17,26 +17,21 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 
+
 import {
-  CountUp,
   FadeInOnScroll,
   StaggerContainer,
 } from "~/app/_components/animations";
+import { NextLink } from "~/app/_components/NextLink";
+import { pageMetadata } from "~/app/_lib/siteMetadata";
 
-export const metadata = {
+export const metadata = pageMetadata({
+  description:
+    "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
+  path: "/about",
+  socialTitle: "About ISO",
   title: "About",
-  description: "Learn about ISO — the photographer second shooter network.",
-  openGraph: {
-    title: "About ISO",
-    description:
-      "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
-  },
-  twitter: {
-    title: "About ISO",
-    description:
-      "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
-  },
-};
+});
 
 const values = [
   {
@@ -59,11 +54,6 @@ const values = [
   },
 ];
 
-const stats = [
-  { value: 500, suffix: "+", label: "Photographers" },
-  { value: 1200, suffix: "+", label: "Events booked" },
-  { value: 50, suffix: "+", label: "Cities" },
-];
 
 const team = [
   {
@@ -87,7 +77,6 @@ export default function AboutPage() {
         {/* Mission */}
         <Box py={60}>
           <Stack align="center" gap="lg" maw={640} mx="auto">
-            <FadeInOnScroll>
               <Text
                 size="sm"
                 fw={600}
@@ -98,28 +87,21 @@ export default function AboutPage() {
               >
                 About ISO
               </Text>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.1}>
               <Title order={1} ta="center">
                 Connecting photographers, one shoot at a time
               </Title>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.2}>
               <Text c="dimmed" size="lg" ta="center" style={{ lineHeight: 1.6 }}>
                 ISO is the second shooter network built for photographers who want
                 to do their best work. Whether you&apos;re a lead photographer
                 looking for reliable backup or a second shooter ready to book more
                 gigs, ISO makes the connection simple.
               </Text>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.3}>
               <Text c="dimmed" ta="center" style={{ lineHeight: 1.6 }}>
                 We started ISO because finding a great second shooter shouldn&apos;t
                 mean scrolling through Facebook groups or cold-DMing strangers on
                 Instagram. Photographers deserve a dedicated space to find, vet,
                 and book the right people for every shoot.
               </Text>
-            </FadeInOnScroll>
           </Stack>
         </Box>
 
@@ -141,15 +123,7 @@ export default function AboutPage() {
               </Title>
             </Stack>
           </FadeInOnScroll>
-          <StaggerContainer
-            stagger={0.12}
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
-              gap: "var(--mantine-spacing-xl)",
-            }}
-          >
+          <StaggerContainer stagger={0.12} className="grid-three-up">
             {values.map((value) => (
               <Paper key={value.title} p="lg" radius="md" withBorder>
                 <ThemeIcon size={40} radius="md" variant="light" mb="sm">
@@ -199,8 +173,8 @@ export default function AboutPage() {
                 That experience sparked a question: why isn&apos;t there a
                 dedicated place for photographers to find and book each other? Not
                 a generic freelancer marketplace. Not a social media group. A
-                purpose-built network where photographers can search by location,
-                specialty, and availability — and actually trust who they&apos;re
+                purpose-built network where photographers can find each other by
+                location and specialty, and actually trust who they&apos;re
                 booking.
               </Text>
             </FadeInOnScroll>
@@ -212,41 +186,6 @@ export default function AboutPage() {
               </Text>
             </FadeInOnScroll>
           </Stack>
-        </Box>
-
-        <Divider />
-
-        {/* Stats */}
-        <Box py={60}>
-          <StaggerContainer
-            stagger={0.15}
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
-              gap: "var(--mantine-spacing-xl)",
-            }}
-          >
-            {stats.map((stat) => (
-              <Stack key={stat.label} align="center" gap={4}>
-                <Text
-                  fw={700}
-                  style={{ fontSize: "2.5rem" }}
-                  variant="gradient"
-                  gradient={{ from: "orange.5", to: "orange.8", deg: 135 }}
-                >
-                  <CountUp
-                    target={stat.value}
-                    suffix={stat.suffix}
-                    formatted={stat.value >= 1000}
-                  />
-                </Text>
-                <Text c="dimmed" size="sm">
-                  {stat.label}
-                </Text>
-              </Stack>
-            ))}
-          </StaggerContainer>
         </Box>
 
         <Divider />
@@ -288,7 +227,7 @@ export default function AboutPage() {
                   </Avatar>
                   <div>
                     <Text fw={500}>{member.name}</Text>
-                    <Text size="sm" c="orange">
+                    <Text size="sm" c="orange.7">
                       {member.role}
                     </Text>
                   </div>
@@ -323,7 +262,7 @@ export default function AboutPage() {
                 in your area.
               </Text>
               <Button
-                component="a"
+                component={NextLink}
                 href="/join"
                 size="lg"
                 rightSection={<IconArrowRight size={18} />}

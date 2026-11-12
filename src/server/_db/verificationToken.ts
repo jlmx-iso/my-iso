@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import { OTP_MAX_ATTEMPTS, OTP_TTL_MINUTES } from "~/_utils/limits";
 import { generateVerificationCode } from "~/server/_utils/auth";
 import { timingSafeEqualStrings } from "~/server/_utils/hash";
 
@@ -19,9 +20,8 @@ import type { ExtendedPrismaClient } from "./softDelete";
  * therefore still gets at most OTP_MAX_ATTEMPTS evaluated.
  */
 
-/** Verification attempts a code survives; the next one invalidates it. */
-export const OTP_MAX_ATTEMPTS = 5;
-export const OTP_TTL_MS = 10 * 60 * 1000;
+export { OTP_MAX_ATTEMPTS };
+export const OTP_TTL_MS = OTP_TTL_MINUTES * 60 * 1000;
 
 type OtpDb = { verificationToken: ExtendedPrismaClient["verificationToken"] };
 

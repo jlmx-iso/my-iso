@@ -6,6 +6,7 @@ import { createTRPCReact } from "@trpc/react-query";
 import { type inferRouterOutputs } from "@trpc/server";
 import { useState } from "react";
 
+import { shouldRetryQuery } from "~/_utils/queryRetry";
 import { MAX_TRPC_BATCH_SIZE } from "~/server/api/requestGuards";
 import { type AppRouter } from "~/server/api/root";
 
@@ -33,7 +34,13 @@ const headers = () => ({ "x-trpc-source": "react" });
 export function TRPCReactProvider(props: {
   children: React.ReactNode;
 }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        // Mutations are never retried (the react-query default).
+        defaultOptions: { queries: { retry: shouldRetryQuery } },
+      }),
+  );
 
   const [trpcClient] = useState(() =>
     api.createClient({

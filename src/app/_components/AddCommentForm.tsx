@@ -1,72 +1,81 @@
 "use client";
 
-import { Button, Textarea } from "@mantine/core";
-import { schemaResolver, useForm } from "@mantine/form";
+import { Button, Group, Text, Textarea } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
-import { z } from "zod";
 
-import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
+import { MAX_COMMENT_LENGTH } from "~/_utils/limits";
+import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
-
-import { Loader } from "./Loader";
-import { Notification } from "./Notification";
-
-
-
 
 type AddCommentFormProps = {
     eventId: string;
+    eventTitle: string;
+    /** Called once the server has stored a comment. */
+    onPosted?: () => void;
 };
 
-const schema = z.object({
-    comment: z.string().min(1, "Comment is required"),
-});
+/** The counter appears once a comment is this close to the limit. */
+const COUNTER_FROM = MAX_COMMENT_LENGTH - 200;
 
-export default function AddCommentForm({ eventId }: AddCommentFormProps) {
-    const commentRefetcher = useCommentsRefetch();
+export default function AddCommentForm({ eventId, eventTitle, onPosted }: AddCommentFormProps) {
+    const utils = api.useUtils();
     const form = useForm({
         initialValues: {
             comment: "",
         },
-        validate: schemaResolver(schema, { sync: true }),
+        validate: {
+            comment: (value: string) => {
+                if (!value.trim()) return "Write a comment first";
+                const over = value.trim().length - MAX_COMMENT_LENGTH;
+                return over > 0
+                    ? `That comment is ${over} characters over the ${MAX_COMMENT_LENGTH.toLocaleString("en-US")} limit. Shorten it to post.`
+                    : null;
+            },
+        },
     });
-    const { mutate, isPending, error } = api.event.addCommentToEvent.useMutation({
+    const { mutate, isPending } = api.event.addCommentToEvent.useMutation({
+        // The draft is only cleared once the server has stored the comment,
+        // so a failed post (rate limit, too long, offline) loses nothing.
+        onError: (error) =>
+            form.setFieldError("comment", userFacingError(error, "Your comment wasn't posted. It's still here — please try again.")),
         onSuccess: () => {
-            commentRefetcher.refetchComments()
-            commentRefetcher.refetchCommentCount()
-        }
+            form.reset();
+            onPosted?.();
+            void utils.event.getCommentsPage.invalidate({ eventId });
+            void utils.event.getCommentCountByEventId.invalidate({ eventId });
+            void utils.event.getById.invalidate({ id: eventId });
+        },
     });
 
-    const handleSumbit = (form.onSubmit((values) => {
-        mutate({
-            content: values.comment,
-            eventId,
-        });
-        form.reset();
-    }));
+    const handleSubmit = form.onSubmit((values) => {
+        if (isPending) return;
+        mutate({ content: values.comment.trim(), eventId });
+    });
 
-    if (isPending) {
-        return <Loader />
-    }
-
+    const length = form.values.comment.trim().length;
 
     return (
-        <>
-            {error && <Notification type="error" autoDismiss={5000} >Error adding comment</Notification>}
-            <form onSubmit={handleSumbit} style={{ alignItems: "flex-end", display: "flex", flexDirection: "column", gap: 8 }}>
-                <Textarea
-                    {...form.getInputProps("comment")}
-                    w="100%"
-                    placeholder="Add a comment"
-                    required
-                    autosize
-                    minRows={2}
-                    onKeyDown={getHotkeyHandler([
-                        ["mod+Enter", handleSumbit],
-                    ])}
-                />
-                <Button type="submit" size="xs">Add Comment</Button>
-            </form>
-        </>
+        <form onSubmit={handleSubmit} noValidate>
+            <Textarea
+                {...form.getInputProps("comment")}
+                aria-label={`Comment on ${eventTitle}`}
+                placeholder="Add a comment"
+                autosize
+                minRows={2}
+                maxRows={8}
+                onKeyDown={getHotkeyHandler([
+                    ["mod+Enter", () => handleSubmit()],
+                ])}
+            />
+            <Group justify="flex-end" align="center" gap="sm" mt="xs">
+                {length >= COUNTER_FROM && (
+                    <Text size="xs" c={length > MAX_COMMENT_LENGTH ? "red" : "dimmed"} data-testid="comment-counter">
+                        {length.toLocaleString("en-US")}/{MAX_COMMENT_LENGTH.toLocaleString("en-US")}
+                    </Text>
+                )}
+                <Button type="submit" size="xs" loading={isPending}>Post comment</Button>
+            </Group>
+        </form>
     )
-};
+}

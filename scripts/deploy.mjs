@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Deploys one environment, in the only safe order:
 //
+//   0. stop if the database predates the migration baseline (it needs
+//      `npm run db:upgrade-legacy` once, never run from here),
 //   1. build the Worker for that environment (and upload source maps),
 //   2. apply pending D1 migrations,
 //   3. deploy the code that needs them.
@@ -20,13 +22,22 @@
 // when the Worker runs (wrangler.toml `[vars]`, `wrangler secret put`), and
 // validated then (src/env.js).
 //
-// Runs from a developer machine or a release job with Cloudflare
-// credentials. CI (.github/workflows/ci.yml) never deploys.
+// Runs from a developer machine, or as the deploy command of Cloudflare
+// Workers Builds (production: `npm run deploy:production`). GitHub Actions
+// CI (.github/workflows/ci.yml) never deploys.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  classifyDatabase,
+  parseWranglerJson,
+  PROBE_BASELINE_SQL,
+  PROBE_TABLES_SQL,
+  WRANGLER_ENV_ARGS,
+} from "./lib/legacyDb.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -42,16 +53,24 @@ if (!Object.hasOwn(TARGETS, name)) {
 }
 const target = TARGETS[/** @type {keyof typeof TARGETS} */ (name)];
 
+// Cloudflare Workers Builds (the repository connected to the Worker) sets
+// WORKERS_CI=1 and provides the build-time values as Build variables, so no
+// file is read there. Everywhere else they come from `.env.deploy.<name>`.
+const onWorkersBuilds = process.env.WORKERS_CI === "1";
 const envFile = path.join(repoRoot, `.env.deploy.${name}`);
-if (!existsSync(envFile)) {
+const configSource = onWorkersBuilds ? "the Workers Builds build variables" : path.basename(envFile);
+if (onWorkersBuilds) {
+  console.warn(`Workers Builds: reading the build-time values for ${name} from its build variables.`);
+} else if (!existsSync(envFile)) {
   console.error(
     `Missing ${path.basename(envFile)}: the build-time configuration for ${name}.\n` +
       "See docs/DEPLOYMENT.md, \"Build-time values\".",
   );
   process.exit(1);
+} else {
+  // Does not override variables already set in the shell.
+  process.loadEnvFile(envFile);
 }
-// Does not override variables already set in the shell.
-process.loadEnvFile(envFile);
 // The template leaves the optional PostHog CLI host empty; an empty value
 // is not "unset" to the CLI, which then refuses it as an invalid host.
 if (!process.env.POSTHOG_CLI_HOST) delete process.env.POSTHOG_CLI_HOST;
@@ -65,7 +84,7 @@ const REQUIRED_AT_BUILD = [
 ];
 const missing = REQUIRED_AT_BUILD.filter((key) => !process.env[key]);
 if (missing.length > 0) {
-  console.error(`${path.basename(envFile)} is missing: ${missing.join(", ")}`);
+  console.error(`${configSource} is missing: ${missing.join(", ")}`);
   process.exit(1);
 }
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "";
@@ -105,6 +124,42 @@ function step(title, command, args) {
     console.error(`\nDeploy to ${name} stopped: "${title}" failed. Nothing after it was run.`);
     process.exit(result.status ?? 1);
   }
+}
+
+/**
+ * Runs one read-only query on the remote database of this environment.
+ *
+ * @param {string} sql
+ */
+function queryRemote(sql) {
+  const result = spawnSync(
+    "npx",
+    ["wrangler", "d1", "execute", "DB", "--remote", "--json", "--command", sql, ...WRANGLER_ENV_ARGS[/** @type {keyof typeof WRANGLER_ENV_ARGS} */ (name)]],
+    { cwd: repoRoot, encoding: "utf8", env: process.env, stdio: ["inherit", "pipe", "inherit"] },
+  );
+  if (result.status !== 0) {
+    console.error(`\nDeploy to ${name} stopped: could not read the database's migration state. Nothing was changed.`);
+    process.exit(result.status ?? 1);
+  }
+  return parseWranglerJson(result.stdout);
+}
+
+// A database created before the migration baseline has the app's tables but
+// no record of 0001_init.sql; `migrations apply` would try to create them
+// again and fail. It is upgraded once, deliberately, by a separate command:
+// never here.
+console.warn(`\n==> Check the ${name} database's migration state`);
+const tables = queryRemote(PROBE_TABLES_SQL).map((row) => String(row.name));
+const baselineApplied =
+  tables.includes("d1_migrations") && Number(queryRemote(PROBE_BASELINE_SQL)[0]?.applied ?? 0) > 0;
+if (classifyDatabase({ baselineApplied, tables }) === "pre-baseline") {
+  console.error(
+    `\nDeploy to ${name} stopped: its database was created before the migration baseline ` +
+      "(it has the app's tables but 0001_init.sql is not recorded), so migrations cannot be applied to it yet. " +
+      `Upgrade it once with:\n\n  npm run db:upgrade-legacy -- --env ${name}\n\n` +
+      "then deploy again. See docs/DATABASE.md, \"Upgrading a database created before the baseline\". Nothing was changed.",
+  );
+  process.exit(1);
 }
 
 // Fails before anything is changed if the build or the bundle is broken.

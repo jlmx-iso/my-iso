@@ -1,0 +1,12 @@
+/*
+ * The avatar that opens the account menu. The avatar itself is 38px; the
+ * button around it is 44px so it is easy to hit with a thumb.
+ */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+}

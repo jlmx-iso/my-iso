@@ -1,6 +1,5 @@
 "use client";
 
-import { useInView } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
 interface CountUpProps {
@@ -14,54 +13,59 @@ interface CountUpProps {
   formatted?: boolean;
   /** Duration of the count animation in ms. Default 1600. */
   duration?: number;
-  className?: string;
-  style?: React.CSSProperties;
 }
 
+/**
+ * Counts up to `target` when scrolled into view. The server HTML (and the
+ * reduced-motion and no-JavaScript experience) shows the final number; screen
+ * readers always get the final number rather than the animation frames.
+ */
 export function CountUp({
   target,
   suffix = "",
   prefix = "",
   formatted = true,
   duration = 1600,
-  className,
-  style,
 }: CountUpProps) {
   const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-60px" });
-  const [display, setDisplay] = useState(0);
-  const hasAnimated = useRef(false);
+  const [display, setDisplay] = useState(target);
 
   useEffect(() => {
-    if (!isInView || hasAnimated.current) return;
-    hasAnimated.current = true;
+    const element = ref.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    const start = performance.now();
+    let frame = 0;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        const start = performance.now();
+        const tick = (now: number) => {
+          const progress = Math.min((now - start) / duration, 1);
+          // Ease-out cubic
+          setDisplay(Math.round((1 - Math.pow(1 - progress, 3)) * target));
+          if (progress < 1) frame = requestAnimationFrame(tick);
+        };
+        frame = requestAnimationFrame(tick);
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(element);
 
-    function tick(now: number) {
-      const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      // Ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(Math.round(eased * target));
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [target, duration]);
 
-      if (progress < 1) {
-        requestAnimationFrame(tick);
-      }
-    }
-
-    requestAnimationFrame(tick);
-  }, [isInView, target, duration]);
-
-  const formattedValue = formatted
-    ? display.toLocaleString("en-US")
-    : String(display);
+  const format = (value: number) =>
+    `${prefix}${formatted ? value.toLocaleString("en-US") : String(value)}${suffix}`;
 
   return (
-    <span ref={ref} className={className} style={style}>
-      {prefix}
-      {formattedValue}
-      {suffix}
+    <span ref={ref}>
+      <span aria-hidden>{format(display)}</span>
+      <span className="sr-only">{format(target)}</span>
     </span>
   );
 }
