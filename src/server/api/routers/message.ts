@@ -1,20 +1,22 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-
-import { logger } from "~/_utils";
+import { ErrorReason, logger } from "~/_utils";
 import {
   classifyRecipients,
   findOrCreateThread,
   findThreadByParticipants,
   MAX_THREAD_PARTICIPANTS,
+  messageableBy,
   relatedToUser,
 } from "~/server/_db/messaging";
+import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { captureEvent } from "~/server/_lib/posthog";
 import { publishThreadMessage } from "~/server/_lib/realtime";
-import { RateLimits } from "~/server/_utils/rateLimit";
+import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 
+import { reasonedError } from "../reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "../trpc";
 
 
@@ -38,6 +40,8 @@ const senderSelect = {
   profilePic: true,
 } as const;
 
+const idInput = z.string().min(1).max(64);
+
 /** Number of most recent messages a thread query returns. */
 const THREAD_PAGE_SIZE = 50;
 
@@ -47,8 +51,66 @@ export const MAX_MESSAGE_LENGTH = 5000;
 /** Threads returned by one page of the conversation list. */
 const THREAD_LIST_PAGE_SIZE = 50;
 
+/** Most people one recipient search returns. */
+export const MAX_RECIPIENT_RESULTS = 20;
+
+/**
+ * The one answer for "you may not message this person" and "no such person",
+ * so a user id cannot be probed for existence or for discoverability.
+ */
+const recipientNotMessageable = () =>
+  reasonedError(
+    "FORBIDDEN",
+    ErrorReason.RECIPIENT_NOT_MESSAGEABLE,
+    "This person isn't accepting new messages. Match with them on Discover or apply to one of their events to connect.",
+  );
+
+const threadListSelect = {
+  id: true,
+  participants: {
+    select: {
+      firstName: true,
+      id: true,
+      lastName: true,
+      photographer: {
+        select: {
+          companyName: true,
+          id: true,
+        },
+      },
+      profilePic: true,
+    },
+  },
+} as const;
+
+const threadListInput = z
+  .object({
+    cursor: idInput.optional(),
+    limit: z.number().int().min(1).max(THREAD_LIST_PAGE_SIZE).default(THREAD_LIST_PAGE_SIZE),
+  })
+  .optional();
+
+/**
+ * One page of `userId`'s conversations, most recently active first, plus one
+ * extra row when there are more (see toPage). `cursor` is the id of the last
+ * thread of the previous page.
+ */
+function findThreadsOf(
+  db: Pick<ExtendedPrismaClient, "messageThread">,
+  userId: string,
+  input: z.infer<typeof threadListInput>,
+  extra: 0 | 1,
+) {
+  return db.messageThread.findMany({
+    ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    select: threadListSelect,
+    take: (input?.limit ?? THREAD_LIST_PAGE_SIZE) + extra,
+    where: { participants: { some: { id: userId } } },
+  });
+}
+
 const messageContent = z.string().trim().min(1).max(MAX_MESSAGE_LENGTH);
-const idInput = z.string().min(1).max(64);
 
 /** The other people in a thread: at least one, capped, no duplicates needed. */
 const otherParticipants = z.array(idInput).min(1).max(MAX_THREAD_PARTICIPANTS - 1);
@@ -134,10 +196,14 @@ export const messageRouter = createTRPCRouter({
    * has exactly one thread (MessageThread.participantKey is unique), so a
    * repeated call posts into that thread instead of creating a duplicate.
    *
-   * A NEW thread may only be opened with people the caller already has a
-   * relationship with (see relatedToUser): a Discover match, a booking or
-   * application between them, or the other person having written first.
-   * Without it, any member could message every other member unprompted.
+   * A NEW thread may only be opened with people the caller may message (see
+   * messageableBy): anyone discoverable, or someone they matched with, have
+   * an active booking with, or who wrote to them first. Otherwise the answer
+   * is FORBIDDEN with reason `recipient_not_messageable`.
+   *
+   * New threads are also capped per caller per day
+   * (MAX_NEW_CONVERSATIONS_PER_DAY): past it the answer is TOO_MANY_REQUESTS
+   * with reason `new_conversation_limit`. Existing threads are unaffected.
    */
   createThread: protectedProcedure
     .use(rateLimit(RateLimits.THREAD_CREATE))
@@ -159,14 +225,22 @@ export const messageRouter = createTRPCRouter({
         let created = false;
 
         if (!thread) {
-          const { missing, unrelated } = await classifyRecipients(ctx.db, userId, others);
-          // One answer for "no such user" and "not someone you can message",
-          // so this cannot be used to test which user ids exist.
-          if (missing.length > 0 || unrelated.length > 0) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'You can only message people you have matched with or have a booking with.',
-            });
+          const { notMessageable } = await classifyRecipients(ctx.db, userId, others);
+          if (notMessageable.length > 0) throw recipientNotMessageable();
+
+          // Counted only here: for a conversation that does not exist yet,
+          // with people the caller is allowed to write to.
+          const allowance = await checkRateLimit(
+            ctx.db,
+            RateLimits.NEW_CONVERSATION_DAILY,
+            `user:${userId}`,
+          );
+          if (!allowance.allowed) {
+            throw reasonedError(
+              "TOO_MANY_REQUESTS",
+              ErrorReason.NEW_CONVERSATION_LIMIT,
+              `You've started ${RateLimits.NEW_CONVERSATION_DAILY.limit} new conversations today, which is the daily limit. You can still reply in your existing conversations, and start new ones tomorrow.`,
+            );
           }
           const result = await findOrCreateThread(ctx.db, allParticipants);
           thread = { id: result.id };
@@ -312,39 +386,53 @@ export const messageRouter = createTRPCRouter({
     }),
 
   /**
-   * People the caller may start a conversation with, by name. Limited to
-   * existing relationships (see relatedToUser), which is also what keeps
-   * members who are not discoverable out of the results for everyone else.
+   * People the caller may start a conversation with, by name: the people
+   * they already have a relationship with first, then other discoverable
+   * members, MAX_RECIPIENT_RESULTS at most. Members who are not discoverable
+   * never appear for someone they have no relationship with.
    */
   getPotentialRecipients: protectedProcedure
     .use(rateLimit(RateLimits.SEARCH))
     .input(z.object({ query: z.string().trim().min(1).max(100) }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      return ctx.db.user.findMany({
-        orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
+      const matchesQuery = {
+        OR: [
+          { firstName: { contains: input.query } },
+          { lastName: { contains: input.query } },
+          { photographer: { companyName: { contains: input.query } } },
+        ],
+      };
+      const orderBy = [{ firstName: "asc" as const }, { id: "asc" as const }];
+
+      const related = await ctx.db.user.findMany({
+        orderBy,
         select: recipientSelect,
-        take: 10,
+        take: MAX_RECIPIENT_RESULTS,
+        where: { AND: [{ id: { not: userId } }, relatedToUser(userId), matchesQuery] },
+      });
+      if (related.length >= MAX_RECIPIENT_RESULTS) return related;
+
+      const discoverable = await ctx.db.user.findMany({
+        orderBy,
+        select: recipientSelect,
+        take: MAX_RECIPIENT_RESULTS - related.length,
         where: {
           AND: [
-            { id: { not: userId } },
-            relatedToUser(userId),
-            {
-              OR: [
-                { firstName: { contains: input.query } },
-                { lastName: { contains: input.query } },
-                { photographer: { companyName: { contains: input.query } } },
-              ],
-            },
+            { id: { notIn: [userId, ...related.map((user) => user.id)] } },
+            { isDiscoverable: true },
+            matchesQuery,
           ],
         },
       });
+      return [...related, ...discoverable];
     }),
 
   /**
-   * Resolves a "message this person" deep link. Returns null unless the
-   * caller may message them (same rule as createThread), so a user id alone
-   * reveals nothing about a member the caller has no relationship with.
+   * Resolves a "message this person" deep link. Answers FORBIDDEN with reason
+   * `recipient_not_messageable` unless the caller may message them (same
+   * rule as createThread), and exactly the same when there is no such user.
+   * Null for the caller's own id.
    */
   getRecipientById: protectedProcedure
     .input(z.object({ userId: idInput }))
@@ -353,10 +441,12 @@ export const messageRouter = createTRPCRouter({
       // You cannot start a conversation with yourself.
       if (input.userId === userId) return null;
 
-      return ctx.db.user.findFirst({
+      const recipient = await ctx.db.user.findFirst({
         select: recipientSelect,
-        where: { AND: [{ id: input.userId }, relatedToUser(userId)] },
+        where: { AND: [{ id: input.userId }, messageableBy(userId)] },
       });
+      if (!recipient) throw recipientNotMessageable();
+      return recipient;
     }),
 
   getThreadById: protectedProcedure
@@ -444,47 +534,15 @@ export const messageRouter = createTRPCRouter({
       }
     }),
   /**
-   * The caller's conversations, most recently active first. Pass the id of
-   * the last thread received as `cursor` for the next page.
+   * The caller's conversations, most recently active first, as a plain
+   * array. Pass the id of the last thread received as `cursor` for the next
+   * page; getThreadsPage does the same and says whether there is one.
    */
   getThreadsByUserId: protectedProcedure
-    .input(z.object({
-      cursor: idInput.optional(),
-      limit: z.number().int().min(1).max(THREAD_LIST_PAGE_SIZE).default(THREAD_LIST_PAGE_SIZE),
-    }).optional())
+    .input(threadListInput)
     .query(async ({ ctx, input }) => {
       try {
-        return await ctx.db.messageThread.findMany({
-          ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
-          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-          take: input?.limit ?? THREAD_LIST_PAGE_SIZE,
-          select: {
-            id: true,
-            participants: {
-              select: {
-                firstName: true,
-                id: true,
-                lastName: true,
-                photographer: {
-                  select: {
-                    companyName: true,
-                    id: true,
-                  }
-                },
-                profilePic: true,
-              },
-            },
-          },
-          where: {
-            participants: {
-              some: {
-                id: {
-                  equals: ctx.session.user.id,
-                },
-              }
-            }
-          },
-        });
+        return await findThreadsOf(ctx.db, ctx.session.user.id, input, 0);
       } catch (error) {
         logger.error("Unable to get threads by userId", { error, userId: ctx.session.user.id });
         throw new TRPCError({
@@ -493,5 +551,16 @@ export const messageRouter = createTRPCRouter({
           cause: error,
         });
       }
+    }),
+
+  /**
+   * getThreadsByUserId as `{ items, nextCursor }`: pass `nextCursor` back as
+   * `cursor` for the next (less recently active) page; null on the last one.
+   */
+  getThreadsPage: protectedProcedure
+    .input(threadListInput)
+    .query(async ({ ctx, input }) => {
+      const rows = await findThreadsOf(ctx.db, ctx.session.user.id, input, 1);
+      return toPage(rows, input?.limit ?? THREAD_LIST_PAGE_SIZE);
     }),
 });

@@ -5,6 +5,7 @@ import { IconMessagePlus } from "@tabler/icons-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { ErrorReason, getErrorReason } from "~/_utils";
 import { Avatar } from "~/app/_components/Avatar";
 import { Modal } from "~/app/_components/Modal";
 import { api } from "~/trpc/react";
@@ -41,18 +42,23 @@ export default function NewMessageModal() {
     const isDeepLinkActive = !!deepLinkUserId && deepLinkUserId !== dismissedDeepLink;
     const deepLink = api.message.getRecipientById.useQuery(
         { userId: deepLinkUserId ?? "" },
-        { enabled: isDeepLinkActive },
+        // A refusal is an answer, not a failure to retry.
+        { enabled: isDeepLinkActive, retry: false },
     );
     const deepLinkRecipient = isDeepLinkActive ? deepLink.data ?? undefined : undefined;
 
     const recipient = pickedRecipient ?? deepLinkRecipient;
     const isResolvingDeepLink = isDeepLinkActive && !pickedRecipient && deepLink.isPending;
     const isDeepLinkUnknown = isDeepLinkActive && !pickedRecipient && deepLink.isFetched && !deepLink.data;
+    const isDeepLinkNotMessageable =
+        isDeepLinkUnknown && getErrorReason(deepLink.error) === ErrorReason.RECIPIENT_NOT_MESSAGEABLE;
 
-    const { data: potentialRecipients = [], isFetching: isSearching } = api.message.getPotentialRecipients.useQuery(
+    const isSearchEnabled = recipientQuery.length > 1;
+    const { data: potentialRecipients = [], isFetching: isSearching, isSuccess: hasSearched } = api.message.getPotentialRecipients.useQuery(
         { query: recipientQuery },
-        { enabled: recipientQuery.length > 1 },
+        { enabled: isSearchEnabled },
     );
+    const hasNoEligibleRecipients = isSearchEnabled && hasSearched && !isSearching && potentialRecipients.length === 0;
 
     const close = () => {
         setIsOpenedByButton(false);
@@ -115,7 +121,9 @@ export default function NewMessageModal() {
                 <Stack gap="sm">
                     {isDeepLinkUnknown && (
                         <Text size="sm" c="red" role="alert">
-                            We couldn&apos;t find that person. Search for a recipient instead.
+                            {isDeepLinkNotMessageable
+                                ? "This photographer isn't accepting new messages. To connect, match with them on Discover or apply to one of their events."
+                                : "We couldn't find that person. Search for a recipient instead."}
                         </Text>
                     )}
                     <Autocomplete
@@ -133,6 +141,11 @@ export default function NewMessageModal() {
                             if (selected) setPickedRecipient(selected);
                         }}
                     />
+                    {hasNoEligibleRecipients && (
+                        <Text size="sm" c="dimmed" role="status">
+                            No eligible recipients found. You can message photographers who are discoverable, or people you have matched or booked with.
+                        </Text>
+                    )}
                 </Stack>
             )}
         </Modal>

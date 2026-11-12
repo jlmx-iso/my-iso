@@ -20,6 +20,8 @@ import { ADMIN_ROLES } from "~/server/_utils/roles";
 import type { UserRole } from "~/server/_utils/roles";
 import { db } from "~/server/db";
 
+import { reasonOf } from "./reasonedError";
+
 
 /**
  * 1. CONTEXT
@@ -84,6 +86,8 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
       ...shape,
       data: {
         ...shape.data,
+        // Machine-readable reason, when the error has one (see ErrorReason).
+        reason: reasonOf(error),
         zodError:
           error.cause instanceof ZodError ? error.cause.flatten() : null,
       },

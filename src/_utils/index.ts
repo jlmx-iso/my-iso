@@ -6,3 +6,4 @@ export * from "./dataUrl";
 export * from "./phone";
 export * from "./instagram";
 export * from "./social";
+export * from "./errorReason";

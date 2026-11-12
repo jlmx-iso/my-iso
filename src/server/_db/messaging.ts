@@ -101,20 +101,31 @@ export async function findOrCreateThread(
 }
 
 /**
- * Filter for users who already have a relationship with `userId`, which is
- * what allows starting a conversation with them:
+ * Booking statuses that count as a working relationship between applicant
+ * and event owner. Declined and cancelled bookings do not.
+ */
+export const ACTIVE_BOOKING_STATUSES = ["applied", "pending", "accepted", "completed"];
+
+/**
+ * Filter for users who have a relationship with `userId`:
  *
  * - the two matched in Discover, or
- * - one applied to the other's event (a booking in either direction), or
+ * - there is an active booking between them (see ACTIVE_BOOKING_STATUSES),
+ *   in either direction, on an event that has not been deleted, or
  * - they have written to `userId` before (in any thread both are part of).
  */
 export function relatedToUser(userId: string): Prisma.UserWhereInput {
+  const activeBooking = {
+    event: { isDeleted: false },
+    isDeleted: false,
+    status: { in: ACTIVE_BOOKING_STATUSES },
+  };
   return {
     OR: [
       { matchesAsUser1: { some: { user2Id: userId } } },
       { matchesAsUser2: { some: { user1Id: userId } } },
-      { bookingsApplied: { some: { isDeleted: false, ownerId: userId } } },
-      { bookingsOwned: { some: { applicantId: userId, isDeleted: false } } },
+      { bookingsApplied: { some: { ...activeBooking, ownerId: userId } } },
+      { bookingsOwned: { some: { ...activeBooking, applicantId: userId } } },
       {
         messages: {
           some: {
@@ -128,28 +139,41 @@ export function relatedToUser(userId: string): Prisma.UserWhereInput {
 }
 
 /**
- * Splits `otherIds` into those that exist and are related to `userId`, those
- * that exist but are not, and those that do not exist.
+ * Filter for the users `userId` may start a conversation with: anyone who is
+ * discoverable (they opted in to being found), plus anyone related to
+ * `userId` (see relatedToUser), and never `userId` themselves.
+ *
+ * A member who is not discoverable is therefore unreachable, and invisible
+ * in recipient search, to everyone they have no relationship with.
+ */
+export function messageableBy(userId: string): Prisma.UserWhereInput {
+  return {
+    AND: [
+      { id: { not: userId } },
+      { OR: [{ isDiscoverable: true }, relatedToUser(userId)] },
+    ],
+  };
+}
+
+/**
+ * Splits `otherIds` into those `userId` may start a conversation with and
+ * the rest (not messageable, or no such user; callers must not tell the two
+ * apart to the client).
  */
 export async function classifyRecipients(
   db: UserDb,
   userId: string,
   otherIds: readonly string[],
-): Promise<{ missing: string[]; related: string[]; unrelated: string[] }> {
+): Promise<{ messageable: string[]; notMessageable: string[] }> {
   const ids = [...new Set(otherIds)];
-  const [existing, related] = await Promise.all([
-    db.user.findMany({ select: { id: true }, where: { id: { in: ids } } }),
-    db.user.findMany({
-      select: { id: true },
-      where: { AND: [{ id: { in: ids } }, relatedToUser(userId)] },
-    }),
-  ]);
+  const allowed = await db.user.findMany({
+    select: { id: true },
+    where: { AND: [{ id: { in: ids } }, messageableBy(userId)] },
+  });
 
-  const existingIds = new Set(existing.map((user) => user.id));
-  const relatedIds = new Set(related.map((user) => user.id));
+  const allowedIds = new Set(allowed.map((user) => user.id));
   return {
-    missing: ids.filter((id) => !existingIds.has(id)),
-    related: ids.filter((id) => relatedIds.has(id)),
-    unrelated: ids.filter((id) => existingIds.has(id) && !relatedIds.has(id)),
+    messageable: ids.filter((id) => allowedIds.has(id)),
+    notMessageable: ids.filter((id) => !allowedIds.has(id)),
   };
 }
