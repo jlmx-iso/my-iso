@@ -16,14 +16,17 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { useDebouncedValue } from "@mantine/hooks";
+import { IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { type FormEvent, useState } from "react";
 
 import {
   HANDLE_MAX_LENGTH,
+  HANDLE_MESSAGES,
   HANDLE_MIN_LENGTH,
+  handleAvailability,
   normalizeHandle,
   publicProfileUrl,
   refusedHandleMessage,
@@ -33,13 +36,13 @@ import { uploadErrorMessage } from "~/_utils/imageFile";
 import { isValidInstagramHandle, normalizeInstagramHandle } from "~/_utils/instagram";
 import { logger } from "~/_utils/logger";
 import { isValidPhone, normalizePhone } from "~/_utils/phone";
+import type { PlanPricing } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError, zodErrorFields } from "~/_utils/userError";
 import { parseOptionalWebsite } from "~/_utils/website";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { notify } from "~/app/_lib/notify";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { env } from "~/env";
-import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
 
 import { AvatarStep } from "./AvatarStep";
@@ -67,7 +70,7 @@ type OnboardingFormProps = {
   /** "plan" when the profile already exists (a reload during the plan step). */
   initialStage: "welcome" | "plan";
   photographerCount: number;
-  pricing: PricingInfo;
+  pricing: PlanPricing;
   user: OnboardingUser;
 };
 
@@ -90,6 +93,8 @@ const STEPS = [
 ] as const satisfies ReadonlyArray<{ fields: ReadonlyArray<keyof FormValues>; title: string }>;
 
 const HANDLE_STEP = 0;
+/** Wait for a pause in typing before asking whether a username is free. */
+const HANDLE_CHECK_DELAY_MS = 400;
 
 export function OnboardingForm({ initialStage, photographerCount, pricing, user }: OnboardingFormProps) {
   const router = useRouter();
@@ -135,6 +140,48 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
   });
 
   const handle = normalizeHandle(form.values.handle);
+
+  // Is the username free? Asked as it is typed, on the step that owns the
+  // field, so a taken one is caught here and not when the profile is saved.
+  const utils = api.useUtils();
+  const [checkedHandle] = useDebouncedValue(handle, HANDLE_CHECK_DELAY_MS);
+  const handleCheck = api.user.isHandleAvailable.useQuery(
+    { handle: checkedHandle },
+    { enabled: checkedHandle !== "" && validateHandle(checkedHandle) === null, staleTime: 30_000 },
+  );
+  const availability = handleAvailability({
+    checkedHandle,
+    handle,
+    isError: handleCheck.isError,
+    isFetching: handleCheck.isFetching,
+    result: handleCheck.data,
+  });
+  const [isCheckingStep, setIsCheckingStep] = useState(false);
+  const [isCroppingPhoto, setIsCroppingPhoto] = useState(false);
+
+  /** The server's word on the username as typed right now; true when free (or unknown). */
+  const confirmHandleIsFree = async (): Promise<boolean> => {
+    if (handle === "" || validateHandle(handle) !== null) return true;
+    if (availability === "taken") return false;
+    if (availability === "available") return true;
+    setIsCheckingStep(true);
+    try {
+      return (await utils.user.isHandleAvailable.fetch({ handle })).available;
+    } catch (error) {
+      // The check itself failed: saving the profile still refuses a taken one.
+      logger.warn("Username availability check failed", { error });
+      return true;
+    } finally {
+      setIsCheckingStep(false);
+    }
+  };
+
+  /** Moves focus to the first field the step complains about. */
+  const focusFirstInvalid = (index: number) => {
+    const fields: ReadonlyArray<keyof FormValues> = STEPS[index]?.fields ?? [];
+    const first = fields.find((field) => form.validateField(field).hasError);
+    if (first) form.getInputNode(first)?.focus();
+  };
 
   const validateStep = (index: number) => {
     const fields = STEPS[index]?.fields ?? [];
@@ -230,10 +277,18 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
     }
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (isSaving) return;
-    if (!validateStep(step)) return;
+    if (isSaving || isCheckingStep) return;
+    if (!validateStep(step)) {
+      focusFirstInvalid(step);
+      return;
+    }
+    if (step === HANDLE_STEP && !(await confirmHandleIsFree())) {
+      form.setFieldError("handle", HANDLE_MESSAGES.taken);
+      form.getInputNode("handle")?.focus();
+      return;
+    }
     if (step < STEPS.length - 1) {
       setSubmitError(null);
       setStep(step + 1);
@@ -277,7 +332,7 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
       </Stack>
 
       <Paper withBorder shadow="md" p={{ base: "md", sm: "xl" }} radius="md">
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={(event) => void handleSubmit(event)} noValidate>
           <Stack gap="md">
             <Stack gap={6}>
               <Group justify="space-between" align="baseline">
@@ -296,7 +351,7 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
             </Stack>
 
             {/* Always rendered so screen readers announce errors as they appear. */}
-            <div role="alert" aria-live="assertive">
+            <div role="alert">
               {submitError && (
                 <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="onboarding-error">
                   {submitError}
@@ -350,9 +405,23 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   autoComplete="username"
                   spellCheck={false}
                   {...form.getInputProps("handle")}
+                  // A taken username is an error on the field as soon as we know.
+                  error={form.errors.handle ?? (availability === "taken" ? HANDLE_MESSAGES.taken : undefined)}
+                  rightSection={
+                    availability === "checking" ? (
+                      <Loader size={16} aria-hidden />
+                    ) : availability === "available" ? (
+                      <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
+                    ) : undefined
+                  }
                   // Say what is wrong as soon as the field is left, not only on "Next".
                   onBlur={() => form.validateField("handle")}
                 />
+                {/* Always rendered so the result of the check is announced. */}
+                <Text size="sm" role="status" mt={-6} c={availability === "available" ? "teal.8" : "gray.7"} data-testid="handle-availability" data-state={availability}>
+                  {availability === "checking" && "Checking if that username is free…"}
+                  {availability === "available" && `@${handle} is available.`}
+                </Text>
                 <TextInput
                   label="Phone number"
                   description="Optional. Not shown on your profile."
@@ -403,8 +472,9 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                 />
                 <Switch
                   mt="xs"
-                  label="Show me in Discover"
-                  description="Lets other photographers find your profile and match with you. You can change this any time on the Discover page."
+                  label="Show my profile in Discover and let other members message me"
+                  description="On: photographers can find you in Discover, match with you and start a conversation. Off: your profile stays hidden and only people you've matched or booked with can message you. You can change this any time on the Discover page."
+                  data-testid="onboarding-discoverable"
                   {...form.getInputProps("isDiscoverable", { type: "checkbox" })}
                 />
               </Stack>
@@ -416,10 +486,18 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   Profiles with a photo get noticed more. You can skip this and add one later
                   from your profile.
                 </Text>
-                <AvatarStep photo={photo} onChange={setPhoto} disabled={isSaving} />
+                <AvatarStep
+                  photo={photo}
+                  onChange={setPhoto}
+                  onCroppingChange={setIsCroppingPhoto}
+                  disabled={isSaving}
+                />
               </Stack>
             )}
 
+            {/* While a photo is being cropped, "Use this photo" is the one
+                primary action: Back and Create profile return afterwards. */}
+            {!(step === 2 && isCroppingPhoto) && (
             <Group justify="space-between" mt="sm">
               {step > 0 ? (
                 <Button variant="default" onClick={() => setStep(step - 1)} disabled={isSaving}>
@@ -428,10 +506,11 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
               ) : (
                 <span />
               )}
-              <Button type="submit" loading={isSaving}>
+              <Button type="submit" loading={isSaving || isCheckingStep}>
                 {!isLastStep ? "Next" : photo ? "Create profile" : "Skip photo and create profile"}
               </Button>
             </Group>
+            )}
 
             {isSaving && (
               <Group gap="xs" justify="center" role="status">

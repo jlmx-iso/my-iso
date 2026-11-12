@@ -13,50 +13,39 @@ import {
   ThemeIcon,
   Title,
 } from "@mantine/core";
-import {
-  IconCalendarEvent,
-  IconCheck,
-  IconChartBar,
-  IconCrown,
-  IconMessageCircle,
-  IconSearch,
-  IconShieldCheck,
-  IconStar,
-} from "@tabler/icons-react";
+import { IconCheck, IconCrown } from "@tabler/icons-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { userFacingError } from "~/_utils/userError";
-import type { PricingInfo } from "~/server/_utils/pricing";
+import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { type BillingInterval, FREE_PLAN, type PlanPricing, PRO_PLAN, proPriceView } from "~/_utils/plans";
+import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
-  pricing: PricingInfo;
+  /** The server's prices for this member's role. */
+  pricing: PlanPricing;
 };
 
-const PRO_FEATURES = [
-  { icon: IconSearch, label: "Priority search placement" },
-  { icon: IconMessageCircle, label: "Unlimited messages" },
-  { icon: IconCalendarEvent, label: "Unlimited bookings" },
-  { icon: IconChartBar, label: "Analytics dashboard" },
-  { icon: IconStar, label: "Featured profile badge" },
-  { icon: IconShieldCheck, label: "Priority support" },
-];
-
-const FREE_LIMITS = [
-  "10 swipes per day",
-  "3 messages per month",
-  "3 applications per month",
-  "Basic profile",
-];
-
 export function PlanSelection({ pricing }: PlanSelectionProps) {
-  const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
+  const router = useRouter();
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [error, setError] = useState<string | null>(null);
 
   const createCheckout = api.subscription.createCheckoutSession.useMutation({
     onError: (err) => {
-      setError(userFacingError(err, "We couldn't start checkout. Please try again, or start free and upgrade later."));
+      if (getErrorReason(err) === ErrorReason.SUBSCRIPTION_EXISTS) {
+        // Already subscribed (another tab, or an earlier visit): nothing to buy.
+        router.replace("/app/onboarding/complete?plan=pro");
+        return;
+      }
+      if (trpcErrorCode(err) === "CONFLICT") {
+        // A second click while the first is still opening checkout.
+        setError(null);
+        return;
+      }
+      setError(userFacingError(err, "We couldn't start checkout. You haven't been charged. Please try again, or start free and upgrade later."));
     },
     onMutate: () => setError(null),
     onSuccess: (data) => {
@@ -69,11 +58,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
     },
   });
 
-  const monthlyEquivalent = billingInterval === "monthly"
-    ? pricing.monthlyPrice
-    : Math.round((pricing.annualPrice / 12) * 100) / 100;
-
-  const annualSavings = pricing.monthlyPrice * 12 - pricing.annualPrice;
+  const price = proPriceView(pricing, billingInterval);
 
   return (
     <Box maw={700} w="100%" mx="auto">
@@ -89,8 +74,9 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
         </Text>
         <SegmentedControl
           aria-label="Billing interval"
+          name="onboarding-billing-interval"
           value={billingInterval}
-          onChange={(value) => setBillingInterval(value)}
+          onChange={(value) => setBillingInterval(value === "annual" ? "annual" : "monthly")}
           data={[
             { label: "Monthly", value: "monthly" },
             { label: "Annual (save more)", value: "annual" },
@@ -104,13 +90,13 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
         <Paper withBorder p="xl" radius="md">
           <Stack gap="md" h="100%" justify="space-between">
             <Stack gap="md">
-              <Title order={2} size="h4">Free</Title>
+              <Title order={2} size="h4">{FREE_PLAN.name}</Title>
               <Text size="xl" fw={700}>
                 $0
                 <Text span size="sm" fw={400} c="dimmed">/month</Text>
               </Text>
               <Stack gap="xs">
-                {FREE_LIMITS.map((feature) => (
+                {FREE_PLAN.features.map((feature) => (
                   <Group key={feature} gap="xs" wrap="nowrap">
                     <ThemeIcon size={20} radius="xl" variant="light" color="gray">
                       <IconCheck size={12} aria-hidden />
@@ -145,39 +131,39 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
           <Stack gap="md" h="100%" justify="space-between">
             <Stack gap="md">
               <Group gap="sm">
-                <Title order={2} size="h4">Pro</Title>
-                <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} />}>
+                <Title order={2} size="h4">{PRO_PLAN.name}</Title>
+                <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
                   Recommended
                 </Badge>
               </Group>
               <Group gap="xs" align="baseline">
-                <Text size="xl" fw={700} c="orange.6">
-                  ${monthlyEquivalent}
-                  <Text span size="sm" fw={400} c="dimmed">/mo</Text>
+                <Text size="xl" fw={700} c="orange.7" data-testid="pro-price">
+                  {price.perMonth}
+                  <Text span size="sm" fw={400} c="dimmed">/month</Text>
                 </Text>
-                {pricing.isFoundingPrice && (
+                {price.regularPerMonth && (
                   <>
                     <Text size="sm" td="line-through" c="dimmed">
-                      <span className="sr-only">Regular price </span>${pricing.standardMonthlyPrice}
+                      <span className="sr-only">Regular price </span>{price.regularPerMonth}
                     </Text>
                     <Badge color="orange" variant="light" size="sm">
-                      Founding Price
+                      Founding price
                     </Badge>
                   </>
                 )}
               </Group>
-              {billingInterval === "annual" && annualSavings > 0 && (
-                <Text size="xs" c="green" fw={500}>
-                  ${pricing.annualPrice}/yr — save ${annualSavings} vs monthly
+              {price.annualNote && (
+                <Text size="xs" c="gray.7" fw={500}>
+                  {price.annualNote}
                 </Text>
               )}
               <Stack gap="xs">
-                {PRO_FEATURES.map((feature) => (
-                  <Group key={feature.label} gap="xs" wrap="nowrap">
+                {PRO_PLAN.features.map((feature) => (
+                  <Group key={feature} gap="xs" wrap="nowrap">
                     <ThemeIcon size={20} radius="xl" variant="light" color="orange">
                       <IconCheck size={12} aria-hidden />
                     </ThemeIcon>
-                    <Text size="sm">{feature.label}</Text>
+                    <Text size="sm">{feature}</Text>
                   </Group>
                 ))}
               </Stack>
@@ -189,7 +175,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                 loading={createCheckout.isPending}
                 onClick={() => createCheckout.mutate({ billingInterval, successPath: "/app/onboarding/complete?plan=pro" })}
               >
-                Upgrade to Pro — ${monthlyEquivalent}/mo
+                {price.cta}
               </Button>
               {pricing.isFoundingPrice && (
                 <Text size="xs" c="dimmed" ta="center">
@@ -201,7 +187,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
         </Paper>
       </SimpleGrid>
 
-      <div role="alert" aria-live="assertive">
+      <div role="alert">
         {error && (
           <Text size="sm" c="red" ta="center" mt="md">
             {error}

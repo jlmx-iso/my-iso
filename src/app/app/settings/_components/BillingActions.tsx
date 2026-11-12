@@ -4,113 +4,147 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { userFacingError } from "~/_utils/userError";
-import type { PricingInfo } from "~/server/_utils/pricing";
+import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { type BillingInterval, type PlanPricing, proPriceView } from "~/_utils/plans";
+import type { BillingAction } from "~/_utils/subscriptionView";
+import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
 type BillingActionsProps = {
-  isProUser: boolean;
-  pricing: PricingInfo;
+  /** What the member's subscription calls for: checkout, the portal, or nothing. */
+  action: BillingAction;
+  /** The portal button's label: "Manage subscription", "Fix payment", ... */
+  portalLabel: string;
+  pricing: PlanPricing;
+  /** "Fix payment" is the page's primary action; "Manage subscription" is not. */
+  portalIsPrimary?: boolean;
 };
 
-export default function BillingActions({ isProUser, pricing }: BillingActionsProps) {
-  const [error, setError] = useState<string | null>(null);
-  const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
+type Notice = { text: string; tone: "error" | "info" };
 
-  const createCheckout = api.subscription.createCheckoutSession.useMutation({
-    onError: (err) => {
-      setError(userFacingError(err, "We couldn't start checkout. Please try again."));
-    },
-    onSuccess: (data) => {
-      if (data.url) {
-        window.location.assign(data.url);
-      } else {
-        setError("We couldn't start checkout. Please try again.");
-      }
-    },
-  });
+const CHECKOUT_FAILED = "We couldn't start checkout. You haven't been charged. Please try again.";
+const PORTAL_FAILED = "We couldn't open billing. Please try again.";
+
+/**
+ * The one billing button: checkout for someone without a subscription, the
+ * Stripe billing portal for anyone who has one (running, past due, paused,
+ * unfinished). If the server knows better than this page did, the button
+ * follows the server.
+ */
+export default function BillingActions({ action, portalLabel, pricing, portalIsPrimary = false }: BillingActionsProps) {
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  // Set when the server's answer shows the page was out of date.
+  const [override, setOverride] = useState<BillingAction | null>(null);
+  const mode = override ?? action;
 
   const createPortal = api.subscription.createPortalSession.useMutation({
-    onError: (err) => {
-      setError(userFacingError(err, "We couldn't open billing. Please try again."));
+    onError: (error) => {
+      // Nothing to manage after all: offer checkout.
+      if (getErrorReason(error) === ErrorReason.NO_BILLING_ACCOUNT) setOverride("checkout");
+      setNotice({ text: userFacingError(error, PORTAL_FAILED), tone: "error" });
     },
     onSuccess: (data) => {
-      if (data.url) {
-        window.location.assign(data.url);
-      } else {
-        setError("We couldn't open billing. Please try again.");
-      }
+      if (data.url) window.location.assign(data.url);
+      else setNotice({ text: PORTAL_FAILED, tone: "error" });
     },
   });
 
-  const monthlyEquivalent = billingInterval === "monthly"
-    ? pricing.monthlyPrice
-    : Math.round((pricing.annualPrice / 12) * 100) / 100;
+  const createCheckout = api.subscription.createCheckoutSession.useMutation({
+    onError: (error) => {
+      if (getErrorReason(error) === ErrorReason.SUBSCRIPTION_EXISTS) {
+        // There is a subscription this page did not know about: a second
+        // checkout would be refused, the portal is where it is managed.
+        setOverride("portal");
+        setNotice({ text: "You already have a subscription. Opening billing so you can manage it…", tone: "info" });
+        createPortal.mutate();
+        return;
+      }
+      if (trpcErrorCode(error) === "CONFLICT") {
+        // A second click (or tab) while the first request is still opening
+        // checkout: nothing went wrong.
+        setNotice({ text: "Checkout is already opening. One moment…", tone: "info" });
+        return;
+      }
+      setNotice({ text: userFacingError(error, CHECKOUT_FAILED), tone: "error" });
+    },
+    onSuccess: (data) => {
+      if (data.url) window.location.assign(data.url);
+      else setNotice({ text: CHECKOUT_FAILED, tone: "error" });
+    },
+  });
 
-  const annualSavings = pricing.monthlyPrice * 12 - pricing.annualPrice;
+  if (mode === "none") return null;
 
-  if (isProUser) {
+  const message = (
+    // Always rendered so the message is announced when it appears.
+    <div role={notice?.tone === "info" ? "status" : "alert"} data-testid="billing-notice">
+      {notice && (
+        <Text size="sm" c={notice.tone === "error" ? "red.8" : "gray.7"} maw={320}>
+          {notice.text}
+        </Text>
+      )}
+    </div>
+  );
+
+  if (mode === "portal") {
     return (
-      <Stack gap="xs">
+      <Stack gap="xs" align="flex-start" w={{ base: "100%", xs: "auto" }}>
         <Button
           onClick={() => {
-            setError(null);
+            setNotice(null);
             createPortal.mutate();
           }}
           loading={createPortal.isPending}
-          leftSection={<IconCreditCard size={18} />}
-          rightSection={<IconExternalLink size={14} />}
-          variant="light"
+          leftSection={<IconCreditCard size={18} aria-hidden />}
+          rightSection={<IconExternalLink size={14} aria-hidden />}
+          variant={portalIsPrimary ? "filled" : "default"}
           size="md"
+          w={{ base: "100%", xs: "auto" }}
+          data-testid="billing-portal"
         >
-          Manage subscription
+          {portalLabel}
         </Button>
-        <div role="alert" aria-live="assertive">
-          {error && (
-            <Text size="sm" c="red">
-              {error}
-            </Text>
-          )}
-        </div>
+        {message}
       </Stack>
     );
   }
 
+  const price = proPriceView(pricing, billingInterval);
+
   return (
-    <Stack gap="xs" align="flex-start">
+    <Stack gap="xs" align="flex-start" w={{ base: "100%", xs: "auto" }}>
       <SegmentedControl
         aria-label="Billing interval"
+        // A fixed name: the generated one differs between server and client.
+        name="billing-interval"
         value={billingInterval}
-        onChange={(value) => setBillingInterval(value)}
+        onChange={(value) => setBillingInterval(value === "annual" ? "annual" : "monthly")}
         data={[
           { label: "Monthly", value: "monthly" },
           { label: "Annual", value: "annual" },
         ]}
-        size="xs"
+        size="sm"
       />
       <Button
         onClick={() => {
-          setError(null);
-          createCheckout.mutate({ billingInterval });
+          setNotice(null);
+          createCheckout.mutate({ billingInterval, successPath: "/app/settings?checkout=success" });
         }}
-        loading={createCheckout.isPending}
-        leftSection={<IconCreditCard size={18} />}
+        loading={createCheckout.isPending || createPortal.isPending}
+        leftSection={<IconCreditCard size={18} aria-hidden />}
         size="md"
+        w={{ base: "100%", xs: "auto" }}
+        data-testid="billing-checkout"
       >
-        Upgrade to Pro — ${monthlyEquivalent}/mo
+        {price.cta}
       </Button>
-      {billingInterval === "annual" && annualSavings > 0 && (
-        <Text size="xs" c="green">
-          ${pricing.annualPrice}/yr — save ${annualSavings} vs monthly
+      {price.annualNote && (
+        <Text size="xs" c="gray.7">
+          {price.annualNote}
         </Text>
       )}
-      <div role="alert" aria-live="assertive">
-        {error && (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        )}
-      </div>
+      {message}
     </Stack>
   );
 }

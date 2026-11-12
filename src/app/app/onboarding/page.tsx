@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { hasProAccess } from "~/_utils/subscriptionView";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
@@ -29,7 +30,7 @@ export default async function OnboardingPage({ searchParams }: PageProps) {
   if (photographer) {
     if (step !== "plan") redirect("/app/events");
     const subscription = await caller.subscription.getStatus();
-    if (subscription?.isActive) redirect("/app/onboarding/complete?plan=pro");
+    if (hasProAccess(subscription)) redirect("/app/onboarding/complete?plan=pro");
     initialStage = "plan";
   }
 

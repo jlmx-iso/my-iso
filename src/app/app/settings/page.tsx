@@ -9,74 +9,26 @@ import {
   ThemeIcon,
   Title,
 } from "@mantine/core";
-import {
-  IconCheck,
-  IconCrown,
-  IconSearch,
-  IconChartBar,
-  IconCalendarEvent,
-  IconMessageCircle,
-  IconStar,
-  IconShieldCheck,
-} from "@tabler/icons-react";
+import { IconCheck, IconCrown } from "@tabler/icons-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { parseCheckoutReturn } from "~/_utils/checkoutStatus";
-import LocalDate from "~/app/_components/LocalDate";
+import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
+import { hasProAccess } from "~/_utils/subscriptionView";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
-import BillingActions from "./_components/BillingActions";
 import CheckoutBanner from "./_components/CheckoutBanner";
+import PlanStatus from "./_components/PlanStatus";
 
 export const metadata: Metadata = { title: "Settings" };
 
 type PageProps = {
   searchParams: Promise<{ checkout?: string | string[] }>;
 };
-
-const PRO_FEATURES = [
-  {
-    icon: IconCalendarEvent,
-    title: "Unlimited Bookings",
-    description: "Accept unlimited second shooter booking requests",
-  },
-  {
-    icon: IconSearch,
-    title: "Priority Search Placement",
-    description: "Appear higher in search results for potential clients",
-  },
-  {
-    icon: IconChartBar,
-    title: "Analytics Dashboard",
-    description: "Track profile views, booking rates, and engagement",
-  },
-  {
-    icon: IconMessageCircle,
-    title: "Unlimited Messages",
-    description: "Send and receive unlimited direct messages",
-  },
-  {
-    icon: IconStar,
-    title: "Featured Profile Badge",
-    description: "Stand out with a Pro badge on your profile",
-  },
-  {
-    icon: IconShieldCheck,
-    title: "Priority Support",
-    description: "Get faster responses from our support team",
-  },
-];
-
-const FREE_FEATURES = [
-  "Create a photographer profile",
-  "Browse events and opportunities",
-  "Send up to 10 messages per month",
-  "Apply to 3 bookings per month",
-];
 
 export default async function SettingsPage({ searchParams }: PageProps) {
   const session = await auth();
@@ -89,9 +41,10 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     caller.user.getMe(),
   ]);
 
-  const isProUser = subscription?.isActive === true;
-  const isCanceled = subscription?.isCanceled === true;
+  const isProUser = hasProAccess(subscription);
+  // The server's prices for this member's role; never a number written here.
   const pricing = getPricingForRole(user.role);
+  const proPrice = proPriceView(pricing, "monthly");
 
   return (
     <Container size="md" py="lg" px={0}>
@@ -101,47 +54,13 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           description="Manage your subscription and billing"
         />
 
-        {/* Keyed so a new return from checkout restarts the confirmation. */}
-        <CheckoutBanner key={checkout ?? "none"} checkout={checkout} isSubscriptionActive={isProUser} />
-
-        {/* Current Plan Status */}
-        <Paper withBorder p="xl" radius="md">
-          <Group justify="space-between" align="flex-start" gap="lg">
-            <Stack gap="xs" style={{ flex: "1 1 260px" }}>
-              <Group gap="sm">
-                <Title order={2} size="h4">Current plan</Title>
-                <Badge
-                  color={isProUser ? "orange" : "gray"}
-                  variant={isProUser ? "filled" : "light"}
-                  size="lg"
-                  data-testid="current-plan"
-                >
-                  {isProUser ? "Pro" : "Free"}
-                </Badge>
-              </Group>
-              {isProUser && !isCanceled && (
-                <Text size="sm" c="dimmed">
-                  Your Pro subscription is active. You have access to all Pro features.
-                </Text>
-              )}
-              {isProUser && isCanceled && (
-                <Text size="sm" c="orange.7">
-                  Your subscription is canceled but remains active until{" "}
-                  {subscription.expiresAt
-                    ? <LocalDate date={new Date(subscription.expiresAt).toISOString()} />
-                    : "the end of your billing period"}
-                  .
-                </Text>
-              )}
-              {!isProUser && (
-                <Text size="sm" c="dimmed">
-                  You are on the free plan. Upgrade to Pro to unlock all features.
-                </Text>
-              )}
-            </Stack>
-            <BillingActions isProUser={isProUser} pricing={pricing} />
-          </Group>
-        </Paper>
+        {/* One block: the banner's live region is always in the page, and
+            must not take a gap of its own while it is empty. */}
+        <div>
+          {/* Keyed so a new return from checkout restarts the confirmation. */}
+          <CheckoutBanner key={checkout ?? "none"} checkout={checkout} isSubscriptionActive={isProUser} />
+          <PlanStatus subscription={subscription} pricing={pricing} />
+        </div>
 
         {/* Plan Comparison */}
         <Stack gap="md">
@@ -151,7 +70,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             <Paper withBorder p="lg" radius="md">
               <Stack gap="md">
                 <Group gap="sm">
-                  <Title order={3} size="h5">Free</Title>
+                  <Title order={3} size="h5">{FREE_PLAN.name}</Title>
                   {!isProUser && (
                     <Badge color="gray" variant="light">
                       Current
@@ -165,7 +84,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                   </Text>
                 </Text>
                 <Stack gap="xs">
-                  {FREE_FEATURES.map((feature) => (
+                  {FREE_PLAN.features.map((feature) => (
                     <Group key={feature} gap="xs" wrap="nowrap">
                       <ThemeIcon size={20} radius="xl" variant="light" color="gray">
                         <IconCheck size={12} aria-hidden />
@@ -189,42 +108,42 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             >
               <Stack gap="md">
                 <Group gap="sm">
-                  <Title order={3} size="h5">Pro</Title>
+                  <Title order={3} size="h5">{PRO_PLAN.name}</Title>
                   {isProUser ? (
-                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} />}>
+                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
                       Current
                     </Badge>
                   ) : (
-                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} />}>
+                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
                       Recommended
                     </Badge>
                   )}
                 </Group>
                 <Group gap="xs" align="baseline">
-                  <Text size="xl" fw={700} c="orange.6">
-                    ${pricing.monthlyPrice}
+                  <Text size="xl" fw={700} c="orange.7" data-testid="pro-price">
+                    {proPrice.perMonth}
                     <Text span size="sm" fw={400} c="dimmed">
                       /month
                     </Text>
                   </Text>
-                  {pricing.isFoundingPrice && (
+                  {proPrice.regularPerMonth && (
                     <>
                       <Text size="sm" td="line-through" c="dimmed">
-                        <span className="sr-only">Regular price </span>${pricing.standardMonthlyPrice}
+                        <span className="sr-only">Regular price </span>{proPrice.regularPerMonth}
                       </Text>
                       <Badge color="orange" variant="light" size="sm">
-                        Founding Price
+                        Founding price
                       </Badge>
                     </>
                   )}
                 </Group>
                 <Stack gap="xs">
-                  {PRO_FEATURES.map((feature) => (
-                    <Group key={feature.title} gap="xs" wrap="nowrap">
+                  {PRO_PLAN.features.map((feature) => (
+                    <Group key={feature} gap="xs" wrap="nowrap">
                       <ThemeIcon size={20} radius="xl" variant="light" color="orange">
                         <IconCheck size={12} aria-hidden />
                       </ThemeIcon>
-                      <Text size="sm">{feature.title}</Text>
+                      <Text size="sm">{feature}</Text>
                     </Group>
                   ))}
                 </Stack>

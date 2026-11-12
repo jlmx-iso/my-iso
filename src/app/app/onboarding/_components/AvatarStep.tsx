@@ -15,6 +15,11 @@ type AvatarStepProps = {
   /** The cropped photo, ready to upload; null when none is chosen. */
   photo: File | null;
   onChange: (photo: File | null) => void;
+  /**
+   * Told when the crop view opens and closes. While it is open, "Use this
+   * photo" is the step's one primary action: the form hides its own.
+   */
+  onCroppingChange?: (isCropping: boolean) => void;
   disabled?: boolean;
 };
 
@@ -47,7 +52,7 @@ async function cropToFile(source: string, area: Area, name: string): Promise<Fil
 }
 
 /** Onboarding photo step: pick an image, crop it to a circle, preview it. */
-export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
+export function AvatarStep({ photo, onChange, onCroppingChange, disabled }: AvatarStepProps) {
   const zoomLabelId = useId();
   const [source, setSource] = useState<{ dataUrl: string; name: string } | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -63,6 +68,7 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
   }, [previewUrl]);
 
   const resetCrop = () => {
+    onCroppingChange?.(false);
     setSource(null);
     setCrop({ x: 0, y: 0 });
     setZoom(1);
@@ -73,6 +79,7 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
     if (!file) return;
     try {
       setSource({ dataUrl: await readAsDataUrl(file), name: file.name });
+      onCroppingChange?.(true);
     } catch (error) {
       logger.error("Failed to read avatar file", { error });
       notify.error({
@@ -102,7 +109,7 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
   if (source) {
     return (
       <Stack gap="sm">
-        <Box pos="relative" h={320} bg="dark.9" style={{ borderRadius: "var(--mantine-radius-md)", overflow: "hidden" }}>
+        <Box pos="relative" h={320} bg="dark.9" style={{ borderRadius: "var(--mantine-radius-md)", overflow: "hidden" }} data-replay-block>
           <Cropper
             image={source.dataUrl}
             crop={crop}
@@ -134,10 +141,10 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
           />
         </Group>
         <Group justify="flex-end" gap="xs">
-          <Button variant="default" size="sm" onClick={resetCrop} disabled={isCropping}>
-            Cancel
+          <Button variant="default" onClick={resetCrop} disabled={isCropping}>
+            Choose another
           </Button>
-          <Button size="sm" onClick={() => void applyCrop()} loading={isCropping} disabled={!area}>
+          <Button onClick={() => void applyCrop()} loading={isCropping} disabled={!area} data-testid="crop-apply">
             Use this photo
           </Button>
         </Group>
@@ -148,8 +155,8 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
   if (photo && previewUrl) {
     return (
       <Stack align="center" gap="sm">
-        <Avatar src={previewUrl} alt="Your profile photo preview" size={160} />
-        <Button variant="default" size="xs" onClick={() => onChange(null)} disabled={disabled}>
+        <Avatar src={previewUrl} alt="Your profile photo preview" size={160} data-replay-block />
+        <Button variant="default" size="sm" className="touch-target" onClick={() => onChange(null)} disabled={disabled}>
           Choose a different photo
         </Button>
       </Stack>

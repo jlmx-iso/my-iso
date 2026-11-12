@@ -33,9 +33,10 @@ export default function CheckoutBanner({ checkout, isSubscriptionActive }: Check
 
   return (
     // Always rendered so screen readers announce the banner and its changes.
-    <div role="status" aria-live="polite" data-testid="checkout-banner" data-state={state}>
+    <div role="status" data-testid="checkout-banner" data-state={state}>
       {state === "confirmed" && (
         <Alert
+          mb="md"
           color="teal"
           icon={<IconCheck size={18} />}
           title="You're on Pro"
@@ -47,12 +48,13 @@ export default function CheckoutBanner({ checkout, isSubscriptionActive }: Check
         </Alert>
       )}
       {state === "confirming" && (
-        <Alert color="blue" icon={<Loader size={18} color="blue" />} title="Confirming your payment…">
+        <Alert mb="md" color="blue" icon={<Loader size={18} color="blue" />} title="Confirming your payment…">
           Thanks! We&apos;re activating Pro on your account. This usually takes a few seconds.
         </Alert>
       )}
       {state === "delayed" && (
         <Alert
+          mb="md"
           color="tan"
           icon={<IconClock size={18} />}
           title="Your payment is still being confirmed"
@@ -66,6 +68,7 @@ export default function CheckoutBanner({ checkout, isSubscriptionActive }: Check
       )}
       {state === "canceled" && (
         <Alert
+          mb="md"
           color="gray"
           icon={<IconInfoCircle size={18} />}
           title="Checkout canceled"

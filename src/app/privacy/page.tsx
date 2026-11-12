@@ -1,5 +1,6 @@
 import { Box, Container, Divider, Stack, Text, Title } from "@mantine/core";
 
+import { SUPPORT_EMAIL } from "~/_lib/site";
 import { pageMetadata } from "~/app/_lib/siteMetadata";
 
 export const metadata = pageMetadata({
@@ -33,7 +34,7 @@ const sections = [
   {
     title: "5. Your Rights",
     content:
-      "You can access, update, or delete your personal information through your account settings. You can request a copy of your data or ask us to delete your account by contacting us at support@myiso.app.",
+      `You can access, update, or delete your personal information through your account settings. You can request a copy of your data or ask us to delete your account by contacting us at ${SUPPORT_EMAIL}.`,
   },
   {
     title: "6. Cookies & Analytics",
@@ -48,7 +49,7 @@ const sections = [
   {
     title: "8. Contact",
     content:
-      "If you have questions about this Privacy Policy, please contact us at support@myiso.app.",
+      `If you have questions about this Privacy Policy, please contact us at ${SUPPORT_EMAIL}.`,
   },
 ];
 

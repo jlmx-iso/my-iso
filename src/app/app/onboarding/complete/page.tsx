@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { hasProAccess } from "~/_utils/subscriptionView";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -26,7 +27,7 @@ export default async function OnboardingCompletePage({ searchParams }: Props) {
   return (
     <OnboardingComplete
       cameFromCheckout={plan === "pro"}
-      isSubscriptionActive={subscription?.isActive === true}
+      isSubscriptionActive={hasProAccess(subscription)}
     />
   );
 }

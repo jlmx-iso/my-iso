@@ -27,12 +27,15 @@ import {
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import {
   FadeInOnScroll,
   StaggerContainer,
 } from "~/app/_components/animations";
 import { NextLink } from "~/app/_components/NextLink";
 import { auth } from "~/auth";
+import { getPricingForRole } from "~/server/_utils/pricing";
+import { USER_ROLES } from "~/server/_utils/roles";
 
 import { pageMetadata, SITE_DESCRIPTION } from "./_lib/siteMetadata";
 
@@ -129,14 +132,7 @@ function HowItWorksSection() {
           </Title>
         </Stack>
       </FadeInOnScroll>
-      <StaggerContainer
-        stagger={0.15}
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
-          gap: "var(--mantine-spacing-xl)",
-        }}
-      >
+      <StaggerContainer stagger={0.15} className="grid-three-up">
         {steps.map((step, i) => (
           <Stack key={step.title} align="center" ta="center" gap="md">
             <Box pos="relative">
@@ -259,6 +255,8 @@ function FeaturesSection() {
 }
 
 function PricingPreviewSection() {
+  // The same plan descriptions and prices as onboarding and Settings.
+  const foundingPrice = proPriceView(getPricingForRole(USER_ROLES.FOUNDING_MEMBER), "monthly");
   return (
     <Box id="pricing" py={60}>
       <FadeInOnScroll>
@@ -275,7 +273,7 @@ function PricingPreviewSection() {
         <FadeInOnScroll direction="left" delay={0.1}>
           <Paper p="xl" radius="md" withBorder style={{ height: "100%" }}>
             <Title order={3} size="h4">
-              Basic
+              {FREE_PLAN.name}
             </Title>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
@@ -286,11 +284,7 @@ function PricingPreviewSection() {
               </Text>
             </Group>
             <Stack gap="xs" mb="lg">
-              {[
-                "Create your profile",
-                "Browse second shooter listings",
-                "Direct messaging",
-              ].map((item) => (
+              {FREE_PLAN.features.map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
                   <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
                   <Text size="sm">{item}</Text>
@@ -323,22 +317,19 @@ function PricingPreviewSection() {
             </Group>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
-                $10
+                {foundingPrice.perMonth}
               </Text>
-              <Text c="dimmed" size="sm" td="line-through">
-                <span className="sr-only">Regular price </span>$19
-              </Text>
+              {foundingPrice.regularPerMonth && (
+                <Text c="dimmed" size="sm" td="line-through">
+                  <span className="sr-only">Regular price </span>{foundingPrice.regularPerMonth}
+                </Text>
+              )}
               <Text c="dimmed" size="sm">
                 / month
               </Text>
             </Group>
             <Stack gap="xs" mb="lg">
-              {[
-                "Everything in Basic",
-                "Priority in search results",
-                "Advanced booking tools",
-                "Analytics dashboard",
-              ].map((item) => (
+              {PRO_PLAN.features.map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
                   <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
                   <Text size="sm">{item}</Text>

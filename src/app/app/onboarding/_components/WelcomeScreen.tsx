@@ -32,7 +32,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={400}>
             {photographerCount >= SOCIAL_PROOF_THRESHOLD
-              ? `Joining ${photographerCount.toLocaleString()} photographers on ISO.`
+              ? `Joining ${photographerCount.toLocaleString("en-US")} photographers on ISO.`
               : "You\u2019re one of the first photographers to join the network."}
           </Text>
         </Stack>

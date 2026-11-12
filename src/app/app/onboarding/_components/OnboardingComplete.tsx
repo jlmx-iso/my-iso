@@ -87,7 +87,7 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
         </Stack>
 
         {/* Always rendered so screen readers announce the payment status. */}
-        <Box w="100%" role="status" aria-live="polite" data-testid="checkout-status" data-state={checkout}>
+        <Box w="100%" role="status" data-testid="checkout-status" data-state={checkout}>
           {checkout === "confirming" && (
             <Alert color="blue" icon={<Loader size={18} color="blue" />} title="Confirming your payment…">
               Thanks! We&apos;re activating Pro on your account. This usually takes a few seconds, and

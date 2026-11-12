@@ -1,5 +1,6 @@
 import { Box, Container, Divider, Stack, Text, Title } from "@mantine/core";
 
+import { SUPPORT_EMAIL } from "~/_lib/site";
 import { pageMetadata } from "~/app/_lib/siteMetadata";
 
 export const metadata = pageMetadata({
@@ -53,7 +54,7 @@ const sections = [
   {
     title: "9. Contact",
     content:
-      "If you have questions about these Terms of Service, please contact us at support@myiso.app.",
+      `If you have questions about these Terms of Service, please contact us at ${SUPPORT_EMAIL}.`,
   },
 ];
 

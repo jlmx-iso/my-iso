@@ -3,55 +3,55 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { CHECKOUT_MAX_ATTEMPTS, CHECKOUT_RETRY_DELAY_MS } from "~/_utils/checkoutStatus";
+import { type ConfirmationState, afterCheck, checkDelay, shouldCheckAgain } from "~/_utils/checkoutStatus";
 import { api } from "~/trpc/react";
 
 /**
  * After a successful checkout the Stripe webhook may not have landed yet, so
- * the page can still say "Free". While `enabled` and not yet active, this
+ * the page can still say "Free". While `enabled` and not yet on Pro, this
  * re-syncs the subscription from Stripe a few times with a short delay, and
- * refreshes the server-rendered page as soon as it turns active.
+ * refreshes the server-rendered page as soon as the member has Pro access
+ * (`hasProAccess` in the answer). The steps themselves are in
+ * ~/_utils/checkoutStatus.
  */
 export function useSubscriptionConfirmation({
   enabled,
   initialIsActive,
 }: {
   enabled: boolean;
+  /** Whether the server-rendered page already found Pro access. */
   initialIsActive: boolean;
 }) {
   const router = useRouter();
   const { mutateAsync: syncStatus } = api.subscription.syncStatus.useMutation();
-  const [isActive, setIsActive] = useState(initialIsActive);
-  const [attempts, setAttempts] = useState(0);
+  const [state, setState] = useState<ConfirmationState>({ attempts: 0, isActive: initialIsActive });
 
-  const shouldRetry = enabled && !isActive && attempts < CHECKOUT_MAX_ATTEMPTS;
+  const { attempts } = state;
+  const checkAgain = shouldCheckAgain(state, enabled);
 
   useEffect(() => {
-    if (!shouldRetry) return;
+    if (!checkAgain) return;
     let cancelled = false;
 
     const timer = setTimeout(() => {
-      syncStatus()
-        .then((subscription) => {
+      void syncStatus()
+        .then(
+          (subscription) => ({ ok: true as const, subscription }),
+          () => ({ ok: false as const }),
+        )
+        .then((outcome) => {
           if (cancelled) return;
-          if (subscription?.isActive) {
-            setIsActive(true);
-            router.refresh();
-          } else {
-            setAttempts((current) => current + 1);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setAttempts((current) => current + 1);
+          setState((current) => afterCheck(current, outcome));
+          // The page was rendered as Free: show it as Pro.
+          if (afterCheck({ attempts, isActive: false }, outcome).isActive) router.refresh();
         });
-      // The first check runs straight away; later ones wait.
-    }, attempts === 0 ? 0 : CHECKOUT_RETRY_DELAY_MS);
+    }, checkDelay(attempts));
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [attempts, router, shouldRetry, syncStatus]);
+  }, [attempts, checkAgain, router, syncStatus]);
 
-  return { attempts, isActive: isActive || initialIsActive };
+  return { attempts, isActive: state.isActive || initialIsActive };
 }
