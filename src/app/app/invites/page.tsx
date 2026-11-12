@@ -151,7 +151,7 @@ export default function Page() {
             </Alert>
           )}
 
-          <div role="alert" aria-live="assertive">
+          <div role="alert">
             {regenerateError && (
               <Text size="sm" c="red">
                 {userFacingError(regenerateError, "We couldn't create a new code. Your current one still works.")}

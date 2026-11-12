@@ -21,6 +21,7 @@ import {
     IconHeartHandshake,
     IconLogout,
     IconSettings,
+    IconShieldCheck,
     IconUser,
     IconUserPlus,
 } from "@tabler/icons-react";
@@ -31,9 +32,13 @@ import { useState } from "react";
 
 import { Avatar } from "~/app/_components/Avatar";
 
+import classes from "./AccountMenu.module.css";
+
 export type AccountMenuUser = {
     name: string;
     profilePic?: string | null;
+    /** Founders and ambassadors: show the waitlist admin entry. */
+    canManageWaitlist?: boolean;
 };
 
 type AccountMenuProps = {
@@ -49,6 +54,13 @@ const links = [
     { href: "/app/invites", icon: IconUserPlus, label: "Invites" },
     { href: "/app/settings", icon: IconSettings, label: "Settings" },
 ] as const;
+
+const ADMIN_LINK = { href: "/app/admin/waitlist", icon: IconShieldCheck, label: "Waitlist admin" } as const;
+
+/** The account links for this member: the admin entry only for those it works for. */
+function linksFor(user: AccountMenuUser) {
+    return user.canManageWaitlist ? [...links, ADMIN_LINK] : links;
+}
 
 function unreadLabel(count: number) {
     return count > 99 ? "99+" : String(count);
@@ -88,7 +100,7 @@ export function AccountDropdown({ user, unreadCount }: AccountMenuProps) {
                 <UnstyledButton
                     onClick={toggle}
                     aria-expanded={opened}
-                    style={{ borderRadius: "50%" }}
+                    className={classes.trigger}
                     data-testid="account-menu-desktop"
                 >
                     {/* Named by hidden text rather than aria-label: the avatar's
@@ -102,7 +114,7 @@ export function AccountDropdown({ user, unreadCount }: AccountMenuProps) {
                     Signed in as {user.name}
                 </Text>
                 <Box component="nav" aria-label="Account">
-                    {links.map((link) => (
+                    {linksFor(user).map((link) => (
                         <NavLink
                             key={link.href}
                             component={Link}
@@ -148,7 +160,7 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                 onClick={open}
                 aria-haspopup="dialog"
                 aria-expanded={opened}
-                style={{ borderRadius: "50%" }}
+                className={classes.trigger}
                 data-testid="account-menu-mobile"
             >
                 <span className="sr-only">
@@ -195,7 +207,7 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                     </Group>
                     <Divider />
                     <Box component="nav" aria-label="Account">
-                        {links.map((link) => (
+                        {linksFor(user).map((link) => (
                             <NavLink
                                 key={link.href}
                                 component={Link}

@@ -127,7 +127,7 @@ export default function LoginForm({ callbackUrl, signInRequired, authError }: Lo
       <Paper withBorder shadow="md" p="xl" radius="md">
         <Stack>
           {/* Always rendered so screen readers announce errors as they appear. */}
-          <div role="alert" aria-live="assertive">
+          <div role="alert">
             {formError && (
               <Alert icon={<IconAlertCircle size={16} />} color="red" data-testid="login-error">
                 {formError}

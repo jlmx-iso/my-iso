@@ -211,7 +211,7 @@ export default function EditProfile({ photographer, handle: savedHandle }: EditP
                 <Title order={1} size="h2" c="orange.7">Edit profile</Title>
 
                 {/* Always rendered so screen readers announce errors as they appear. */}
-                <div role="alert" aria-live="assertive">
+                <div role="alert">
                     {submitError && (
                         <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="edit-profile-error">
                             {submitError}

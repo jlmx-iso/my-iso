@@ -2,13 +2,17 @@
 
 import { type CSSProperties, Children, type ReactNode, useEffect, useRef, useState } from "react";
 
+import { REVEAL_READY_ATTRIBUTE } from "./revealScript";
+
 /**
  * Scroll reveals.
  *
  * The markup is rendered visible. The hidden "before" state lives in
  * `globals.css` and only applies once the inline script in the root layout has
  * set `data-reveal` on <html>, so the content is readable without JavaScript,
- * while it loads, and when the visitor prefers reduced motion.
+ * while it loads, and when the visitor prefers reduced motion. If the script
+ * runs but React never hydrates, the script disarms the reveals after a few
+ * seconds (see revealScript.ts), so nothing stays hidden.
  */
 
 /** True once the element has scrolled into view (or cannot be observed). */
@@ -17,6 +21,9 @@ function useRevealed<T extends Element>() {
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
+    // React is running: the inline script's "never hydrated" fallback (see
+    // revealScript.ts) must leave the reveals armed.
+    document.documentElement.setAttribute(REVEAL_READY_ATTRIBUTE, "");
     const element = ref.current;
     if (!element || typeof IntersectionObserver === "undefined") {
       setRevealed(true);

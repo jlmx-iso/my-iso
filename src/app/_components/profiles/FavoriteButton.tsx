@@ -30,10 +30,12 @@ export const FavoriteButton = ({ isFavorite, photographerId, photographerName }:
     onError,
     onSuccess: () => setIsSaved(true),
   });
-  const label = isSaved ? `Remove ${photographerName} from saved` : `Save ${photographerName}`;
+  // A toggle: the name stays the same and `aria-pressed` carries the state
+  // (a name that flips as well is announced as "Remove…, pressed").
+  const label = `Save ${photographerName}`;
 
   return (
-    <Tooltip label={isSaved ? "Saved" : "Save"}>
+    <Tooltip label={isSaved ? "Saved. Click to remove" : "Save"}>
       <ActionIcon
         loading={addFavorite.isPending || removeFavorite.isPending}
         onClick={() =>
@@ -41,10 +43,11 @@ export const FavoriteButton = ({ isFavorite, photographerId, photographerName }:
         }
         variant={isSaved ? "light" : "default"}
         size="lg"
+        className="touch-target"
         aria-label={label}
         aria-pressed={isSaved}
       >
-        {isSaved ? <IconBookmarkFilled size={20} /> : <IconBookmark size={20} />}
+        {isSaved ? <IconBookmarkFilled size={20} aria-hidden /> : <IconBookmark size={20} aria-hidden />}
       </ActionIcon>
     </Tooltip>
   );

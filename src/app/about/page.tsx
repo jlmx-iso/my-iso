@@ -129,15 +129,7 @@ export default function AboutPage() {
               </Title>
             </Stack>
           </FadeInOnScroll>
-          <StaggerContainer
-            stagger={0.12}
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
-              gap: "var(--mantine-spacing-xl)",
-            }}
-          >
+          <StaggerContainer stagger={0.12} className="grid-three-up">
             {values.map((value) => (
               <Paper key={value.title} p="lg" radius="md" withBorder>
                 <ThemeIcon size={40} radius="md" variant="light" mb="sm">

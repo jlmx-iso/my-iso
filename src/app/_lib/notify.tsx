@@ -18,12 +18,14 @@ type Toast = {
   id?: string;
 };
 
+// `role`: failures interrupt a screen reader ("alert"); confirmations and
+// information wait their turn ("status").
 const KINDS = {
-  error: { autoClose: 9000, color: "red", icon: <IconExclamationMark size={18} aria-hidden /> },
-  info: { autoClose: 6000, color: "blue", icon: <IconInfoCircle size={18} aria-hidden /> },
-  success: { autoClose: 4500, color: "teal", icon: <IconCheck size={18} aria-hidden /> },
+  error: { autoClose: 9000, color: "red", icon: <IconExclamationMark size={18} aria-hidden />, role: "alert" },
+  info: { autoClose: 6000, color: "blue", icon: <IconInfoCircle size={18} aria-hidden />, role: "status" },
+  success: { autoClose: 4500, color: "teal", icon: <IconCheck size={18} aria-hidden />, role: "status" },
   // Something went through, but not all of it; or "slow down".
-  warning: { autoClose: 8000, color: "tan", icon: <IconAlertTriangle size={18} aria-hidden /> },
+  warning: { autoClose: 8000, color: "tan", icon: <IconAlertTriangle size={18} aria-hidden />, role: "alert" },
 } as const;
 
 function show(kind: keyof typeof KINDS, { id, message, title }: Toast) {

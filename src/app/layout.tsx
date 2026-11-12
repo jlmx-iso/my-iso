@@ -5,7 +5,6 @@ import '@mantine/dates/styles.css';
 import '@mantine/notifications/styles.css';
 
 import { ColorSchemeScript } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 
@@ -18,6 +17,7 @@ import AppShell from "./_components/AppShell";
 import { AppFooter, Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
+import Toasts from "./_components/Toasts";
 import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -95,9 +95,7 @@ export default async function RootLayout({
           }
         >
           <ThemeProvider>
-            {/* Top of the screen: clear of the phone tab bar and of the buttons
-                at the bottom of dialogs (offsets in globals.css). */}
-            <Notifications position="top-center" limit={3} containerWidth={440} zIndex={1000} />
+            <Toasts />
             <TRPCReactProvider>
               <AppShell
                 header={<Navbar />}

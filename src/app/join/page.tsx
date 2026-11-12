@@ -175,7 +175,7 @@ function JoinContent() {
 
   const signInAlert = (
     // Always rendered so screen readers announce errors as they appear.
-    <div role="alert" aria-live="assertive">
+    <div role="alert">
       {signInError && (
         <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="join-error">
           {signInError}

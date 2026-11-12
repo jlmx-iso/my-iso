@@ -146,7 +146,7 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail, expla
           />
         </Group>
         {/* Always rendered so screen readers announce changes to it. */}
-        <div id={statusId} role="status" aria-live="polite" style={{ minHeight: 20 }}>
+        <div id={statusId} role="status" style={{ minHeight: 20 }}>
           {error ? (
             <Text c="red" size="sm" ta="center" data-testid="otp-error">
               {error}
@@ -186,7 +186,7 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail, expla
               onClick={() => void resend()}
               loading={isResending}
               disabled={remaining > 0 || isVerifying}
-              data-testid="otp-send-new"
+              data-testid="otp-resend"
             >
               {remaining > 0 ? `Send a new code in ${remaining}s` : "Send a new code"}
             </Button>

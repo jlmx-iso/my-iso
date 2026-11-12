@@ -29,6 +29,7 @@ import { useState } from "react";
 import { formatRelative } from "~/_lib/dayjs";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
+import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type Notification = RouterOutputs["notification"]["getAll"]["notifications"][number];
@@ -179,15 +180,20 @@ export default function NotificationsPage() {
     const hasMore = pageCount * PAGE_SIZE < totalCount;
     const isLoadingFirst = !!firstPage?.isPending;
     const isLoadingMore = pageCount > 1 && !!lastPage?.isPending;
+    const { expectMore, listRef } = useFocusNewItems(notifications.length);
 
     return (
         <Stack gap="lg" maw={760} mx="auto">
             <PageHeader
                 title="Notifications"
                 description={
-                    unreadCount > 0
-                        ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
-                        : "You're all caught up"
+                    // Only once the list has loaded: "all caught up" above a
+                    // loading skeleton or an error would be a guess.
+                    !firstPage?.data
+                        ? undefined
+                        : unreadCount > 0
+                            ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
+                            : "You're all caught up"
                 }
                 action={
                     unreadCount > 0 ? (
@@ -206,6 +212,7 @@ export default function NotificationsPage() {
 
             <SegmentedControl
                 aria-label="Show"
+                name="notification-filter"
                 value={filter}
                 onChange={(value) => {
                     setFilter(value);
@@ -242,7 +249,7 @@ export default function NotificationsPage() {
                 />
             ) : (
                 <Stack gap="xs">
-                    <Stack gap="xs" component="ul" m={0} p={0} aria-label="Notifications">
+                    <Stack ref={listRef} gap="xs" component="ul" m={0} p={0} aria-label="Notifications">
                         {notifications.map((notification) => (
                             <NotificationRow
                                 key={notification.id}
@@ -256,7 +263,10 @@ export default function NotificationsPage() {
                         <Group justify="center" pt="md">
                             <Button
                                 variant="default"
-                                onClick={() => setPageCount((current) => current + 1)}
+                                onClick={() => {
+                                    expectMore();
+                                    setPageCount((current) => current + 1);
+                                }}
                                 loading={isLoadingMore}
                             >
                                 Load more

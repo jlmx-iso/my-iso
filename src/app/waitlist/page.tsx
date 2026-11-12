@@ -133,7 +133,7 @@ export default function Page() {
         <form onSubmit={handleSubmit} noValidate>
           <Stack>
             {/* Always rendered so screen readers announce errors as they appear. */}
-            <div role="alert" aria-live="assertive">
+            <div role="alert">
               {submitError && (
                 <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="waitlist-error">
                   {submitError}
