@@ -3,7 +3,7 @@ import { availableBookingActions } from "./bookingActions";
 /**
  * The sections of a bookings list, in the order they are shown:
  *
- * - `needsReply`: the viewer has to do something: answer an application, or
+ * - `needsReply` ("Needs you"): the viewer has to do something: answer an application, or
  *   mark a booking completed once its event is over. Exactly the bookings
  *   whose card shows one of those buttons (availableBookingActions), so the
  *   section and the buttons cannot disagree.
@@ -16,7 +16,8 @@ export type BookingGroup = (typeof BOOKING_GROUPS)[number];
 
 export const BOOKING_GROUP_TITLES: Record<BookingGroup, string> = {
   closed: "Closed",
-  needsReply: "Needs your reply",
+  // Answering an application, and marking a finished booking completed.
+  needsReply: "Needs you",
   past: "Past",
   upcoming: "Upcoming",
 };
@@ -54,9 +55,18 @@ export function groupBookings<T extends GroupableBooking>(
   bookings: readonly T[],
   variant: "sent" | "received",
   now: Date,
+  /**
+   * Groups to keep as they are (by booking id), e.g. while a card's dialog
+   * is open: a card that changed group would be remounted elsewhere in the
+   * list, taking the open dialog with it. Bookings not in it are grouped as
+   * usual.
+   */
+  pinned?: ReadonlyMap<string, BookingGroup> | null,
 ): Record<BookingGroup, T[]> {
   const groups: Record<BookingGroup, T[]> = { closed: [], needsReply: [], past: [], upcoming: [] };
-  for (const booking of bookings) groups[bookingGroupOf(booking, variant, now)].push(booking);
+  for (const booking of bookings) {
+    groups[pinned?.get(booking.id) ?? bookingGroupOf(booking, variant, now)].push(booking);
+  }
   const at = (booking: T) => new Date(booking.event.date).getTime();
   const soonestFirst = (a: T, b: T) => at(a) - at(b) || a.id.localeCompare(b.id);
   const latestFirst = (a: T, b: T) => at(b) - at(a) || a.id.localeCompare(b.id);
@@ -65,6 +75,15 @@ export function groupBookings<T extends GroupableBooking>(
   groups.past.sort(latestFirst);
   groups.closed.sort(latestFirst);
   return groups;
+}
+
+/** Every booking's group right now, by id: what `pinned` holds still. */
+export function bookingGroupSnapshot(
+  bookings: ReadonlyArray<GroupableBooking>,
+  variant: "sent" | "received",
+  now: Date,
+): Map<string, BookingGroup> {
+  return new Map(bookings.map((booking) => [booking.id, bookingGroupOf(booking, variant, now)]));
 }
 
 /**

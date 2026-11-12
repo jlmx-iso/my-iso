@@ -101,3 +101,25 @@ button:focus-visible,
     min-height: 2.75rem;
   }
 }
+
+/*
+ * One line, cut with an ellipsis, on the element itself. For a link that
+ * must stay one line: putting `truncate` or `lineClamp` on its parent
+ * instead makes the parent clip, which cuts off the link's enlarged hit
+ * area (above) and, for an inline-block link, loses the ellipsis.
+ * Declared after the touch-target rules so it keeps its own display.
+ */
+.ellipsis,
+.tap-link.ellipsis,
+h1 > a.ellipsis,
+h2 > a.ellipsis,
+h3 > a.ellipsis,
+h4 > a.ellipsis,
+h5 > a.ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}

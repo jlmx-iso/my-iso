@@ -9,13 +9,20 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BOOKINGS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePages } from "~/_utils/pagination";
 import { userFacingError } from "~/_utils/userError";
 import BookingCard from "~/app/_components/bookings/BookingCard";
-import { BOOKING_GROUPS, BOOKING_GROUP_TITLES, groupBookings, needsReplyLabel } from "~/app/_components/bookings/bookingGroups";
+import {
+  BOOKING_GROUPS,
+  BOOKING_GROUP_TITLES,
+  type BookingGroup,
+  bookingGroupSnapshot,
+  groupBookings,
+  needsReplyLabel,
+} from "~/app/_components/bookings/bookingGroups";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
 import { focusInto } from "~/app/_hooks/useFocusNewItems";
@@ -36,14 +43,14 @@ function BookingsSkeleton({ label }: { label: string }) {
   );
 }
 
-/** How many bookings on this tab need the viewer: the number worth a badge. Nothing when none do. */
+/** How many bookings on this tab need the viewer (to answer, or to mark completed). Nothing when none do. */
 function NeedsReplyBadge({ count, hasMore }: { count: number; hasMore: boolean }) {
   const label = needsReplyLabel(count, hasMore);
   if (!label) return null;
   return (
     <Badge component="span" size="sm" circle={label.length === 1} data-testid="tab-needs-reply">
       <span aria-hidden>{label}</span>
-      <span className="sr-only">, {count} {count === 1 ? "needs" : "need"} your reply</span>
+      <span className="sr-only">, {count} {count === 1 ? "needs" : "need"} you</span>
     </Badge>
   );
 }
@@ -53,14 +60,16 @@ function GroupedBookings<T extends { id: string; status: string; event: { date: 
   bookings,
   variant,
   now,
+  pinned,
   renderCard,
 }: {
   bookings: readonly T[];
   variant: "sent" | "received";
   now: Date;
+  pinned: ReadonlyMap<string, BookingGroup> | null;
   renderCard: (booking: T) => React.ReactNode;
 }) {
-  const groups = groupBookings(bookings, variant, now);
+  const groups = groupBookings(bookings, variant, now, pinned);
   return (
     <Stack gap="xl">
       {BOOKING_GROUPS.filter((group) => groups[group].length > 0).map((group) => {
@@ -190,8 +199,21 @@ export default function BookingsPage() {
   const receivedApplications = mergePages(received.data?.pages);
   // Grouping depends on the time: a booking moves to "Past" when its event ends.
   const now = useNow();
-  const sentNeedingReply = groupBookings(myApplications, "sent", now).needsReply.length;
-  const receivedNeedingReply = groupBookings(receivedApplications, "received", now).needsReply.length;
+  // While a card's confirmation is open, every card keeps the group it had
+  // then: one that moved (its event started or ended, or it was updated)
+  // would be remounted elsewhere and take the open dialog with it.
+  const [pinned, setPinned] = useState<Map<string, BookingGroup> | null>(null);
+  const onDialogOpenChange = (open: boolean) =>
+    setPinned(
+      open
+        ? new Map([
+            ...bookingGroupSnapshot(myApplications, "sent", now),
+            ...bookingGroupSnapshot(receivedApplications, "received", now),
+          ])
+        : null,
+    );
+  const sentNeedingReply = groupBookings(myApplications, "sent", now, pinned).needsReply.length;
+  const receivedNeedingReply = groupBookings(receivedApplications, "received", now, pinned).needsReply.length;
 
   return (
     <Container size="md" py="md" px={0}>
@@ -254,8 +276,16 @@ export default function BookingsPage() {
                 bookings={myApplications}
                 variant="sent"
                 now={now}
+                pinned={pinned}
                 renderCard={(booking) => (
-                  <BookingCard key={booking.id} booking={booking} event={booking.event} user={booking.owner} variant="sent" />
+                  <BookingCard
+                    key={booking.id}
+                    booking={booking}
+                    event={booking.event}
+                    user={booking.owner}
+                    variant="sent"
+                    onDialogOpenChange={onDialogOpenChange}
+                  />
                 )}
               />
             </PanelState>
@@ -286,8 +316,16 @@ export default function BookingsPage() {
                 bookings={receivedApplications}
                 variant="received"
                 now={now}
+                pinned={pinned}
                 renderCard={(booking) => (
-                  <BookingCard key={booking.id} booking={booking} event={booking.event} user={booking.applicant} variant="received" />
+                  <BookingCard
+                    key={booking.id}
+                    booking={booking}
+                    event={booking.event}
+                    user={booking.applicant}
+                    variant="received"
+                    onDialogOpenChange={onDialogOpenChange}
+                  />
                 )}
               />
             </PanelState>

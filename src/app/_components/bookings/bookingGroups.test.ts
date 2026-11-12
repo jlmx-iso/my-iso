@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BOOKING_STATUSES } from "~/server/_db/bookingTransitions";
 
 import { availableBookingActions } from "./bookingActions";
-import { BOOKING_GROUPS, bookingGroupOf, groupBookings, needsReplyLabel } from "./bookingGroups";
+import { BOOKING_GROUPS, bookingGroupOf, bookingGroupSnapshot, groupBookings, needsReplyLabel } from "./bookingGroups";
 
 const HOUR_MS = 60 * 60 * 1000;
 const now = new Date("2026-06-01T12:00:00Z");
@@ -11,7 +11,7 @@ const at = (hours: number, duration = 4) => ({ date: new Date(now.getTime() + ho
 const booking = (id: string, status: string, event = at(24)) => ({ event, id, status });
 
 describe("bookingGroupOf", () => {
-  it("puts an application in the owner's 'needs your reply', and in the applicant's 'upcoming'", () => {
+  it("puts an application in the owner's 'needs you', and in the applicant's 'upcoming'", () => {
     expect(bookingGroupOf(booking("a", "applied"), "received", now)).toBe("needsReply");
     expect(bookingGroupOf(booking("a", "applied"), "sent", now)).toBe("upcoming");
   });
@@ -33,7 +33,7 @@ describe("bookingGroupOf", () => {
     expect(bookingGroupOf(booking("a", "canceled"), "received", now)).toBe("closed");
   });
 
-  it("says 'needs your reply' exactly when the card offers a reply, for every role, status and time", () => {
+  it("says 'needs you' exactly when the card offers a reply, for every role, status and time", () => {
     for (const variant of ["sent", "received"] as const) {
       for (const status of BOOKING_STATUSES) {
         for (const hours of [48, 0, -1, -4, -48]) {
@@ -83,5 +83,30 @@ describe("needsReplyLabel", () => {
     expect(needsReplyLabel(3, true)).toBe("3+");
     expect(needsReplyLabel(0, false)).toBeNull();
     expect(needsReplyLabel(0, true)).toBeNull();
+  });
+});
+
+describe("pinned groups (a card with an open dialog stays put)", () => {
+  it("keeps a booking in its group while pinned, even once the clock moves it", () => {
+    // Accepted, the event starts in 30 minutes and lasts an hour: Upcoming now, "needs you" (complete) later.
+    const card = booking("vineyard", "accepted", at(0.5, 1));
+    const pinned = bookingGroupSnapshot([card], "sent", now);
+    expect(pinned.get("vineyard")).toBe("upcoming");
+    const later = new Date(now.getTime() + 2 * HOUR_MS);
+    expect(groupBookings([card], "sent", later).needsReply.map((b) => b.id)).toEqual(["vineyard"]);
+    expect(groupBookings([card], "sent", later, pinned).upcoming.map((b) => b.id)).toEqual(["vineyard"]);
+  });
+
+  it("keeps a booking whose status changed under the dialog in place too", () => {
+    const pinned = bookingGroupSnapshot([booking("a", "accepted")], "received", now);
+    expect(groupBookings([booking("a", "canceled")], "received", now, pinned).upcoming.map((b) => b.id)).toEqual(["a"]);
+  });
+
+  it("groups bookings it does not know as usual, and everything as usual once unpinned", () => {
+    const pinned = bookingGroupSnapshot([booking("a", "applied")], "received", now);
+    const groups = groupBookings([booking("a", "applied"), booking("new", "declined")], "received", now, pinned);
+    expect(groups.needsReply.map((b) => b.id)).toEqual(["a"]);
+    expect(groups.closed.map((b) => b.id)).toEqual(["new"]);
+    expect(groupBookings([booking("a", "canceled")], "received", now, null).closed.map((b) => b.id)).toEqual(["a"]);
   });
 });

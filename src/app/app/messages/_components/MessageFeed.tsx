@@ -221,11 +221,13 @@ export default function MessageFeed({ threadId, initialThread }: MessageFeedProp
                 {firstOther && (
                     <Avatar src={firstOther.profilePic} name={title} alt="" size="sm" />
                 )}
-                <Title order={2} size="h5" lineClamp={1} style={{ flex: 1, minWidth: 0 }}>
+                {/* One line, cut with an ellipsis by the link (or text) itself: a
+                    clamped heading would clip the link's enlarged hit area. */}
+                <Title order={2} size="h5" style={{ flex: 1, minWidth: 0 }}>
                     {firstOther && others.length === 1 ? (
-                        <Link href={`/app/photographer/${firstOther.id}`}>{title}</Link>
+                        <Link href={`/app/photographer/${firstOther.id}`} className="ellipsis">{title}</Link>
                     ) : (
-                        title || "Conversation"
+                        <span className="ellipsis">{title || "Conversation"}</span>
                     )}
                 </Title>
             </Group>

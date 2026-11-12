@@ -3,6 +3,7 @@
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 
 import DialogError from "./DialogError";
+import { dialogLock } from "./dialogFailure";
 
 type ConfirmDialogProps = {
     opened: boolean;
@@ -21,6 +22,11 @@ type ConfirmDialogProps = {
     loading?: boolean;
     /** Why the last attempt failed: shown above the buttons (see DialogError). */
     error?: string | null;
+    /**
+     * The action can no longer be done (what it was for has changed): the
+     * footer is a single "Close" instead of offering it again.
+     */
+    closeOnly?: boolean;
     errorTitle?: string;
 };
 
@@ -41,21 +47,40 @@ export default function ConfirmDialog({
     loading = false,
     error,
     errorTitle,
+    closeOnly = false,
 }: ConfirmDialogProps) {
     return (
-        <Modal opened={opened} onClose={onClose} title={title} size="sm" centered closeOnClickOutside={!loading}>
+        // While the request runs the dialog stays: its outcome is reported in it.
+        <Modal
+            opened={opened}
+            onClose={() => {
+                if (!loading) onClose();
+            }}
+            title={title}
+            size="sm"
+            centered
+            {...dialogLock(loading)}
+        >
             <Stack gap="lg">
                 <Text size="sm" component="div" style={{ lineHeight: 1.55 }}>
                     {children}
                 </Text>
                 <DialogError message={error} title={errorTitle} />
                 <Group justify="flex-end" gap="sm">
-                    <Button variant="default" onClick={onClose} disabled={loading} data-autofocus>
-                        {cancelLabel}
-                    </Button>
-                    <Button color={destructive ? "red" : undefined} onClick={onConfirm} loading={loading}>
-                        {confirmLabel}
-                    </Button>
+                    {closeOnly ? (
+                        <Button variant="default" onClick={onClose} data-autofocus>
+                            Close
+                        </Button>
+                    ) : (
+                        <>
+                            <Button variant="default" onClick={onClose} disabled={loading} data-autofocus>
+                                {cancelLabel}
+                            </Button>
+                            <Button color={destructive ? "red" : undefined} onClick={onConfirm} loading={loading}>
+                                {confirmLabel}
+                            </Button>
+                        </>
+                    )}
                 </Group>
             </Stack>
         </Modal>

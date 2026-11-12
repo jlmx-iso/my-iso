@@ -15,6 +15,8 @@ import { type FormEvent, useState } from "react";
 import { logger } from "~/_utils/logger";
 import { isClientError, userFacingError } from "~/_utils/userError";
 import DialogError from "~/app/_components/DialogError";
+import { dialogLock, routeFailure } from "~/app/_components/dialogFailure";
+import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -41,9 +43,19 @@ export default function ApplyModal({
 
   const utils = api.useUtils();
 
+  // Whether the dialog is open when a failure arrives.
+  const isOpen = useLatestRef(opened);
   const { mutate, isPending, error, reset } = api.booking.applyToEvent.useMutation({
     onError: (error) => {
       logger.error("Error applying to event", { error });
+      // Shown in the dialog (DialogError, from `error`) while it is open;
+      // if it is gone, a toast, so the failure is never silent.
+      if (routeFailure({ dialogOpen: isOpen.current, stale: false }).show === "toast") {
+        notify.error({
+          message: userFacingError(error, "Your application couldn't be sent. Please try again."),
+          title: "Application not sent",
+        });
+      }
       // Refused because of how things stand now (already applied, filled,
       // started): the card behind this dialog should say so too.
       if (isClientError(error)) void utils.booking.hasApplied.invalidate({ eventId });
@@ -77,9 +89,11 @@ export default function ApplyModal({
       <Modal
         opened={opened}
         onClose={() => {
+          if (isPending) return;
           close();
           reset();
         }}
+        {...dialogLock(isPending)}
         title={`Apply to "${eventTitle}"`}
         size="md"
       >

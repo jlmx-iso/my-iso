@@ -28,7 +28,9 @@ import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
+import { routeFailure } from "~/app/_components/dialogFailure";
 import LocalDate from "~/app/_components/LocalDate";
+import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -67,6 +69,11 @@ type BookingCardProps = {
   variant: "sent" | "received";
   /** The other party (owner if I'm the applicant, applicant if I'm the owner) */
   user: BookingUser;
+  /**
+   * Told when this card's confirmation opens and closes, so the list can
+   * keep the card where it is meanwhile (see `pinned` in groupBookings).
+   */
+  onDialogOpenChange?: (open: boolean) => void;
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -154,7 +161,7 @@ const STALE_REASONS: ReadonlySet<string> = new Set([
   ErrorReason.BOOKING_NOT_YET_COMPLETABLE,
 ]);
 
-export default function BookingCard({ booking, event, user, variant }: BookingCardProps) {
+export default function BookingCard({ booking, event, user, variant, onDialogOpenChange }: BookingCardProps) {
   const utils = api.useUtils();
   const [confirming, setConfirming] = useState<BookingAction | null>(null);
   const role: BookingRole = variant === "received" ? "owner" : "applicant";
@@ -174,20 +181,24 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
   // move the card to another group, remounting it and taking the dialog and
   // its explanation with it: refresh once the dialog is closed instead.
   const [refreshOnClose, setRefreshOnClose] = useState(false);
+  // Whether the confirmation is open when a failure ARRIVES (the request may
+  // have been sent from an earlier render).
+  const dialogOpen = useLatestRef(confirming !== null);
   const { mutate: updateStatus, isPending, variables } = api.booking.updateStatus.useMutation({
     onError: (error) => {
       logger.error("Error updating booking status", { error });
       const message = userFacingError(error, "Nothing was changed. Please try again.");
-      if (confirming) setConfirmError(message);
-      else notify.error({ message, title: "Booking not updated" });
-      // The booking moved on while this card was open: show where it stands.
       const reason = getErrorReason(error);
-      if (reason && STALE_REASONS.has(reason)) {
-        if (confirming) setRefreshOnClose(true);
-        else refresh();
-      }
+      // In the dialog if it is still open; otherwise a toast, and a stale
+      // card is refreshed at once (see routeFailure).
+      const route = routeFailure({ dialogOpen: dialogOpen.current, stale: !!reason && STALE_REASONS.has(reason) });
+      if (route.show === "dialog") setConfirmError(message);
+      else notify.error({ message, title: "Booking not updated" });
+      if (route.refresh === "now") refresh();
+      if (route.refresh === "on-close") setRefreshOnClose(true);
     },
     onSuccess: () => {
+      if (confirming) onDialogOpenChange?.(false);
       setConfirming(null);
       setConfirmError(null);
       refresh();
@@ -263,8 +274,10 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
         <Group gap="sm" wrap="nowrap">
           <Avatar src={user.profilePic} name={name} alt="" size="md" />
           <Stack gap={0} style={{ minWidth: 0 }}>
-            <Text size="sm" fw={600} truncate>
-              <Link href={`/app/photographer/${user.id}`} className="tap-link">{name}</Link>
+            {/* The link truncates itself (.ellipsis): a truncating parent would
+                clip its enlarged hit area and lose the ellipsis. */}
+            <Text size="sm" fw={600}>
+              <Link href={`/app/photographer/${user.id}`} className="tap-link ellipsis">{name}</Link>
             </Text>
             <Text size="xs" c="dimmed">
               {variant === "sent" ? "Event owner" : "Applicant"}
@@ -310,7 +323,10 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
                   leftSection={action === "accept" || action === "complete" ? <IconCheck size={16} aria-hidden /> : undefined}
                   onClick={() => {
                     setConfirmError(null);
-                    if (view.confirm) setConfirming(action);
+                    if (view.confirm) {
+                      setConfirming(action);
+                      onDialogOpenChange?.(true);
+                    }
                     else perform(action);
                   }}
                   loading={isPending && variables?.status === requestedStatusFor(action)}
@@ -340,8 +356,11 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
         <ConfirmDialog
           opened
           onClose={() => {
+            // Not while the request runs (ConfirmDialog does not offer it either).
+            if (isPending) return;
             setConfirming(null);
             setConfirmError(null);
+            onDialogOpenChange?.(false);
             if (refreshOnClose) {
               setRefreshOnClose(false);
               refresh();
@@ -350,6 +369,8 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
           onConfirm={() => perform(confirming)}
           error={confirmError}
           errorTitle="Booking not updated"
+          // The booking changed under the dialog: retrying would fail again.
+          closeOnly={refreshOnClose}
           title={confirmView.title}
           confirmLabel={confirmView.confirmLabel}
           cancelLabel={confirmView.cancelLabel}

@@ -38,6 +38,8 @@ import { useRef, useState } from "react";
 import { type MoveDirection, canMoveImage, moveImage, sortPortfolio } from "~/_utils/portfolioOrder";
 import { userFacingError } from "~/_utils/userError";
 import DialogError from "~/app/_components/DialogError";
+import { dialogLock, routeFailure } from "~/app/_components/dialogFailure";
+import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
@@ -305,6 +307,9 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
   // Failures of the edit and delete dialogs, shown inside them.
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Whether each dialog is open when a failure arrives (see routeFailure).
+  const editOpen = useLatestRef(editing !== null);
+  const deleteOpen = useLatestRef(deleting !== null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -371,7 +376,9 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       setEditError(null);
       notify.success({ message: "Your changes are live.", title: "Image updated" });
     } catch (error) {
-      setEditError(userFacingError(error, "Your changes weren't saved. Please try again."));
+      const message = userFacingError(error, "Your changes weren't saved. Please try again.");
+      if (routeFailure({ dialogOpen: editOpen.current, stale: false }).show === "dialog") setEditError(message);
+      else notify.error({ message, title: "Couldn't save changes" });
     }
   };
 
@@ -416,7 +423,9 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       setDeleting(null);
       focusAfterDeleteDialog();
     } catch (error) {
-      setDeleteError(userFacingError(error, "The image wasn't deleted. Please try again."));
+      const message = userFacingError(error, "The image wasn't deleted. Please try again.");
+      if (routeFailure({ dialogOpen: deleteOpen.current, stale: false }).show === "dialog") setDeleteError(message);
+      else notify.error({ message, title: "Couldn't delete image" });
     }
   };
 
@@ -518,6 +527,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
           setEditError(null);
         }}
         title="Edit image details"
+        {...dialogLock(updateImage.isPending)}
       >
         {editing && (
           <EditImageForm
@@ -539,6 +549,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
         onClose={() => !deleteImage.isPending && closeDeleteDialog()}
         title="Delete this image?"
         centered
+        {...dialogLock(deleteImage.isPending)}
         // Focus is returned by closeDeleteDialog / handleConfirmDelete.
         returnFocus={false}
       >

@@ -25,8 +25,10 @@ import { useState } from "react";
 import { toSafeWebsiteUrl } from "~/_utils/social";
 import { userFacingError } from "~/_utils/userError";
 import DialogError from "~/app/_components/DialogError";
+import { dialogLock, routeFailure } from "~/app/_components/dialogFailure";
 import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
+import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
@@ -58,6 +60,7 @@ export default function Page() {
   const [decision, setDecision] = useState<Decision | null>(null);
   // Why the last decision failed, shown in its dialog.
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  const decisionOpen = useLatestRef(decision !== null);
 
   const utils = api.useUtils();
   const { data, error, isLoading, refetch } = api.waitlist.getAll.useQuery({ status, page, limit: 20 });
@@ -81,7 +84,10 @@ export default function Page() {
       });
       setDecision(null);
     } catch (mutationError) {
-      setDecisionError(userFacingError(mutationError, "Nothing was changed. Please try again."));
+      const message = userFacingError(mutationError, "Nothing was changed. Please try again.");
+      // In the dialog while it is open; if it has gone, never silently.
+      if (routeFailure({ dialogOpen: decisionOpen.current, stale: false }).show === "dialog") setDecisionError(message);
+      else notify.error({ message, title: action === "approve" ? "Couldn't approve application" : "Couldn't decline application" });
     }
   };
 
@@ -241,6 +247,7 @@ export default function Page() {
         }}
         title={decision?.action === "approve" ? "Approve this application?" : "Decline this application?"}
         centered
+        {...dialogLock(isDeciding)}
       >
         {decision && (
           <Stack gap="md">
