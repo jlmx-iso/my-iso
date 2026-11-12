@@ -1,11 +1,19 @@
 "use client";
 
 import { Box, Button, Group, Image, Stack, Text } from "@mantine/core";
-import { type FileRejection, IMAGE_MIME_TYPE, Dropzone } from "@mantine/dropzone";
+import { type FileRejection, Dropzone } from "@mantine/dropzone";
 import { IconPhoto, IconUpload, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-const MAX_SIZE_MB = 5;
+import {
+  IMAGE_ACCEPT,
+  IMAGE_TOO_LARGE_MESSAGE,
+  IMAGE_TYPES_LABEL,
+  IMAGE_WRONG_TYPE_MESSAGE,
+  MAX_IMAGE_MB,
+  imageFileError,
+} from "~/_utils/imageFile";
+import { MAX_IMAGE_BYTES } from "~/_utils/limits";
 
 type ImagePickerProps = {
   file: File | null;
@@ -21,8 +29,8 @@ type ImagePickerProps = {
 
 function describeRejection(rejections: FileRejection[]): string {
   const code = rejections[0]?.errors[0]?.code;
-  if (code === "file-too-large") return `That image is larger than ${MAX_SIZE_MB} MB. Choose a smaller one.`;
-  if (code === "file-invalid-type") return "Choose an image file (JPG, PNG, WebP or GIF).";
+  if (code === "file-too-large") return IMAGE_TOO_LARGE_MESSAGE;
+  if (code === "file-invalid-type") return IMAGE_WRONG_TYPE_MESSAGE;
   if (code === "too-many-files") return "Choose a single image.";
   return "That file can't be used. Choose a different image.";
 }
@@ -71,12 +79,16 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
       ) : (
         <Dropzone
           onDrop={(files) => {
-            setRejection(null);
-            onChange(files[0] ?? null);
+            const picked = files[0] ?? null;
+            // Checked again here: some browsers report no type for a dropped
+            // file, which the dropzone lets through.
+            const problem = picked ? imageFileError(picked) : null;
+            setRejection(problem);
+            onChange(problem ? null : picked);
           }}
           onReject={(rejections) => setRejection(describeRejection(rejections))}
-          maxSize={MAX_SIZE_MB * 1024 ** 2}
-          accept={IMAGE_MIME_TYPE}
+          maxSize={MAX_IMAGE_BYTES}
+          accept={IMAGE_ACCEPT}
           maxFiles={1}
           multiple={false}
           disabled={disabled}
@@ -98,7 +110,7 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
             <div>
               <Text fw={500}>Tap to choose an image, or drop one here</Text>
               <Text size="sm" c="dimmed" mt={4}>
-                JPG, PNG, WebP or GIF, up to {MAX_SIZE_MB} MB
+                {IMAGE_TYPES_LABEL}, up to {MAX_IMAGE_MB} MB
               </Text>
             </div>
           </Group>
@@ -107,7 +119,7 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
       {/* Always rendered so screen readers announce validation as it appears. */}
       <div role="alert" aria-live="assertive">
         {message && (
-          <Text size="sm" c="red">
+          <Text size="sm" c="red" data-testid="image-picker-error">
             {message}
           </Text>
         )}

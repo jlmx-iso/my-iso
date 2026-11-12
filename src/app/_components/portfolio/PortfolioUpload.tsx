@@ -3,13 +3,13 @@
 import { Button, type ButtonProps, Checkbox, Group, Modal, Stack, TagsInput, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
 import { IconUpload } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { uploadErrorMessage } from "~/_utils/imageFile";
 import { logger } from "~/_utils/logger";
-import { userFacingError } from "~/_utils/userError";
 import { ImagePicker } from "~/app/_components/input/ImagePicker";
+import { notify } from "~/app/_lib/notify";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
 
@@ -87,8 +87,7 @@ export default function PortfolioUpload({ onUploaded, buttonProps }: PortfolioUp
         tags: values.tags,
         title: values.title.trim(),
       });
-      notifications.show({
-        color: "teal",
+      notify.success({
         message: `"${values.title.trim()}" is now in your portfolio.`,
         title: "Image uploaded",
       });
@@ -97,11 +96,9 @@ export default function PortfolioUpload({ onUploaded, buttonProps }: PortfolioUp
       onUploaded();
     } catch (error) {
       logger.error("Error uploading portfolio image", { error });
-      notifications.show({
-        color: "red",
-        message: userFacingError(error, "We couldn't upload that image. Please try again."),
-        title: "Upload failed",
-      });
+      // Shown in the form, next to the image it is about: wrong type, too
+      // large, portfolio full, too many uploads, or a plain failure.
+      setFileError(uploadErrorMessage(error));
     } finally {
       setIsReading(false);
     }

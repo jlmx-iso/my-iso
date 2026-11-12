@@ -16,19 +16,27 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { type FormEvent, useState } from "react";
 
-import { normalizeHandle, publicProfileUrl, validateHandle } from "~/_utils/handle";
+import {
+  HANDLE_MAX_LENGTH,
+  HANDLE_MIN_LENGTH,
+  normalizeHandle,
+  publicProfileUrl,
+  refusedHandleMessage,
+  validateHandle,
+} from "~/_utils/handle";
+import { uploadErrorMessage } from "~/_utils/imageFile";
 import { isValidInstagramHandle, normalizeInstagramHandle } from "~/_utils/instagram";
 import { logger } from "~/_utils/logger";
 import { isValidPhone, normalizePhone } from "~/_utils/phone";
-import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import { trpcErrorCode, userFacingError, zodErrorFields } from "~/_utils/userError";
 import { parseOptionalWebsite } from "~/_utils/website";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { notify } from "~/app/_lib/notify";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { env } from "~/env";
 import type { PricingInfo } from "~/server/_utils/pricing";
@@ -152,11 +160,16 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
         });
       } catch (error) {
         logger.error("Profile update failed during onboarding", { error });
-        if (trpcErrorCode(error) === "CONFLICT") {
-          // The handle belongs to the first step: go back there and say so.
+        // The handle belongs to the first step: go back there and say so
+        // on the field itself.
+        const handleRefusal = refusedHandleMessage(handle, {
+          code: trpcErrorCode(error),
+          invalidFields: zodErrorFields(error),
+        });
+        if (handleRefusal) {
           setStep(HANDLE_STEP);
-          form.setFieldError("handle", "That username is taken. Try another one.");
-          setSubmitError("That username is already taken. Choose a different one to continue.");
+          form.setFieldError("handle", handleRefusal);
+          setSubmitError("That username can't be used. Choose a different one to continue.");
         } else {
           setSubmitError(userFacingError(error, "We couldn't save your details. Please try again."));
         }
@@ -187,8 +200,7 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
         await updatePreferences.mutateAsync({ isDiscoverable: values.isDiscoverable });
       } catch (error) {
         logger.error("Saving discoverability failed during onboarding", { error });
-        notifications.show({
-          color: "tan",
+        notify.warning({
           message: "We couldn't save your Discover visibility. You can set it on the Discover page.",
           title: "One setting wasn't saved",
         });
@@ -199,9 +211,8 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
           await uploadAvatar.mutateAsync({ image: await readFileAsBase64(photo) });
         } catch (error) {
           logger.error("Avatar upload failed during onboarding", { error });
-          notifications.show({
-            color: "tan",
-            message: "Your profile is ready, but the photo didn't upload. You can add it from your profile.",
+          notify.warning({
+            message: `Your profile is ready, but the photo didn't upload. ${uploadErrorMessage(error, "")} You can add one from your profile.`.replace(/\s+/g, " "),
             title: "Photo not uploaded",
           });
         }
@@ -331,15 +342,16 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   description={
                     handle && !validateHandle(handle)
                       ? `Your public profile: ${publicProfileUrl(env.NEXT_PUBLIC_BASE_URL, handle)}`
-                      : "Optional. 3 to 30 lowercase letters, numbers or underscores. It becomes your public profile link."
+                      : `Optional. ${HANDLE_MIN_LENGTH} to ${HANDLE_MAX_LENGTH} lowercase letters, numbers or underscores. It becomes your public profile link.`
                   }
                   placeholder="yourname"
                   leftSection={<Text size="sm" c="dimmed" aria-hidden>@</Text>}
                   autoCapitalize="none"
                   autoComplete="username"
                   spellCheck={false}
-                  maxLength={31}
                   {...form.getInputProps("handle")}
+                  // Say what is wrong as soon as the field is left, not only on "Next".
+                  onBlur={() => form.validateField("handle")}
                 />
                 <TextInput
                   label="Phone number"

@@ -2,15 +2,15 @@
 
 import { ActionIcon, Box, Button, Group, Modal, Stack } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
 import { IconCamera } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 
+import { uploadErrorMessage } from "~/_utils/imageFile";
 import { logger } from "~/_utils/logger";
-import { userFacingError } from "~/_utils/userError";
 import { ImagePicker } from "~/app/_components/input/ImagePicker";
+import { notify } from "~/app/_lib/notify";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
 
@@ -28,6 +28,7 @@ function ChangePhotoButton() {
     const [opened, { close, open }] = useDisclosure(false);
     const [file, setFile] = useState<File | null>(null);
     const [isReading, setIsReading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const uploadImage = api.photographer.uploadProfileImage.useMutation();
     const { update: updateSession } = useSession();
     const router = useRouter();
@@ -37,10 +38,12 @@ function ChangePhotoButton() {
         if (isSaving) return;
         close();
         setFile(null);
+        setUploadError(null);
     };
 
     const handleUpload = async () => {
         if (!file) return;
+        setUploadError(null);
         setIsReading(true);
         try {
             const image = await readFileAsBase64(file);
@@ -51,18 +54,14 @@ function ChangePhotoButton() {
             router.refresh();
             close();
             setFile(null);
-            notifications.show({
-                color: "teal",
+            notify.success({
                 message: "Your new photo is live across ISO.",
                 title: "Profile photo updated",
             });
         } catch (error) {
             logger.error("Error uploading profile avatar", { error });
-            notifications.show({
-                color: "red",
-                message: userFacingError(error, "We couldn't upload that photo. Please try again."),
-                title: "Upload failed",
-            });
+            // In the dialog, next to the photo it is about.
+            setUploadError(uploadErrorMessage(error, "We couldn't upload that photo. Please try again."));
         } finally {
             setIsReading(false);
         }
@@ -94,9 +93,13 @@ function ChangePhotoButton() {
                 <Stack gap="md">
                     <ImagePicker
                         file={file}
-                        onChange={setFile}
+                        onChange={(next) => {
+                            setFile(next);
+                            setUploadError(null);
+                        }}
                         label="Profile photo"
                         disabled={isSaving}
+                        error={uploadError}
                         previewRadius="50%"
                     />
                     <Group justify="flex-end">

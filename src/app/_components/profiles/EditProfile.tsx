@@ -2,7 +2,6 @@
 
 import { Alert, Button, Group, SimpleGrid, Stack, Text, TextInput, Textarea, type TextInputProps, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
 import { type Photographer } from "@prisma/client";
 import { IconAlertCircle } from "@tabler/icons-react";
 import Link from "next/link";
@@ -10,6 +9,14 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 
+import {
+    HANDLE_MAX_LENGTH,
+    HANDLE_MIN_LENGTH,
+    normalizeHandle,
+    publicProfileUrl,
+    refusedHandleMessage,
+    validateHandle,
+} from "~/_utils/handle";
 import { isValidInstagramHandle, normalizeInstagramHandle } from "~/_utils/instagram";
 import { logger } from "~/_utils/logger";
 import {
@@ -20,9 +27,11 @@ import {
     normalizeVimeoHandle,
     normalizeYouTubeHandle,
 } from "~/_utils/social";
-import { userFacingError, zodFieldErrors } from "~/_utils/userError";
+import { trpcErrorCode, userFacingError, zodErrorFields, zodFieldErrors } from "~/_utils/userError";
 import { parseOptionalWebsite } from "~/_utils/website";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { notify } from "~/app/_lib/notify";
+import { env } from "~/env";
 import { api } from "~/trpc/react";
 
 const MAX_BIO_LENGTH = 1000;
@@ -48,6 +57,8 @@ function SocialHandleInput({ prefix, ...props }: TextInputProps & { prefix: stri
 
 type EditProfileProps = {
     photographer: Photographer;
+    /** The member's current username, the last part of their public profile link. */
+    handle: string | null;
 }
 
 type FormValues = {
@@ -55,6 +66,7 @@ type FormValues = {
     companyName: string;
     facebook: string;
     firstName: string;
+    handle: string;
     instagram: string;
     lastName: string;
     location: string;
@@ -77,10 +89,11 @@ const optionalHandle = (value: string, normalize: (handle: string) => string) =>
  * name, business name and location are required; bio, website and socials
  * are optional.
  */
-export default function EditProfile({ photographer }: EditProfileProps) {
+export default function EditProfile({ photographer, handle: savedHandle }: EditProfileProps) {
     const router = useRouter();
     const { update: updateSession } = useSession();
     const updateProfile = api.photographer.update.useMutation();
+    const updateHandle = api.user.updateProfile.useMutation();
     const [submitError, setSubmitError] = useState<string | null>(null);
     const nameParts = photographer.name.split(" ");
 
@@ -90,6 +103,7 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             companyName: photographer.companyName,
             facebook: photographer.facebook ? normalizeFacebookHandle(photographer.facebook) : "",
             firstName: nameParts[0] ?? "",
+            handle: savedHandle ?? "",
             instagram: photographer.instagram ? normalizeInstagramHandle(photographer.instagram) : "",
             lastName: nameParts.slice(1).join(" "),
             location: photographer.location,
@@ -108,6 +122,11 @@ export default function EditProfile({ photographer }: EditProfileProps) {
             },
             facebook: handleError,
             firstName: (value) => (value.trim() ? null : "Enter your first name"),
+            handle: (value) => {
+                // A username cannot be removed once set: links to the public profile use it.
+                if (savedHandle && !normalizeHandle(value)) return "Enter a username, or keep your current one";
+                return validateHandle(value);
+            },
             instagram: (value) =>
                 !value.trim() || isValidInstagramHandle(value)
                     ? null
@@ -126,6 +145,25 @@ export default function EditProfile({ photographer }: EditProfileProps) {
     const handleSubmit = form.onSubmit(async (values) => {
         setSubmitError(null);
         const website = parseOptionalWebsite(values.website);
+        const handle = normalizeHandle(values.handle);
+        if (handle && handle !== savedHandle) {
+            try {
+                await updateHandle.mutateAsync({ handle });
+            } catch (error) {
+                logger.error("Username update failed", { error });
+                const refusal = refusedHandleMessage(handle, {
+                    code: trpcErrorCode(error),
+                    invalidFields: zodErrorFields(error),
+                });
+                if (refusal) {
+                    form.setFieldError("handle", refusal);
+                    setSubmitError("That username can't be used. Nothing was saved — choose a different one.");
+                } else {
+                    setSubmitError(userFacingError(error, "We couldn't save your profile. Your changes are still here — please try again."));
+                }
+                return;
+            }
+        }
         try {
             await updateProfile.mutateAsync({
                 bio: values.bio.trim() || null,
@@ -159,12 +197,13 @@ export default function EditProfile({ photographer }: EditProfileProps) {
         await updateSession().catch((error: unknown) =>
             logger.error("Session refresh failed after profile update", { error }),
         );
-        notifications.show({ color: "teal", message: "Your changes are live.", title: "Profile updated" });
+        notify.success({ message: "Your changes are live.", title: "Profile updated" });
         router.push("/app/profile");
         router.refresh();
     });
 
-    const isSaving = updateProfile.isPending;
+    const isSaving = updateProfile.isPending || updateHandle.isPending;
+    const typedHandle = normalizeHandle(form.values.handle);
 
     return (
         <form onSubmit={handleSubmit} noValidate>
@@ -200,6 +239,21 @@ export default function EditProfile({ photographer }: EditProfileProps) {
                     autoComplete="organization"
                     required
                     {...form.getInputProps("companyName")}
+                />
+                <TextInput
+                    label="Username"
+                    description={
+                        typedHandle && !validateHandle(typedHandle)
+                            ? `Your public profile: ${publicProfileUrl(env.NEXT_PUBLIC_BASE_URL, typedHandle)}`
+                            : `${HANDLE_MIN_LENGTH} to ${HANDLE_MAX_LENGTH} lowercase letters, numbers or underscores. It becomes your public profile link.`
+                    }
+                    placeholder="yourname"
+                    leftSection={<Text size="sm" c="dimmed" aria-hidden>@</Text>}
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    spellCheck={false}
+                    {...form.getInputProps("handle")}
+                    onBlur={() => form.validateField("handle")}
                 />
                 <Textarea
                     label="Bio"

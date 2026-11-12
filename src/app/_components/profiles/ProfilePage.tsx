@@ -1,6 +1,6 @@
 import { Button, Divider, Stack } from "@mantine/core";
 import { type Photographer } from "@prisma/client";
-import { IconExternalLink, IconMessage, IconPencil } from "@tabler/icons-react";
+import { IconExternalLink, IconPencil } from "@tabler/icons-react";
 
 import { NextLink } from "~/app/_components/NextLink";
 import { auth } from "~/auth";
@@ -8,6 +8,7 @@ import { api } from "~/trpc/server";
 
 import EditProfile from "./EditProfile";
 import { FavoriteButton } from "./FavoriteButton";
+import { MessageAction } from "./MessageAction";
 import ProfileHeader from "./ProfileHeader";
 import ReviewsSection from "./ReviewsSection";
 import PortfolioSection from "../portfolio/PortfolioSection";
@@ -24,17 +25,17 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
   if (!session?.user) return null;
 
   const isSelf = session.user.id === photographer.userId;
+  const caller = await api();
   if (isEditing && isSelf) {
-    return <EditProfile photographer={photographer} />;
+    const me = await caller.user.getMe();
+    return <EditProfile photographer={photographer} handle={me.handle} />;
   }
 
-  const caller = await api();
-  const [images, favorites, owner] = await Promise.all([
+  const [images, favorite, owner] = await Promise.all([
     caller.photographer.getPortfolioImages({ photographerId: photographer.id }),
-    isSelf ? Promise.resolve([]) : caller.user.getFavorites(),
+    isSelf ? Promise.resolve({ isFavorite: false }) : caller.user.isFavorite({ targetId: photographer.id }),
     isSelf ? caller.user.getMe() : Promise.resolve(null),
   ]);
-  const isFavorite = favorites.some((favorite) => favorite.targetId === photographer.id);
 
   return (
     <Stack w="100%" gap="xl">
@@ -69,18 +70,11 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
           ) : (
             <>
               <FavoriteButton
-                isFavorite={isFavorite}
+                isFavorite={favorite.isFavorite}
                 photographerId={photographer.id}
                 photographerName={photographer.name}
               />
-              <Button
-                component={NextLink}
-                href={`/app/messages?new=${photographer.userId}`}
-                size="sm"
-                leftSection={<IconMessage size={16} />}
-              >
-                Message
-              </Button>
+              <MessageAction userId={photographer.userId} />
             </>
           )
         }

@@ -7,8 +7,17 @@ import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useState } from "react";
 
+import {
+    IMAGE_ACCEPT,
+    IMAGE_TOO_LARGE_MESSAGE,
+    IMAGE_TYPES_LABEL,
+    IMAGE_WRONG_TYPE_MESSAGE,
+    MAX_IMAGE_MB,
+    imageFileError,
+    uploadErrorMessage,
+} from "~/_utils/imageFile";
+import { MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { logger } from "~/_utils/logger";
-import { userFacingError } from "~/_utils/userError";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
@@ -21,8 +30,17 @@ type CreateEventFormProps = {
 
 const MAX_TITLE_LENGTH = 140;
 const MAX_DESCRIPTION_LENGTH = 1000;
-const MAX_IMAGE_MB = 5;
 const DATE_FORMAT = "YYYY-MM-DD HH:mm:ss";
+const SAVE_FAILED = "We couldn't create your event. Your details are still here — please try again.";
+
+/** Whole hours, as the server requires (1 to MAX_EVENT_DURATION_HOURS). */
+const DURATION_HOURS = [1, 2, 3, 4, 6, 8, 10, 12, 24, 48, 72].filter((hours) => hours <= MAX_EVENT_DURATION_HOURS);
+const durationLabel = (hours: number) => {
+    if (hours === 1) return "1 hour";
+    if (hours === 8) return "8 hours (full day)";
+    if (hours >= 24 && hours % 24 === 0) return `${hours / 24} ${hours === 24 ? "day" : "days"} (${hours} hours)`;
+    return `${hours} hours`;
+};
 
 type FormValues = {
     date: string | null;
@@ -60,10 +78,7 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
                     ? `Keep the description under ${MAX_DESCRIPTION_LENGTH} characters`
                     : null;
             },
-            image: (value) =>
-                value && value.size > MAX_IMAGE_MB * 1024 ** 2
-                    ? `Choose an image smaller than ${MAX_IMAGE_MB} MB`
-                    : null,
+            image: (value) => (value ? imageFileError(value) : null),
             location: (value) => (value.trim() ? null : "Enter where the event is"),
             title: (value) => {
                 if (!value.trim()) return "Give the event a title";
@@ -93,7 +108,12 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
         } catch (error) {
             // Keep the form and everything in it; say what went wrong.
             logger.error("Error creating event", { error });
-            setSubmitError(userFacingError(error, "We couldn't create your event. Your details are still here — please try again."));
+            const message = uploadErrorMessage(error, SAVE_FAILED);
+            // A refused image is reported on the image field as well.
+            if (message === IMAGE_TOO_LARGE_MESSAGE || message === IMAGE_WRONG_TYPE_MESSAGE) {
+                form.setFieldError("image", message);
+            }
+            setSubmitError(message);
         } finally {
             setIsReadingImage(false);
         }
@@ -142,16 +162,7 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
                         label="Duration"
                         required
                         allowDeselect={false}
-                        data={[
-                            { value: "1", label: "1 hour" },
-                            { value: "2", label: "2 hours" },
-                            { value: "3", label: "3 hours" },
-                            { value: "4", label: "4 hours" },
-                            { value: "6", label: "6 hours" },
-                            { value: "8", label: "8 hours (full day)" },
-                            { value: "10", label: "10 hours" },
-                            { value: "12", label: "12 hours" },
-                        ]}
+                        data={DURATION_HOURS.map((hours) => ({ label: durationLabel(hours), value: String(hours) }))}
                         {...form.getInputProps("duration")}
                     />
                 </SimpleGrid>
@@ -163,12 +174,17 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
                 />
                 <FileInput
                     label="Cover image"
-                    description={`Optional. JPG, PNG or WebP, up to ${MAX_IMAGE_MB} MB.`}
+                    description={`Optional. ${IMAGE_TYPES_LABEL}, up to ${MAX_IMAGE_MB} MB.`}
                     leftSection={<IconUpload size={16} />}
                     placeholder="Choose an image"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept={IMAGE_ACCEPT.join(",")}
                     clearable
                     {...form.getInputProps("image")}
+                    onChange={(file) => {
+                        form.setFieldValue("image", file);
+                        // Say so at once, not only on "Create event".
+                        form.setFieldError("image", file ? imageFileError(file) : null);
+                    }}
                 />
                 <Group justify="flex-end" mt="xs">
                     <Button variant="default" onClick={onCancel} disabled={isSaving}>

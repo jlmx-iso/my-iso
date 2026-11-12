@@ -12,7 +12,11 @@ type LocationAutocompleteProps = AutocompleteProps & {
     isRequired: boolean;
 };
 
-export function LocationAutocomplete({ label, placeholder, isRequired, ...props }: LocationAutocompleteProps) {
+/** The server returns nothing for shorter queries, so none are sent. */
+export const LOCATION_MIN_QUERY_LENGTH = 3;
+const LOCATION_HINT = `Type at least ${LOCATION_MIN_QUERY_LENGTH} letters to see suggestions`;
+
+export function LocationAutocomplete({ label, placeholder, isRequired, description, ...props }: LocationAutocompleteProps) {
     const combobox = useCombobox({
         onDropdownClose: () => combobox.resetSelectedOption(),
     });
@@ -20,7 +24,7 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
     const [value, setValue] = useState('');
 
     const { data: autocompleteData = [] } = api.google.getAutocompleteLocations.useQuery({ query: value }, {
-        enabled: value.length > 0,
+        enabled: value.trim().length >= LOCATION_MIN_QUERY_LENGTH,
     });
 
     const debouncedSetValue = useMemo(() => debounce((newValue: string) => {
@@ -37,6 +41,7 @@ export function LocationAutocomplete({ label, placeholder, isRequired, ...props 
             label={label}
             placeholder={placeholder}
             required={isRequired}
+            description={description ? <>{description} {LOCATION_HINT}.</> : `${LOCATION_HINT}.`}
             data={autocompleteData}
             onChange={(event) => {
                 if (props.onChange) {

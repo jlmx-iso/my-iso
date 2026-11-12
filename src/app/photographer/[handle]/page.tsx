@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { NextLink } from "~/app/_components/NextLink";
 import PortfolioSection from "~/app/_components/portfolio/PortfolioSection";
+import { MessageAction } from "~/app/_components/profiles/MessageAction";
 import ProfileHeader from "~/app/_components/profiles/ProfileHeader";
 import ReviewsSection, { type ReviewViewer } from "~/app/_components/profiles/ReviewsSection";
 import { auth } from "~/auth";
@@ -45,9 +46,7 @@ export default async function PhotographerProfilePage({ params }: PageProps) {
                 Manage profile
               </Button>
             ) : viewer === "member" ? (
-              <Button component={NextLink} href={messageHref} size="sm" leftSection={<IconMessage size={16} />}>
-                Message
-              </Button>
+              <MessageAction userId={photographer.userId} />
             ) : (
               <>
                 <Button component={NextLink} href={signInHref(messageHref)} size="sm" leftSection={<IconMessage size={16} />}>

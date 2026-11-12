@@ -79,7 +79,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
               </Badge>
             </Group>
             {actions && (
-              <Group gap="xs" wrap="nowrap">
+              <Group gap="xs" wrap="nowrap" align="flex-start">
                 {actions}
               </Group>
             )}
