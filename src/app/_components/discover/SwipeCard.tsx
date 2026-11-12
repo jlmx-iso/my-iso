@@ -29,7 +29,7 @@ import {
   IconWorld,
   IconX,
 } from "@tabler/icons-react";
-import { motion, useMotionValue, useTransform } from "framer-motion";
+import { motion, useMotionValue, useTransform } from "motion/react";
 import { useState } from "react";
 
 import { instagramUrl } from "~/_utils";
