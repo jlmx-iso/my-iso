@@ -320,9 +320,13 @@ export const eventRouter = createTRPCRouter({
         ? await uploadEventImage(ctx, photographer.id, image)
         : undefined;
 
-      return ctx.db.event.create({
+      const created = await ctx.db.event.create({
         data: { ...fields, image: imageUrl, photographerId: photographer.id },
       });
+      // A new event has no bookings; said through the same derivation as
+      // everywhere else rather than by passing the column on.
+      const [event] = await withDerivedFulfilled(ctx.db, [created]);
+      return event ?? { ...created, isFulfilled: false };
     }),
 
   delete: protectedProcedure
@@ -623,10 +627,13 @@ export const eventRouter = createTRPCRouter({
         ? await uploadEventImage(ctx, event.photographerId, image)
         : undefined;
 
-      return ctx.db.event.update({
+      const updated = await ctx.db.event.update({
         data: { ...fields, ...(imageUrl ? { image: imageUrl } : {}) },
         where: { id: event.id },
       });
+      // `isFulfilled` from the bookings, never the stored column.
+      const [derived] = await withDerivedFulfilled(ctx.db, [updated]);
+      return derived ?? updated;
     }),
 });
 

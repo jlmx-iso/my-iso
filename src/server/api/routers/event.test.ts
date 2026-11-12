@@ -250,6 +250,16 @@ describe("events feed", () => {
       expect(await stored(open.id)).toBe(true);
     });
 
+    it("editing an event answers with the derived value, not the stored column", async () => {
+      const filled = await createEvent("filled", DAY_MS);
+      await acceptedBookingOn(filled.id);
+      const open = await createEvent("open", 2 * DAY_MS);
+      await testDb.raw.event.update({ data: { isFulfilled: true }, where: { id: open.id } });
+
+      expect(await as(owner).update({ id: filled.id, title: "filled, renamed" })).toMatchObject({ isFulfilled: true, title: "filled, renamed" });
+      expect(await as(owner).update({ id: open.id, title: "open, renamed" })).toMatchObject({ isFulfilled: false, title: "open, renamed" });
+    });
+
     it("does not count a deleted booking, or one that does not hold the slot", async () => {
       const event = await createEvent("open", DAY_MS);
       const [first, second] = [await createTestUser(testDb.db), await createTestUser(testDb.db)];
