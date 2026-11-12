@@ -36,8 +36,12 @@ export type Insights = {
    */
   from: string;
   to: string;
-  /** The first day views were counted at all (the earliest counter row), or null if none yet. */
-  countingSince: string | null;
+  /**
+   * The first day views were counted at all on ISO (the earliest counter
+   * row; today when nothing has been counted yet). Days before it were not
+   * counted, which is not the same as nobody looking.
+   */
+  countingSince: string;
   profileViews: Compared & {
     /** One entry per day, oldest first, zeros included; starts no earlier than countingSince. */
     daily: Array<{ day: string; count: number }>;
@@ -92,8 +96,10 @@ export function foldSources(bySource: ReadonlyMap<ViewSource, number>): Array<{ 
 /**
  * Conversations in which someone other than `userId` sent the first
  * message, with that first message in [since, until). Soft-deleted messages
- * count when deciding who started a thread: deleting it later does not
- * change who wrote first.
+ * are deliberately NOT ignored when deciding who started a thread (this is
+ * raw SQL, outside the soft-delete extension, on purpose): deleting a first
+ * message later does not change who wrote first, nor move the conversation
+ * into another period.
  */
 async function conversationsStartedWith(db: InsightsDb, userId: string, since: Date, until: Date): Promise<number> {
   const rows = await db.$queryRaw<Array<{ n: number | bigint }>>(Prisma.sql`
@@ -107,7 +113,8 @@ async function conversationsStartedWith(db: InsightsDb, userId: string, since: D
         WHERE e."threadId" = m."threadId"
           AND (e."createdAt" < m."createdAt" OR (e."createdAt" = m."createdAt" AND e."id" < m."id"))
       )`);
-  return Number(rows[0]?.n ?? 0);
+  // COUNT(*) answers one row.
+  return rows.reduce((total, row) => total + Number(row.n), 0);
 }
 
 /** The first day anything was counted (the counters began with this feature). */
@@ -128,10 +135,11 @@ async function countingStarted(db: InsightsDb): Promise<string | null> {
  */
 export async function getInsights(db: InsightsDb, userId: string, days: InsightRange, now: Date = new Date()): Promise<Insights> {
   const range = rangeDays(days, now);
-  const from = range[0] ?? utcDay(now);
-  const to = range.at(-1) ?? utcDay(now);
-  const since = startOfDay(from);
-  const until = new Date(startOfDay(to).getTime() + DAY_MS);
+  // [since, until): the `days` complete UTC days ending yesterday.
+  const until = startOfDay(utcDay(now));
+  const since = new Date(until.getTime() - days * DAY_MS);
+  const from = utcDay(since);
+  const to = utcDay(new Date(until.getTime() - DAY_MS));
   const previousFrom = utcDay(new Date(since.getTime() - days * DAY_MS));
   const previousSince = startOfDay(previousFrom);
   const ownLiveEvent = { isDeleted: false, photographer: { userId } };
@@ -142,7 +150,7 @@ export async function getInsights(db: InsightsDb, userId: string, days: InsightR
     ownerId: userId,
   });
 
-  const [countingSince, profileRows, eventViewRows, applicationRows, previousApplications, conversations, previousConversations] =
+  const [countingStartedOn, profileRows, eventViewRows, applicationRows, previousApplications, conversations, previousConversations] =
     await Promise.all([
       countingStarted(db),
       db.profileView.findMany({
@@ -160,6 +168,7 @@ export async function getInsights(db: InsightsDb, userId: string, days: InsightR
       conversationsStartedWith(db, userId, previousSince, since),
     ]);
 
+  const countingSince = countingStartedOn ?? utcDay(now);
   const byDay = new Map<string, number>();
   const bySource = new Map<ViewSource, number>();
   let previousProfileViews = 0;
@@ -174,14 +183,15 @@ export async function getInsights(db: InsightsDb, userId: string, days: InsightR
   }
   // The chart starts when counting did: days before that were not counted,
   // which is not the same as nobody looking.
-  const daily = range.filter((day) => !countingSince || day >= countingSince).map((day) => ({ count: byDay.get(day) ?? 0, day }));
+  const daily = range.filter((day) => day >= countingSince).map((day) => ({ count: byDay.get(day) ?? 0, day }));
   // The previous period can only be compared when it was counted in full.
-  const previousCounted = countingSince !== null && countingSince <= previousFrom;
+  const previousCounted = countingSince <= previousFrom;
 
   const viewsByEvent = new Map<string, number>();
   let previousEventViews = 0;
   for (const row of eventViewRows) {
-    const count = row._sum.count ?? 0;
+    // A sum over at least one row: never null here; Number(null) would be 0.
+    const count = Number(row._sum.count);
     if (row.day < from) previousEventViews += count;
     else viewsByEvent.set(row.eventId, (viewsByEvent.get(row.eventId) ?? 0) + count);
   }
@@ -211,6 +221,7 @@ export async function getInsights(db: InsightsDb, userId: string, days: InsightR
       sources: foldSources(bySource),
     },
     to,
+    // An id with no live event of the member's (deleted since) is dropped.
     topEvents: ranked.flatMap((row) => {
       const event = eventById.get(row.id);
       return event ? [{ ...row, date: event.date, title: event.title }] : [];

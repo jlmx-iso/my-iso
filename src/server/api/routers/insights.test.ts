@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { proUserIds } from "~/server/_billing/proStatus";
 import { compare, foldSources, getInsights, rangeDays, TOP_EVENTS } from "~/server/_db/insights";
 import { utcDay } from "~/server/_lib/viewCounter";
 import { createDbCaller } from "~/test/helpers/dbCaller";
@@ -12,6 +13,7 @@ vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
 vi.mock("~/_lib", () => ({ cloudinaryClient: null }));
 
 import { insightsRouter } from "./insights";
+import { subscriptionRouter } from "./subscription";
 
 freezeRateLimitClock();
 
@@ -111,6 +113,24 @@ describe("insights", () => {
     await expect(as(member).getSummary({ days: 30 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("agrees with Settings about who is Pro: a cancellation whose date passed is not Pro on either", async () => {
+    // The shape of a settled row set to cancel at the end of its period,
+    // with that moment behind it and Stripe's "deleted" event not in yet:
+    // status still "active". Settings (getStatus), insights (proProcedure)
+    // and the badge (proUserIds) all apply the one rule and say "not Pro".
+    await makePro(testDb.db, member.id, { cancelAt: new Date(Date.now() - DAY_MS) });
+    const settings = await createDbCaller(subscriptionRouter, testDb.db, { user: member }).getStatus();
+    expect(settings).toMatchObject({ cancelAtPeriodEnd: true, hasProAccess: false, status: "active" });
+    await expect(as(member).getSummary({ days: 30 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect([...(await proUserIds(testDb.db, [member.id]))]).toEqual([]);
+
+    // Before that moment, all three say Pro.
+    await testDb.db.subscription.update({ data: { cancelAt: new Date(Date.now() + DAY_MS) }, where: { userId: member.id } });
+    expect(await createDbCaller(subscriptionRouter, testDb.db, { user: member }).getStatus()).toMatchObject({ hasProAccess: true });
+    await expect(as(member).getSummary({ days: 30 })).resolves.toMatchObject({ days: 30 });
+    expect([...(await proUserIds(testDb.db, [member.id]))]).toEqual([member.id]);
+  });
+
   describe("getInsights", () => {
     it("covers the complete days through yesterday, never today", async () => {
       await views(member.id, TODAY, "search", 50);
@@ -208,6 +228,46 @@ describe("insights", () => {
       expect(quarter.applications.value).toBe(3);
     });
 
+    it("compares event views with the previous period, and ranks ties by applications, then by id", async () => {
+      // Counting started long ago (another member's row).
+      await views(other.id, utcDay(daysAgo(60)), "search", 1);
+      const [first, second, third] = [await ownEvent("A"), await ownEvent("B"), await ownEvent("C")];
+      const applicationsOnly = await ownEvent("Applications only");
+      await testDb.db.eventView.createMany({
+        data: [
+          { count: 4, day: YESTERDAY, eventId: first.id },
+          { count: 4, day: YESTERDAY, eventId: second.id },
+          { count: 4, day: YESTERDAY, eventId: third.id },
+          // The week before.
+          { count: 6, day: utcDay(daysAgo(10)), eventId: first.id },
+        ],
+      });
+      await application(second.id, member.id, daysAgo(1));
+      await application(applicationsOnly.id, member.id, daysAgo(2));
+
+      const week = await getInsights(testDb.db, member.id, 7, NOW);
+      expect(week.eventViews).toMatchObject({ changePercent: 100, previous: 6, value: 12 });
+      const byIdAmongEquals = [first.id, third.id].sort();
+      expect(week.topEvents.map((event) => [event.id, event.views, event.applications])).toEqual([
+        [second.id, 4, 1],
+        [byIdAmongEquals[0], 4, 0],
+        [byIdAmongEquals[1], 4, 0],
+        [applicationsOnly.id, 0, 1],
+      ]);
+    });
+
+    it("leaves out an event that was deleted after its applications came in", async () => {
+      const event = await ownEvent("Gone");
+      await application(event.id, member.id, daysAgo(1));
+      // The applications query reads live bookings of live events; the event
+      // list is read separately, so an event deleted in between is dropped.
+      const spy = vi.spyOn(testDb.db.event, "findMany").mockImplementation((async () => []) as unknown as typeof testDb.db.event.findMany);
+      const insights = await getInsights(testDb.db, member.id, 7, NOW);
+      spy.mockRestore();
+      expect(insights.applications.value).toBe(1);
+      expect(insights.topEvents).toEqual([]);
+    });
+
     it(`lists at most ${TOP_EVENTS} events`, async () => {
       for (let index = 0; index < TOP_EVENTS + 3; index += 1) {
         const event = await ownEvent(`Event ${index}`);
@@ -237,12 +297,13 @@ describe("insights", () => {
       expect(insights).toMatchObject({
         applications: { value: 0 },
         conversationsStarted: { value: 0 },
-        countingSince: null,
-        eventViews: { value: 0 },
-        profileViews: { previous: null, sources: [], value: 0 },
+        // Nothing counted on ISO yet: counting starts today, and no day of
+        // the period is shown as a counted zero.
+        countingSince: TODAY,
+        eventViews: { previous: null, value: 0 },
+        profileViews: { daily: [], previous: null, sources: [], value: 0 },
         topEvents: [],
       });
-      expect(insights.profileViews.daily).toHaveLength(90);
     });
   });
 });

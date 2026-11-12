@@ -182,7 +182,7 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
         <Stack gap="lg">
             <Group justify="space-between" align="center" gap="sm">
                 <Text size="sm" c="dimmed" aria-live="polite">
-                    {data ? `${formatUtcDay(data.from)} to ${formatUtcDay(data.to)}, up to yesterday*` : "Loading…"}
+                    {data ? `${formatUtcDay(data.from)} to ${formatUtcDay(data.to)}, through yesterday*` : "Loading…"}
                 </Text>
                 <SegmentedControl
                     value={String(days)}
@@ -219,7 +219,7 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                     <Paper withBorder radius="md" p={{ base: "md", sm: "lg" }}>
                         <Group justify="space-between" align="baseline" mb="sm" gap="xs">
                             <Title order={2} size="h5">Profile views per day</Title>
-                            {data.countingSince && data.countingSince > data.from && (
+                            {data.countingSince > data.from && (
                                 <Text size="xs" c="dimmed" data-testid="counting-since">
                                     Counting started on {formatUtcDay(data.countingSince)}
                                 </Text>
@@ -254,9 +254,9 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                         Counts only: ISO does not record who viewed you. Each browser counts once a day per page; your own visits
                         and automated traffic are not counted.
                     </Text>
-                    <Text size="xs" c="dimmed">
-                        * Days run midnight to midnight UTC, the same for every member. Today is left out until it is over, so a
-                        number never changes while you watch it and cannot be tied to one visit.
+                    <Text size="xs" c="dimmed" data-testid="utc-footnote">
+                        * Days run midnight to midnight UTC, so a late-evening view may land on the next day. Every number on
+                        this page stops at the end of yesterday: today is added once it is over.
                     </Text>
                 </Stack>
             )}
