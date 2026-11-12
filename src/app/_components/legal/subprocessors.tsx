@@ -38,7 +38,7 @@ export const SUBPROCESSORS: Subprocessor[] = [
   },
   {
     data: "Product analytics events, error reports and, only with consent, session recordings with all text and photos hidden. Linked to an account id; never a name, email or IP address.",
-    location: "United States (PostHog US cloud)",
+    location: <OwnerTodo fallback={confirmLater}>region (US or EU cloud) of the production PostHog project</OwnerTodo>,
     name: "PostHog, Inc.",
     purpose: "Product analytics, error tracking, session replay (opt-in) and feature flags.",
   },
@@ -67,7 +67,7 @@ export const SUBPROCESSORS: Subprocessor[] = [
     purpose: "Writing match summaries and conversation starters (Claude).",
   },
   {
-    data: "For Google sign-in: the Google account's name and email address. For location suggestions: the text typed into a location field.",
+    data: "For Google sign-in: the Google account's name and email address. For location suggestions: the text typed into a location field. A profile picture hosted by Google (lh3.googleusercontent.com), where an account has one, is loaded from Google, which then receives the viewer's IP address and browser details.",
     location: <OwnerTodo fallback={confirmLater}>Google processing locations</OwnerTodo>,
     name: "Google LLC",
     purpose: "Sign in with Google, and location suggestions (Places API).",

@@ -8,6 +8,7 @@ import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { type BillingInterval, type PlanPricing, proPriceView } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import LocalDate from "~/app/_components/LocalDate";
+import { renewalTerms } from "~/app/_components/plans/renewalTerms";
 import { api } from "~/trpc/react";
 
 import type { BillingMode } from "./billingMode";
@@ -165,6 +166,9 @@ export default function BillingActions({ mode: initialMode, paidUntil, portalLab
           {price.annualNote}
         </Text>
       )}
+      <Text size="xs" c="gray.7" maw={320} data-testid="renewal-terms">
+        {renewalTerms(pricing, billingInterval === "annual")}
+      </Text>
       {message}
     </Stack>
   );

@@ -1,6 +1,6 @@
 import { Alert, Box, Container, Divider, List, ListItem, Stack, Text, Title } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 
 export type LegalSection = {
   title: string;
@@ -56,7 +56,7 @@ export default function LegalPage({
                 {index + 1}. {section.title}
               </Title>
               <Stack gap="sm">
-                {section.body.map((paragraph, paragraphIndex) => (
+                {section.body.filter((paragraph) => !rendersEmpty(paragraph)).map((paragraph, paragraphIndex) => (
                   <Text key={paragraphIndex} style={{ lineHeight: 1.7 }}>
                     {paragraph}
                   </Text>
@@ -98,6 +98,16 @@ export default function LegalPage({
         </Stack>
       </Box>
     </Container>
+  );
+}
+
+/** A paragraph that is only an owner TODO with no fallback, in production: nothing to show. */
+function rendersEmpty(paragraph: ReactNode): boolean {
+  return (
+    isProductionBuild() &&
+    isValidElement<{ fallback?: ReactNode }>(paragraph) &&
+    paragraph.type === OwnerTodo &&
+    paragraph.props.fallback === ""
   );
 }
 

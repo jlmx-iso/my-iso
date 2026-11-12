@@ -76,7 +76,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   {
     title: "ISO Pro",
     body: [
-      "Pro is a paid subscription, billed in advance each month or year through Stripe. It renews automatically at the price shown when you subscribed until you cancel. You can cancel at any time in Settings → Billing; you keep Pro until the end of the period you paid for. Prices are shown before you subscribe.",
+      "Pro is a paid subscription, billed in advance each month or year through Stripe. It renews automatically at the price shown when you subscribed until you cancel. You can cancel at any time in Settings → Current plan → Manage subscription; you keep Pro until the end of the period you paid for. Prices are shown before you subscribe.",
       "We may change Pro prices for future periods; we will tell you before a change applies to you, and you can cancel before it does. A founding member price is an exception: it stays the same for as long as that subscription stays active, and a price change does not apply to it.",
       "Deleting your account cancels Pro immediately, without a refund for the rest of the period unless the law requires one. Write to us if something went wrong with a payment.",
       <>
@@ -84,9 +84,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
         <OwnerTodo fallback="your subscription is cancelled; write to us about any refund">what happens to Pro and any refund when we close an account</OwnerTodo>
         .
       </>,
-      <>
-        <OwnerTodo fallback="">refund policy, taxes, and price-change notice period</OwnerTodo>
-      </>,
+      <OwnerTodo fallback="" key="pro-todo">refund policy, taxes, and price-change notice period</OwnerTodo>,
     ],
   },
   {
@@ -112,9 +110,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
     title: "Disclaimers and liability",
     body: [
       "ISO is provided as is and as available. To the extent the law allows, we disclaim implied warranties and are not liable for indirect or consequential losses, or for what members do or fail to do.",
-      <>
-        <OwnerTodo fallback="">liability cap and any consumer-law carve-outs</OwnerTodo>
-      </>,
+      <OwnerTodo fallback="" key="liability-todo">liability cap and any consumer-law carve-outs</OwnerTodo>,
     ],
   },
   {

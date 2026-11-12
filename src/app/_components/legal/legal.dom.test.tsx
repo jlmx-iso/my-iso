@@ -48,6 +48,7 @@ describe.each(Object.entries(pages))("the %s page", (_name, Page) => {
     const { container } = renderWithProviders(<Page />);
     expect(container.querySelectorAll("[data-owner-todo]")).toHaveLength(0);
     expect(container.textContent).not.toMatch(/TODO/);
+    for (const paragraph of container.querySelectorAll("p")) expect(paragraph.textContent?.trim()).not.toBe("");
   });
 
   it("numbers its sections as headings", () => {

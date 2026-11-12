@@ -212,7 +212,7 @@ export function startAnalytics(): boolean {
  * - "unknown": the choice is forgotten; analytics without replay or person
  *   properties (a signed-in member by user id only), with PostHog's state
  *   back in memory and nothing left in the browser's
- *   storage. In an opt-in region (EU/EEA, UK, CH) forgetting the choice
+ *   storage. In an opt-in region (OPT_IN_COUNTRIES) forgetting the choice
  *   is a refusal, as for "denied".
  * - "analytics": like "granted", without session replay.
  *

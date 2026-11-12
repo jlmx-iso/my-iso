@@ -123,7 +123,9 @@ export default function ConsentBanner({ optInRequired }: Props) {
       setAnalyticsConsent(choice);
       window.dispatchEvent(new Event(CONSENT_CHANGED_EVENT));
       setPreferencesOpen(false);
-      setAnnouncement(SAVED_MESSAGE);
+      // Cleared first, so a second save in a row is announced again.
+      setAnnouncement("");
+      setTimeout(() => setAnnouncement(SAVED_MESSAGE), 100);
       if (source === "dialog" && !openedFromBanner.current) {
         // From the footer or Settings: say so where the person is.
         notify.success({ message: "They apply on this browser from now on.", title: SAVED_MESSAGE });

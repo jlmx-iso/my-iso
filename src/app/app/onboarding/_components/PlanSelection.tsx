@@ -19,9 +19,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
-import { type BillingInterval, formatPrice, FREE_PLAN, type PlanPricing, PRO_PLAN, proPriceView } from "~/_utils/plans";
+import { type BillingInterval, FREE_PLAN, type PlanPricing, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import ProFeatures from "~/app/_components/plans/ProFeatures";
+import { chargedPrice, renewalTerms } from "~/app/_components/plans/renewalTerms";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
@@ -62,7 +63,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
   const price = proPriceView(pricing, billingInterval);
   const annual = billingInterval === "annual";
   // What is charged each time: the yearly total for an annual plan.
-  const charged = annual ? formatPrice(pricing.annualPrice) : price.perMonth;
+  const charged = chargedPrice(pricing, annual);
 
   return (
     <Box maw={700} w="100%" mx="auto">
@@ -177,8 +178,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                 {annual ? `Upgrade to Pro — ${charged}/year` : price.cta}
               </Button>
               <Text size="xs" c="dimmed" ta="center" data-testid="renewal-terms">
-                Renews automatically every {annual ? "year" : "month"} at {charged} until you cancel. Cancel anytime
-                in Settings → Billing.
+                {renewalTerms(pricing, annual)}
               </Text>
               {pricing.isFoundingPrice && (
                 <Text size="xs" c="dimmed" ta="center">

@@ -40,6 +40,7 @@ afterEach(() => {
 });
 
 const banner = () => screen.queryByRole("region", { name: "Privacy choices" });
+const liveRegion = () => document.querySelector(".sr-only[aria-live=polite]");
 
 describe("ConsentBanner", () => {
   it("asks a visitor who has not chosen, with Accept and Decline side by side", async () => {
@@ -107,7 +108,7 @@ describe("ConsentBanner", () => {
       </>,
     );
     await userEvent.click(await screen.findByRole("button", { name: "Accept analytics" }));
-    expect(document.querySelector(".sr-only[aria-live=polite]")?.textContent).toBe("Privacy choices saved");
+    await waitFor(() => expect(liveRegion()?.textContent).toBe("Privacy choices saved"));
     await waitFor(() => expect(document.activeElement?.id).toBe("main-content"));
     // No toast for a choice made in the banner itself.
     expect(screen.queryByText("They apply on this browser from now on.")).toBeNull();
@@ -197,7 +198,23 @@ describe("privacy preferences", () => {
     expect(consentCookie()).toBe("denied");
     // Saved from the footer: a toast says so, and the live region too.
     expect(await screen.findByText("They apply on this browser from now on.")).toBeTruthy();
-    expect(document.querySelector(".sr-only[aria-live=polite]")?.textContent).toBe("Privacy choices saved");
+    await waitFor(() => expect(liveRegion()?.textContent).toBe("Privacy choices saved"));
+  });
+
+  it("announces a second save in a row again", async () => {
+    renderWithProviders(
+      <>
+        <PrivacyChoicesLink />
+        <ConsentBanner optInRequired={false} />
+      </>,
+    );
+    for (let save = 0; save < 2; save++) {
+      await userEvent.click(await screen.findByRole("button", { name: "Privacy choices" }));
+      await userEvent.click(screen.getByRole("button", { name: "Save choices" }));
+      // Emptied first, then filled: a screen reader hears it each time.
+      expect(liveRegion()?.textContent).toBe("");
+      await waitFor(() => expect(liveRegion()?.textContent).toBe("Privacy choices saved"));
+    }
   });
 
   it("opens from the Settings button too", async () => {

@@ -98,7 +98,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Elsewhere, until you choose, we count usage linked to your account id, with nothing stored in your browser.",
       "Session replay records clicks and page changes so we can see where the app gets in the way. It is only ever on if you switch it on. Every piece of text, everything typed and every photo is hidden in a recording.",
       "If your browser sends a Global Privacy Control signal, we treat it as a refusal, everywhere. You can change your choice at any time with \"Privacy choices\" in the footer or in Settings. Withdrawing consent does not affect what was processed before.",
-      "What we store in your browser:",
+      "What we store in your browser (on the live site the sign-in cookies carry the __Secure- or __Host- prefix):",
     ],
     table: {
       head: ["Name", "What it is for", "When", "How long"],
@@ -107,7 +107,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
         ["authjs.csrf-token, authjs.callback-url", "Protect and complete sign-in", "Always (needed)", "Until the browser closes"],
         ["authjs.state, authjs.pkce.code_verifier", "Complete sign-in with Google", "Only during a Google sign-in", "15 minutes"],
         ["iso_consent", "Remembers your privacy choice", "Once you choose", "6 months"],
-        ["iso_views", "Counts your view of a profile or event once a day (Pro insights); holds no identity", "When you view one, unless you refused analytics", "Until the end of the day (UTC)"],
+        ["iso_views", "Counts your view of a profile or event once a day (Pro insights); holds no identity", "When you view one, unless you refused analytics (or have not yet accepted, where acceptance is needed)", "Until the end of the day (UTC)"],
         ["ph_<project>_posthog (cookie and localStorage)", "Analytics state", "Only after you accept analytics", "Up to 1 year, or until you withdraw consent"],
         ["iso_analytics_user (localStorage)", "Ends the analytics identity when you sign out", "Only after you accept analytics", "Until sign-out or withdrawal"],
       ],
@@ -153,8 +153,14 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     title: "Deleting your account",
     body: [
-      "In Settings, \"Delete account\". It takes effect at once: you are signed out on every device, and any Pro subscription is cancelled immediately and its open invoices voided, so nothing more is charged. The unused part of the period you paid for is not refunded automatically; write to us if you think it should be.",
-      "We delete: your profile details, portfolio and every photo you uploaded (also from our image host), your comments, likes and saved photographers, your Discover swipes and matches (with their summaries), your notifications, your waitlist entry, pending sign-up checks and codes for your address, your Google sign-in link, the reviews others wrote about you, and your analytics with any session recordings.",
+      "In Settings, \"Delete account\". It takes effect at once: you are signed out on every device, and your profile and events are hidden from everyone. The rest below normally happens straight away; if one of our providers is unavailable at that moment, we finish it automatically, usually within the hour.",
+      "Any Pro subscription is cancelled and its open invoices voided, so nothing more is charged. The unused part of the period you paid for is not refunded automatically; write to us if you think it should be.",
+      "We delete: your profile details, portfolio and every photo you uploaded (also from our image host), your comments, likes and saved photographers, your Discover swipes and matches (with their summaries), your notifications, your waitlist entry, pending sign-up checks and codes for your address, your Google sign-in link, the reviews others wrote about you, and the view counts of your profile and events.",
+      <>
+        Your analytics and any session recordings are deleted from our analytics provider automatically
+        where we have set that up, and otherwise by hand within{" "}
+        <OwnerTodo fallback="one month">period for deleting analytics by hand</OwnerTodo>.
+      </>,
       "We hide your events: they disappear from ISO and their description and cover photo are deleted, but their title, date and place stay in the booking history of members who applied.",
       "What stays, without your name (shown as \"Deleted member\"): messages you sent stay in the conversations of the people who received them; reviews you wrote about others stay; bookings keep their status, date and event title, without your notes; other members' notifications that named you now name \"Deleted member\". Your invite code stops working; members you invited keep their accounts.",
       <>

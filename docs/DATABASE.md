@@ -439,8 +439,13 @@ policy it carries out.
 
 **How it is safe without transactions.** The first statement is one
 conditional `UPDATE "User" SET isDeleted = true, deletionRequestedAt = now
-WHERE id = ? AND isDeleted = false`. From then on the soft-delete extension
-hides the account from every read, which also ends its sessions (the
+WHERE id = ? AND isDeleted = false`, followed at once by `isDeleted` on their
+`Photographer` row and events (`hideAccount`; the run repeats it first, in
+case the request stopped in between). From then on the soft-delete
+extension hides the account, the public profile (its page, metadata,
+preview image and search, all of which find it through a relation such as
+`user: { handle }`) and the events from every read, before any step that
+talks to another service and could fail; it also ends the sessions (the
 Auth.js `jwt` callback asks `isAccountActive` on every session read and
 clears the cookie; mobile bearer tokens fail the same lookup). Then each
 step below runs in order; each is idempotent, so a run that stops part-way
@@ -464,7 +469,7 @@ with it answers "This account is still being deleted" (`deletion_pending`).
 
 | What | What happens |
 | --- | --- |
-| Pro subscription | Cancelled in Stripe **immediately**, without proration or a final invoice, and its open invoices voided so no retry can charge (nothing is left to use; no automatic refund for the rest of the period). Asked of Stripe whatever the stored status says. The `Subscription` row and `User.stripeId` stay as the billing record. Billing code looks a deleted account up too (`INCLUDING_DELETED`): a later webhook still updates the row, and a subscription that turns up for a deleted account (a checkout completed in another tab after deletion) is recorded and then cancelled the same way (`src/server/_billing/accountClosure.ts`). |
+| Pro subscription | Cancelled in Stripe **immediately** (or, if Stripe fails, by the retry; a webhook for the deleted account also voids any invoice still open, whatever the subscription status), without proration or a final invoice, and its open invoices voided so no retry can charge (nothing is left to use; no automatic refund for the rest of the period). Asked of Stripe whatever the stored status says. The `Subscription` row and `User.stripeId` stay as the billing record. Billing code looks a deleted account up too (`INCLUDING_DELETED`): a later webhook still updates the row, and a subscription that turns up for a deleted account (a checkout completed in another tab after deletion) is recorded and then cancelled the same way (`src/server/_billing/accountClosure.ts`). |
 | Live chat | Their open sockets in every thread's room are closed (`ChatRoom.revokeUser`, awaited, chunked). Thread membership stays; new connections are refused because no session is found. |
 | Analytics | The PostHog person (distinct id = user id) with its events and recordings is deleted through PostHog's API (`persons/bulk_delete`). Skipped and reported when not configured. |
 | Uploaded images (profile photo, avatar, portfolio including removed ones, event covers) | Deleted from Cloudinary first, while the rows that hold their URLs exist. An image already gone counts as deleted. |

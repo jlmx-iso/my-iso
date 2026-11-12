@@ -77,7 +77,7 @@ export default async function RootLayout({
   // Set by src/middleware.ts on every page request; the Content-Security-
   // Policy lets inline scripts run only with it.
   const nonce = await requestNonce();
-  // EU/EEA, UK and Switzerland: no analytics until the visitor accepts.
+  // Opt-in regions (OPT_IN_COUNTRIES in ~/_lib/consent): no analytics until the visitor accepts.
   const optInRequired = await requestRequiresOptIn();
 
   return (

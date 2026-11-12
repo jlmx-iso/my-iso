@@ -443,8 +443,8 @@ describe("OnboardingForm", () => {
     renderWithProviders(
       <OnboardingForm initialStage="plan" photographerCount={3} pricing={PRICING} user={USER} />,
     );
-    expect(screen.getByTestId("renewal-terms").textContent).toMatch(
-      /Renews automatically every month at \$10 until you cancel\. Cancel anytime\s+in Settings → Billing\./,
+    expect(screen.getByTestId("renewal-terms").textContent).toBe(
+      "Renews automatically every month at $10 until you cancel. Cancel anytime in Settings → Current plan → Manage subscription.",
     );
 
     await userEvent.click(screen.getByRole("radio", { name: /Annual/ }));
