@@ -10,7 +10,7 @@ import { issueOtp } from "~/server/_db/verificationToken";
 import { generateInviteCode, INVITE_CODE_ALPHABET } from "~/server/_utils/invite";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendOtpVerifyLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 import { createInvitedUser, signInWithOtp } from "./signup";
@@ -324,9 +324,11 @@ describe("invite redemption against SQLite", () => {
     it("rate limits verification per email address", async () => {
       const user = await createTestUser(testDb.db, { email: "ada@example.com" });
       const limit = RateLimits.OTP_VERIFY_EMAIL.limit;
+      // Guesses from many other clients have all but used up the window.
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL, IP, user.email, limit - 2);
 
       const statuses = [];
-      for (let i = 0; i < limit + 1; i++) {
+      for (let i = 0; i < 3; i++) {
         const result = await signInWithOtp(
           testDb.db,
           { code: "000000", email: user.email },
@@ -337,8 +339,7 @@ describe("invite redemption against SQLite", () => {
         statuses.push(result.status);
       }
 
-      expect(statuses.slice(0, limit).every((status) => status === "rejected")).toBe(true);
-      expect(statuses[limit]).toBe("rate_limited");
+      expect(statuses).toEqual(["rejected", "rejected", "rate_limited"]);
 
       // Even the right code is refused while limited.
       await issueOtp(testDb.db, user.email, { code: "123456" });
@@ -349,27 +350,23 @@ describe("invite redemption against SQLite", () => {
 
     it("caps guesses per address per day, however many new codes are issued", async () => {
       const user = await createTestUser(testDb.db, { email: "ada@example.com" });
-      const perWindow = RateLimits.OTP_VERIFY_EMAIL.limit;
       const perDay = RateLimits.OTP_VERIFY_EMAIL_DAILY.limit;
+      // Earlier in the day, in earlier 15-minute windows, all but two of the
+      // day's guesses were made (by any number of clients).
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_DAILY, IP, user.email, perDay - 2);
 
-      let evaluated = 0;
-      let ip = 0;
-      // Guess as fast as the 15-minute limit allows, with a fresh code and a
-      // fresh client address every time.
-      for (let window = 0; evaluated < perDay; window++) {
-        expect(window).toBeLessThan(10);
-        for (let i = 0; i < perWindow && evaluated < perDay; i++) {
-          await issueOtp(testDb.db, user.email, { code: "123456" });
-          await expect(
-            signInWithOtp(testDb.db, { code: "000000", email: user.email }, `198.51.100.${ip++}`, inviteOnly),
-          ).resolves.toEqual({ status: "rejected" });
-          evaluated += 1;
-        }
-        limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+      // The last two, each with a fresh code and a fresh client, are still
+      // looked at (and counted).
+      for (const ip of ["198.51.100.1", "198.51.100.2"]) {
+        await issueOtp(testDb.db, user.email, { code: "123456" });
+        await expect(
+          signInWithOtp(testDb.db, { code: "000000", email: user.email }, ip, inviteOnly),
+        ).resolves.toEqual({ status: "rejected" });
       }
 
       // A new 15-minute window, a new code, a new client and the RIGHT code:
       // still refused, and distinguishably so.
+      limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
       await issueOtp(testDb.db, user.email, { code: "123456" });
       await expect(
         signInWithOtp(testDb.db, { code: "123456", email: user.email }, "192.0.2.1", inviteOnly),
@@ -385,12 +382,7 @@ describe("invite redemption against SQLite", () => {
     it("answers a daily-capped address the same whether or not it has an account", async () => {
       const perDay = RateLimits.OTP_VERIFY_EMAIL_DAILY.limit;
       const statusAfterCap = async (email: string) => {
-        for (let i = 0; i < perDay; i++) {
-          await signInWithOtp(testDb.db, { code: "000000", email }, `198.51.100.${i}`, inviteOnly);
-          if ((i + 1) % RateLimits.OTP_VERIFY_EMAIL.limit === 0) {
-            limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
-          }
-        }
+        await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_DAILY, IP, email, perDay);
         return signInWithOtp(testDb.db, { code: "000000", email }, "192.0.2.1", inviteOnly);
       };
 
@@ -403,21 +395,36 @@ describe("invite redemption against SQLite", () => {
       const victim = await createTestUser(testDb.db, { email: "victim@example.com" });
       const attackerIp = "198.51.100.200";
 
-      // The attacker exhausts their own per-IP allowance on other addresses.
-      for (let i = 0; i < RateLimits.OTP_VERIFY_IP.limit; i++) {
-        await signInWithOtp(testDb.db, { code: "000000", email: `other${i}@example.com` }, attackerIp, inviteOnly);
-      }
-      const bucketsBefore = await testDb.raw.rateLimit.count();
+      // The attacker has used all but one of their per-IP allowance on other
+      // addresses; the next guess (really made) uses the last of it.
+      await spendOtpVerifyLimit(
+        testDb.db,
+        RateLimits.OTP_VERIFY_IP,
+        attackerIp,
+        "other@example.com",
+        RateLimits.OTP_VERIFY_IP.limit - 1,
+      );
+      await expect(
+        signInWithOtp(testDb.db, { code: "000000", email: "other@example.com" }, attackerIp, inviteOnly),
+      ).resolves.toEqual({ status: "rejected" });
+      const countersBefore = await testDb.raw.rateLimit.findMany({ orderBy: { key: "asc" } });
 
       // ...and then hammers the victim's address.
-      for (let i = 0; i < RateLimits.OTP_VERIFY_EMAIL_DAILY.limit + 5; i++) {
+      for (let i = 0; i < 5; i++) {
         await expect(
           signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly),
         ).resolves.toEqual({ status: "rate_limited" });
       }
 
-      // No counter was opened for the victim's address,
-      await expect(testDb.raw.rateLimit.count()).resolves.toBe(bucketsBefore);
+      // Only the attacker's own per-IP counter moved: no counter was opened
+      // or touched for the victim's address,
+      const countersAfter = await testDb.raw.rateLimit.findMany({ orderBy: { key: "asc" } });
+      expect(countersAfter.map(({ count: _count, ...row }) => row)).toEqual(
+        countersBefore.map(({ count: _count, ...row }) => row),
+      );
+      expect(countersAfter.filter((row, i) => row.count !== countersBefore[i]?.count).map((row) => row.key)).toEqual([
+        expect.stringMatching(/^otp-verify-ip:/),
+      ]);
       // and the victim signs in normally.
       await issueOtp(testDb.db, victim.email, { code: "123456" });
       await expect(
@@ -428,33 +435,38 @@ describe("invite redemption against SQLite", () => {
     it("one client cannot use up an address's daily allowance and lock its owner out", async () => {
       const victim = await createTestUser(testDb.db, { email: "victim@example.com" });
       const attackerIp = "198.51.100.200";
-      const perClientWindow = RateLimits.OTP_VERIFY_EMAIL_IP.limit;
       const perClientDay = RateLimits.OTP_VERIFY_EMAIL_IP_DAILY.limit;
-
-      // The attacker guesses at the victim's address all day, as fast as
-      // their own 15-minute limit lets them, far past their daily limit.
-      const statuses: string[] = [];
-      for (let i = 0; i < perClientDay * 4; i++) {
-        if (i > 0 && i % perClientWindow === 0) {
-          limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL_IP.windowSeconds);
-        }
-        const result = await signInWithOtp(
-          testDb.db,
-          { code: "000000", email: victim.email },
-          attackerIp,
-          inviteOnly,
-        );
-        statuses.push(result.status);
-      }
-
-      // The attacker got their own per-day allowance of guesses and no more,
-      expect(statuses.filter((status) => status === "rejected")).toHaveLength(perClientDay);
-      expect(statuses.slice(perClientDay).every((status) => status === "rate_limited")).toBe(true);
-      // which is well short of the ceiling shared with the victim,
+      // One client's daily allowance against an address is well short of the
+      // ceiling that client shares with the address's owner.
       expect(perClientDay).toBeLessThan(RateLimits.OTP_VERIFY_EMAIL_DAILY.limit);
 
-      // so the victim, on their own connection, still signs in the same day.
+      // The attacker has guessed at the victim's address all day: every
+      // guess counted for the pair (attacker, address) and for the address.
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_IP_DAILY, attackerIp, victim.email, perClientDay - 1);
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_DAILY, attackerIp, victim.email, perClientDay - 1);
+
+      // Their last allowed guess is looked at; every one after it is refused,
+      const statuses: string[] = [];
+      for (let i = 0; i < 4; i++) {
+        const result = await signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly);
+        statuses.push(result.status);
+      }
+      expect(statuses).toEqual(["rejected", "rate_limited", "rate_limited", "rate_limited"]);
+
+      // in later 15-minute windows too,
       limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+      await expect(
+        signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly),
+      ).resolves.toEqual({ status: "rate_limited" });
+
+      // and the refused guesses did not count against the address: it stands
+      // at the attacker's allowance, not more.
+      const addressWide = await testDb.raw.rateLimit.findMany({
+        where: { key: { startsWith: "otp-verify-email-daily:" } },
+      });
+      expect(addressWide).toMatchObject([{ count: perClientDay }]);
+
+      // So the victim, on their own connection, still signs in the same day.
       await issueOtp(testDb.db, victim.email, { code: "123456" });
       await expect(
         signInWithOtp(testDb.db, { code: "123456", email: victim.email }, IP, inviteOnly),
@@ -465,21 +477,24 @@ describe("invite redemption against SQLite", () => {
       const victim = await createTestUser(testDb.db, { email: "victim@example.com" });
       const attackerIp = "198.51.100.201";
       const limit = RateLimits.OTP_VERIFY_EMAIL_IP.limit;
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_IP, attackerIp, victim.email, limit - 1);
 
-      for (let i = 0; i < limit; i++) {
-        await signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly);
-      }
+      // The last guess of the window goes through to the code check...
+      await expect(
+        signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly),
+      ).resolves.toEqual({ status: "rejected" });
       const sharedBefore = await testDb.raw.rateLimit.findMany({
         where: { key: { startsWith: "otp-verify-email:" } },
       });
-      for (let i = 0; i < 10; i++) {
+      // ...and the ones after it are refused on the client's own limit.
+      for (let i = 0; i < 3; i++) {
         await expect(
           signInWithOtp(testDb.db, { code: "000000", email: victim.email }, attackerIp, inviteOnly),
         ).resolves.toEqual({ status: "rate_limited" });
       }
 
-      // Refused on the client's own limit: the address-wide counter did not move.
-      expect(sharedBefore).toMatchObject([{ count: limit }]);
+      // The address-wide counter did not move.
+      expect(sharedBefore).toMatchObject([{ count: 1 }]);
       await expect(
         testDb.raw.rateLimit.findMany({ where: { key: { startsWith: "otp-verify-email:" } } }),
       ).resolves.toEqual(sharedBefore);

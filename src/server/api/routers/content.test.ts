@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { MAX_IMAGE_BYTES } from "~/server/_utils/image";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller, fakeCloudinary } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
@@ -198,9 +198,8 @@ describe("content routers against SQLite", () => {
     });
 
     it("is rate limited per user", async () => {
-      for (let i = 0; i < RateLimits.MEMBER_SEARCH.limit; i++) {
-        await searchAs(visitor).searchAll({ query: "o" });
-      }
+      await spendRateLimit(testDb.db, RateLimits.MEMBER_SEARCH, `user:${visitor.id}`, RateLimits.MEMBER_SEARCH.limit - 1);
+      await searchAs(visitor).searchAll({ query: "o" });
       await expect(searchAs(visitor).searchAll({ query: "o" })).rejects.toMatchObject({
         code: "TOO_MANY_REQUESTS",
       });

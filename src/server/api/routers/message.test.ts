@@ -7,7 +7,7 @@ import { ACTIVE_BOOKING_STATUSES, threadParticipantKey } from "~/server/_db/mess
 import { MAX_NEW_CONVERSATIONS_PER_DAY, RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -686,11 +686,15 @@ describe("messageRouter against SQLite", () => {
     });
 
     it("a group that does not fit is refused whole, without using up what was left", async () => {
-      const people = await strangers(MAX_NEW_CONVERSATIONS_PER_DAY);
+      const people = await strangers(2);
       const ids = people.map((person) => person.id);
-      for (const id of ids.slice(0, MAX_NEW_CONVERSATIONS_PER_DAY - 2)) {
-        await as(alice).createThread({ initialMessage: "hi", participants: [id] });
-      }
+      // Alice has already reached all but two of the people she may today.
+      await spendRateLimit(
+        testDb.db,
+        RateLimits.NEW_CONVERSATION_DAILY,
+        `user:${alice.id}`,
+        MAX_NEW_CONVERSATIONS_PER_DAY - 2,
+      );
 
       // Two places left; a group of three would need three.
       const error = await errorOf(
@@ -700,7 +704,7 @@ describe("messageRouter against SQLite", () => {
         }),
       );
       expect(reasonOf(error)).toBe(ErrorReason.NEW_CONVERSATION_LIMIT);
-      expect(await testDb.db.messageThread.count()).toBe(MAX_NEW_CONVERSATIONS_PER_DAY - 2);
+      expect(await testDb.db.messageThread.count()).toBe(0);
 
       // The refusal cost nothing: the two places are still there.
       await as(alice).createThread({ initialMessage: "hi", participants: [ids.at(-1) ?? ""] });
@@ -840,20 +844,23 @@ describe("messageRouter against SQLite", () => {
       ]);
       expect(await testDb.raw.threadRead.count({ where: { threadId: thread.id, userId: bob.id } })).toBe(1);
 
-      for (let i = 2; i < RateLimits.MESSAGE_MARK_READ.limit; i++) {
-        await as(bob).markThreadRead({ threadId: thread.id });
-      }
+      await spendRateLimit(testDb.db, RateLimits.MESSAGE_MARK_READ, `user:${bob.id}`, RateLimits.MESSAGE_MARK_READ.limit - 2);
       await expect(as(bob).markThreadRead({ threadId: thread.id })).rejects.toMatchObject({
         code: "TOO_MANY_REQUESTS",
       });
     });
 
     it("counts a full page of conversations in one grouped query, within D1's parameter limit", async () => {
-      const senders = await Promise.all(
-        Array.from({ length: 50 }, () => createTestUser(testDb.db, { isDiscoverable: true })),
-      );
-      for (const sender of senders) {
-        await as(sender).createThread({ initialMessage: "hi bob", participants: [bob.id] });
+      // 50 conversations with one unread message each, written directly:
+      // what is under test is the read side.
+      for (let i = 0; i < 50; i++) {
+        await testDb.raw.messageThread.create({
+          data: {
+            messages: { create: { content: "hi bob", senderId: alice.id } },
+            participantKey: `page-test-${i}`,
+            participants: { connect: [{ id: alice.id }, { id: bob.id }] },
+          },
+        });
       }
       const queryRaw = vi.spyOn(testDb.db, "$queryRaw");
 

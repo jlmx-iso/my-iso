@@ -5,7 +5,7 @@ import { setStripeClientForTests } from "~/server/_billing/stripe";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 import { buildSubscription, startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
 
@@ -268,9 +268,8 @@ describe("createCheckoutSession", () => {
     await expect(anonymous.createCheckoutSession({ billingInterval: "monthly" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
-    for (let i = 0; i < RateLimits.BILLING_CHECKOUT.limit; i++) {
-      await as(user).createCheckoutSession({ billingInterval: "monthly" });
-    }
+    await spendRateLimit(testDb.db, RateLimits.BILLING_CHECKOUT, `user:${user.id}`, RateLimits.BILLING_CHECKOUT.limit - 1);
+    await as(user).createCheckoutSession({ billingInterval: "monthly" });
     await expect(as(user).createCheckoutSession({ billingInterval: "monthly" })).rejects.toMatchObject({
       code: "TOO_MANY_REQUESTS",
     });
