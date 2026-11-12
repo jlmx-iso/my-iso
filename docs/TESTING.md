@@ -1,0 +1,239 @@
+# Testing
+
+Most of this codebase is written by agents. The test suite is what stops a
+change from quietly breaking something else, so the bar is high and
+enforced by CI, and it only moves up.
+
+## The bar
+
+| Check | Rule | Where | Blocks a merge |
+| --- | --- | --- | --- |
+| Coverage, global | lines 65%, branches 58%, functions 60%, statements 66% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
+| Coverage, critical code | higher per-directory floors for `src/server/_billing`, `src/server/_db`, `src/server/api/routers`, `src/server/_jobs`, `src/_lib` | `coverage-thresholds.json` | yes |
+| Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
+| Authorization matrix | **every tRPC procedure has a row** saying who may call it, and behaves as its row says | `src/server/api/authz.matrix.test.ts` | yes |
+| Mutation score | reported weekly, for a few critical modules | `stryker.config.mjs` | no |
+
+The numbers above are the values at the time of writing; the JSON file is
+the source of truth.
+
+### Rules for every change (agents included)
+
+1. **Every pull request adds tests for what it changes.** Diff coverage
+   enforces the minimum (90% of changed lines run); the review checks that
+   the tests assert the behaviour, not just execute it.
+2. **A bug fix starts with a failing test.** Write the test that reproduces
+   the bug, see it fail, then fix the code. The test stays.
+3. **A new tRPC procedure gets a row in the authorization matrix** in the
+   same pull request. The test fails until it has one. Choosing `public`, or
+   moving a procedure to a weaker level, is a security decision: say why in
+   the pull request.
+4. **Never lower a threshold.** If coverage rose, ratchet it (below). If a
+   change cannot keep a threshold, it needs more tests, not a lower bar.
+5. Test through the real thing where the suite already can: the database
+   layer runs against real SQLite (`src/test/helpers/sqlite.ts`), billing
+   against the real Stripe SDK talking to a local stub
+   (`src/test/helpers/stripeStub.ts`), components through the DOM.
+
+## Running the suites
+
+| Command | What |
+| --- | --- |
+| `npm test` | Vitest, all unit, integration and DOM tests (about 90 s) |
+| `npm run test:watch` | the same, watching |
+| `npm run test:coverage` | the same with coverage; fails under any threshold. Writes `coverage/` (HTML in `coverage/index.html`, `lcov.info`, `coverage-summary.json`) |
+| `npm run coverage:diff` | diff coverage of this branch against `origin/main`, after `test:coverage` (`-- --base main --threshold 90` to change either) |
+| `npm run coverage:ratchet` | raise the thresholds to the measured coverage, after `test:coverage` |
+| `npm run test:mutation` | Stryker over the files in `stryker.config.mjs` (tens of minutes; `-- --mutate src/_lib/telemetryScrub.ts` for one file). Report in `reports/mutation/index.html` |
+| `npm run test:e2e` | Playwright against the built Worker in workerd with a local D1, after `npm run build:cf` (see "End-to-end" below) |
+
+One file or test: `npx vitest run src/server/_billing/entitlements.test.ts`,
+`npx vitest run -t "retries a failed call"`.
+
+## Coverage
+
+### Scope
+
+Coverage counts every file under `src/` (`*.ts`, `*.tsx`, `*.js`), including
+files no test imports, which count as 0%. `vitest.config.ts` lists what is
+left out and why, each with a comment:
+
+- tests and test helpers (`*.test.*`, `src/test/`);
+- type-only files (`*.d.ts`, `src/types/`, `src/_types/`) and styles;
+- Next.js route-convention files (`page.tsx`, `layout.tsx`, `error.tsx`,
+  ...). Most are async server components that need the Next.js request
+  scope; they are covered by the build and the E2E smoke. Keep logic out of
+  them: put it in a module or component that is measured. Route handlers
+  (`route.ts`) are in scope;
+- `src/instrumentation-client.ts`, `src/middleware.ts`: framework bootstrap;
+- `src/server/db.ts`: chooses the database driver at import time; tests
+  inject their own SQLite client;
+- `src/do/ChatRoom.ts`: imports `cloudflare:workers`, which exists only in
+  workerd. Its logic is in `chatRoomPolicy.ts` and `realtimeGateway.ts`;
+- `src/server/_lib/emails/`: React Email templates (static markup).
+
+Add to this list only for code that cannot run under Vitest, with the
+reason next to it.
+
+### Thresholds and the ratchet
+
+`coverage-thresholds.json` holds the global thresholds and the
+per-directory ones (Vitest `coverage.thresholds`, glob keys). They were set
+to the measured values rounded down. `npm run test:coverage` fails if any is
+missed.
+
+When a change raises coverage, run:
+
+```sh
+npm run test:coverage
+npm run coverage:ratchet      # rewrites coverage-thresholds.json, upward only
+```
+
+and commit `coverage-thresholds.json` with the change. The script raises
+each threshold to the new measured value rounded down and never lowers one;
+`npm run coverage:ratchet -- --check` reports what it would change and
+exits 1, without writing. Do this whenever you add tests; there is no need
+to ratchet on every pull request, but the bar should never sit far below the
+measurement.
+
+Coverage must be the same on every run, or the gate fails at random. Code
+that does something only by chance (a 1% cleanup, say) takes the random
+function as a parameter, and a test drives both branches (see
+`src/server/_billing/eventLog.test.ts`).
+
+### Diff coverage
+
+On pull requests CI runs, after the coverage run:
+
+```sh
+npm run coverage:diff -- --base origin/<base branch> --threshold 90
+```
+
+It takes `git diff --unified=0 <base>...HEAD -- src/` (the changes since the
+branch left its base), keeps the added or edited lines of non-test files,
+and looks each up in `coverage/lcov.info`. Lines the coverage report does
+not count as executable (comments, types, imports, blank lines) do not
+count. It prints each file's covered/total and the uncovered line numbers,
+lists changed files outside the coverage scope, writes the same to the job
+summary, and fails under 90%. A change with no executable lines in `src/`
+passes.
+
+## Authorization matrix
+
+`src/server/api/authz.matrix.test.ts` holds one table, `POLICY`, with a row
+per procedure: its access level and a minimal valid input.
+
+| access | anonymous | member | Pro member | founder / ambassador |
+| --- | --- | --- | --- | --- |
+| `public` | allowed | allowed | allowed | allowed |
+| `member` (`protectedProcedure`) | UNAUTHORIZED | allowed | allowed | allowed |
+| `pro` (`proProcedure`) | UNAUTHORIZED | FORBIDDEN | allowed | allowed |
+| `admin` (`founderProcedure`) | UNAUTHORIZED | FORBIDDEN | FORBIDDEN | allowed |
+
+The test walks `appRouter._def.procedures`, so a new procedure without a row
+fails ("missing"), and so does a row for a procedure that no longer exists
+("stale"). Each procedure is called as each of the five callers against a
+real SQLite database with outbound network disabled. "Allowed" means the
+call got past the gate in `src/server/api/trpc.ts`: it may still fail on its
+own terms (NOT_FOUND for the made-up ids), but not with a gate's error and
+not on input validation. When a resolver itself answers UNAUTHORIZED or
+FORBIDDEN for the minimal input (an object-level check such as "not a
+participant of this thread"), the row says so in `resolverDenies`.
+
+## DOM tests
+
+Vitest runs in Node. A test file that renders components opts into a DOM
+with a docblock on its first line, and is named `*.dom.test.tsx`:
+
+```tsx
+// @vitest-environment happy-dom
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { renderWithProviders, trpcError } from "~/test/dom/render";
+
+vi.mock("next-auth/react", () => import("~/test/dom/session"));
+import { testSession } from "~/test/dom/session";
+
+it("...", async () => {
+  testSession.signIn("user-1");
+  const view = renderWithProviders(<Thing />, {
+    trpc: {
+      thing: {
+        get: () => ({ id: "t1" }),
+        save: () => {
+          throw trpcError("FORBIDDEN", "Not yours");
+        },
+      },
+    },
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Save" }));
+  expect(view.callsTo("thing.save")).toEqual([{ id: "t1" }]);
+});
+```
+
+`renderWithProviders` wraps the component in `MantineProvider` and the real
+`@trpc/react-query` client (`api` from `~/trpc/react`) whose one link answers
+from the handlers you give it, typed per procedure. Queries, mutations and
+their `onError`/`onSuccess` run as in the app; only the network is replaced.
+A call without a handler fails. `view.calls` and `view.callsTo(path)` record
+what was sent. React Query does not retry in tests.
+
+Test through the DOM: roles, labels and text a user sees. Do not add test
+hooks to components. For time, use fake timers limited to what the code
+uses (`vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })`)
+and advance them inside `act` (see `MessageFeed.dom.test.tsx`,
+`BookingCard.dom.test.tsx`).
+
+## Mutation testing
+
+`npm run test:mutation` runs [Stryker](https://stryker-mutator.io/) over the
+modules listed in `stryker.config.mjs` (entitlements, booking transitions,
+the rate limiter, telemetry scrubbing). For each small change it makes to
+the code, it runs the related tests; a change no test notices "survives".
+The HTML report (`reports/mutation/index.html`) shows each survivor in
+place.
+
+First local run: `src/_lib/telemetryScrub.ts` scored 83% (109 of 131
+mutants killed). Survivors worth a test: a non-Error thrown value keeps a
+six-digit code (`scrubErrorForLog`'s `codes: true` for non-Errors is
+untested); `$set_once` handling and nested `email`/`name` keys outside
+`$set`; `$snapshot_bytes` passing through unscrubbed; query strings on
+`http://` and `ws://` URLs (only `https`/`wss` are tested); and the
+`MAX_DEPTH` boundary. `src/server/_billing/entitlements.ts` scored 96% (122
+of 127); its survivors: the `refundedInvoiceId !== null` guard (no test has
+a row with neither a refunded nor a latest invoice) and `isPastDue` on a
+disputed `unpaid` subscription.
+
+It runs weekly and on demand (`.github/workflows/mutation.yml`, Actions tab,
+"Run workflow"), uploads the report as the `mutation-report` artifact and
+puts the score in the job summary. It is not a required check. Read the
+survivors: one that changes behaviour that matters (who gets access, what is
+redacted, when a limit trips) is a missing test; equivalent mutants (a
+change with no observable effect) can be ignored.
+
+## End-to-end
+
+```sh
+NEXT_PUBLIC_BASE_URL=http://localhost:8788 npm run build:cf   # with the usual build variables
+npm run test:e2e
+```
+
+`npm run test:e2e` runs Playwright (`e2e/`, `playwright.config.ts`) against
+the built Worker. Its web server, `e2e/serve.mjs`, applies `migrations/` and
+`prisma/seed-staging.sql` to a fresh local D1 in `e2e/.state`, then starts
+`wrangler dev` on port 8788 with placeholder runtime variables passed as
+`--var` (your `.dev.vars` is not used). The tests cover the landing page,
+the sign-in page, the redirect of an anonymous visitor, and a signed-in
+member (the seeded Sarah Chen) loading the events feed and creating an
+event. The session is the encrypted JWT Auth.js would set after a sign-in,
+minted in the test with the server's placeholder `AUTH_SECRET` and set as a
+cookie. About 25 seconds after the build.
+
+Chromium: Playwright's own (`npx playwright install chromium`), or one
+already on the machine at `/opt/pw-browsers/chromium` or `E2E_CHROMIUM_PATH`.
+Traces are off. CI runs this as the "End-to-end smoke" job, in parallel with
+the others.
+
+Known noise: typing a location makes the Worker call Google Places with the
+placeholder key; the call fails and the form accepts the typed text.
