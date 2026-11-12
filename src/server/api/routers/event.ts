@@ -532,6 +532,11 @@ export const eventRouter = createTRPCRouter({
 
       const rows = await ctx.db.event.findMany({
         include: {
+          // Live comments per event, for the card's comment button: counted
+          // in the same query, so the feed needs no request per event. (The
+          // soft-delete extension does not reach into an include, hence the
+          // explicit filter.)
+          _count: { select: { comments: { where: { isDeleted: false } } } },
           photographer: { select: eventPhotographerSelect },
         },
         // The id breaks ties between events at the same time, so pages
@@ -548,8 +553,9 @@ export const eventRouter = createTRPCRouter({
       });
       const { items, nextCursor } = toPage(rows, input.limit);
       const last = items.at(-1);
+      const withCounts = items.map(({ _count, ...event }) => ({ ...event, commentCount: _count.comments }));
       return {
-        items: await withDerivedFulfilled(ctx.db, items),
+        items: await withDerivedFulfilled(ctx.db, withCounts),
         nextCursor: nextCursor && last ? encodeFeedCursor(last) : null,
       };
     }),

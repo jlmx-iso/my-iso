@@ -2,8 +2,9 @@
  * Bookings as the browser sees them: which actions to offer, what each
  * status is called, and how an application to an event stands.
  *
- * WHICH actions a card offers is decided by bookingCardActions
- * (~/app/_components/bookings/bookingActions), from the server's own rule;
+ * WHICH actions a card offers, and the status each one sends, are derived
+ * from the server's transition table in
+ * ~/app/_components/bookings/bookingActions;
  * this module holds what goes around them: labels, hints, money.
  */
 
@@ -12,15 +13,6 @@ export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 export type BookingRole = "applicant" | "owner";
 export type BookingAction = "accept" | "decline" | "withdraw" | "cancel" | "complete";
-
-/** The status `booking.updateStatus` is asked for to perform each action. */
-export const ACTION_TARGET_STATUS = {
-  accept: "accepted",
-  cancel: "canceled",
-  complete: "completed",
-  decline: "declined",
-  withdraw: "canceled",
-} as const satisfies Record<BookingAction, Exclude<BookingStatus, "applied">>;
 
 export function isBookingStatus(value: unknown): value is BookingStatus {
   return BOOKING_STATUSES.some((status) => status === value);

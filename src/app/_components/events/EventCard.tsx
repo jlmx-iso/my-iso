@@ -30,6 +30,9 @@ type EventCardProps = {
 /** One event in the feed. Renders from the feed row: no request of its own. */
 export default function EventCard({ event, application, currentUserId, now }: EventCardProps) {
     const [isCommentFormOpen, setIsCommentFormOpen] = useState(false);
+    // Comments posted from this card since the feed row was loaded.
+    const [postedHere, setPostedHere] = useState(0);
+    const commentCount = event.commentCount + postedHere;
     const href = `/app/events/${event.id}`;
     const isPast = new Date(event.date).getTime() < now.getTime();
 
@@ -81,11 +84,11 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                         className="touch-target"
                         leftSection={<IconMessageCircle size={16} aria-hidden />}
                         aria-expanded={isCommentFormOpen}
-                        aria-label={`Comment on ${event.title}`}
+                        aria-label={`Comment on ${event.title}, ${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
                         onClick={() => setIsCommentFormOpen((open) => !open)}
+                        data-testid="event-card-comments"
                     >
-                        {/* The feed row carries no comment count; the event page shows it. */}
-                        Comment
+                        {commentCount}
                     </Button>
                     <ApplyAction
                         event={event}
@@ -98,7 +101,7 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                     <AddCommentForm
                         eventId={event.id}
                         eventTitle={event.title}
-                        onPosted={() => setIsCommentFormOpen(false)}
+                        onPosted={() => setPostedHere((count) => count + 1)}
                     />
                 )}
             </Stack>

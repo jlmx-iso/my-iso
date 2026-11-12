@@ -17,7 +17,6 @@ import { useState } from "react";
 import { formatDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
 import {
-  ACTION_TARGET_STATUS,
   type BookingAction,
   type BookingRole,
   applicationOfBooking,
@@ -33,7 +32,7 @@ import ConfirmDialog from "~/app/_components/ConfirmDialog";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
-import { bookingCardActions } from "./bookingActions";
+import { availableBookingActions, requestedStatusFor } from "./bookingActions";
 import { useNowAtBoundaries } from "./boundaryClock";
 
 type BookingUser = {
@@ -189,7 +188,7 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
   const perform = (action: BookingAction) => {
     const { success } = actionView(action, role, name, event.title);
     updateStatus(
-      { bookingId: booking.id, status: ACTION_TARGET_STATUS[action] },
+      { bookingId: booking.id, status: requestedStatusFor(action) },
       { onSuccess: () => notify.success(success) },
     );
   };
@@ -198,15 +197,14 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
   // card's clock moves at exactly those moments.
   const startsAt = new Date(event.date);
   const now = useNowAtBoundaries([startsAt, new Date(startsAt.getTime() + event.duration * HOUR_MS)]);
-  // Which buttons: the server's own rule (see bookingCardActions).
-  const offered = bookingCardActions({ event: { date: startsAt, duration: event.duration }, now, status: booking.status, variant });
-  const actions: BookingAction[] = [
-    ...(offered.accept ? (["accept"] as const) : []),
-    ...(offered.decline ? (["decline"] as const) : []),
-    // "Cancel" is a withdrawal while it is still an application.
-    ...(offered.cancel ? ([booking.status === "accepted" ? "cancel" : "withdraw"] as const) : []),
-    ...(offered.complete ? (["complete"] as const) : []),
-  ];
+  // Which buttons: exactly what the server's transition rules allow this
+  // viewer's role now (see availableBookingActions).
+  const actions = availableBookingActions({
+    event: { date: startsAt, duration: event.duration },
+    now,
+    status: booking.status,
+    variant,
+  });
   const situation = { event, now, role, status: booking.status };
   const hint = bookingHint({ ...situation, canReapply: applicationOfBooking(booking).canReapply });
   const status = bookingStatusView(booking.status);
@@ -302,8 +300,8 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
                   color={view.color}
                   leftSection={action === "accept" || action === "complete" ? <IconCheck size={16} aria-hidden /> : undefined}
                   onClick={() => (view.confirm ? setConfirming(action) : perform(action))}
-                  loading={isPending && variables?.status === ACTION_TARGET_STATUS[action]}
-                  disabled={isPending && variables?.status !== ACTION_TARGET_STATUS[action]}
+                  loading={isPending && variables?.status === requestedStatusFor(action)}
+                  disabled={isPending && variables?.status !== requestedStatusFor(action)}
                   data-testid={`booking-${action}`}
                 >
                   {view.label}
