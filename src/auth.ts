@@ -3,7 +3,6 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
-import ResendProvider from "next-auth/providers/resend";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
@@ -15,7 +14,22 @@ import { getClientIp } from "~/server/_utils/clientIp";
 import { hashEmail } from "~/server/_utils/hash";
 import { db } from "~/server/db";
 
-/** Surfaces as `?error=CredentialsSignin&code=rate_limited`. */
+/**
+ * Client contract for the `otp` sign-in (`signIn("otp", { redirect: false })`
+ * or POST /api/auth/callback/otp):
+ *
+ * - `error: "CredentialsSignin", code: "rate_limited"`: too many attempts
+ *   from this client or for this address (15-minute or daily cap), or the
+ *   limiter is unavailable. The code entered was NOT looked at. Show "too
+ *   many attempts, try again later"; entering another code will not help
+ *   until the window passes.
+ * - `error: "CredentialsSignin", code: "credentials"` (the Auth.js default):
+ *   wrong, expired, used or attempt-exhausted code, or a sign-up without a
+ *   valid invite. Offer to send a new code.
+ *
+ * Neither answer depends on whether the address has an account: the limits
+ * are counted per address before any lookup.
+ */
 class OtpRateLimited extends CredentialsSignin {
   code = "rate_limited";
 }
@@ -41,9 +55,17 @@ const prismaAdapter = PrismaAdapter(db);
  * PrismaAdapter with sign-up routed through `createInvitedUser`. Auth.js
  * swallows errors thrown from `events.createUser`, so the invite cannot be
  * enforced there; an error thrown from the adapter does abort the sign-in.
+ *
+ * The verification-token methods are removed: they exist for Auth.js email
+ * ("magic link") providers, which this app does not offer. Sign-in codes are
+ * issued and checked by ~/server/_db/verificationToken, never through the
+ * adapter, and without these methods Auth.js refuses to start if an email
+ * provider is ever added back by mistake.
  */
 const adapter: Adapter = {
   ...prismaAdapter,
+  createVerificationToken: undefined,
+  useVerificationToken: undefined,
   createUser: async (data) => {
     const firstName = data.firstName || data.name?.split(" ")[0] || "";
     const user = await createInvitedUser(
@@ -64,14 +86,16 @@ const adapter: Adapter = {
 /**
  * Auth.js v5 configuration
  * Uses PrismaAdapter which works with both LibSQL (local) and D1 (Cloudflare)
+ *
+ * Providers are exactly Google and `otp` (see auth.test.ts). There is no
+ * email "magic link" provider: its /api/auth/signin/<id> endpoint mails any
+ * member on request, unthrottled, and answers differently for members and
+ * non-members.
  */
 export const authConfig = {
   adapter,
   providers: [
     ...providers,
-    ...(env.RESEND_API_KEY
-      ? [ResendProvider({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })]
-      : []),
     CredentialsProvider({
       id: "otp",
       name: "Email OTP",
@@ -179,7 +203,7 @@ export const authConfig = {
       // race-free check is the atomic claim in createInvitedUser.
       const pending = await findPendingInvite(db, normalizedEmail);
       if (!pending || !(await isInviteRedeemable(db, pending.code))) {
-        // Google: redirect with a user-visible error; Resend: silently block
+        // Google: redirect with a user-visible error; otherwise just refuse.
         return account?.provider === "google" ? "/join?error=invite_required" : false;
       }
 
