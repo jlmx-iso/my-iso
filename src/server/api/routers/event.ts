@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { syncEventFulfilled, withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
@@ -345,18 +346,27 @@ export const eventRouter = createTRPCRouter({
         where: { eventId: event.id },
       });
 
-      return { ...event, commentCount };
+      // `isFulfilled` is derived from the bookings, not read from the
+      // column; if the column disagrees (the write after a booking
+      // transition failed), it is put right here, idempotently.
+      const [derived] = await withDerivedFulfilled(ctx.db, [event]);
+      if (derived && derived.isFulfilled !== event.isFulfilled) {
+        await syncEventFulfilled(ctx.db, event.id);
+      }
+
+      return { ...(derived ?? event), commentCount };
     }),
 
   getByPhotographerId: protectedProcedure
     .input(z.object({ photographerId: idInput, ...pageInput }))
-    .query(({ ctx, input }) => {
-      return ctx.db.event.findMany({
+    .query(async ({ ctx, input }) => {
+      const events = await ctx.db.event.findMany({
         ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
         orderBy: [{ date: "desc" }, { id: "desc" }],
         take: input.limit,
         where: { photographerId: input.photographerId },
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   getCommentById: protectedProcedure
@@ -430,7 +440,10 @@ export const eventRouter = createTRPCRouter({
    * `locations` narrows to events in those places (city match, as
    * getRecentByLocation); empty or omitted means everywhere. Pass
    * `nextCursor` back as `cursor` for the next page; it is null on the last.
-   * Deleted events never appear.
+   * Deleted events never appear. The next page continues after the cursor
+   * event's place in the order even if that event has since started (and so
+   * left the upcoming feed) or been deleted; a cursor that names no event
+   * at all is a BAD_REQUEST.
    */
   getFeedPage: protectedProcedure
     .input(z.object({
@@ -444,8 +457,32 @@ export const eventRouter = createTRPCRouter({
       const upcoming = input.when === "upcoming";
       const direction = upcoming ? "asc" : "desc";
 
+      // Keyset paging: the next page is "everything after the cursor event
+      // in (date, id) order", stated as a condition on those two columns.
+      // (Prisma's `cursor` + `skip: 1` positions itself within the FILTERED
+      // rows: once the cursor event has started, or been deleted, it is no
+      // longer among them, and the skip would swallow the first event of
+      // the next page instead.) The cursor event is therefore looked up
+      // whatever has become of it, deleted included; its position is still
+      // where the previous page ended.
+      let after: { date: Date; id: string } | null = null;
+      if (input.cursor) {
+        after = await ctx.db.event.findFirst({
+          select: { date: true, id: true },
+          // Naming isDeleted (with no condition on it) opts out of the
+          // soft-delete filter.
+          where: { id: input.cursor, isDeleted: {} },
+        });
+        if (!after) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This page of the feed is no longer available. Reload the feed.",
+          });
+        }
+      }
+      const beyond = upcoming ? ("gt" as const) : ("lt" as const);
+
       const rows = await ctx.db.event.findMany({
-        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
         include: {
           photographer: { select: eventPhotographerSelect },
         },
@@ -454,11 +491,17 @@ export const eventRouter = createTRPCRouter({
         orderBy: [{ date: direction }, { id: direction }],
         take: input.limit + 1,
         where: {
-          date: upcoming ? { gte: now } : { lt: now },
-          ...(filters.length > 0 ? { OR: filters } : {}),
+          AND: [
+            { date: upcoming ? { gte: now } : { lt: now } },
+            ...(filters.length > 0 ? [{ OR: filters }] : []),
+            ...(after
+              ? [{ OR: [{ date: { [beyond]: after.date } }, { date: after.date, id: { [beyond]: after.id } }] }]
+              : []),
+          ],
         },
       });
-      return toPage(rows, input.limit);
+      const { items, nextCursor } = toPage(rows, input.limit);
+      return { items: await withDerivedFulfilled(ctx.db, items), nextCursor };
     }),
 
   /**
@@ -472,10 +515,10 @@ export const eventRouter = createTRPCRouter({
       locations: feedLocationsInput,
       startAt: z.number().int().min(0).max(10_000).optional(),
     }))
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       const filters = locationFilters(input.locations);
 
-      return ctx.db.event.findMany({
+      const events = await ctx.db.event.findMany({
         include: {
           photographer: { select: eventPhotographerSelect },
         },
@@ -486,6 +529,7 @@ export const eventRouter = createTRPCRouter({
           ...(filters.length > 0 ? { OR: filters } : {}),
         },
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   search: protectedProcedure
@@ -495,8 +539,8 @@ export const eventRouter = createTRPCRouter({
       beforeDate: z.date(),
       query: z.string().trim().min(1).max(100),
     }))
-    .query(({ ctx, input }) => {
-      return ctx.db.event.findMany({
+    .query(async ({ ctx, input }) => {
+      const events = await ctx.db.event.findMany({
         orderBy: [{ date: "asc" }, { id: "asc" }],
         where: {
           date: { gte: input.afterDate, lte: input.beforeDate },
@@ -508,6 +552,7 @@ export const eventRouter = createTRPCRouter({
         },
         take: 50,
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   update: protectedProcedure

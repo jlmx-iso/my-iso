@@ -101,9 +101,13 @@ describe("booking state machine", () => {
   describe("the transition table", () => {
     const actions = Object.keys(BOOKING_TRANSITIONS) as BookingAction[];
     const roles: BookingRole[] = ["applicant", "owner"];
-    const future = new Date(Date.now() + DAY_MS);
-    const past = new Date(Date.now() - DAY_MS);
+    // A two-hour event tomorrow, one that began an hour ago, one from yesterday.
+    const future = { date: new Date(Date.now() + DAY_MS), duration: 2 };
+    const ongoing = { date: new Date(Date.now() - DAY_MS / 24), duration: 2 };
+    const past = { date: new Date(Date.now() - DAY_MS), duration: 2 };
     const allowed = new Set([
+      "withdraw:applicant:applied:ongoing",
+      "decline:owner:applied:ongoing",
       "withdraw:applicant:applied:future",
       "withdraw:applicant:applied:past",
       "accept:owner:applied:future",
@@ -120,8 +124,8 @@ describe("booking state machine", () => {
       for (const action of actions) {
         for (const role of roles) {
           for (const status of ["applied", "accepted", "declined", "completed", "canceled"]) {
-            for (const [label, date] of [["future", future], ["past", past]] as const) {
-              if (checkTransition(action, role, { status }, date, new Date()) === null) {
+            for (const [label, event] of [["future", future], ["ongoing", ongoing], ["past", past]] as const) {
+              if (checkTransition(action, role, { status }, event, new Date()) === null) {
                 found.add(`${action}:${role}:${status}:${label}`);
               }
             }
@@ -175,6 +179,60 @@ describe("booking state machine", () => {
       const again = await as(applicant).applyToEvent({ eventId: event.id, notes: "Changed my mind" });
 
       expect(again).toMatchObject({ id: booking.id, notes: "Changed my mind", status: "applied" });
+    });
+
+    it("re-applying keeps what the owner wrote and clears how the booking was cancelled", async () => {
+      const { booking, event } = await applied();
+      await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+      await testDb.raw.booking.update({ data: { ownerNotes: "Kept for my records" }, where: { id: booking.id } });
+      expect(await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({ cancelOrigin: "withdrawn" });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: true, hasApplied: true, status: "canceled" });
+
+      await as(applicant).applyToEvent({ eventId: event.id, rate: "$400" });
+
+      expect(await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({
+        cancelOrigin: null,
+        ownerNotes: "Kept for my records",
+        rate: "$400",
+        status: "applied",
+      });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: true, status: "applied" });
+    });
+
+    it.each([
+      ["the owner cancelled", "owner", "canceled_by_owner"],
+      ["the applicant backed out of", "applicant", "canceled_by_applicant"],
+    ] as const)("does not reopen an accepted booking that %s", async (_label, who, cancelOrigin) => {
+      const { booking, event } = await accepted();
+      await as(who === "owner" ? owner : applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+      await testDb.raw.booking.update({ data: { ownerNotes: "Plans changed, sorry" }, where: { id: booking.id } });
+
+      const error = await errorOf(as(applicant).applyToEvent({ eventId: event.id, notes: "Take me back" }));
+
+      expect(error).toMatchObject({ code: "CONFLICT" });
+      expect(await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({
+        cancelOrigin,
+        notes: "I'd love to help",
+        ownerNotes: "Plans changed, sorry",
+        status: "canceled",
+      });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: true, status: "canceled" });
+      // The owner was not told about an application that did not happen.
+      expect((await notificationsFor(owner)).filter((n) => n.type === "booking_applied")).toHaveLength(1);
+    });
+
+    it("does not reopen a booking cancelled before the origin was recorded (unknown who cancelled)", async () => {
+      const { booking, event } = await applied();
+      await testDb.raw.booking.update({ data: { cancelOrigin: null, status: "canceled" }, where: { id: booking.id } });
+
+      await expect(as(applicant).applyToEvent({ eventId: event.id })).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await statusOf(booking.id)).toBe("canceled");
+    });
+
+    it("reports no application, and nothing to re-apply to, for an event never applied to", async () => {
+      const event = await createEvent();
+
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: false, status: null });
     });
 
     it("does not let a declined applicant apply again", async () => {
@@ -329,6 +387,28 @@ describe("booking state machine", () => {
       });
     });
 
+    it("does not complete while the event is still going on (it has started but not ended)", async () => {
+      const { booking, event } = await accepted();
+      // A ten-hour job that began an hour ago.
+      await testDb.db.event.update({ data: { date: new Date(Date.now() - DAY_MS / 24), duration: 10 }, where: { id: event.id } });
+
+      for (const actor of [owner, applicant]) {
+        const error = await errorOf(as(actor).updateStatus({ bookingId: booking.id, status: "completed" }));
+        expect(error).toMatchObject({ code: "BAD_REQUEST" });
+        expect(reasonOf(error)).toBe(ErrorReason.BOOKING_NOT_YET_COMPLETABLE);
+      }
+      expect(await statusOf(booking.id)).toBe("accepted");
+      // Nor can it be cancelled any more: that was possible until it started.
+      expect(reasonOf(await errorOf(as(owner).updateStatus({ bookingId: booking.id, status: "canceled" })))).toBe(
+        ErrorReason.BOOKING_EVENT_STARTED,
+      );
+
+      // Eleven hours after the start it has ended.
+      await testDb.db.event.update({ data: { date: new Date(Date.now() - 11 * (DAY_MS / 24)) }, where: { id: event.id } });
+      await as(applicant).updateStatus({ bookingId: booking.id, status: "completed" });
+      expect(await statusOf(booking.id)).toBe("completed");
+    });
+
     it("does not complete before the event has taken place", async () => {
       const { booking } = await accepted();
 
@@ -461,9 +541,9 @@ describe("booking state machine", () => {
     it("an accept that loses to a withdrawal is refused and leaves the event open", async () => {
       const { booking, event } = await applied();
       // The owner's request read "applied"; the withdrawal lands before its write.
-      expect(await applyTransition(testDb.db, booking.id, "withdraw")).toBe(true);
+      expect(await applyTransition(testDb.db, booking.id, "withdraw", "applicant")).toBe(true);
 
-      expect(await applyTransition(testDb.db, booking.id, "accept")).toBe(false);
+      expect(await applyTransition(testDb.db, booking.id, "accept", "owner")).toBe(false);
 
       expect(await statusOf(booking.id)).toBe("canceled");
       expect(await isFulfilled(event.id)).toBe(false);

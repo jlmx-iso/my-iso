@@ -5,8 +5,10 @@ import { ErrorReason, logger } from "~/_utils";
 import {
   actionFor,
   applyTransition,
+  canReapply,
   checkTransition,
   isSlotTaken,
+  REAPPLIABLE_CANCEL_ORIGIN,
   syncEventFulfilled,
   type BookingAction,
   type TransitionRefusal,
@@ -263,12 +265,20 @@ export const bookingRouter = createTRPCRouter({
 
       const applicationKey = { applicantId: userId, eventId: input.eventId };
 
-      // Someone who withdrew may apply again: the same row goes back to
-      // "applied" (one conditional statement, so a double submit applies
-      // once). Any other existing application stays as it is.
+      // Someone who WITHDREW their application may apply again: the same
+      // row goes back to "applied" (one conditional statement, so a double
+      // submit applies once). Nothing else is reopened: not an application
+      // the owner declined, and not a booking that was accepted and then
+      // cancelled by either side (cancelOrigin says which it was). Only the
+      // applicant's own fields are rewritten; what the owner wrote stays.
       const reapplied = await ctx.db.booking.updateMany({
-        data: { notes: input.notes ?? null, ownerNotes: null, rate: input.rate ?? null, status: "applied" },
-        where: { ...applicationKey, isDeleted: false, status: "canceled" },
+        data: { cancelOrigin: null, notes: input.notes ?? null, rate: input.rate ?? null, status: "applied" },
+        where: {
+          ...applicationKey,
+          cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
+          isDeleted: false,
+          status: "canceled",
+        },
       });
 
       let booking;
@@ -407,7 +417,14 @@ export const bookingRouter = createTRPCRouter({
         },
       });
 
-      return { hasApplied: !!booking, status: booking?.status ?? null };
+      // `hasApplied` is true for any application on record, whatever became
+      // of it. `canReapply`: it was withdrawn, so `applyToEvent` will accept
+      // a new application (show "Apply again", not a disabled "Applied").
+      return {
+        canReapply: booking ? canReapply(booking) : false,
+        hasApplied: !!booking,
+        status: booking?.status ?? null,
+      };
     }),
 
   /**
@@ -417,7 +434,8 @@ export const bookingRouter = createTRPCRouter({
    * - `accepted`, `declined`: the event owner, on an application.
    * - `canceled`: the applicant withdrawing an application, or either party
    *   cancelling an accepted booking before the event.
-   * - `completed`: either party, on an accepted booking, after the event.
+   * - `completed`: either party, on an accepted booking, once the event has
+   *   ended (its start plus its duration).
    *
    * `ownerNotes` may only be sent by the event owner.
    *
@@ -447,7 +465,7 @@ export const bookingRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       const booking = await ctx.db.booking.findFirst({
-        include: { event: { select: { date: true, id: true, title: true } } },
+        include: { event: { select: { date: true, duration: true, id: true, title: true } } },
         where: { id: input.bookingId, ...onLiveEvent },
       });
 
@@ -465,10 +483,10 @@ export const bookingRouter = createTRPCRouter({
       // The owner's reply is the owner's to write.
       if (input.ownerNotes !== undefined && role !== "owner") throw REFUSALS.not_allowed();
 
-      const refusal = checkTransition(action, role, booking, booking.event.date, new Date());
+      const refusal = checkTransition(action, role, booking, booking.event, new Date());
       if (refusal) throw REFUSALS[refusal]();
 
-      const applied = await applyTransition(ctx.db, booking.id, action, {
+      const applied = await applyTransition(ctx.db, booking.id, action, role, {
         ownerNotes: input.ownerNotes,
       }).catch((error: unknown) => {
         logger.error("Error updating booking status", { error });

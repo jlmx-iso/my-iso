@@ -102,6 +102,99 @@ describe("events feed", () => {
     expect((await as(viewer).getFeedPage({ limit: 5 })).nextCursor).toBeNull();
   });
 
+  it("skips nothing when the cursor event starts (leaves the upcoming feed) between two requests", async () => {
+    const soon = await createEvent("+1", DAY_MS);
+    for (let day = 2; day <= 4; day++) await createEvent(`+${day}`, day * DAY_MS);
+    const first = await as(viewer).getFeedPage({ limit: 1 });
+    expect(first.items.map((event) => event.title)).toEqual(["+1"]);
+
+    // Time passes: the last event of page one has begun.
+    await testDb.db.event.update({ data: { date: new Date(Date.now() - HOUR_MS) }, where: { id: soon.id } });
+    const second = await as(viewer).getFeedPage({ cursor: first.nextCursor ?? undefined, limit: 2 });
+
+    // Still everything that was after it; "+2" is not swallowed.
+    expect(second.items.map((event) => event.title)).toEqual(["+2", "+3"]);
+    const third = await as(viewer).getFeedPage({ cursor: second.nextCursor ?? undefined, limit: 2 });
+    expect(third).toMatchObject({ items: [{ title: "+4" }], nextCursor: null });
+  });
+
+  it("skips nothing when the cursor event is deleted between two requests, in either direction", async () => {
+    for (let day = 1; day <= 4; day++) await createEvent(`+${day}`, day * DAY_MS);
+    for (let day = 1; day <= 4; day++) await createEvent(`-${day}`, -day * DAY_MS);
+
+    for (const [when, expected] of [["upcoming", ["+3", "+4"]], ["past", ["-3", "-4"]]] as const) {
+      const first = await as(viewer).getFeedPage({ limit: 2, when });
+      await testDb.raw.event.update({ data: { isDeleted: true }, where: { id: first.nextCursor ?? "" } });
+
+      const second = await as(viewer).getFeedPage({ cursor: first.nextCursor ?? undefined, limit: 2, when });
+
+      expect(second.items.map((event) => event.title)).toEqual(expected);
+      expect(second.nextCursor).toBeNull();
+    }
+  });
+
+  it("refuses a cursor that names no event", async () => {
+    await createEvent("+1", DAY_MS);
+
+    await expect(as(viewer).getFeedPage({ cursor: "no-such-event" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("combines the cursor with the city filter", async () => {
+    for (let day = 1; day <= 3; day++) {
+      await createEvent(`austin +${day}`, day * DAY_MS);
+      await createEvent(`denver +${day}`, day * DAY_MS, { location: "Denver, CO" });
+    }
+
+    expect(await allPages({ limit: 2, locations: ["Denver"] })).toEqual([["denver +1", "denver +2"], ["denver +3"]]);
+  });
+
+  describe("isFulfilled", () => {
+    async function acceptedBookingOn(eventId: string) {
+      const applicant = await createTestUser(testDb.db);
+      await testDb.db.booking.create({ data: { applicantId: applicant.id, eventId, ownerId: owner.id, status: "accepted" } });
+    }
+
+    it("is derived from the bookings on every read, whatever the stored column says", async () => {
+      // The write of the column failed after the booking was accepted...
+      const filled = await createEvent("filled", DAY_MS);
+      await acceptedBookingOn(filled.id);
+      // ...and here it was left set after the booking was cancelled.
+      const open = await createEvent("open", 2 * DAY_MS);
+      await testDb.raw.event.update({ data: { isFulfilled: true }, where: { id: open.id } });
+
+      const expected = [{ isFulfilled: true, title: "filled" }, { isFulfilled: false, title: "open" }];
+      expect((await as(viewer).getFeedPage({})).items).toMatchObject(expected);
+      expect(await as(viewer).getRecentByLocation({ locations: [] })).toMatchObject([...expected].reverse());
+      expect(await as(viewer).getByPhotographerId({ photographerId })).toMatchObject([...expected].reverse());
+      expect(
+        await as(viewer).search({ afterDate: new Date(), beforeDate: new Date(Date.now() + 9 * DAY_MS), query: "e" }),
+      ).toMatchObject(expected);
+    });
+
+    it("reading one event also repairs the stored column, in both directions", async () => {
+      const filled = await createEvent("filled", DAY_MS);
+      await acceptedBookingOn(filled.id);
+      const open = await createEvent("open", 2 * DAY_MS);
+      await testDb.raw.event.update({ data: { isFulfilled: true }, where: { id: open.id } });
+      const stored = async (id: string) => (await testDb.raw.event.findUniqueOrThrow({ where: { id } })).isFulfilled;
+
+      expect((await as(viewer).getById({ id: filled.id })).isFulfilled).toBe(true);
+      expect((await as(viewer).getById({ id: open.id })).isFulfilled).toBe(false);
+
+      expect(await stored(filled.id)).toBe(true);
+      expect(await stored(open.id)).toBe(false);
+    });
+
+    it("does not count a deleted booking, or one that does not hold the slot", async () => {
+      const event = await createEvent("open", DAY_MS);
+      const [first, second] = [await createTestUser(testDb.db), await createTestUser(testDb.db)];
+      await testDb.db.booking.create({ data: { applicantId: first.id, eventId: event.id, isDeleted: true, ownerId: owner.id, status: "accepted" } });
+      await testDb.db.booking.create({ data: { applicantId: second.id, eventId: event.id, ownerId: owner.id, status: "applied" } });
+
+      expect((await as(viewer).getById({ id: event.id })).isFulfilled).toBe(false);
+    });
+  });
+
   it("keeps a stable order for events at the same time", async () => {
     const at = new Date(Date.now() + DAY_MS);
     for (const title of ["a", "b", "c", "d"]) {
