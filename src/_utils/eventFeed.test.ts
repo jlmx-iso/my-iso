@@ -1,38 +1,54 @@
 import { describe, expect, it } from "vitest";
 
-import { partitionEventsByDate } from "./eventFeed";
+import { EVENTS_PAGE_SIZE, feedView, isFeedWhen } from "./eventFeed";
 
-const now = new Date("2026-06-15T12:00:00Z");
-const event = (id: string, date: string) => ({ date: new Date(date), id });
+const page = (ids: string[], nextCursor: string | null) => ({ items: ids.map((id) => ({ id })), nextCursor });
+const ids = (count: number, from = 0) => Array.from({ length: count }, (_, index) => `e${from + index}`);
 
-describe("partitionEventsByDate", () => {
-  const events = [
-    event("far", "2026-12-01T10:00:00Z"),
-    event("soon", "2026-06-16T10:00:00Z"),
-    event("yesterday", "2026-06-14T10:00:00Z"),
-    event("last-year", "2025-06-14T10:00:00Z"),
-  ];
-
-  it("lists upcoming events soonest first", () => {
-    expect(partitionEventsByDate(events, now).upcoming.map((e) => e.id)).toEqual(["soon", "far"]);
+describe("feedView", () => {
+  it("is empty before anything has loaded", () => {
+    expect(feedView(undefined)).toEqual({ events: [], hasMore: false, note: null });
   });
 
-  it("lists past events most recent first", () => {
-    expect(partitionEventsByDate(events, now).past.map((e) => e.id)).toEqual(["yesterday", "last-year"]);
+  it("keeps the server's order across pages", () => {
+    const view = feedView([page(["a", "b"], "b"), page(["c", "d"], null)]);
+    expect(view.events.map((event) => event.id)).toEqual(["a", "b", "c", "d"]);
   });
 
-  it("treats an event starting right now as upcoming and accepts ISO strings", () => {
-    const result = partitionEventsByDate(
-      [{ date: now.toISOString(), id: "now" }, { date: "2026-06-15T11:59:59Z", id: "just-missed" }],
-      now,
+  it("offers more exactly while the last page has a cursor", () => {
+    expect(feedView([page(["a"], "a")]).hasMore).toBe(true);
+    expect(feedView([page(["a"], "a"), page(["b"], null)]).hasMore).toBe(false);
+    // An earlier page's cursor says nothing once a later page has loaded.
+    expect(feedView([page(["a"], "a"), page([], null)]).hasMore).toBe(false);
+  });
+
+  it("goes past any fixed number of events", () => {
+    // Six full pages: more than the old feed could ever show (48).
+    const pages = Array.from({ length: 6 }, (_, index) =>
+      page(ids(EVENTS_PAGE_SIZE, index * EVENTS_PAGE_SIZE), `e${(index + 1) * EVENTS_PAGE_SIZE - 1}`),
     );
-    expect(result.upcoming.map((e) => e.id)).toEqual(["now"]);
-    expect(result.past.map((e) => e.id)).toEqual(["just-missed"]);
+    const view = feedView(pages);
+    expect(view.events).toHaveLength(72);
+    expect(view.hasMore).toBe(true);
+    expect(view.note).toBe("Showing 72 events");
   });
 
-  it("does not mutate its input", () => {
-    const input = [...events];
-    partitionEventsByDate(input, now);
-    expect(input).toEqual(events);
+  it("shows an event once when it turns up on two pages", () => {
+    const view = feedView([page(["a", "b"], "b"), page(["b", "c"], null)]);
+    expect(view.events.map((event) => event.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("says how many are shown only while there are more", () => {
+    expect(feedView([page(["a"], "a")]).note).toBe("Showing 1 event");
+    expect(feedView([page(["a", "b"], null)]).note).toBeNull();
+  });
+});
+
+describe("isFeedWhen", () => {
+  it("accepts the two lists and nothing else", () => {
+    expect(isFeedWhen("upcoming")).toBe(true);
+    expect(isFeedWhen("past")).toBe(true);
+    expect(isFeedWhen("all")).toBe(false);
+    expect(isFeedWhen(null)).toBe(false);
   });
 });

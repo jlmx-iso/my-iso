@@ -2,11 +2,11 @@
 
 import { ActionIcon, Alert, Button, Collapse, Group, Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
 import { DatePickerInput, type DatesRangeValue } from '@mantine/dates';
-import { useDisclosure, useId } from '@mantine/hooks';
+import { useDebouncedValue, useDisclosure, useId } from '@mantine/hooks';
 import { IconAdjustments, IconAlertCircle, IconSearch, IconSearchOff } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, Suspense, useState } from 'react';
+import { type FormEvent, Suspense, useEffect, useRef, useState } from 'react';
 
 import { SEARCH_MAX_OFFSET } from '~/_utils/limits';
 import { SEARCH_PAGE_SIZE } from '~/_utils/pageSizes';
@@ -15,12 +15,15 @@ import { userFacingError } from '~/_utils/userError';
 import EmptyState from '~/app/_components/EmptyState';
 import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
 import PageHeader from '~/app/_components/PageHeader';
+import { focusInto } from '~/app/_hooks/useFocusNewItems';
 import { api } from '~/trpc/react';
 
 import SearchLoadingSkeleton from './_components/SearchLoadingSkeleton';
 import SearchResults from './_components/SearchResults';
 
 type SearchType = 'all' | 'photographers' | 'events';
+
+const LOCATION_DEBOUNCE_MS = 450;
 
 function Search() {
   const router = useRouter();
@@ -29,8 +32,16 @@ function Search() {
   // the back button, and can be shared.
   const submittedQuery = useSearchParams().get('q')?.trim() ?? '';
 
-  const [draft, setDraft] = useState(submittedQuery);
-  const [location, setLocation] = useState('');
+  // What is in the box. It follows the URL: after Back or Forward the box
+  // shows the query whose results are on screen, not the last thing typed.
+  const [typed, setTyped] = useState({ forQuery: submittedQuery, value: submittedQuery });
+  const draft = typed.forQuery === submittedQuery ? typed.value : submittedQuery;
+  const setDraft = (value: string) => setTyped({ forQuery: submittedQuery, value });
+
+  const [locationDraft, setLocation] = useState('');
+  // The location filter is typed into: search once the typing pauses, not on
+  // every keystroke.
+  const [location] = useDebouncedValue(locationDraft.trim(), LOCATION_DEBOUNCE_MS);
   const [searchType, setSearchType] = useState<SearchType>('all');
   const [dateRange, setDateRange] = useState<DatesRangeValue<string>>([null, null]);
   const [filtersOpen, { toggle: toggleFilters }] = useDisclosure(false);
@@ -83,10 +94,12 @@ function Search() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const query = draft.trim();
-    router.replace(query ? `${pathname}?q=${encodeURIComponent(query)}` : pathname, { scroll: false });
+    if (query === submittedQuery) return;
+    // A history entry per search, so Back returns to the previous results.
+    router.push(query ? `${pathname}?q=${encodeURIComponent(query)}` : pathname, { scroll: false });
   };
 
-  const hasActiveFilters = !!location || hasDateRange;
+  const hasActiveFilters = !!locationDraft.trim() || hasDateRange;
 
   const photographerCount = results?.photographers.length ?? 0;
   const eventCount = results?.events.length ?? 0;
@@ -94,6 +107,19 @@ function Search() {
   const hasResults = !!results && totalCount > 0;
   // Counts never claim to be the total while more can be loaded: "20+".
   const totalLabel = loadedCountLabel(totalCount, hasMore);
+
+  // After "Load more", focus goes to the first result that was added (the
+  // button may be gone, which would otherwise leave focus on <body>).
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const countsWhenAsked = useRef<{ events: number; photographers: number } | null>(null);
+  useEffect(() => {
+    const before = countsWhenAsked.current;
+    if (!before || (photographerCount <= before.photographers && eventCount <= before.events)) return;
+    countsWhenAsked.current = null;
+    const morePhotographers = photographerCount > before.photographers && searchType !== 'events';
+    const [list, index] = morePhotographers ? ['photographers', before.photographers] : ['events', before.events];
+    focusInto(resultsRef.current?.querySelector(`[data-results="${list}"]`)?.children.item(index));
+  }, [eventCount, photographerCount, searchType]);
 
   return (
     <Stack gap="md">
@@ -115,6 +141,7 @@ function Search() {
                   color={hasActiveFilters ? undefined : 'gray'}
                   onClick={toggleFilters}
                   size="lg"
+                  className="touch-target"
                   aria-label={hasActiveFilters ? 'Filters (active)' : 'Filters'}
                   aria-expanded={filtersOpen}
                   aria-controls={filtersId}
@@ -141,7 +168,7 @@ function Search() {
                   label="Location"
                   placeholder="City, State"
                   isRequired={false}
-                  value={location}
+                  value={locationDraft}
                   onChange={(val) => setLocation(val)}
                 />
                 <DatePickerInput
@@ -166,6 +193,7 @@ function Search() {
 
       {hasSearched && !isLoading && hasResults && (
         <SegmentedControl
+          name="search-result-type"
           value={searchType}
           onChange={(v) => setSearchType(v)}
           aria-label="Show"
@@ -180,7 +208,7 @@ function Search() {
       )}
 
       {/* Always rendered so screen readers announce the outcome of a search. */}
-      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+      <div role="status" aria-atomic="true" className="sr-only">
         {isLoading && 'Searching…'}
         {hasSearched && !isLoading && results &&
           (totalCount === 0
@@ -191,7 +219,7 @@ function Search() {
       </div>
 
       {error && (
-        <Alert color="red" icon={<IconAlertCircle size={16} />} title="Search didn't work" role="alert">
+        <Alert color="red" icon={<IconAlertCircle size={16} />} title="Search didn't work">
           {userFacingError(error, 'Something went wrong on our side. Please try again.')}
           <Group mt="xs">
             <Button variant="default" size="xs" onClick={() => void firstPage?.refetch()}>
@@ -202,7 +230,11 @@ function Search() {
       )}
 
       {isLoading && hasSearched && <SearchLoadingSkeleton type={searchType} />}
-      {hasSearched && !isLoading && hasResults && <SearchResults results={results} searchType={searchType} />}
+      {hasSearched && !isLoading && hasResults && (
+        <div ref={resultsRef}>
+          <SearchResults results={results} searchType={searchType} />
+        </div>
+      )}
 
       {hasSearched && !isLoading && hasResults && hasMore && (
         <Stack gap={6} align="center">
@@ -212,11 +244,11 @@ function Search() {
           <Button
             variant="default"
             loading={isLoadingMore}
-            onClick={() =>
-              loadMoreError
-                ? void lastPage?.refetch()
-                : setPaging({ count: pageCount + 1, key: searchKey })
-            }
+            onClick={() => {
+              countsWhenAsked.current = { events: eventCount, photographers: photographerCount };
+              if (loadMoreError) void lastPage?.refetch();
+              else setPaging({ count: pageCount + 1, key: searchKey });
+            }}
           >
             {loadMoreError ? 'Try again' : 'Load more results'}
           </Button>

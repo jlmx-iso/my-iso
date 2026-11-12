@@ -6,6 +6,8 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { INITIAL_DECK_REFILL, nextDeckRefill } from "~/_utils/discoverDeck";
+import { fullName } from "~/_utils/names";
 import { isRateLimited, userFacingError } from "~/_utils/userError";
 import EmptyState from "~/app/_components/EmptyState";
 import { notify } from "~/app/_lib/notify";
@@ -30,38 +32,36 @@ export default function CardStack() {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
-  const { data: deck, isPending, isError, isFetching, refetch } = api.discover.getCardDeck.useQuery(
+  const { data: deck, dataUpdatedAt, isPending, isError, isFetching, refetch } = api.discover.getCardDeck.useQuery(
     { limit: DECK_SIZE },
   );
   const { data: preferences } = api.discover.getPreferences.useQuery();
   const { mutateAsync: swipe } = api.discover.swipe.useMutation();
-
-  // Expire stale matches once per visit.
-  const { mutate: expireStaleMatches } = api.discover.expireStaleMatches.useMutation();
-  const hasExpired = useRef(false);
-  useEffect(() => {
-    if (!hasExpired.current) {
-      hasExpired.current = true;
-      expireStaleMatches();
-    }
-  }, [expireStaleMatches]);
 
   const remaining = deck?.filter((user) => !swipedIds.has(user.id)) ?? [];
   const deckLength = deck?.length ?? 0;
   const isExhausted = deckLength > 0 && remaining.length === 0;
 
   // Out of cards: ask the server for the next batch (it excludes everyone
-  // already swiped).
+  // already swiped), once per batch. If that request fails the error state
+  // below offers "Try again"; nothing is retried by itself.
+  const refillState = useRef(INITIAL_DECK_REFILL);
   useEffect(() => {
-    if (isExhausted && !isFetching) void refetch();
-  }, [isExhausted, isFetching, refetch]);
+    const { refill, state } = nextDeckRefill(refillState.current, {
+      isExhausted,
+      isFetching,
+      loadedAt: dataUpdatedAt,
+    });
+    refillState.current = state;
+    if (refill) void refetch();
+  }, [dataUpdatedAt, isExhausted, isFetching, refetch]);
 
   const handleSwipe = async (direction: "like" | "pass") => {
     const target = remaining[0];
     if (!target) return;
 
     const photo = target.photographer;
-    const name = photo?.companyName?.trim() || `${target.firstName} ${target.lastName}`.trim() || "this photographer";
+    const name = fullName(target, "this photographer");
 
     setSwipedIds((current) => new Set(current).add(target.id));
     setAnnouncement(direction === "like" ? `Liked ${name}` : `Passed on ${name}`);
@@ -104,7 +104,7 @@ export default function CardStack() {
 
   const liveRegion = (
     // Always rendered so screen readers announce each swipe.
-    <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
+    <div className="sr-only" role="status">{announcement}</div>
   );
 
   if (isPending || (isExhausted && isFetching)) {
@@ -116,13 +116,26 @@ export default function CardStack() {
     );
   }
 
-  if (isError && !deck) {
+  // Nothing to show and the last request failed: the first load, or the
+  // refill after the last card.
+  if (isError && remaining.length === 0) {
     return (
-      <Alert color="red" icon={<IconAlertCircle size={16} />} title="We couldn't load photographers">
-        <Button variant="default" size="xs" mt="xs" onClick={() => void refetch()}>
-          Try again
-        </Button>
-      </Alert>
+      <>
+        {liveRegion}
+        <Alert
+          color="red"
+          icon={<IconAlertCircle size={16} />}
+          title={deck ? "We couldn't load more photographers" : "We couldn't load photographers"}
+          data-testid="deck-error"
+        >
+          <Button variant="default" size="xs" mt="xs" className="touch-target" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </Alert>
+        {matchData && (
+          <MatchCelebration onClose={() => setMatchData(null)} currentUserAvatar={preferences?.photographer?.avatar} {...matchData} />
+        )}
+      </>
     );
   }
 

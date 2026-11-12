@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Alert,
   Button,
   Modal,
   Stack,
@@ -9,25 +10,29 @@ import {
   Textarea,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconCheck, IconSend } from "@tabler/icons-react";
+import { IconAlertCircle, IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
 
 import { logger } from "~/_utils/logger";
-import { userFacingError } from "~/_utils/userError";
+import { isClientError, userFacingError } from "~/_utils/userError";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 type ApplyModalProps = {
   eventId: string;
   eventTitle: string;
-  hasApplied: boolean;
+  /** The trigger's text: "Apply", "Apply again". */
+  label: string;
+  /** Detail page: the trigger is the page's primary action, full width on phones. */
+  prominent?: boolean;
   onSuccess?: () => void;
 };
 
 export default function ApplyModal({
   eventId,
   eventTitle,
-  hasApplied,
+  label,
+  prominent = false,
   onSuccess,
 }: ApplyModalProps) {
   const [opened, { open, close }] = useDisclosure(false);
@@ -36,13 +41,12 @@ export default function ApplyModal({
 
   const utils = api.useUtils();
 
-  const { mutate, isPending } = api.booking.applyToEvent.useMutation({
+  const { mutate, isPending, error, reset } = api.booking.applyToEvent.useMutation({
     onError: (error) => {
       logger.error("Error applying to event", { error });
-      notify.error({
-        message: userFacingError(error, "Your application couldn't be sent. Please try again."),
-        title: "Application not sent",
-      });
+      // Refused because of how things stand now (already applied, filled,
+      // started): the card behind this dialog should say so too.
+      if (isClientError(error)) void utils.booking.hasApplied.invalidate({ eventId });
     },
     onSuccess: () => {
       notify.success({
@@ -51,6 +55,7 @@ export default function ApplyModal({
       });
       void utils.booking.hasApplied.invalidate({ eventId });
       void utils.booking.getMyApplicationsPage.invalidate();
+      void utils.booking.getMyApplications.invalidate();
       setRate("");
       setNotes("");
       close();
@@ -67,25 +72,14 @@ export default function ApplyModal({
     });
   };
 
-  if (hasApplied) {
-    return (
-      <Button
-        size="xs"
-        variant="light"
-        color="teal"
-        leftSection={<IconCheck size={14} />}
-        disabled
-      >
-        Applied
-      </Button>
-    );
-  }
-
   return (
     <>
       <Modal
         opened={opened}
-        onClose={close}
+        onClose={() => {
+          close();
+          reset();
+        }}
         title={`Apply to "${eventTitle}"`}
         size="md"
       >
@@ -95,6 +89,16 @@ export default function ApplyModal({
             Let the event owner know you are interested in second shooting this
             event. You can include your rate and a message.
           </Text>
+
+          {/* In the dialog, next to what it is about: a toast would sit on
+              top of the dialog's title. Always rendered so it is announced. */}
+          <div role="alert">
+            {error && (
+              <Alert color="red" icon={<IconAlertCircle size={16} />} title="Application not sent" data-testid="apply-error">
+                {userFacingError(error, "Your application couldn't be sent. Please try again.")}
+              </Alert>
+            )}
+          </div>
 
           <TextInput
             label="Your rate"
@@ -128,8 +132,13 @@ export default function ApplyModal({
         </form>
       </Modal>
 
-      <Button size="xs" variant="light" onClick={open}>
-        I&apos;m interested
+      <Button
+        size={prominent ? "md" : "sm"}
+        w={prominent ? { base: "100%", xs: "auto" } : undefined}
+        onClick={open}
+        data-testid="apply-button"
+      >
+        {label}
       </Button>
     </>
   );

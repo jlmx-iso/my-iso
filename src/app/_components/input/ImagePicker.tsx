@@ -51,8 +51,11 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
   return (
     <Stack gap="xs">
       {file && previewUrl ? (
-        <Group wrap="nowrap" align="center" gap="md">
+        // Wraps on a narrow phone: the button goes under the preview
+        // instead of being cut off beside it.
+        <Group wrap="wrap" align="center" gap="md">
           <Image
+            data-replay-block
             src={previewUrl}
             alt={`Preview of ${file.name}`}
             w={previewRadius === "50%" ? 120 : 160}
@@ -61,14 +64,16 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
             radius={previewRadius}
             style={{ flexShrink: 0 }}
           />
-          <Stack gap={6} style={{ minWidth: 0 }}>
+          <Stack gap={6} style={{ flex: "1 1 180px", minWidth: 0 }}>
             <Text size="sm" fw={500} truncate>
               {file.name}
             </Text>
             <Button
               variant="default"
-              size="xs"
+              size="sm"
+              className="touch-target"
               w="fit-content"
+              maw="100%"
               onClick={() => onChange(null)}
               disabled={disabled}
             >
@@ -117,7 +122,7 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
         </Dropzone>
       )}
       {/* Always rendered so screen readers announce validation as it appears. */}
-      <div role="alert" aria-live="assertive">
+      <div role="alert">
         {message && (
           <Text size="sm" c="red" data-testid="image-picker-error">
             {message}

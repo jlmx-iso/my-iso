@@ -33,7 +33,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { type MoveDirection, canMoveImage, moveImage, sortPortfolio } from "~/_utils/portfolioOrder";
 import { userFacingError } from "~/_utils/userError";
@@ -75,6 +75,7 @@ function Thumbnail({ image }: { image: PortfolioImage }) {
   }
   return (
     <Image
+      data-replay-block
       src={image.image}
       alt={image.title}
       h="100%"
@@ -186,6 +187,8 @@ function PortfolioCard({
               color="dark"
               variant="filled"
               loading={busy}
+              className="touch-target"
+              data-portfolio-actions={image.id}
               aria-label={`Actions for ${image.title}`}
               aria-expanded={menuOpened}
               onClick={() => setMenuOpened((current) => !current)}
@@ -362,6 +365,33 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
     }
   };
 
+  /**
+   * The delete dialog is opened from an item of a card's actions menu, which
+   * is gone by the time the dialog closes: put focus somewhere real instead
+   * of letting it fall to <body>. `imageId`: the card to return to (its
+   * actions button); without one (the image was deleted) the first remaining
+   * card, or the section heading.
+   */
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const focusAfterDeleteDialog = (imageId?: string) => {
+    // After the dialog has let go of focus and the grid has re-rendered.
+    requestAnimationFrame(() => {
+      const section = sectionRef.current;
+      if (!section) return;
+      const target =
+        (imageId ? section.querySelector<HTMLElement>(`[data-portfolio-actions="${CSS.escape(imageId)}"]`) : null) ??
+        section.querySelector<HTMLElement>("[data-portfolio-actions]") ??
+        section.querySelector<HTMLElement>("#portfolio-heading");
+      target?.focus();
+    });
+  };
+
+  const closeDeleteDialog = () => {
+    const imageId = deleting?.id;
+    setDeleting(null);
+    focusAfterDeleteDialog(imageId);
+  };
+
   const handleConfirmDelete = async () => {
     if (!deleting) return;
     try {
@@ -372,6 +402,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
         title: "Image deleted",
       });
       setDeleting(null);
+      focusAfterDeleteDialog();
     } catch (error) {
       showError("Couldn't delete image", error, "Please try again.");
     }
@@ -392,9 +423,9 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
   }
 
   return (
-    <Stack gap="md" component="section" aria-labelledby="portfolio-heading">
+    <Stack gap="md" component="section" aria-labelledby="portfolio-heading" ref={sectionRef}>
       <Group justify="space-between" align="center">
-        <Title order={2} size="h4" id="portfolio-heading">
+        <Title order={2} size="h4" id="portfolio-heading" tabIndex={-1}>
           Portfolio
         </Title>
         {isOwner && sorted.length > 0 && <PortfolioUpload onUploaded={() => void refresh()} />}
@@ -445,6 +476,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
         {viewing && (
           <Stack gap="sm">
             <Image
+              data-replay-block
               src={viewing.image}
               alt={viewing.title}
               mah="70dvh"
@@ -484,16 +516,18 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
 
       <Modal
         opened={!!deleting}
-        onClose={() => !deleteImage.isPending && setDeleting(null)}
+        onClose={() => !deleteImage.isPending && closeDeleteDialog()}
         title="Delete this image?"
         centered
+        // Focus is returned by closeDeleteDialog / handleConfirmDelete.
+        returnFocus={false}
       >
         <Stack gap="md">
           <Text size="sm">
             &ldquo;{deleting?.title}&rdquo; will be removed from your portfolio. This can&apos;t be undone.
           </Text>
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteImage.isPending}>
+            <Button variant="default" onClick={closeDeleteDialog} disabled={deleteImage.isPending} data-autofocus>
               Keep image
             </Button>
             <Button color="red" onClick={() => void handleConfirmDelete()} loading={deleteImage.isPending}>

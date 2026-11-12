@@ -5,6 +5,7 @@ import { IconCalendar, IconClock, IconHeart, IconMapPin, IconMessageCircle } fro
 import Link from 'next/link';
 
 import { formatDate } from '~/_lib/dayjs';
+import { fullName } from '~/_utils/names';
 import UserBadge from '~/app/_components/UserBadge';
 import type { RouterOutputs } from '~/trpc/react';
 
@@ -13,8 +14,7 @@ type EventSearchCardProps = {
 };
 
 export default function EventSearchCard({ event }: EventSearchCardProps) {
-  const photographerName = event.photographer.name ||
-    `${event.photographer.user.firstName || ''} ${event.photographer.user.lastName || ''}`.trim();
+  const photographerName = event.photographer.name || fullName(event.photographer.user);
   const href = `/app/events/${event.id}`;
 
   return (
@@ -32,7 +32,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         <Link href={href} tabIndex={-1} aria-hidden="true">
           {/* A fixed ratio, so the image is never cropped to a strip. */}
           <AspectRatio ratio={16 / 9}>
-            <Image src={event.image} alt="" fit="cover" />
+            <Image src={event.image} alt="" fit="cover" data-replay-block />
           </AspectRatio>
         </Link>
       )}

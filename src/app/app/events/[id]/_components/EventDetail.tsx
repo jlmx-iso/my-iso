@@ -1,30 +1,54 @@
 "use client";
 
-import { Alert, Anchor, Button, Divider, Group, Skeleton, Stack, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Badge, Box, Button, Divider, Group, Skeleton, Stack, Text, Title } from "@mantine/core";
 import { IconAlertCircle, IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 
+import { applicationOf } from "~/_utils/bookings";
 import { COMMENTS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePagesOldestFirst, partialCountNote } from "~/_utils/pagination";
 import AddCommentForm from "~/app/_components/AddCommentForm";
-import EventCard from "~/app/_components/events/EventCard";
+import ApplyAction from "~/app/_components/events/ApplyAction";
 import EventComment from "~/app/_components/events/EventComment";
-import { api } from "~/trpc/react";
+import EventCover from "~/app/_components/events/EventCover";
+import EventMeta from "~/app/_components/events/EventMeta";
+import Timemarker from "~/app/_components/Timemarker";
+import UserBadge from "~/app/_components/UserBadge";
+import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
+import { useNow } from "~/app/_hooks/useNow";
+import { type RouterOutputs, api } from "~/trpc/react";
 
 type EventDetailProps = {
-    eventId: string;
-    eventTitle: string;
+    /** The event as the server rendered it; kept fresh by the query below. */
+    initialEvent: RouterOutputs["event"]["getById"];
+    currentUserId: string | null;
 };
 
-/** One event with its comments and the comment form. */
-export default function EventDetail({ eventId, eventTitle }: EventDetailProps) {
+/** The server just rendered this data: no need to ask again on mount. */
+const FRESH_FOR_MS = 30_000;
+
+/** One event: what, where and when, the way to apply, then its comments. */
+export default function EventDetail({ initialEvent, currentUserId }: EventDetailProps) {
+    const eventId = initialEvent.id;
+    const { data: event } = api.event.getById.useQuery(
+        { id: eventId },
+        { initialData: initialEvent, staleTime: FRESH_FOR_MS },
+    );
+    const isOwnEvent = event.photographer.userId === currentUserId;
+    const applied = api.booking.hasApplied.useQuery({ eventId }, { enabled: !isOwnEvent });
+    const application = applied.data === undefined ? undefined : applicationOf(applied.data);
+    const now = useNow();
+    const isPast = new Date(event.date).getTime() < now.getTime();
+
     // The newest comments first; "Load earlier comments" pages back in time.
     const comments = api.event.getCommentsPage.useInfiniteQuery(
         { eventId, limit: COMMENTS_PAGE_SIZE },
         { getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined },
     );
-    const total = api.event.getCommentCountByEventId.useQuery({ eventId });
+    const total = api.event.getCommentCountByEventId.useQuery({ eventId }, { initialData: initialEvent.commentCount, staleTime: FRESH_FOR_MS });
     const loaded = mergePagesOldestFirst(comments.data?.pages);
+    // Earlier comments appear above the ones on screen.
+    const { expectMore, listRef } = useFocusNewItems(loaded.length, "start");
     // The heading shows the real total, never just what happens to be loaded.
     const commentCount = Math.max(total.data ?? 0, loaded.length);
     const partialNote = comments.hasNextPage
@@ -37,7 +61,33 @@ export default function EventDetail({ eventId, eventTitle }: EventDetailProps) {
                 <Group gap={4} wrap="nowrap"><IconArrowLeft size={14} aria-hidden /> Back to events</Group>
             </Anchor>
 
-            <EventCard eventId={eventId} isEventPage />
+            <Stack gap="md" component="article">
+                <Group justify="space-between" align="center" wrap="nowrap">
+                    <UserBadge user={event.photographer} />
+                    <Timemarker date={event.createdAt} />
+                </Group>
+
+                <Title order={1} size="h2" style={{ overflowWrap: "anywhere" }}>{event.title}</Title>
+
+                <Group gap="xs">
+                    <EventMeta date={event.date} duration={event.duration} location={event.location} withTime />
+                    {isPast && <Badge variant="light" color="gray">Past event</Badge>}
+                </Group>
+
+                {/* The page's primary action: above the description and the
+                    cover, so it is on screen without scrolling on a phone. */}
+                <Box data-testid="event-primary-action">
+                    <ApplyAction event={event} application={application} isOwnEvent={isOwnEvent} now={now} prominent />
+                </Box>
+
+                {event.description && (
+                    <Text maw={680} style={{ lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                        {event.description}
+                    </Text>
+                )}
+
+                {event.image && <EventCover src={event.image} mah={420} radius="md" />}
+            </Stack>
 
             <Divider />
 
@@ -69,7 +119,11 @@ export default function EventDetail({ eventId, eventTitle }: EventDetailProps) {
                                 <Button
                                     variant="default"
                                     size="xs"
-                                    onClick={() => void comments.fetchNextPage()}
+                                    className="touch-target"
+                                    onClick={() => {
+                                        expectMore();
+                                        void comments.fetchNextPage();
+                                    }}
                                     loading={comments.isFetchingNextPage}
                                 >
                                     Load earlier comments
@@ -81,7 +135,7 @@ export default function EventDetail({ eventId, eventTitle }: EventDetailProps) {
                                 We couldn&apos;t load earlier comments. Please try again.
                             </Text>
                         )}
-                        <Stack gap={0} component="ul" m={0} p={0} aria-label="Comments">
+                        <Stack ref={listRef} gap={0} component="ul" m={0} p={0} aria-label="Comments">
                             {loaded.map((comment) => (
                                 <EventComment key={comment.id} comment={comment} />
                             ))}
@@ -89,7 +143,7 @@ export default function EventDetail({ eventId, eventTitle }: EventDetailProps) {
                     </>
                 )}
 
-                <AddCommentForm eventId={eventId} eventTitle={eventTitle} />
+                <AddCommentForm eventId={eventId} eventTitle={event.title} />
             </Stack>
         </Stack>
     );

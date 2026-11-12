@@ -2,6 +2,7 @@
 
 import { Box, Group, Stack, Text } from "@mantine/core";
 
+import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
@@ -29,7 +30,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
         onSuccess: () => void refetch(),
     });
     const { user } = comment;
-    const name = `${user.firstName || ""} ${user.lastName || ""}`.trim() || "ISO member";
+    const name = fullName(user);
 
     return (
         <Box component="li" py="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)", listStyle: "none" }}>

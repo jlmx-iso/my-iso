@@ -8,6 +8,7 @@ import {
   IconSend,
 } from "@tabler/icons-react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BOOKINGS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { loadedCountLabel, mergePages } from "~/_utils/pagination";
@@ -15,6 +16,8 @@ import { userFacingError } from "~/_utils/userError";
 import BookingCard from "~/app/_components/bookings/BookingCard";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
+import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
+import { useNow } from "~/app/_hooks/useNow";
 import { api } from "~/trpc/react";
 
 const pageOptions = {
@@ -74,10 +77,11 @@ function PanelState({
   onLoadMore,
   onRetry,
 }: PanelStateProps) {
+  const { expectMore, listRef } = useFocusNewItems(loaded);
   if (isPending) return <BookingsSkeleton label={loadingLabel} />;
   if (error && loaded === 0) {
     return (
-      <Alert color="red" icon={<IconAlertCircle size={16} />} title={`We couldn't load ${noun}`} role="alert">
+      <Alert color="red" icon={<IconAlertCircle size={16} />} title={`We couldn't load ${noun}`}>
         {userFacingError(error, "Please try again.")}
         <Group mt="xs">
           <Button variant="default" size="xs" onClick={onRetry}>
@@ -91,13 +95,20 @@ function PanelState({
 
   return (
     <Stack gap="sm">
-      {children}
+      <Stack gap="sm" ref={listRef}>{children}</Stack>
       {hasMore && (
         <Stack gap={6} align="center" mt="xs">
           <Text size="sm" c="dimmed" role="status">
             Showing the {loaded} most recent
           </Text>
-          <Button variant="default" onClick={onLoadMore} loading={isLoadingMore}>
+          <Button
+            variant="default"
+            onClick={() => {
+              expectMore();
+              onLoadMore();
+            }}
+            loading={isLoadingMore}
+          >
             Load more
           </Button>
           {isLoadMoreError && (
@@ -111,7 +122,17 @@ function PanelState({
   );
 }
 
+const TABS = ["applications", "received"] as const;
+type BookingsTab = (typeof TABS)[number];
+const isTab = (value: string | null): value is BookingsTab => TABS.some((tab) => tab === value);
+
 export default function BookingsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  // `?tab=received` opens the second tab (linked from "View applications").
+  const requestedTab = useSearchParams().get("tab");
+  const tab: BookingsTab = isTab(requestedTab) ? requestedTab : "applications";
+  const now = useNow();
   const sent = api.booking.getMyApplicationsPage.useInfiniteQuery({ limit: BOOKINGS_PAGE_SIZE }, pageOptions);
   const received = api.booking.getReceivedApplicationsPage.useInfiniteQuery({ limit: BOOKINGS_PAGE_SIZE }, pageOptions);
 
@@ -126,7 +147,12 @@ export default function BookingsPage() {
           description="Manage your applications and incoming requests"
         />
 
-        <Tabs defaultValue="applications">
+        <Tabs
+          value={tab}
+          onChange={(value) => {
+            if (isTab(value)) router.replace(value === "applications" ? pathname : `${pathname}?tab=${value}`, { scroll: false });
+          }}
+        >
           <Tabs.List>
             <Tabs.Tab value="applications" leftSection={<IconSend size={16} />}>
               My applications
@@ -171,6 +197,7 @@ export default function BookingsPage() {
                   event={booking.event}
                   user={booking.owner}
                   variant="sent"
+                  now={now}
                 />
               ))}
             </PanelState>
@@ -204,6 +231,7 @@ export default function BookingsPage() {
                   event={booking.event}
                   user={booking.applicant}
                   variant="received"
+                  now={now}
                 />
               ))}
             </PanelState>

@@ -63,8 +63,8 @@ function VisibilitySwitch({ preferences }: { preferences: Preferences }) {
   return (
     <Stack gap="xs">
       <Switch
-        label="Show me in Discover"
-        description="Let other photographers see your profile here and match with you"
+        label="Show my profile in Discover and let other members message me"
+        description="On: photographers can find you here, match with you and start a conversation. Off: only people you've matched, booked or talked with can reach you."
         checked={checked}
         disabled={update.isPending}
         onChange={(event) => update.mutate({ isDiscoverable: event.currentTarget.checked })}
@@ -72,7 +72,7 @@ function VisibilitySwitch({ preferences }: { preferences: Preferences }) {
       />
       {!checked && (
         <Alert color="tan" icon={<IconEyeOff size={16} />} py="xs">
-          You&apos;re hidden: nobody can find or match with you until you turn this on.
+          You&apos;re hidden: nobody new can find, match with or message you until you turn this on.
         </Alert>
       )}
     </Stack>

@@ -40,6 +40,8 @@ export function PortfolioThumbnail({ src, alt, priority, sizes = "(min-width: 75
 
   return (
     <Image
+      // A member's photograph: session replay records an empty box instead.
+      data-replay-block
       src={src}
       alt={alt}
       fill

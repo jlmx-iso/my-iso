@@ -11,12 +11,14 @@ import { api } from "~/trpc/react";
 type AddCommentFormProps = {
     eventId: string;
     eventTitle: string;
+    /** Called once the server has stored a comment. */
+    onPosted?: () => void;
 };
 
 /** The counter appears once a comment is this close to the limit. */
 const COUNTER_FROM = MAX_COMMENT_LENGTH - 200;
 
-export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormProps) {
+export default function AddCommentForm({ eventId, eventTitle, onPosted }: AddCommentFormProps) {
     const utils = api.useUtils();
     const form = useForm({
         initialValues: {
@@ -39,6 +41,7 @@ export default function AddCommentForm({ eventId, eventTitle }: AddCommentFormPr
             form.setFieldError("comment", userFacingError(error, "Your comment wasn't posted. It's still here — please try again.")),
         onSuccess: () => {
             form.reset();
+            onPosted?.();
             void utils.event.getCommentsPage.invalidate({ eventId });
             void utils.event.getCommentCountByEventId.invalidate({ eventId });
             void utils.event.getById.invalidate({ id: eventId });

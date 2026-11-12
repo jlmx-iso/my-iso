@@ -21,9 +21,11 @@ import Link from "next/link";
 import { useId } from "react";
 
 import { formatDate } from "~/_lib/dayjs";
+import { fullName } from "~/_utils/names";
 import { REVIEWS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePages, partialCountNote } from "~/_utils/pagination";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -101,7 +103,7 @@ function ReviewForm({
           </Title>
 
           {/* Always rendered so screen readers announce errors as they appear. */}
-          <div role="alert" aria-live="assertive">
+          <div role="alert">
             {createReview.isError && (
               <Alert color="red" icon={<IconAlertCircle size={16} />}>
                 {userFacingError(createReview.error, "We couldn't post your review. Please try again.")}
@@ -199,6 +201,8 @@ export default function ReviewsSection({
     ? partialCountNote(loaded.length, reviewCount, { one: "review", other: "reviews" })
     : null;
 
+  const { expectMore, listRef } = useFocusNewItems(loaded.length);
+
   const refresh = () => {
     void utils.review.getPageByPhotographerId.invalidate({ photographerId });
     void utils.review.getAverageRating.invalidate({ photographerId });
@@ -243,10 +247,9 @@ export default function ReviewsSection({
             : `No reviews yet. Worked with ${photographerName}? Be the first to leave one.`}
         </Text>
       ) : (
-        <Stack gap="sm" component="ul" m={0} p={0} style={{ listStyle: "none" }}>
+        <Stack ref={listRef} gap="sm" component="ul" m={0} p={0} style={{ listStyle: "none" }}>
           {loaded.map((review) => {
-            const reviewer =
-              `${review.user.firstName || ""} ${review.user.lastName || ""}`.trim() || "ISO member";
+            const reviewer = fullName(review.user);
             return (
               <Paper key={review.id} component="li" p="md" radius="md" withBorder data-testid="review-item">
                 <Group align="flex-start" gap="md" wrap="nowrap">
@@ -284,7 +287,10 @@ export default function ReviewsSection({
           </Text>
           <Button
             variant="default"
-            onClick={() => void reviews.fetchNextPage()}
+            onClick={() => {
+              expectMore();
+              void reviews.fetchNextPage();
+            }}
             loading={reviews.isFetchingNextPage}
           >
             Load more reviews

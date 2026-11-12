@@ -5,6 +5,7 @@ import { IconPlus } from "@tabler/icons-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import ConfirmDialog from "~/app/_components/ConfirmDialog";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -23,11 +24,22 @@ export default function CreateEventButton() {
     const utils = api.useUtils();
     const openedByLink = useSearchParams().has(CREATE_EVENT_PARAM);
     const [openedByButton, setOpenedByButton] = useState(false);
+    // Something has been typed into the form: closing would lose it.
+    const [hasDraft, setHasDraft] = useState(false);
+    const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
     const close = () => {
+        setHasDraft(false);
+        setConfirmingDiscard(false);
         setOpenedByButton(false);
         // Drop ?create so the modal does not reopen on reload or back.
         if (openedByLink) router.replace(pathname, { scroll: false });
+    };
+
+    /** Escape, the overlay, the close button and Cancel: ask before losing a draft. */
+    const requestClose = () => {
+        if (hasDraft) setConfirmingDiscard(true);
+        else close();
     };
 
     const handleCreated = (event: { id: string; title: string }) => {
@@ -36,7 +48,7 @@ export default function CreateEventButton() {
             message: `"${event.title}" is live. Photographers nearby can now apply.`,
             title: "Event created",
         });
-        void utils.event.getRecentByLocation.invalidate();
+        void utils.event.getFeedPage.invalidate();
     };
 
     return (
@@ -44,9 +56,27 @@ export default function CreateEventButton() {
             <Button leftSection={<IconPlus size={18} />} size="sm" onClick={() => setOpenedByButton(true)}>
                 Create event
             </Button>
-            <Modal opened={openedByButton || openedByLink} onClose={close} title="Create event" size="lg">
-                <CreateEventForm onCreated={handleCreated} onCancel={close} />
+            <Modal
+                opened={openedByButton || openedByLink}
+                onClose={requestClose}
+                // The confirmation on top handles Escape while it is open.
+                closeOnEscape={!confirmingDiscard}
+                title="Create event"
+                size="lg"
+            >
+                <CreateEventForm onCreated={handleCreated} onCancel={requestClose} onDirtyChange={setHasDraft} />
             </Modal>
+            <ConfirmDialog
+                opened={confirmingDiscard}
+                onClose={() => setConfirmingDiscard(false)}
+                onConfirm={close}
+                title="Discard this event?"
+                confirmLabel="Discard draft"
+                cancelLabel="Keep editing"
+                destructive
+            >
+                What you&apos;ve written so far will be lost.
+            </ConfirmDialog>
         </>
     );
 }

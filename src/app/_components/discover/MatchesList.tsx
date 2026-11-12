@@ -4,6 +4,7 @@ import { Alert, Badge, Button, Group, Paper, Skeleton, Stack, Text } from "@mant
 import { IconAlertCircle, IconChevronRight, IconHeartHandshake } from "@tabler/icons-react";
 import Link from "next/link";
 
+import { businessName, fullName } from "~/_utils/names";
 import EmptyState from "~/app/_components/EmptyState";
 import { api } from "~/trpc/react";
 
@@ -65,8 +66,8 @@ export default function MatchesList() {
       {matches.map((match) => {
         const other = match.otherUser;
         const photo = other.photographer;
-        const displayName =
-          photo?.companyName?.trim() || `${other.firstName || ""} ${other.lastName || ""}`.trim() || "ISO member";
+        const displayName = fullName(other);
+        const company = businessName(other, photo?.companyName);
         // Relative to when the list was fetched, so rendering stays pure.
         const timeLeft = formatTimeLeft(match.expiresAt, dataUpdatedAt);
         // A match normally has a thread; fall back to the profile if not.
@@ -103,6 +104,9 @@ export default function MatchesList() {
                     )}
                   </Group>
 
+                  {company && (
+                    <Text size="sm" lineClamp={1}>{company}</Text>
+                  )}
                   {match.aiSummary ? (
                     <Text size="sm" c="dimmed" lineClamp={2}>
                       {match.aiSummary}

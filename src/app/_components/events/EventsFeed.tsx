@@ -1,69 +1,129 @@
 "use client";
 
-import { Alert, Button, Center, SimpleGrid, Stack, Text, Title } from '@mantine/core'
-import { IconAlertCircle, IconCalendarEvent } from '@tabler/icons-react'
-import { keepPreviousData } from '@tanstack/react-query'
+import { Alert, Button, SimpleGrid, Stack, Tabs, Text, Title } from '@mantine/core'
+import { IconAlertCircle, IconCalendarEvent, IconHistory } from '@tabler/icons-react'
 import Link from 'next/link'
 import { useState } from 'react'
 
-import { EVENTS_PAGE_SIZE, partitionEventsByDate } from '~/_utils/eventFeed'
+import { type Application, applicationOf, applicationsByEvent } from '~/_utils/bookings'
+import { EVENTS_PAGE_SIZE, type FeedWhen, feedView, isFeedWhen } from '~/_utils/eventFeed'
+import { trpcErrorCode } from '~/_utils/userError'
 import EmptyState from "~/app/_components/EmptyState";
+import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
+import { useNow } from "~/app/_hooks/useNow";
 import { type RouterOutputs, api } from "~/trpc/react";
 
-import EventCard from "./EventCard";
+import EventCard, { type FeedEvent } from "./EventCard";
+import EventCardSkeleton from "./EventCardSkeleton";
 
-type FeedEvent = RouterOutputs["event"]["getRecentByLocation"][number];
+type FeedPage = RouterOutputs["event"]["getFeedPage"];
 
 type EventsFeedProps = {
+    currentUserId: string;
     /** The member's location(s); the feed shows events there. */
     locations: string[];
-    /** First page, fetched on the server. */
-    initialEvents: FeedEvent[];
+    /** First page of upcoming events, fetched on the server. */
+    initialUpcoming: FeedPage;
 };
 
-function EventGrid({ events, label }: { events: FeedEvent[]; label: string }) {
-    return (
-        <SimpleGrid
-            component="ul"
-            cols={{ base: 1, md: 2 }}
-            spacing="md"
-            m={0}
-            p={0}
-            aria-label={label}
-        >
-            {events.map((event) => (
-                <li key={event.id} style={{ listStyle: "none", minWidth: 0 }}>
-                    <EventCard eventId={event.id} />
-                </li>
-            ))}
-        </SimpleGrid>
-    );
-}
+/** One request tells every card in the feed how the viewer's application stands. */
+const APPLICATIONS_LIMIT = 100;
+const NOT_APPLIED: Application = { canReapply: false, status: "none" };
+/** The server just rendered this data: no need to ask again on mount. */
+const FRESH_FOR_MS = 30_000;
 
 /**
- * Events near the member, split into upcoming (soonest first) and past.
- * "Load more" raises the limit of the one feed query (the procedure pages by
- * `limit`/`startAt`), so creating an event only has to invalidate that query.
+ * The viewer's application to one event. Known from the feed's single
+ * applications request; only someone with more applications than that
+ * request returns asks per event.
  */
-export default function EventsFeed({ locations, initialEvents }: EventsFeedProps) {
-    const [limit, setLimit] = useState(EVENTS_PAGE_SIZE);
-    const { data: events = [], isFetching, isError, refetch } = api.event.getRecentByLocation.useQuery(
-        { limit, locations, startAt: 0 },
+function FeedCard({
+    event,
+    applications,
+    currentUserId,
+    now,
+}: {
+    event: FeedEvent;
+    now: Date;
+    /** The applications request's answer; undefined while it loads. */
+    applications: { byEvent: Map<string, Application>; isComplete: boolean } | undefined;
+    currentUserId: string;
+}) {
+    const isOwnEvent = event.photographer.userId === currentUserId;
+    const known = applications?.byEvent.get(event.id) ?? (applications?.isComplete ? NOT_APPLIED : undefined);
+    const needsLookup = !!applications && known === undefined && !isOwnEvent;
+    const lookup = api.booking.hasApplied.useQuery({ eventId: event.id }, { enabled: needsLookup });
+    const application = known ?? (lookup.data === undefined ? undefined : applicationOf(lookup.data));
+
+    return <EventCard event={event} application={application} currentUserId={currentUserId} now={now} />;
+}
+
+function FeedList({
+    when,
+    locations,
+    initialPage,
+    place,
+    currentUserId,
+}: {
+    when: FeedWhen;
+    locations: string[];
+    initialPage?: FeedPage;
+    place: string | undefined;
+    currentUserId: string;
+}) {
+    const utils = api.useUtils();
+    const feed = api.event.getFeedPage.useInfiniteQuery(
+        { limit: EVENTS_PAGE_SIZE, locations, when },
         {
-            initialData: limit === EVENTS_PAGE_SIZE ? initialEvents : undefined,
-            placeholderData: keepPreviousData,
+            getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+            ...(initialPage
+                ? { initialData: { pageParams: [undefined], pages: [initialPage] }, staleTime: FRESH_FOR_MS }
+                : {}),
         },
     );
-    // A full page means there may be more.
-    const hasMore = events.length >= limit;
-    // Evaluated per render on purpose: "upcoming" is relative to now.
-    const { upcoming, past } = partitionEventsByDate(events);
-    const place = locations[0]?.split(",")[0]?.trim();
+    const applications = api.booking.getMyApplications.useQuery({ limit: APPLICATIONS_LIMIT });
+    const myApplications = applications.data
+        ? {
+            byEvent: applicationsByEvent(applications.data),
+            // Fewer than the limit came back: the list is all of them.
+            isComplete: applications.data.length < APPLICATIONS_LIMIT,
+        }
+        // The one request failed: each card asks for itself instead.
+        : applications.isError
+            ? { byEvent: new Map<string, Application>(), isComplete: false }
+            : undefined;
 
-    if (isError && events.length === 0) {
+    const now = useNow();
+    const { events, hasMore, note } = feedView(feed.data?.pages);
+    const { expectMore, listRef } = useFocusNewItems(events.length);
+    const label = when === "upcoming" ? "Upcoming events" : "Past events";
+
+    const loadMore = async () => {
+        expectMore();
+        const result = await feed.fetchNextPage();
+        // The cursor no longer names an event (it was removed for good):
+        // start the list again from its first page.
+        if (result.isError && trpcErrorCode(result.error) === "BAD_REQUEST") {
+            await utils.event.getFeedPage.reset({ limit: EVENTS_PAGE_SIZE, locations, when });
+        }
+    };
+
+    if (feed.isPending) {
+        return (
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" aria-busy="true" aria-label={`Loading ${label.toLowerCase()}`}>
+                {[0, 1].map((index) => (
+                    <div key={index} style={{ border: "1px solid var(--mantine-color-gray-3)", borderRadius: "var(--mantine-radius-md)", padding: "var(--mantine-spacing-md)" }}>
+                        <EventCardSkeleton />
+                    </div>
+                ))}
+            </SimpleGrid>
+        );
+    }
+
+    if (feed.isError && events.length === 0) {
         return (
             <Alert color="red" icon={<IconAlertCircle size={16} />} title="We couldn't load events">
-                <Button variant="default" size="xs" mt="xs" onClick={() => void refetch()}>
+                <Button variant="default" size="xs" mt="xs" onClick={() => void feed.refetch()}>
                     Try again
                 </Button>
             </Alert>
@@ -71,55 +131,106 @@ export default function EventsFeed({ locations, initialEvents }: EventsFeedProps
     }
 
     if (events.length === 0) {
-        return (
+        return when === "upcoming" ? (
             <EmptyState
                 icon={IconCalendarEvent}
-                title={place ? `No events in ${place} yet` : "No events yet"}
-                description="Post the first one to find a second shooter, or search for events in other cities."
+                title={place ? `Nothing coming up in ${place}` : "Nothing coming up yet"}
+                description="Post an event to find a second shooter, or search for events in other cities."
                 action={
                     <Button component={Link} href="/app/search" variant="default">
                         Search events
                     </Button>
                 }
             />
+        ) : (
+            <EmptyState
+                icon={IconHistory}
+                title={place ? `No past events in ${place}` : "No past events"}
+                description="Events move here once they have started."
+            />
         );
     }
 
     return (
-        <Stack gap="xl">
-            <Stack gap="md" component="section" aria-labelledby="upcoming-events-heading">
-                <Title order={2} size="h4" id="upcoming-events-heading">
-                    Upcoming{place ? ` in ${place}` : ""}
-                </Title>
-                {upcoming.length > 0 ? (
-                    <EventGrid events={upcoming} label="Upcoming events" />
-                ) : (
-                    <Text c="dimmed" size="sm">
-                        Nothing coming up{place ? ` in ${place}` : ""} right now. Post an event to find a second shooter.
-                    </Text>
-                )}
-            </Stack>
-
-            {past.length > 0 && (
-                <Stack gap="md" component="section" aria-labelledby="past-events-heading">
-                    <Title order={2} size="h4" id="past-events-heading">
-                        Past events
-                    </Title>
-                    <EventGrid events={past} label="Past events" />
-                </Stack>
-            )}
+        <Stack gap="lg">
+            <SimpleGrid
+                ref={listRef}
+                component="ul"
+                cols={{ base: 1, md: 2 }}
+                spacing="md"
+                m={0}
+                p={0}
+                aria-label={label}
+            >
+                {events.map((event) => (
+                    <li key={event.id} style={{ listStyle: "none", minWidth: 0 }}>
+                        <FeedCard event={event} applications={myApplications} currentUserId={currentUserId} now={now} />
+                    </li>
+                ))}
+            </SimpleGrid>
 
             {hasMore && (
-                <Center>
+                <Stack gap={6} align="center">
+                    <Text size="sm" c="dimmed" role="status" data-testid="events-partial">
+                        {note}
+                    </Text>
                     <Button
                         variant="default"
-                        onClick={() => setLimit((current) => current + EVENTS_PAGE_SIZE)}
-                        loading={isFetching}
+                        onClick={() => void loadMore()}
+                        loading={feed.isFetchingNextPage}
+                        data-testid="events-load-more"
                     >
                         Load more events
                     </Button>
-                </Center>
+                    {feed.isFetchNextPageError && (
+                        <Text size="sm" c="red" role="alert">
+                            We couldn&apos;t load more events. Please try again.
+                        </Text>
+                    )}
+                </Stack>
             )}
         </Stack>
+    );
+}
+
+/**
+ * Events near the member: what is coming up, soonest first, and on a second
+ * tab what has already happened. Each list loads a page at a time for as
+ * long as the server says there is more.
+ */
+export default function EventsFeed({ currentUserId, locations, initialUpcoming }: EventsFeedProps) {
+    const [when, setWhen] = useState<FeedWhen>("upcoming");
+    const place = locations[0]?.split(",")[0]?.trim();
+
+    return (
+        <Tabs value={when} onChange={(value) => isFeedWhen(value) && setWhen(value)} keepMounted={false}>
+            <Tabs.List mb="md">
+                <Tabs.Tab value="upcoming" leftSection={<IconCalendarEvent size={16} aria-hidden />}>Upcoming</Tabs.Tab>
+                <Tabs.Tab value="past" leftSection={<IconHistory size={16} aria-hidden />}>Past</Tabs.Tab>
+            </Tabs.List>
+
+            <Tabs.Panel value="upcoming">
+                <Stack gap="md">
+                    <Title order={2} size="h4">
+                        Upcoming{place ? ` in ${place}` : ""}
+                    </Title>
+                    <FeedList
+                        when="upcoming"
+                        locations={locations}
+                        initialPage={initialUpcoming}
+                        place={place}
+                        currentUserId={currentUserId}
+                    />
+                </Stack>
+            </Tabs.Panel>
+            <Tabs.Panel value="past">
+                <Stack gap="md">
+                    <Title order={2} size="h4">
+                        Past events{place ? ` in ${place}` : ""}
+                    </Title>
+                    <FeedList when="past" locations={locations} place={place} currentUserId={currentUserId} />
+                </Stack>
+            </Tabs.Panel>
+        </Tabs>
     )
 }

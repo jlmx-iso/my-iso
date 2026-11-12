@@ -4,6 +4,7 @@ import { Card, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { IconChevronRight, IconMapPin } from '@tabler/icons-react';
 import Link from 'next/link';
 
+import { fullName } from '~/_utils/names';
 import { Avatar } from '~/app/_components/Avatar';
 import type { RouterOutputs } from '~/trpc/react';
 
@@ -12,10 +13,7 @@ type PhotographerCardProps = {
 };
 
 export default function PhotographerCard({ photographer }: PhotographerCardProps) {
-  const displayName =
-    photographer.name ||
-    `${photographer.user.firstName || ''} ${photographer.user.lastName || ''}`.trim() ||
-    'ISO member';
+  const displayName = photographer.name || fullName(photographer.user);
   const profileHref = `/app/photographer/${photographer.user.id}`;
   const thumbnails = photographer.portfolioImages ?? [];
 
@@ -69,6 +67,7 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
             {thumbnails.map((img) => (
               <Image
                 key={img.id}
+                data-replay-block
                 src={img.image}
                 alt=""
                 w={72}

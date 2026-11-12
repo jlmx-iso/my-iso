@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, FileInput, Group, Select, SimpleGrid, Stack, TextInput, Textarea } from "@mantine/core";
+import { Alert, Button, FileInput, Group, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
 import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
@@ -18,6 +18,7 @@ import {
 } from "~/_utils/imageFile";
 import { MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { logger } from "~/_utils/logger";
+import { isRateLimited, trpcErrorCode, zodErrorFields } from "~/_utils/userError";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
@@ -26,12 +27,31 @@ type CreateEventFormProps = {
     /** Called with the new event once it is saved. */
     onCreated: (event: { id: string; title: string }) => void;
     onCancel: () => void;
+    /** Told whether anything has been typed, so closing can ask first. */
+    onDirtyChange?: (isDirty: boolean) => void;
 };
 
 const MAX_TITLE_LENGTH = 140;
 const MAX_DESCRIPTION_LENGTH = 1000;
 const DATE_FORMAT = "YYYY-MM-DD HH:mm:ss";
 const SAVE_FAILED = "We couldn't create your event. Your details are still here — please try again.";
+const COVER_FAILED = "The cover image couldn't be uploaded, so the event wasn't posted. Everything else is still here.";
+/** In the order the fields appear, for moving focus to the first invalid one. */
+const FIELD_ORDER = ["title", "description", "date", "duration", "location", "image"] as const;
+
+/**
+ * Whether a failed create was about the cover image: the image itself was
+ * refused, or the image host could not take it.
+ */
+function isCoverFailure(error: unknown, hadImage: boolean): boolean {
+    if (!hadImage) return false;
+    if (zodErrorFields(error).includes("image")) return true;
+    const code = trpcErrorCode(error);
+    // The image was refused, or uploads are being rate limited.
+    if (code === "PAYLOAD_TOO_LARGE" || code === "UNSUPPORTED_MEDIA_TYPE" || isRateLimited(error)) return true;
+    // The image host did not take it ("Error uploading image").
+    return error instanceof Error && /upload/i.test(error.message);
+}
 
 /** Whole hours, as the server requires (1 to MAX_EVENT_DURATION_HOURS). */
 const DURATION_HOURS = [1, 2, 3, 4, 6, 8, 10, 12, 24, 48, 72].filter((hours) => hours <= MAX_EVENT_DURATION_HOURS);
@@ -51,10 +71,12 @@ type FormValues = {
     title: string;
 };
 
-export default function CreateEventForm({ onCreated, onCancel }: CreateEventFormProps) {
+export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: CreateEventFormProps) {
     const createEvent = api.event.create.useMutation();
     const [isReadingImage, setIsReadingImage] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    // The last attempt failed on the cover image: offer to post without it.
+    const [coverFailed, setCoverFailed] = useState(false);
     const isSaving = isReadingImage || createEvent.isPending;
 
     const form = useForm<FormValues>({
@@ -85,16 +107,24 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
                 return value.length > MAX_TITLE_LENGTH ? `Keep the title under ${MAX_TITLE_LENGTH} characters` : null;
             },
         },
+        // What the member typed, as opposed to the defaults: a draft worth
+        // asking about before it is thrown away.
+        onValuesChange: (values) =>
+            onDirtyChange?.(
+                values.title.trim() !== "" || values.description.trim() !== "" || values.location.trim() !== "" || values.image !== null,
+            ),
     });
 
-    const handleSubmit = form.onSubmit(async (values) => {
+    const save = async (values: FormValues, withCover: boolean) => {
         if (isSaving) return;
         setSubmitError(null);
+        setCoverFailed(false);
+        const cover = withCover ? values.image : null;
         try {
             let image: string | undefined;
-            if (values.image) {
+            if (cover) {
                 setIsReadingImage(true);
-                image = await readFileAsBase64(values.image);
+                image = await readFileAsBase64(cover);
             }
             const event = await createEvent.mutateAsync({
                 date: dayjs(values.date).toISOString(),
@@ -112,21 +142,51 @@ export default function CreateEventForm({ onCreated, onCancel }: CreateEventForm
             // A refused image is reported on the image field as well.
             if (message === IMAGE_TOO_LARGE_MESSAGE || message === IMAGE_WRONG_TYPE_MESSAGE) {
                 form.setFieldError("image", message);
+                setCoverFailed(true);
+                setSubmitError(`${message} The event wasn't posted.`);
+            } else if (isCoverFailure(error, cover !== null)) {
+                setCoverFailed(true);
+                setSubmitError(COVER_FAILED);
+            } else {
+                setSubmitError(message);
             }
-            setSubmitError(message);
         } finally {
             setIsReadingImage(false);
         }
-    });
+    };
+
+    const handleSubmit = form.onSubmit(
+        (values) => void save(values, true),
+        // Invalid: take the keyboard to the first field that needs fixing.
+        (errors) => {
+            const first = FIELD_ORDER.find((field) => errors[field] != null && errors[field] !== false);
+            if (first) form.getInputNode(first)?.focus();
+        },
+    );
 
     return (
         <form onSubmit={handleSubmit} noValidate>
             <Stack gap="md">
                 {/* Always rendered so screen readers announce errors as they appear. */}
-                <div role="alert" aria-live="assertive">
+                <div role="alert">
                     {submitError && (
                         <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="create-event-error">
                             {submitError}
+                            {coverFailed && (
+                                <Group gap="xs" mt="xs">
+                                    <Button
+                                        size="xs"
+                                        className="touch-target"
+                                        variant="default"
+                                        onClick={() => void save(form.values, false)}
+                                        disabled={isSaving}
+                                        data-testid="post-without-cover"
+                                    >
+                                        Post without cover
+                                    </Button>
+                                    <Text size="xs" c="gray.7">You can add one later by editing the event.</Text>
+                                </Group>
+                            )}
                         </Alert>
                     )}
                 </div>

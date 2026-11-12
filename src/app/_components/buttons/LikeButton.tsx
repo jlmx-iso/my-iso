@@ -20,10 +20,11 @@ export default function LikeButton({ targetLabel, onToggle, isPending, numberOfL
             variant="subtle"
             color={isLiked ? "red" : "gray"}
             size="compact-sm"
+            className="touch-target"
             w="fit-content"
             aria-pressed={isLiked}
             aria-label={`Like ${targetLabel}, ${numberOfLikes} ${numberOfLikes === 1 ? "like" : "likes"}`}
-            leftSection={isLiked ? <IconHeartFilled size={16} /> : <IconHeart size={16} />}
+            leftSection={isLiked ? <IconHeartFilled size={16} aria-hidden /> : <IconHeart size={16} aria-hidden />}
         >
             {numberOfLikes}
         </Button>

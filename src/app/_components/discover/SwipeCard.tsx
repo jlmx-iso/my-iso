@@ -2,7 +2,6 @@
 
 import {
   Anchor,
-  Avatar,
   Badge,
   Box,
   Button,
@@ -33,7 +32,9 @@ import { motion, useMotionValue, useTransform } from "motion/react";
 import { useState } from "react";
 
 import { instagramUrl } from "~/_utils/instagram";
+import { businessName, fullName } from "~/_utils/names";
 import { toSafeWebsiteUrl } from "~/_utils/social";
+import { Avatar } from "~/app/_components/Avatar";
 
 interface SwipeCardProps {
   user: {
@@ -73,8 +74,9 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
 
   const photo = user.photographer;
   const avatar = photo?.avatar ?? user.profilePic;
-  const normalizedCompanyName = photo?.companyName?.trim();
-  const displayName = normalizedCompanyName || (`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User");
+  // The person first, as everywhere else; their business under the name.
+  const displayName = fullName(user);
+  const company = businessName(user, photo?.companyName);
   const location = photo?.location ?? [user.city, user.state].filter(Boolean).join(", ");
 
   const hasPortfolio = photo?.portfolioImages && photo.portfolioImages.length > 0;
@@ -164,11 +166,10 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
         <Stack gap="md">
           {/* Avatar + Name + Location */}
           <Group gap="md" wrap="nowrap">
-            <Avatar src={avatar} alt="" size={64} radius="xl" color="orange" aria-hidden={avatar ? undefined : true}>
-              {(user.firstName || "U")[0]}
-            </Avatar>
+            <Avatar src={avatar} name={displayName} alt="" size={64} />
             <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
               <Title order={2} size="h4" lineClamp={1}>{displayName}</Title>
+              {company && <Text size="sm" fw={500} lineClamp={1}>{company}</Text>}
               {location && (
                 <Group gap={4} wrap="nowrap">
                   <IconMapPin size={14} color="var(--mantine-color-dimmed)" />
@@ -262,6 +263,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                     {photo.portfolioImages!.map((img, i) => (
                       <Image
                         key={i}
+                        data-replay-block
                         src={img.image}
                         alt={img.title}
                         h={140}

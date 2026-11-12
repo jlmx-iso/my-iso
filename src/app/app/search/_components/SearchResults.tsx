@@ -22,7 +22,7 @@ export default function SearchResults({ results, searchType }: SearchResultsProp
           <Title order={2} size="h5" id="search-photographers">
             Photographers
           </Title>
-          <SimpleGrid component="ul" cols={{ base: 1, md: 2 }} spacing="md" m={0} p={0}>
+          <SimpleGrid component="ul" cols={{ base: 1, md: 2 }} spacing="md" m={0} p={0} data-results="photographers">
             {results.photographers.map((photographer) => (
               <li key={photographer.id} style={{ listStyle: 'none', minWidth: 0 }}>
                 <PhotographerCard photographer={photographer} />
@@ -37,7 +37,7 @@ export default function SearchResults({ results, searchType }: SearchResultsProp
           <Title order={2} size="h5" id="search-events">
             Events
           </Title>
-          <SimpleGrid component="ul" cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" m={0} p={0}>
+          <SimpleGrid component="ul" cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" m={0} p={0} data-results="events">
             {results.events.map((event) => (
               <li key={event.id} style={{ listStyle: 'none', minWidth: 0 }}>
                 <EventSearchCard event={event} />

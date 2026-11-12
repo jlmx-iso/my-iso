@@ -19,10 +19,10 @@ export default async function Page() {
     const caller = await api();
     const photographer = await caller.photographer.getByUserId({ userId: session.user.id });
     const locations = photographer?.location ? [photographer.location] : [];
-    const initialEvents = await caller.event.getRecentByLocation({
+    const initialUpcoming = await caller.event.getFeedPage({
         limit: EVENTS_PAGE_SIZE,
         locations,
-        startAt: 0,
+        when: "upcoming",
     });
 
     return (
@@ -32,7 +32,7 @@ export default async function Page() {
                 description="Find and post second shooter opportunities near you"
                 action={<Suspense><CreateEventButton /></Suspense>}
             />
-            <EventsFeed locations={locations} initialEvents={initialEvents} />
+            <EventsFeed currentUserId={session.user.id} locations={locations} initialUpcoming={initialUpcoming} />
         </Stack>
     );
 }
