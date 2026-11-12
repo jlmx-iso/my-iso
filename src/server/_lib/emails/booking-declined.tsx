@@ -40,9 +40,9 @@ export function BookingDeclinedEmail({
       </Text>
 
       <Text style={paragraph}>
-        These things happen — it's rarely about you or your work. Sometimes
+        These things happen — it&apos;s rarely about you or your work. Sometimes
         the organizer is looking for a very specific style, has a budget
-        constraint, or already had someone in mind. Don't let it slow you
+        constraint, or already had someone in mind. Don&apos;t let it slow you
         down.
       </Text>
 

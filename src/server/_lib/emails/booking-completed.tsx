@@ -36,11 +36,11 @@ export function BookingCompletedEmail({
       preview={`How'd it go at ${eventTitle}?`}
       unsubscribeUrl={unsubscribeUrl}
     >
-      <Heading style={heading}>How'd it go?</Heading>
+      <Heading style={heading}>How&apos;d it go?</Heading>
 
       <Text style={paragraph}>
         Hey {firstName}, hope the shoot went well! {eventTitle} with{" "}
-        {partnerName} is wrapped up, and we'd love to hear how it went.
+        {partnerName} is wrapped up, and we&apos;d love to hear how it went.
       </Text>
 
       <Section style={calloutBox}>

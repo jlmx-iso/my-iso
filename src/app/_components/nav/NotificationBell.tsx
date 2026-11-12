@@ -5,6 +5,7 @@ import { IconBell } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { api } from "~/trpc/react";
+
 import { NotificationDropdown } from "./NotificationDropdown";
 
 export function NotificationBell() {

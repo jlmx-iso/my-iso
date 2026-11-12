@@ -26,17 +26,18 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 
-import { FavoriteButton } from "./FavoriteButton";
-import EditProfile from "./EditProfile";
-import EmptyState from "../EmptyState";
-import { Notification } from "../Notification";
-import PortfolioImageCard from "../portfolio/PortfolioImageCard";
-import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
-import ProfileAvatar from "./ProfileAvatar";
-
 import { facebookUrl, instagramUrl, tikTokUrl, toSafeWebsiteUrl, twitterUrl, vimeoUrl, youTubeUrl } from "~/_utils";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
+
+import EditProfile from "./EditProfile";
+import { FavoriteButton } from "./FavoriteButton";
+import EmptyState from "../EmptyState";
+import { Notification } from "../Notification";
+import { PortfolioThumbnail, PortfolioUpload } from "../portfolio";
+import ProfileAvatar from "./ProfileAvatar";
+import PortfolioImageCard from "../portfolio/PortfolioImageCard";
+
 
 type ProfilePageProps = {
   userId: string;
@@ -62,15 +63,15 @@ const socialLinks: Array<{
 
 export const ProfilePage = async ({
   userId,
-  photographer,
+  photographer: initialPhotographer,
   isEditing,
   isSuccess,
 }: ProfilePageProps) => {
   const session = await auth();
-  if (!photographer) {
-    photographer =
-      (await (await api()).photographer.getByUserId({ userId })) ?? undefined;
-  }
+  const photographer =
+    initialPhotographer ??
+    (await (await api()).photographer.getByUserId({ userId })) ??
+    undefined;
 
   if (!session) {
     return null;

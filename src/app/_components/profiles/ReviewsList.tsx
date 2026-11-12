@@ -9,10 +9,11 @@ import {
 } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 
+import { formatLocalDate } from "~/_lib/dayjs";
+
 import EmptyState from "../EmptyState";
 import { StarRating } from "./PublicProfileHero";
 
-import { formatLocalDate } from "~/_lib/dayjs";
 
 type Review = {
   id: string;

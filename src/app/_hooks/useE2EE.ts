@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   decryptMessage,
@@ -22,6 +22,8 @@ import {
 } from "~/_utils/keystore";
 import { api } from "~/trpc/react";
 
+import { useLatestRef } from "./useLatestRef";
+
 type E2EEState = {
   ready: boolean;
   privateKey: CryptoKey | null;
@@ -35,8 +37,7 @@ type E2EEState = {
  */
 export function useE2EE() {
   const [state, setState] = useState<E2EEState>({ privateKey: null, ready: false });
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const stateRef = useLatestRef(state);
 
   const session = useSession();
   const sessionUserId = session.data?.user?.id;
@@ -46,15 +47,13 @@ export function useE2EE() {
   const apiUtils = api.useUtils();
 
   // Stable refs so the effect never captures stale hook instances
-  const setupRef = useRef(setupKeysMutation);
-  setupRef.current = setupKeysMutation;
-  const restoreRef = useRef(restoreKeysQuery);
-  restoreRef.current = restoreKeysQuery;
-  const apiUtilsRef = useRef(apiUtils);
-  apiUtilsRef.current = apiUtils;
+  const setupRef = useLatestRef(setupKeysMutation);
+  const restoreRef = useLatestRef(restoreKeysQuery);
+  const apiUtilsRef = useLatestRef(apiUtils);
 
   useEffect(() => {
     // Reset when user changes (logout/login without full reload)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset belongs with the key (re)initialisation below
     setState({ privateKey: null, ready: false });
 
     if (!sessionUserId) return;
@@ -103,7 +102,7 @@ export function useE2EE() {
     });
 
     return () => { cancelled = true; };
-  }, [sessionUserId]);
+  }, [sessionUserId, restoreRef, setupRef]);
 
   /**
    * Encrypt plaintext for a thread.
@@ -154,7 +153,7 @@ export function useE2EE() {
 
     const ciphertext = await encryptMessage(threadKey, plaintext);
     return { ciphertext, threadKeys: freshThreadKeys };
-  }, [sessionUserId]);
+  }, [sessionUserId, apiUtilsRef, stateRef]);
 
   /**
    * Decrypt a message given its thread ID. Loads the thread key from
@@ -185,7 +184,7 @@ export function useE2EE() {
     } catch {
       return "[decryption failed]";
     }
-  }, []);
+  }, [stateRef]);
 
   return {
     decryptForThread,

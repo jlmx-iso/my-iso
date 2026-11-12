@@ -1,7 +1,9 @@
 import { Stack, Text } from '@mantine/core';
+
+import type { RouterOutputs } from '~/trpc/react';
+
 import EventSearchCard from './EventSearchCard';
 import PhotographerCard from './PhotographerCard';
-import type { RouterOutputs } from '~/trpc/react';
 
 type SearchResultsProps = {
   results: RouterOutputs['search']['searchAll'];

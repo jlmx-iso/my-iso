@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 
+import { auth } from "~/auth";
+
 import { OnboardingComplete } from "../_components/OnboardingComplete";
 
-import { auth } from "~/auth";
 
 type Props = {
   searchParams: Promise<{ plan?: string }>;

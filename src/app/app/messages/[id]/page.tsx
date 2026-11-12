@@ -1,7 +1,8 @@
-import MessageFeed from "../_components/MessageFeed";
 
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
+
+import MessageFeed from "../_components/MessageFeed";
 
 
 export default async function Page({ params }: { params: Promise<{ id: string; }>; }) {

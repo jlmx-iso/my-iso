@@ -1,8 +1,10 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
+
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaClient } from "@prisma/client";
 import { config } from "dotenv";
-import { resolve } from "path";
+
+
 import { generateInviteCode } from "../src/server/_utils/invite";
 
 // Load .env file
@@ -150,22 +152,22 @@ async function main() {
 
   // Set roles for seed users
   await Promise.all([
-    db.user.update({ where: { id: users[0]!.id }, data: { role: "founding_member" } }),
-    db.user.update({ where: { id: users[1]!.id }, data: { role: "founding_member" } }),
-    db.user.update({ where: { id: users[2]!.id }, data: { role: "founding_member" } }),
-    db.user.update({ where: { id: users[3]!.id }, data: { role: "founding_member" } }),
-    db.user.update({ where: { id: users[4]!.id }, data: { role: "founding_member" } }),
-    db.user.update({ where: { id: users[5]!.id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[0].id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[1].id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[2].id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[3].id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[4].id }, data: { role: "founding_member" } }),
+    db.user.update({ where: { id: users[5].id }, data: { role: "founding_member" } }),
   ]);
 
   console.log("Creating invite codes...");
   await Promise.all([
-    db.inviteCode.create({ data: { code: "ISO-SARAH-A1B2", creatorId: users[0]!.id } }),
-    db.inviteCode.create({ data: { code: "ISO-MARCU-C3D4", creatorId: users[1]!.id } }),
-    db.inviteCode.create({ data: { code: "ISO-AISHA-E5F6", creatorId: users[2]!.id } }),
-    db.inviteCode.create({ data: { code: "ISO-JAMES-G7H8", creatorId: users[3]!.id } }),
-    db.inviteCode.create({ data: { code: "ISO-YUKIT-J9K2", creatorId: users[4]!.id } }),
-    db.inviteCode.create({ data: { code: "ISO-ELENA-L3M4", creatorId: users[5]!.id } }),
+    db.inviteCode.create({ data: { code: "ISO-SARAH-A1B2", creatorId: users[0].id } }),
+    db.inviteCode.create({ data: { code: "ISO-MARCU-C3D4", creatorId: users[1].id } }),
+    db.inviteCode.create({ data: { code: "ISO-AISHA-E5F6", creatorId: users[2].id } }),
+    db.inviteCode.create({ data: { code: "ISO-JAMES-G7H8", creatorId: users[3].id } }),
+    db.inviteCode.create({ data: { code: "ISO-YUKIT-J9K2", creatorId: users[4].id } }),
+    db.inviteCode.create({ data: { code: "ISO-ELENA-L3M4", creatorId: users[5].id } }),
   ]);
   console.log("Created 6 invite codes");
 
@@ -192,7 +194,7 @@ async function main() {
   const photographers = await Promise.all([
     db.photographer.create({
       data: {
-        userId: users[0]!.id,
+        userId: users[0].id,
         name: "Sarah Chen",
         companyName: "Chen Photography Co.",
         location: "Austin, TX",
@@ -204,7 +206,7 @@ async function main() {
     }),
     db.photographer.create({
       data: {
-        userId: users[1]!.id,
+        userId: users[1].id,
         name: "Marcus Rivera",
         companyName: "Rivera Visual Studio",
         location: "Denver, CO",
@@ -216,7 +218,7 @@ async function main() {
     }),
     db.photographer.create({
       data: {
-        userId: users[2]!.id,
+        userId: users[2].id,
         name: "Aisha Patel",
         companyName: "Luminous Frame",
         location: "Portland, OR",
@@ -228,7 +230,7 @@ async function main() {
     }),
     db.photographer.create({
       data: {
-        userId: users[3]!.id,
+        userId: users[3].id,
         name: "James O'Brien",
         companyName: "O'Brien Photo",
         location: "Nashville, TN",
@@ -240,7 +242,7 @@ async function main() {
     }),
     db.photographer.create({
       data: {
-        userId: users[4]!.id,
+        userId: users[4].id,
         name: "Yuki Tanaka",
         companyName: "Tanaka Creative",
         location: "Seattle, WA",
@@ -251,7 +253,7 @@ async function main() {
     }),
     db.photographer.create({
       data: {
-        userId: users[5]!.id,
+        userId: users[5].id,
         name: "Elena Kowalski",
         companyName: "Kowalski Studios",
         location: "Chicago, IL",
@@ -274,7 +276,7 @@ async function main() {
     // Upcoming events
     db.event.create({
       data: {
-        photographerId: photographers[0]!.id,
+        photographerId: photographers[0].id,
         title: "Spring Wedding at Barton Creek — Need Second Shooter",
         description:
           "200-guest outdoor wedding at a vineyard venue along Barton Creek. Looking for a second shooter comfortable with natural light and candid reception coverage. Ceremony at 4pm, reception until 11pm.",
@@ -286,7 +288,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[1]!.id,
+        photographerId: photographers[1].id,
         title: "Mountain Elopement — Assistant Needed",
         description:
           "Sunrise elopement at Rocky Mountain National Park. Need someone who's comfortable hiking 3+ miles with gear. We'll meet at the trailhead at 4am. Incredible views guaranteed.",
@@ -297,7 +299,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[2]!.id,
+        photographerId: photographers[2].id,
         title: "Fashion Editorial Shoot — Looking for BTS Photographer",
         description:
           "Two-day fashion editorial for a Portland-based clothing brand. Need someone to capture behind-the-scenes content for their social media. Studio and on-location shots.",
@@ -309,7 +311,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[3]!.id,
+        photographerId: photographers[3].id,
         title: "Live Music Festival Coverage — 3-Day Event",
         description:
           "Nashville's biggest indie music festival needs photographers! Covering 4 stages over 3 days. Great opportunity to build your portfolio with live music photography. Press passes included.",
@@ -321,7 +323,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[4]!.id,
+        photographerId: photographers[4].id,
         title: "Intimate Garden Wedding — Second Shooter",
         description:
           "50-person micro-wedding in a private garden. Looking for a second shooter who excels at detail shots and candid guest portraits. Relaxed, low-key vibe.",
@@ -332,7 +334,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[5]!.id,
+        photographerId: photographers[5].id,
         title: "Corporate Headshot Day — Need Two Assistants",
         description:
           "Full-day corporate headshot session for a tech company. 80+ employees. Need two assistants to help with lighting setup, backdrop changes, and keeping the queue moving.",
@@ -343,7 +345,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[0]!.id,
+        photographerId: photographers[0].id,
         title: "Engagement Session at Lady Bird Lake",
         description:
           "Golden hour engagement session along the boardwalk. Couple wants a mix of posed and candid. Looking for someone to help with off-camera flash for a few dramatic shots.",
@@ -354,7 +356,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[2]!.id,
+        photographerId: photographers[2].id,
         title: "Branding Photoshoot for Local Bakery",
         description:
           "Half-day branding session for a popular artisan bakery. Product shots, lifestyle content, and staff portraits. Looking for a food photography enthusiast to assist.",
@@ -365,7 +367,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[1]!.id,
+        photographerId: photographers[1].id,
         title: "Winter Formal Wedding — Second Shooter Needed",
         description:
           "Elegant ballroom wedding at The Brown Palace. 300 guests, black-tie affair. Need an experienced second shooter comfortable working in low light with flash.",
@@ -376,7 +378,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[4]!.id,
+        photographerId: photographers[4].id,
         title: "Newborn and Family Portrait Session",
         description:
           "In-home newborn session with the whole family. Looking for an assistant to help with posing, props, and natural light modifiers. Gentle, quiet environment.",
@@ -388,7 +390,7 @@ async function main() {
     // --- New events (11–20) ---
     db.event.create({
       data: {
-        photographerId: photographers[3]!.id,
+        photographerId: photographers[3].id,
         title: "Street Photography Walk — Downtown Nashville",
         description:
           "Casual group photo walk through downtown Nashville hitting Broadway, Printers Alley, and the riverfront. All skill levels welcome. We'll share edits in a group album afterward.",
@@ -400,7 +402,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[5]!.id,
+        photographerId: photographers[5].id,
         title: "Tech Startup Launch Party — Full Coverage",
         description:
           "High-energy launch party for a Series A startup. 200+ attendees, live DJ, keynote talk. Need a photographer who can capture candids, speaker moments, and branding details.",
@@ -412,7 +414,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[0]!.id,
+        photographerId: photographers[0].id,
         title: "Golden Hour Couples Marathon — 6 Sessions",
         description:
           "Running back-to-back 20-minute couples sessions at Zilker Park during golden hour. Need a second shooter to alternate setups and keep things flowing smoothly.",
@@ -423,7 +425,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[2]!.id,
+        photographerId: photographers[2].id,
         title: "Farmers Market Brand Content Day",
         description:
           "Shooting lifestyle content for three vendors at the Portland Saturday Market. Product close-ups, customer interactions, and vibrant market atmosphere. Great for food/lifestyle portfolio.",
@@ -435,7 +437,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[1]!.id,
+        photographerId: photographers[1].id,
         title: "Ski Resort Lifestyle Shoot — Need Drone Operator",
         description:
           "Two-day lifestyle campaign for Breckenridge Resort. Looking for a licensed drone operator to capture aerial powder shots, village scenery, and après-ski vibes.",
@@ -447,7 +449,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[4]!.id,
+        photographerId: photographers[4].id,
         title: "Real Estate Photography — 5 Listings",
         description:
           "Shooting 5 residential listings in the Queen Anne neighborhood. Need an assistant for lighting, staging touch-ups, and twilight exterior shots. Fast turnaround required.",
@@ -458,7 +460,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[3]!.id,
+        photographerId: photographers[3].id,
         title: "Charity Gala — Black Tie Event Photography",
         description:
           "Annual fundraiser gala at the Country Music Hall of Fame. 400 guests, live auction, musical performances. Need a second photographer comfortable with flash in formal settings.",
@@ -470,7 +472,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[0]!.id,
+        photographerId: photographers[0].id,
         title: "Quinceañera — Full Day Coverage",
         description:
           "Quinceañera celebration at a downtown Austin event hall. Church ceremony in the morning, reception with live band in the evening. Need a bilingual second shooter if possible.",
@@ -481,7 +483,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[5]!.id,
+        photographerId: photographers[5].id,
         title: "Yoga Retreat — Wellness Brand Content",
         description:
           "Capturing a full-day wellness retreat for a Chicago-based yoga studio's rebrand. Outdoor classes, meditation sessions, healthy food prep, and portraits of instructors.",
@@ -492,7 +494,7 @@ async function main() {
     }),
     db.event.create({
       data: {
-        photographerId: photographers[2]!.id,
+        photographerId: photographers[2].id,
         title: "Vintage Car Show — Automotive Photography",
         description:
           "Annual vintage car show at Portland International Raceway. 150+ classic cars, live music, and vendors. Looking for a photographer who loves automotive detail shots and wide compositions.",
@@ -510,114 +512,114 @@ async function main() {
   await Promise.all([
     db.comment.create({
       data: {
-        eventId: events[0]!.id,
-        userId: users[1]!.id,
+        eventId: events[0].id,
+        userId: users[1].id,
         content: "I'm available! I've shot several weddings in the Austin area. Would love to chat about the details.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[0]!.id,
-        userId: users[4]!.id,
+        eventId: events[0].id,
+        userId: users[4].id,
         content: "Beautiful venue! Is there parking for the second shooter or should I plan for rideshare?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[1]!.id,
-        userId: users[2]!.id,
+        eventId: events[1].id,
+        userId: users[2].id,
         content: "This sounds incredible! I'm a strong hiker and have all-weather gear. What lens kit are you recommending?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[3]!.id,
-        userId: users[0]!.id,
+        eventId: events[3].id,
+        userId: users[0].id,
         content: "I've covered festivals before and would love to be part of this. What's the photo pit situation like?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[3]!.id,
-        userId: users[5]!.id,
+        eventId: events[3].id,
+        userId: users[5].id,
         content: "This is a dream gig! Available all 3 days. Happy to share my live music portfolio.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[4]!.id,
-        userId: users[3]!.id,
+        eventId: events[4].id,
+        userId: users[3].id,
         content: "I specialize in intimate weddings. This sounds right up my alley!",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[5]!.id,
-        userId: users[2]!.id,
+        eventId: events[5].id,
+        userId: users[2].id,
         content: "I have experience with high-volume headshot days. What lighting setup are you planning?",
       },
     }),
     // Comments on new events (11–20)
     db.comment.create({
       data: {
-        eventId: events[10]!.id,
-        userId: users[0]!.id,
+        eventId: events[10].id,
+        userId: users[0].id,
         content: "Love photo walks! I'll bring my 35mm film camera too if that's cool.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[10]!.id,
-        userId: users[4]!.id,
+        eventId: events[10].id,
+        userId: users[4].id,
         content: "Count me in! Nashville downtown is so photogenic, especially Printers Alley at dusk.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[11]!.id,
-        userId: users[3]!.id,
+        eventId: events[11].id,
+        userId: users[3].id,
         content: "This sounds like a blast. What's the dress code for photographers? Business casual or all black?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[13]!.id,
-        userId: users[1]!.id,
+        eventId: events[13].id,
+        userId: users[1].id,
         content: "Farmers markets are my favorite to shoot! The light through the tents is always gorgeous.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[14]!.id,
-        userId: users[5]!.id,
+        eventId: events[14].id,
+        userId: users[5].id,
         content: "I'm FAA Part 107 certified and have a Mavic 3 Pro. Would love to chat about this!",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[14]!.id,
-        userId: users[0]!.id,
+        eventId: events[14].id,
+        userId: users[0].id,
         content: "Incredible opportunity. What's the turnaround time for deliverables?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[16]!.id,
-        userId: users[2]!.id,
+        eventId: events[16].id,
+        userId: users[2].id,
         content: "I've shot galas and black-tie events before. Happy to share my portfolio. What flash system are you running?",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[18]!.id,
-        userId: users[4]!.id,
+        eventId: events[18].id,
+        userId: users[4].id,
         content: "This is such a unique shoot concept! Would love to capture the meditation sessions.",
       },
     }),
     db.comment.create({
       data: {
-        eventId: events[19]!.id,
-        userId: users[3]!.id,
+        eventId: events[19].id,
+        userId: users[3].id,
         content: "Classic cars + photography — name a better combo. I'll be there with my macro lens for the details!",
       },
     }),
@@ -630,7 +632,7 @@ async function main() {
   const thread1 = await db.messageThread.create({
     data: {
       participants: {
-        connect: [{ id: users[0]!.id }, { id: users[1]!.id }],
+        connect: [{ id: users[0].id }, { id: users[1].id }],
       },
     },
   });
@@ -638,7 +640,7 @@ async function main() {
   const thread2 = await db.messageThread.create({
     data: {
       participants: {
-        connect: [{ id: users[0]!.id }, { id: users[2]!.id }],
+        connect: [{ id: users[0].id }, { id: users[2].id }],
       },
     },
   });
@@ -647,7 +649,7 @@ async function main() {
     db.message.create({
       data: {
         threadId: thread1.id,
-        senderId: users[1]!.id,
+        senderId: users[1].id,
         content: "Hey Sarah! I saw your post about the Barton Creek wedding. I'd love to be your second shooter.",
         isRead: true,
       },
@@ -655,7 +657,7 @@ async function main() {
     db.message.create({
       data: {
         threadId: thread1.id,
-        senderId: users[0]!.id,
+        senderId: users[0].id,
         content: "Hi Marcus! Thanks for reaching out. Your adventure portfolio is stunning. Have you shot weddings before?",
         isRead: true,
       },
@@ -663,7 +665,7 @@ async function main() {
     db.message.create({
       data: {
         threadId: thread1.id,
-        senderId: users[1]!.id,
+        senderId: users[1].id,
         content: "Absolutely — I've second-shot about 20 weddings in the past two years. I can send you some samples if you'd like!",
         isRead: false,
       },
@@ -671,7 +673,7 @@ async function main() {
     db.message.create({
       data: {
         threadId: thread2.id,
-        senderId: users[2]!.id,
+        senderId: users[2].id,
         content: "Hi Sarah! Love your work. Would you ever be interested in collaborating on a styled shoot? I have some ideas for an editorial series.",
         isRead: true,
       },
@@ -679,7 +681,7 @@ async function main() {
     db.message.create({
       data: {
         threadId: thread2.id,
-        senderId: users[0]!.id,
+        senderId: users[0].id,
         content: "That sounds amazing, Aisha! I'm always down for creative collabs. What did you have in mind?",
         isRead: false,
       },
@@ -692,16 +694,16 @@ async function main() {
 
   await Promise.all([
     db.favorite.create({
-      data: { userId: users[0]!.id, targetId: photographers[1]!.id },
+      data: { userId: users[0].id, targetId: photographers[1].id },
     }),
     db.favorite.create({
-      data: { userId: users[0]!.id, targetId: photographers[2]!.id },
+      data: { userId: users[0].id, targetId: photographers[2].id },
     }),
     db.favorite.create({
-      data: { userId: users[1]!.id, targetId: photographers[0]!.id },
+      data: { userId: users[1].id, targetId: photographers[0].id },
     }),
     db.favorite.create({
-      data: { userId: users[3]!.id, targetId: photographers[4]!.id },
+      data: { userId: users[3].id, targetId: photographers[4].id },
     }),
   ]);
 
@@ -740,14 +742,14 @@ async function main() {
     //    the real user owns.
 
     // Real user applied to the Barton Creek wedding (Austin event by Sarah)
-    const austinEvent = events[0]!; // Spring Wedding at Barton Creek
-    const ladyBirdEvent = events[6]!; // Engagement Session at Lady Bird Lake
+    const austinEvent = events[0]; // Spring Wedding at Barton Creek
+    const ladyBirdEvent = events[6]; // Engagement Session at Lady Bird Lake
 
     await db.booking.create({
       data: {
         eventId: austinEvent.id,
         applicantId: realUser.id,
-        ownerId: users[0]!.id, // Sarah owns the event
+        ownerId: users[0].id, // Sarah owns the event
         status: "accepted",
         rate: "$75/hr",
         notes: "I'd love to second shoot this! I know the Barton Creek area well and have shot several weddings there.",
@@ -760,7 +762,7 @@ async function main() {
       data: {
         eventId: ladyBirdEvent.id,
         applicantId: realUser.id,
-        ownerId: users[0]!.id,
+        ownerId: users[0].id,
         status: "applied",
         rate: "$50 flat",
         notes: "Happy to help with off-camera flash — I have a couple of Godox AD200s.",
@@ -784,7 +786,7 @@ async function main() {
     await db.booking.create({
       data: {
         eventId: realUserEvent.id,
-        applicantId: users[1]!.id, // Marcus
+        applicantId: users[1].id, // Marcus
         ownerId: realUser.id,
         status: "applied",
         rate: "$60/hr",
@@ -795,7 +797,7 @@ async function main() {
     await db.booking.create({
       data: {
         eventId: realUserEvent.id,
-        applicantId: users[4]!.id, // Yuki
+        applicantId: users[4].id, // Yuki
         ownerId: realUser.id,
         status: "applied",
         rate: "Negotiable",
@@ -806,9 +808,9 @@ async function main() {
     // A completed booking from a past-ish event
     await db.booking.create({
       data: {
-        eventId: events[5]!.id, // Corporate Headshot Day (Chicago, Elena's)
+        eventId: events[5].id, // Corporate Headshot Day (Chicago, Elena's)
         applicantId: realUser.id,
-        ownerId: users[5]!.id,
+        ownerId: users[5].id,
         status: "completed",
         rate: "$200 flat",
         notes: "I have studio lighting experience and can help keep things moving.",
@@ -822,14 +824,14 @@ async function main() {
     // Thread with Sarah about the Barton Creek wedding
     const threadWithSarah = await db.messageThread.create({
       data: {
-        participants: { connect: [{ id: realUser.id }, { id: users[0]!.id }] },
+        participants: { connect: [{ id: realUser.id }, { id: users[0].id }] },
       },
     });
 
     await db.message.create({
       data: {
         threadId: threadWithSarah.id,
-        senderId: users[0]!.id,
+        senderId: users[0].id,
         content: `Hey ${realUser.firstName}! Thanks for applying to second shoot the Barton Creek wedding. Your portfolio looks great — love your natural light work!`,
         isRead: true,
       },
@@ -845,7 +847,7 @@ async function main() {
     await db.message.create({
       data: {
         threadId: threadWithSarah.id,
-        senderId: users[0]!.id,
+        senderId: users[0].id,
         content: "Ceremony at 4pm, cocktail hour at 5, reception 6-11. I'll send over the full shot list next week. Can you bring a 70-200?",
         isRead: true,
       },
@@ -862,14 +864,14 @@ async function main() {
     // Thread with Marcus about collaborating
     const threadWithMarcus = await db.messageThread.create({
       data: {
-        participants: { connect: [{ id: realUser.id }, { id: users[1]!.id }] },
+        participants: { connect: [{ id: realUser.id }, { id: users[1].id }] },
       },
     });
 
     await db.message.create({
       data: {
         threadId: threadWithMarcus.id,
-        senderId: users[1]!.id,
+        senderId: users[1].id,
         content: `Hi ${realUser.firstName}! I saw your mini-sessions event posting. I'm based in Denver but I'm actually going to be in Austin that week visiting family. Would love to help out!`,
         isRead: true,
       },
@@ -886,14 +888,14 @@ async function main() {
     // Thread with Aisha — unread message
     const threadWithAisha = await db.messageThread.create({
       data: {
-        participants: { connect: [{ id: realUser.id }, { id: users[2]!.id }] },
+        participants: { connect: [{ id: realUser.id }, { id: users[2].id }] },
       },
     });
 
     await db.message.create({
       data: {
         threadId: threadWithAisha.id,
-        senderId: users[2]!.id,
+        senderId: users[2].id,
         content: `Hey ${realUser.firstName}! I came across your profile and love your work. I'm planning a styled shoot in Austin next month — any interest in collaborating? I'm thinking desert-bohemian vibes at a ranch venue.`,
         isRead: false,
       },

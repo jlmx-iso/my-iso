@@ -2,13 +2,13 @@ import { Box, Container, Group } from "@mantine/core";
 import Image from "next/image";
 import Link from "next/link";
 
+import { auth } from "~/auth";
+
 import { LoginButton } from "./buttons/LoginButton";
 import { UserProfileButton } from "./buttons/UserProfileButton";
-import { NotificationBell } from "./nav/NotificationBell";
 import NavLinks from "./nav/NavLinks";
-
+import { NotificationBell } from "./nav/NotificationBell";
 import logo from "../../../public/img/logo.webp";
-import { auth } from "~/auth";
 
 const authLinks = [
     { href: "/app/events", label: "Events" },

@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
 import { TextInput, Button, Group, Stack, Text, Collapse, ActionIcon, Paper, SegmentedControl } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { IconAdjustments, IconSearch } from '@tabler/icons-react';
-import { api } from '~/trpc/react';
-import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
+import { useState } from 'react';
+
 import EmptyState from '~/app/_components/EmptyState';
-import SearchResults from './_components/SearchResults';
+import { LocationAutocomplete } from '~/app/_components/LocationAutocomplete';
+import { api } from '~/trpc/react';
+
 import SearchLoadingSkeleton from './_components/SearchLoadingSkeleton';
+import SearchResults from './_components/SearchResults';
 
 type SearchType = 'all' | 'photographers' | 'events';
 

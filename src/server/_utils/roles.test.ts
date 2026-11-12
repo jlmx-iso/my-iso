@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { ADMIN_ROLES, USER_ROLES, WAITLIST_APPROVED_CODE } from "./roles";
 
 describe("USER_ROLES", () => {

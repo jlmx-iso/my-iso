@@ -1,4 +1,5 @@
 import type { AnyTRPCRouter } from "@trpc/server";
+
 import { mockDb } from "../mocks/db";
 
 type MockSession = {
@@ -29,10 +30,12 @@ export function createTestCaller<TRouter extends AnyTRPCRouter>(
   router: TRouter,
   ctx: MockContext = {},
 ) {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
-  return (router as any).createCaller(buildContext(ctx)) as ReturnType<
-    TRouter["createCaller"]
-  >;
+  // The mock context only implements the parts of the real context that the
+  // routers under test touch, so it is deliberately not checked against it.
+  const createCaller = router.createCaller as (
+    context: unknown,
+  ) => ReturnType<TRouter["createCaller"]>;
+  return createCaller(buildContext(ctx));
 }
 
 /** Create a tRPC caller with an authenticated session. */

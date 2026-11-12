@@ -1,8 +1,8 @@
 import { Stack } from "@mantine/core";
 
-import PageHeader from "~/app/_components/PageHeader";
 import { CardStack } from "~/app/_components/discover";
 import { DiscoverPreferences } from "~/app/_components/discover";
+import PageHeader from "~/app/_components/PageHeader";
 
 export default function DiscoverPage() {
   return (

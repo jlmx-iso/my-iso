@@ -3,11 +3,12 @@
 import { Box } from "@mantine/core";
 import { IconCamera } from "@tabler/icons-react";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export function PortfolioThumbnail({ src, alt }: { src: string; alt: string }) {
-  const [broken, setBroken] = useState(false);
-  useEffect(() => { setBroken(false); }, [src]);
+  // Track which src failed so a new image gets a fresh attempt.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const broken = brokenSrc === src;
 
   if (broken) {
     return (
@@ -32,7 +33,7 @@ export function PortfolioThumbnail({ src, alt }: { src: string; alt: string }) {
       alt={alt}
       fill
       style={{ objectFit: "cover" }}
-      onError={() => setBroken(true)}
+      onError={() => setBrokenSrc(src)}
     />
   );
 }

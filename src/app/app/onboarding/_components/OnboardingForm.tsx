@@ -12,20 +12,15 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-
 import { type FileWithPath } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
-import Cropper, { type CropperProps } from "react-easy-crop";
-import type { Area } from "react-easy-crop";
-
-import { OnboardingComplete } from "./OnboardingComplete";
-import { PlanSelection } from "./PlanSelection";
-import { WelcomeScreen } from "./WelcomeScreen";
-
 import { useSession } from "next-auth/react";
-import { isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
+import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
+import type { Area } from "react-easy-crop";
+import Cropper from "react-easy-crop";
+
+import { dataUrlToBase64, isValidInstagramHandle, isValidPhone, logger, normalizeInstagramHandle, normalizePhone } from "~/_utils";
 import { ErrorAlert } from "~/app/_components/Alerts";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Loader } from "~/app/_components/Loader";
@@ -33,6 +28,10 @@ import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { env } from "~/env";
 import type { PricingInfo } from "~/server/_utils/pricing";
 import { api } from "~/trpc/react";
+
+import { OnboardingComplete } from "./OnboardingComplete";
+import { PlanSelection } from "./PlanSelection";
+import { WelcomeScreen } from "./WelcomeScreen";
 
 // Onboarding stages (not steps in the stepper — separate screens)
 type Stage = "welcome" | "profile" | "plan" | "complete";
@@ -124,9 +123,13 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
   // Preview URL for the cropped file
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   useEffect(() => {
+    // The object URL is an external resource owned by this effect: it must be
+    // created and revoked together, so it cannot be derived during render.
+    /* eslint-disable react-hooks/set-state-in-effect -- see above */
     if (!avatarFiles?.[0]) { setAvatarPreviewUrl(null); return; }
     const url = URL.createObjectURL(avatarFiles[0]);
     setAvatarPreviewUrl(url);
+    /* eslint-enable react-hooks/set-state-in-effect */
     return () => URL.revokeObjectURL(url);
   }, [avatarFiles]);
 
@@ -255,7 +258,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
       await new Promise<void>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = async () => {
-          const base64File = reader.result?.toString().split(",")[1];
+          const base64File = dataUrlToBase64(reader.result);
           if (base64File) {
             try {
               await uploadAvatar.mutateAsync({ image: base64File });
@@ -489,6 +492,7 @@ export function OnboardingForm({ photographerCount, pricing, user }: OnboardingF
                   <Box pos="relative">
                     <Image
                       src={avatarPreviewUrl}
+                      alt="Profile photo preview"
                       radius="md"
                       style={{ maxHeight: 400, objectFit: "cover", width: "100%" }}
                     />

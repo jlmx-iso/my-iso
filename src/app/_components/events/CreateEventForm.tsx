@@ -9,11 +9,12 @@ import dayjs from "dayjs";
 import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
-import { Loader } from "../Loader";
 
+import { dataUrlToBase64, logger } from "~/_utils";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
-import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
+
+import { Loader } from "../Loader";
 
 
 type CreateEventProps = {
@@ -55,7 +56,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
         const reader = new FileReader();
         if (image) {
             reader.onloadend = async () => {
-                const base64File = reader.result?.toString().split(',')[1];
+                const base64File = dataUrlToBase64(reader.result);
 
                 if (base64File) {
                     try {

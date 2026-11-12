@@ -4,6 +4,7 @@ import { Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
 import { IconHeart, IconMessageCircle } from '@tabler/icons-react';
 import Link from 'next/link';
+
 import { formatLocalDate } from '~/_lib/dayjs';
 import UserBadge from '~/app/_components/UserBadge';
 import type { RouterOutputs } from '~/trpc/react';

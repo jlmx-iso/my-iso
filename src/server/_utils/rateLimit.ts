@@ -99,10 +99,7 @@ export async function checkRateLimit(
 
   try {
     // Get current rate limit data
-    const data = await kv.get(key, 'json') as {
-      count: number;
-      resetAt: number;
-    } | null;
+    const data = await kv.get<{ count: number; resetAt: number }>(key, 'json');
 
     // If no data or window expired, start fresh
     if (!data || now > data.resetAt) {
@@ -173,14 +170,14 @@ export async function checkRateLimit(
  */
 export const RateLimits = {
   /** Strict limit for sensitive operations (e.g., password reset, email verification) */
-  STRICT: { limit: 5, window: 300 } as RateLimitConfig, // 5 requests per 5 minutes
+  STRICT: { limit: 5, window: 300 }, // 5 requests per 5 minutes
 
   /** Standard limit for authenticated API requests */
-  STANDARD: { limit: 100, window: 60 } as RateLimitConfig, // 100 requests per minute
+  STANDARD: { limit: 100, window: 60 }, // 100 requests per minute
 
   /** Generous limit for public endpoints */
-  GENEROUS: { limit: 1000, window: 60 } as RateLimitConfig, // 1000 requests per minute
+  GENEROUS: { limit: 1000, window: 60 }, // 1000 requests per minute
 
   /** Authentication attempts */
-  AUTH: { limit: 10, window: 900 } as RateLimitConfig, // 10 attempts per 15 minutes
+  AUTH: { limit: 10, window: 900 }, // 10 attempts per 15 minutes
 } as const;

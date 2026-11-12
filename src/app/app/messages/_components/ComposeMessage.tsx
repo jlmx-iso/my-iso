@@ -6,11 +6,12 @@ import { getHotkeyHandler } from "@mantine/hooks";
 import { IconSend } from "@tabler/icons-react";
 import { useCallback } from "react";
 
-import { type Recipient } from "./NewMessageModal";
 
 import { storeThreadKey } from "~/_utils/keystore";
 import { useE2EE } from "~/app/_hooks/useE2EE";
 import { api } from "~/trpc/react";
+
+import { type Recipient } from "./NewMessageModal";
 
 type ComposeMessageProps = {
   recipient: Recipient;

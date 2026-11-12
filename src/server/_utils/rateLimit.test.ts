@@ -7,6 +7,9 @@ vi.mock("~/_utils", () => ({
 
 import { checkRateLimit } from "./rateLimit";
 
+// checkRateLimit reads the KV binding from globalThis.RATE_LIMITER.
+const testGlobal = globalThis as { RATE_LIMITER?: unknown };
+
 const CONFIG = { limit: 5, window: 60 };
 const ID = "test-identifier";
 
@@ -27,16 +30,14 @@ function makeMockKv(initial: { count: number; resetAt: number } | null = null) {
 beforeEach(() => {
   // Ensure RATE_LIMITER is not on globalThis
   if ("RATE_LIMITER" in globalThis) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (globalThis as any).RATE_LIMITER;
+    delete testGlobal.RATE_LIMITER;
   }
 });
 
 afterEach(() => {
   vi.clearAllMocks();
   if ("RATE_LIMITER" in globalThis) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (globalThis as any).RATE_LIMITER;
+    delete testGlobal.RATE_LIMITER;
   }
 });
 
@@ -52,8 +53,7 @@ describe("checkRateLimit — no KV namespace", () => {
 describe("checkRateLimit — with KV namespace", () => {
   it("allows first request and sets remaining to limit - 1", async () => {
     const kv = makeMockKv(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).RATE_LIMITER = kv;
+    testGlobal.RATE_LIMITER = kv;
 
     const result = await checkRateLimit(ID, CONFIG);
 
@@ -67,8 +67,7 @@ describe("checkRateLimit — with KV namespace", () => {
     const now = Date.now();
     const resetAt = now + 60_000;
     const kv = makeMockKv({ count: 2, resetAt });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).RATE_LIMITER = kv;
+    testGlobal.RATE_LIMITER = kv;
 
     const result = await checkRateLimit(ID, CONFIG);
 
@@ -80,8 +79,7 @@ describe("checkRateLimit — with KV namespace", () => {
     const now = Date.now();
     const resetAt = now + 30_000; // 30s until reset
     const kv = makeMockKv({ count: CONFIG.limit, resetAt });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).RATE_LIMITER = kv;
+    testGlobal.RATE_LIMITER = kv;
 
     const result = await checkRateLimit(ID, CONFIG);
 
@@ -94,8 +92,7 @@ describe("checkRateLimit — with KV namespace", () => {
   it("resets window when resetAt has expired", async () => {
     const expiredResetAt = Date.now() - 1000; // already in the past
     const kv = makeMockKv({ count: CONFIG.limit, resetAt: expiredResetAt });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).RATE_LIMITER = kv;
+    testGlobal.RATE_LIMITER = kv;
 
     const result = await checkRateLimit(ID, CONFIG);
 
@@ -112,8 +109,7 @@ describe("checkRateLimit — with KV namespace", () => {
       list: vi.fn(),
       getWithMetadata: vi.fn(),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).RATE_LIMITER = kv;
+    testGlobal.RATE_LIMITER = kv;
 
     const result = await checkRateLimit(ID, CONFIG);
 

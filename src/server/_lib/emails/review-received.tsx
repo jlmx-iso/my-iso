@@ -74,7 +74,7 @@ export function ReviewReceivedEmail({
 
       <Section style={calloutBox}>
         <Text style={{ ...calloutText, fontStyle: "italic" }}>
-          "{reviewPreview}"
+          &quot;{reviewPreview}&quot;
         </Text>
         <Text style={{ ...calloutText, marginTop: "8px", fontWeight: "600" }}>
           — {reviewerName}

@@ -5,10 +5,11 @@ import { IconBell, IconLogout, IconSettings, IconUser, IconUserPlus } from "@tab
 import { type Session } from "next-auth";
 import { signOut } from "next-auth/react";
 
-import { LoginButton } from "./LoginButton";
 
 import { Avatar } from "~/app/_components/Avatar";
 import colors from "~/app/theme/colors";
+
+import { LoginButton } from "./LoginButton";
 
 
 type UserProfileButtonProps = {
@@ -26,7 +27,7 @@ export const UserProfileButton = ({ session }: UserProfileButtonProps) => {
         }
     }
 
-    if (!session || !session.user) {
+    if (!session?.user) {
         return (
             <LoginButton />
         );

@@ -20,12 +20,13 @@ import {
   IconShieldCheck,
 } from "@tabler/icons-react";
 
-import BillingActions from "./_components/BillingActions";
 import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
+
+import BillingActions from "./_components/BillingActions";
 
 const PRO_FEATURES = [
   {

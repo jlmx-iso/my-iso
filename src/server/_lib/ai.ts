@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-import { env } from "~/env";
 import { logger } from "~/_utils";
+import { env } from "~/env";
 
 function getClient(): Anthropic | null {
   if (!env.ANTHROPIC_API_KEY) return null;
@@ -125,7 +125,7 @@ ${formatProfile(user2)}`,
 
     const parsed: unknown = JSON.parse(textBlock.text);
     if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
-      return parsed as string[];
+      return parsed;
     }
     return [];
   } catch (error) {

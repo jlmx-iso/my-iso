@@ -20,7 +20,8 @@ declare module "next-auth" {
       lastName: string;
       profilePic?: string;
     } & DefaultSession["user"];
-    accessToken: string;
+    /** Google OAuth access token; absent for OTP and mobile sessions. */
+    accessToken?: string;
   }
 }
 

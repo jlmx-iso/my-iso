@@ -1,4 +1,3 @@
-import { TRPCError } from "@trpc/server";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -6,8 +5,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockDb = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {
+  const db = {
     user: {
       findUnique: vi.fn(),
     },
@@ -77,8 +75,9 @@ vi.mock("~/env", () => ({
 // Imports
 // ---------------------------------------------------------------------------
 
-import { authRouter } from "./auth";
 import { UserVerificationErrors } from "~/_types/errors";
+
+import { authRouter } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Helper

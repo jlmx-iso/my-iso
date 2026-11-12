@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
+
 import MessageTile from "./MessageTile";
 
-import { useMessageWebSocket, type WsMessage } from "~/app/_hooks/useMessageWebSocket";
 
 type DecryptedWsMessage = {
   id: string;
@@ -81,6 +82,7 @@ export default function MessageListener({
 
   // Reset when thread changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- must clear together with the decrypted-id ref below
     setDecrypted([]);
     decryptedIdsRef.current.clear();
   }, [threadId]);

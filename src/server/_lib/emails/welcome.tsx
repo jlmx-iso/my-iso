@@ -31,7 +31,7 @@ export function WelcomeEmail({
       preview={`Welcome to ISO, ${firstName}. You're in.`}
       unsubscribeUrl={unsubscribeUrl}
     >
-      <Heading style={heading}>You're in, {firstName}.</Heading>
+      <Heading style={heading}>You&apos;re in, {firstName}.</Heading>
 
       <Text style={paragraph}>
         Welcome to ISO. We built this for photographers like you — people who
@@ -45,7 +45,7 @@ export function WelcomeEmail({
         No pay-to-play. Just photographers helping photographers.
       </Text>
 
-      <Text style={paragraph}>Here's what you can do right away:</Text>
+      <Text style={paragraph}>Here&apos;s what you can do right away:</Text>
 
       <Text style={paragraph}>
         <strong>Build your profile</strong> — Show the world who you are and
@@ -67,7 +67,7 @@ export function WelcomeEmail({
       </Section>
 
       <Text style={paragraph}>
-        We're a small team — just us, Penny and Jordan — and we read every
+        We&apos;re a small team — just us, Penny and Jordan — and we read every
         single reply to these emails. If you have questions, ideas, or just want
         to say hi, hit reply. We mean it.
       </Text>

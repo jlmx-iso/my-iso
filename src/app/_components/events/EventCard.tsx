@@ -3,10 +3,12 @@
 import { ActionIcon, Badge, Box, Card, Divider, Group, Image, Stack, Text, Title } from "@mantine/core";
 import { useHover } from '@mantine/hooks';
 import { IconMessageCircle } from "@tabler/icons-react";
-import { useSession } from "next-auth/react";
-import { formatLocalDate } from '~/_lib/dayjs';
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useState } from "react";
+
+import { formatLocalDate } from '~/_lib/dayjs';
+import { api } from "~/trpc/react";
 
 import ApplyModal from "../bookings/ApplyModal";
 import UserBadge from "../UserBadge";
@@ -14,7 +16,6 @@ import EventCardSkeleton from "./EventCardSkeleton";
 import AddCommentForm from "../AddCommentForm";
 import Timemarker from "../Timemarker";
 
-import { api } from "~/trpc/react";
 
 type EventCardProps = {
     eventId: string;

@@ -3,13 +3,14 @@ import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import ConversationTile from "./_components/ConversationTile";
-import NewMessageModal from "./_components/NewMessageModal";
 
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
+
+import ConversationTile from "./_components/ConversationTile";
+import NewMessageModal from "./_components/NewMessageModal";
 
 interface LayoutProps {
     children: React.ReactNode;

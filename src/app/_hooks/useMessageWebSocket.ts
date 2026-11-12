@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useLatestRef } from "./useLatestRef";
+
 export type WsMessage = {
   id: string;
   content: string;
@@ -20,13 +22,13 @@ const MAX_RECONNECT_DELAY = 30_000;
 export function useMessageWebSocket({ threadId, onMessage }: UseMessageWebSocketOptions) {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+  const onMessageRef = useLatestRef(onMessage);
 
   useEffect(() => {
     if (!threadId) return;
 
     // Clear stale messages from previous thread
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset belongs with the socket (re)connect for the new thread
     setMessages([]);
 
     let cancelled = false;
@@ -83,7 +85,7 @@ export function useMessageWebSocket({ threadId, onMessage }: UseMessageWebSocket
       wsRef.current?.close(1000, "Component unmounted");
       wsRef.current = null;
     };
-  }, [threadId]);
+  }, [threadId, onMessageRef]);
 
   return { messages };
 }

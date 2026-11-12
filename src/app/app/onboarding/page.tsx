@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { OnboardingForm } from "./_components/OnboardingForm";
 
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
+
+import { OnboardingForm } from "./_components/OnboardingForm";
 
 export default async function OnboardingPage() {
   const session = await auth();

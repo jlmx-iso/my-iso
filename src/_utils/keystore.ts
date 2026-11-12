@@ -24,8 +24,12 @@ function openDb(): Promise<IDBDatabase> {
       }
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(idbError(req));
   });
+}
+
+function idbError(req: IDBRequest): Error {
+  return req.error ?? new Error("IndexedDB request failed");
 }
 
 function idbGet<T>(db: IDBDatabase, store: string, key: string): Promise<T | undefined> {
@@ -33,7 +37,7 @@ function idbGet<T>(db: IDBDatabase, store: string, key: string): Promise<T | und
     const tx = db.transaction(store, "readonly");
     const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(idbError(req));
   });
 }
 
@@ -42,7 +46,7 @@ function idbPut(db: IDBDatabase, store: string, key: string, value: unknown): Pr
     const tx = db.transaction(store, "readwrite");
     const req = tx.objectStore(store).put(value, key);
     req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(idbError(req));
   });
 }
 

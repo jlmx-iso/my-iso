@@ -60,8 +60,10 @@ export async function GET(request: Request) {
           }}
         >
           {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- next/og (Satori) renders plain <img>, not next/image
             <img
               src={avatarUrl}
+              alt=""
               style={{
                 border: "3px solid rgba(255,255,255,0.3)",
                 borderRadius: 60,
@@ -134,8 +136,10 @@ export async function GET(request: Request) {
             justifyContent: "flex-end",
           }}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element -- next/og (Satori) renders plain <img>, not next/image */}
           <img
             src={LOGO_BASE64}
+            alt=""
             style={{ height: 80, opacity: 0.9, width: 80 }}
           />
           <div

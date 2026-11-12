@@ -1,7 +1,7 @@
 "use client";
 
-import { type ReactNode, Children } from "react";
 import { motion } from "framer-motion";
+import { type ReactNode, Children } from "react";
 
 interface StaggerContainerProps {
   children: ReactNode;

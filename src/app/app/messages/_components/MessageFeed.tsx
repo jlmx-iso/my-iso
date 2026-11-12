@@ -7,13 +7,14 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
+import ScrollButton from "~/app/_components/buttons/ScrollButton";
+import { useE2EE } from "~/app/_hooks/useE2EE";
+import { api } from "~/trpc/react";
+
 import ComposeMessage from "./ComposeMessage";
 import MessageListener from "./MessageListener";
 import MessageTile from "./MessageTile";
 
-import { useE2EE } from "~/app/_hooks/useE2EE";
-import ScrollButton from "~/app/_components/buttons/ScrollButton";
-import { api } from "~/trpc/react";
 
 type DecryptedMessage = {
   content: string;
@@ -141,7 +142,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                     <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} decryptMessage={decryptWsMessage} />
                     {displayMessages.map((message, index) => {
                         const nextMessage = displayMessages[index + 1];
-                        const isLastInGroup = !nextMessage || nextMessage.senderId !== message.senderId;
+                        const isLastInGroup = nextMessage?.senderId !== message.senderId;
                         return (
                             <MessageTile
                                 key={message.id}

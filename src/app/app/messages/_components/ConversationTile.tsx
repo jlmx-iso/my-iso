@@ -1,10 +1,11 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 
-import { type Recipient } from "./NewMessageModal";
 
 import { Avatar } from "~/app/_components/Avatar";
 import Timemarker from "~/app/_components/Timemarker";
 import { api } from "~/trpc/server";
+
+import { type Recipient } from "./NewMessageModal";
 
 type ConversationTileProps = {
     threadId: string;

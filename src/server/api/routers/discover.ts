@@ -2,8 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
-import { db as prismaDb } from "~/server/db";
 import { generateIcebreakers, generateMatchSummary } from "~/server/_lib/ai";
+import { db as prismaDb } from "~/server/db";
+
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const discoverRouter = createTRPCRouter({

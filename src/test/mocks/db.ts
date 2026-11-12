@@ -1,9 +1,8 @@
 import { vi } from "vitest";
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+ 
 function makeMockDb() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {
+  const db = {
     user: {
       count: vi.fn(),
       create: vi.fn(),
@@ -46,7 +45,7 @@ function makeMockDb() {
   };
 
   // Default: $transaction calls the callback with the db itself
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+   
   db.$transaction.mockImplementation((cb: (tx: typeof db) => unknown) => cb(db));
 
   return db;
@@ -55,7 +54,7 @@ function makeMockDb() {
 export const mockDb = makeMockDb();
 
 /** Reset all mocks between tests and restore the $transaction default. */
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+ 
 export function resetMockDb() {
   const models = Object.values(mockDb) as Array<Record<string, ReturnType<typeof vi.fn>> | ReturnType<typeof vi.fn>>;
   for (const model of models) {
@@ -70,7 +69,7 @@ export function resetMockDb() {
     }
   }
   // Restore $transaction default after reset
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+   
   (mockDb.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
     (cb: (tx: typeof mockDb) => unknown) => cb(mockDb),
   );

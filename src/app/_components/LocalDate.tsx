@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { formatLocalDate } from "~/_lib/dayjs";
 
@@ -11,12 +11,20 @@ type LocalDateProps = {
 
 /** Client component that formats a UTC date in the user's local timezone. Use this in server components. */
 export default function LocalDate({ date, format }: LocalDateProps) {
-  const [formatted, setFormatted] = useState<string | null>(null);
+  // Render nothing on the server and during hydration: the server's timezone
+  // is not the user's, so formatting there would cause a hydration mismatch.
+  const isClient = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
 
-  useEffect(() => {
-    setFormatted(formatLocalDate(date, format));
-  }, [date, format]);
-
+  if (!isClient) return null;
+  const formatted = formatLocalDate(date, format);
   if (!formatted) return null;
   return <>{formatted}</>;
+}
+
+function subscribeToNothing() {
+  return () => undefined;
 }

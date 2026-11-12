@@ -1,4 +1,3 @@
-import type * as React from "react";
 import {
   Button,
   Heading,
@@ -7,6 +6,7 @@ import {
   Hr,
 } from "@react-email/components";
 import { render } from "@react-email/render";
+import type * as React from "react";
 
 import { Layout } from "./components/Layout";
 import {
@@ -45,7 +45,7 @@ export function InactiveEventsEmail({
       <Heading style={heading}>New events near you</Heading>
 
       <Text style={paragraph}>
-        Hey {firstName}, a few new events popped up that we thought you'd want
+        Hey {firstName}, a few new events popped up that we thought you&apos;d want
         to know about.
       </Text>
 

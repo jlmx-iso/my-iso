@@ -4,6 +4,7 @@ import { Button, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
 import { IconMapPin } from '@tabler/icons-react';
 import Link from 'next/link';
+
 import { Avatar } from '~/app/_components/Avatar';
 import type { RouterOutputs } from '~/trpc/react';
 

@@ -5,8 +5,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockDb = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {
+  const db = {
     user: {
       create: vi.fn(),
       findFirst: vi.fn(),
@@ -19,7 +18,7 @@ const mockDb = vi.hoisted(() => {
     },
     $transaction: vi.fn(),
   };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+   
   db.$transaction.mockImplementation((cb: (tx: typeof db) => unknown) => cb(db));
   return db;
 });
@@ -28,10 +27,8 @@ vi.mock("~/server/db", () => ({ db: mockDb }));
 
 vi.mock("~/_utils", () => ({
   Result: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ok: (v: any) => ({ isOk: true, isErr: false, value: v }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    err: (e: any) => ({ isOk: false, isErr: true, error: e }),
+    ok: (v: unknown) => ({ isOk: true, isErr: false, value: v }),
+    err: (e: unknown) => ({ isOk: false, isErr: true, error: e }),
   },
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
@@ -40,8 +37,9 @@ vi.mock("~/_utils", () => ({
 // Actual imports (resolved after mocks are hoisted)
 // ---------------------------------------------------------------------------
 
-import { createUser, verifyUserEmail } from "./user";
 import { UserVerificationErrors } from "~/_types/errors";
+
+import { createUser, verifyUserEmail } from "./user";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,7 +78,7 @@ const fakeUser = {
 beforeEach(() => {
   vi.clearAllMocks();
   // Restore $transaction default
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+   
   (mockDb.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
     (cb: (tx: typeof mockDb) => unknown) => cb(mockDb),
   );
@@ -92,9 +90,9 @@ beforeEach(() => {
 
 describe("createUser", () => {
   it("creates user and returns Result.ok when email is unique", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce(null);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.create.mockResolvedValueOnce(fakeUser);
 
     const result = await createUser(baseInput);
@@ -103,12 +101,12 @@ describe("createUser", () => {
     if (result.isOk) {
       expect(result.value).toEqual(fakeUser);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+     
     expect(mockDb.user.create).toHaveBeenCalledOnce();
   });
 
   it("returns Result.err('User already exists') when email is taken", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce({ id: "existing-user" });
 
     const result = await createUser(baseInput);
@@ -117,12 +115,12 @@ describe("createUser", () => {
     if (result.isErr) {
       expect(result.error.message).toBe("User already exists");
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+     
     expect(mockDb.user.create).not.toHaveBeenCalled();
   });
 
   it("returns Result.err when findFirst throws", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockRejectedValueOnce(new Error("DB error"));
 
     const result = await createUser(baseInput);
@@ -134,9 +132,9 @@ describe("createUser", () => {
   });
 
   it("returns Result.err('Error registering user') when create throws", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce(null);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.create.mockRejectedValueOnce(new Error("Constraint violation"));
 
     const result = await createUser(baseInput);
@@ -160,13 +158,13 @@ const fakeToken = {
 
 describe("verifyUserEmail", () => {
   it("returns Result.ok(userId) for valid non-expired token", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce(fakeToken);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce({ ...fakeUser, emailVerified: null });
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.update.mockResolvedValueOnce({ ...fakeUser, emailVerified: new Date() });
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.delete.mockResolvedValueOnce(fakeToken);
 
     const result = await verifyUserEmail("123456");
@@ -178,7 +176,7 @@ describe("verifyUserEmail", () => {
   });
 
   it("returns Result.err(TOKEN_NOT_FOUND) when token is absent", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce(null);
 
     const result = await verifyUserEmail("bad-token");
@@ -190,7 +188,7 @@ describe("verifyUserEmail", () => {
   });
 
   it("returns Result.err(TOKEN_EXPIRED) for expired token", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce({
       ...fakeToken,
       expires: new Date(Date.now() - 1000), // expired
@@ -205,9 +203,9 @@ describe("verifyUserEmail", () => {
   });
 
   it("returns Result.err(USER_NOT_FOUND) when user doesn't exist", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce(fakeToken);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce(null);
 
     const result = await verifyUserEmail("123456");
@@ -219,9 +217,9 @@ describe("verifyUserEmail", () => {
   });
 
   it("returns Result.err(USER_ALREADY_VERIFIED) when user is already verified", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce(fakeToken);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce({
       ...fakeUser,
       emailVerified: new Date(), // already verified
@@ -236,11 +234,11 @@ describe("verifyUserEmail", () => {
   });
 
   it("returns Result.err when transaction throws", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.verificationToken.findFirst.mockResolvedValueOnce(fakeToken);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     mockDb.user.findFirst.mockResolvedValueOnce({ ...fakeUser, emailVerified: null });
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+     
     (mockDb.$transaction as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("Transaction failed"),
     );

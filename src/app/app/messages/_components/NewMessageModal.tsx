@@ -3,13 +3,14 @@
 import { Autocomplete, Loader, Stepper } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconMessagePlus } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
-import ComposeMessage from "./ComposeMessage";
 
 import { Modal } from "~/app/_components/Modal";
 import { api } from "~/trpc/react";
+
+import ComposeMessage from "./ComposeMessage";
 
 export type Recipient = {
     photographer: {
@@ -26,7 +27,7 @@ export default function NewMessageModal() {
     const [recipientQuery, setRecipientQuery] = useState('');
     const [recipient, setRecipient] = useState<Recipient>();
     const [active, setActive] = useState(0);
-    const [opened, { open, close }] = useDisclosure(false);
+    const [opened, { open }] = useDisclosure(false);
     const nextStep = () => setActive((current) => (current < 2 ? current + 1 : current));
 
     const searchParams = useSearchParams();

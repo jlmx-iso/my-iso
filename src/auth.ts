@@ -1,19 +1,17 @@
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import type { PendingInviteValidation } from "@prisma/client";
 import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
-import type { Adapter } from "next-auth/adapters";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import ResendProvider from "next-auth/providers/resend";
-import type { PendingInviteValidation } from "@prisma/client";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
 import { providers, sessionConfig } from "~/auth.config";
 import { env } from "~/env";
-import { db } from "~/server/db";
-import { checkIfUserExists } from "~/server/_utils/auth/auth";
 import { generateUniqueInviteCode } from "~/server/_utils/invite";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
+import { db } from "~/server/db";
 
 /**
  * Shared invite redemption logic used by both the OTP credential provider
@@ -94,7 +92,7 @@ async function redeemInviteAndSetupUser(
  * See: src/server/api/routers/auth.ts for magic link implementation
  */
 export const authConfig = {
-  adapter: PrismaAdapter(db) as Adapter,
+  adapter: PrismaAdapter(db),
   providers: [
     ...providers,
     ...(env.RESEND_API_KEY

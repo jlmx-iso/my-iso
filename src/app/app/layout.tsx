@@ -1,10 +1,11 @@
 import { Container } from "@mantine/core";
 
+import { auth } from "~/auth";
+import { api } from "~/trpc/server";
+
 import { OnboardingCheck } from "./_components/OnboardingCheck";
 import { Providers } from "./providers";
 
-import { auth } from "~/auth";
-import { api } from "~/trpc/server";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
     const session = await auth();

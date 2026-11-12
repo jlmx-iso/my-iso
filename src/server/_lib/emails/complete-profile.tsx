@@ -59,7 +59,7 @@ export function CompleteProfileEmail({
       </Section>
 
       <Text style={paragraph}>
-        It doesn't have to be perfect — just real. People connect with
+        It doesn&apos;t have to be perfect — just real. People connect with
         authenticity, not polish.
       </Text>
 

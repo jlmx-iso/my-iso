@@ -40,11 +40,11 @@ export function BookingAcceptedEmail({
       preview={`You're booked for ${eventTitle}!`}
       unsubscribeUrl={unsubscribeUrl}
     >
-      <Heading style={heading}>You're booked!</Heading>
+      <Heading style={heading}>You&apos;re booked!</Heading>
 
       <Text style={paragraph}>
         Congrats {applicantFirstName} — {ownerName} accepted your application.
-        You're officially on the roster.
+        You&apos;re officially on the roster.
       </Text>
 
       <Section style={calloutBox}>

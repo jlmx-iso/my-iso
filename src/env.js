@@ -88,7 +88,7 @@ export const env = createEnv({
       .url()
       .optional()
       .refine(
-        (str) => !str || !str.includes("YOUR_MYSQL_URL_HERE"),
+        (str) => !str?.includes("YOUR_MYSQL_URL_HERE"),
         "You forgot to change the default URL"
       ),
 

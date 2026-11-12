@@ -250,7 +250,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
                 <Text size="sm" fw={600}>Portfolio</Text>
                 {hasPortfolio ? (
                   <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
-                    {photo!.portfolioImages!.map((img, i) => (
+                    {photo.portfolioImages!.map((img, i) => (
                       <Image
                         key={i}
                         src={img.image}
@@ -283,7 +283,7 @@ export default function SwipeCard({ user, onSwipe, isTop }: SwipeCardProps) {
               </Stack>
 
               {/* Rating detail */}
-              {photo && photo.avgRating != null && (
+              {photo?.avgRating != null && (
                 <Group gap="xs">
                   <Group gap={4}>
                     {[1, 2, 3, 4, 5].map((star) => (

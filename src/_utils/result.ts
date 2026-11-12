@@ -4,7 +4,7 @@ type ErrResult<T> = { error: T; isErr: true; isOk: false };
 export type Result<TOk = unknown, TErr = Error> = OkResult<TOk> | ErrResult<TErr>;
 
 
-// eslint-disable-next-line @typescript-eslint/no-namespace
+ 
 /**
  * Result type for functional error handling
  *
@@ -14,12 +14,12 @@ export type Result<TOk = unknown, TErr = Error> = OkResult<TOk> | ErrResult<TErr
  * - Check result.isOk before accessing result.value
  * - Check result.isErr before accessing result.error
  */
-export namespace Result {
-  export function ok<T>(value: T): OkResult<T> {
+export const Result = {
+  ok<T>(value: T): OkResult<T> {
     return { isErr: false, isOk: true, value };
-  }
+  },
 
-  export function err<T>(error: T): ErrResult<T> {
+  err<T>(error: T): ErrResult<T> {
     return { error, isErr: true, isOk: false };
-  }
-}
+  },
+};

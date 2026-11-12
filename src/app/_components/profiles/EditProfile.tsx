@@ -3,18 +3,18 @@
 import { Button, Group, Stack, Text, TextInput, Textarea, type TextInputProps } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type Photographer } from "@prisma/client";
-import { IconCheck } from "@tabler/icons-react";
 import { zod4Resolver } from 'mantine-form-zod-resolver';
-import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { redirect } from 'next/navigation';
+import { useSession } from "next-auth/react";
 import { z } from "zod";
 
-import { Loader } from "../Loader";
 
 import { isValidInstagramHandle, isValidSocialHandle, normalizeInstagramHandle, normalizeFacebookHandle, normalizeTwitterHandle, normalizeTikTokHandle, normalizeVimeoHandle, normalizeYouTubeHandle } from "~/_utils";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { api } from "~/trpc/react";
+
+import { Loader } from "../Loader";
 
 
 function SocialHandleInput({ prefix, ...props }: TextInputProps & { prefix: string }) {

@@ -46,7 +46,7 @@ export function NewMessageEmail({
 
       <Section style={calloutBox}>
         <Text style={{ ...calloutText, fontStyle: "italic" }}>
-          "{messagePreview}"
+          &quot;{messagePreview}&quot;
         </Text>
       </Section>
 

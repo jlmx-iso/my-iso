@@ -17,8 +17,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 
-import logo from "../../../public/img/logo.webp";
 import { api } from "~/trpc/react";
+
+import logo from "../../../public/img/logo.webp";
 
 export default function Page() {
   const [position, setPosition] = useState<number | null>(null);

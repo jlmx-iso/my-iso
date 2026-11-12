@@ -5,8 +5,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockDb = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {
+  const db = {
     user: {
       findUnique: vi.fn(),
     },

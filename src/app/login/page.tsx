@@ -18,14 +18,14 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
-import logo from "../../../public/img/logo.webp";
 import { api } from "~/trpc/react";
+
+import logo from "../../../public/img/logo.webp";
 
 export default function Page() {
   const [step, setStep] = useState<"email" | "code">("email");
   const [isLoading, setIsLoading] = useState<"google" | "email" | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
 
   const form = useForm({
     initialValues: { email: "" },
@@ -63,14 +63,15 @@ export default function Page() {
 
   const handleVerifyOtp = async (code: string) => {
     setOtpError(null);
-    setIsVerifying(true);
     const result = await signIn("otp", {
       email: form.values.email,
       code,
       redirect: false,
     });
-    setIsVerifying(false);
     if (result?.ok) {
+      // Full page load (not router.push) so the server-rendered layout picks up
+      // the session cookie that signIn() just set.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- see above
       window.location.href = "/app/events";
     } else {
       setOtpError("Invalid or expired code.");

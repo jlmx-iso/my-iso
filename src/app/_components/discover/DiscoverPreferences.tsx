@@ -40,12 +40,16 @@ export default function DiscoverPreferences() {
   const [budgetMax, setBudgetMax] = useState<number | null>(null);
 
   useEffect(() => {
+    // Seeds the editable form state once the saved preferences arrive (and
+    // again after a save refetches them).
+    /* eslint-disable react-hooks/set-state-in-effect -- see above */
     if (prefs) {
       setIsDiscoverable(prefs.isDiscoverable);
       setSeekingTypes(prefs.seekingTypes);
       setBudgetMin(prefs.budgetMin);
       setBudgetMax(prefs.budgetMax);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [prefs]);
 
   const toggleType = (type: string) => {

@@ -1,9 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { placeAutocomplete } from "~/server/_lib/google";
+
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
-import { placeAutocomplete } from "~/server/_lib/google";
 
 
 export const googleRouter = createTRPCRouter({

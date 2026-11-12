@@ -1,6 +1,6 @@
-import { env } from '~/env';
-import { Result } from '~/_utils/result';
 import { logger } from '~/_utils';
+import { Result } from '~/_utils/result';
+import { env } from '~/env';
 
 type GooglePlacesResponse = {
   predictions: Array<{ description: string }>;

@@ -5,8 +5,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const mockDb = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = {
+  const db = {
     subscription: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -87,9 +86,10 @@ vi.mock("~/server/_utils/pricing", () => ({
 // Imports
 // ---------------------------------------------------------------------------
 
+import { getPriceIdForCheckout, getPricingForRole } from "~/server/_utils/pricing";
+
 import { subscriptionRouter } from "./subscription";
 
-import { getPriceIdForCheckout, getPricingForRole } from "~/server/_utils/pricing";
 
 // ---------------------------------------------------------------------------
 // Helpers

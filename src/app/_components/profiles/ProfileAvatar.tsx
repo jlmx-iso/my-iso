@@ -5,17 +5,18 @@ import { type FileWithPath } from '@mantine/dropzone';
 import { useHover } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconUpload } from '@tabler/icons-react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 
-import { Avatar } from '../Avatar';
 
+import { dataUrlToBase64, logger } from '~/_utils';
 import { Dropzone } from '~/app/_components/input/Dropzone';
 import { Modal } from '~/app/_components/Modal';
 import colors from '~/app/theme/colors';
-import { logger } from '~/_utils';
 import { api } from '~/trpc/react';
+
+import { Avatar } from '../Avatar';
 
 
 type AvatarProps = {
@@ -44,7 +45,7 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
         setUploading(true);
         const reader = new FileReader();
         reader.onloadend = async () => {
-            const base64File = reader.result?.toString().split(',')[1]; // Get base64 string without the prefix
+            const base64File = dataUrlToBase64(reader.result); // Get base64 string without the prefix
 
             if (base64File) {
                 try {
@@ -75,7 +76,7 @@ export default function ProfileAvatar({ isSelf, avatar, name, size }: AvatarProp
 
     const previews = files?.map((file, index) => {
         const imageUrl = URL.createObjectURL(file);
-        return <Image key={index} src={imageUrl} onLoad={() => URL.revokeObjectURL(imageUrl)} />;
+        return <Image key={index} src={imageUrl} alt={`Preview of ${file.name}`} onLoad={() => URL.revokeObjectURL(imageUrl)} />;
     });
 
     if (isSelf) {

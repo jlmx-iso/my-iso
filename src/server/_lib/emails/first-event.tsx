@@ -39,7 +39,7 @@ export function FirstEventEmail({
       <Heading style={heading}>Ready to shoot, {firstName}?</Heading>
 
       <Text style={paragraph}>
-        Events are the heart of ISO. Whether you're looking for your next gig
+        Events are the heart of ISO. Whether you&apos;re looking for your next gig
         or want to organize a shoot, this is where it happens.
       </Text>
 
@@ -69,7 +69,7 @@ export function FirstEventEmail({
       <Text style={paragraph}>
         Browse open calls and events near you. Apply to the ones that match
         your style and availability. Some of the best collaborations start
-        with a simple "I'm interested."
+        with a simple &quot;I&apos;m interested.&quot;
       </Text>
       <Section style={ctaSection}>
         <Button style={secondaryButton} href={browseEventsUrl}>

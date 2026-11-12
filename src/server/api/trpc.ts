@@ -15,9 +15,9 @@ import { ZodError } from "zod";
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
 import { env } from "~/env";
-import { db } from "~/server/db";
 import { ADMIN_ROLES } from "~/server/_utils/roles";
 import type { UserRole } from "~/server/_utils/roles";
+import { db } from "~/server/db";
 
 
 /**
@@ -49,11 +49,16 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
             select: { id: true, email: true, firstName: true, lastName: true },
           });
           if (user) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             session = {
-              user: { id: user.id, email: user.email ?? "", name: `${user.firstName} ${user.lastName}` },
-              expires: new Date(((payload.exp as number) ?? 0) * 1000).toISOString(),
-            } as any;
+              user: {
+                id: user.id,
+                email: user.email ?? "",
+                firstName: user.firstName,
+                lastName: user.lastName,
+                name: `${user.firstName} ${user.lastName}`,
+              },
+              expires: new Date((payload.exp ?? 0) * 1000).toISOString(),
+            };
           }
         }
       } catch {
@@ -116,7 +121,7 @@ export const publicProcedure = t.procedure;
 
 /** Reusable middleware that enforces users are logged in before running the procedure. */
 const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
-  if (!ctx.session || !ctx.session.user) {
+  if (!ctx.session?.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
   return next({
@@ -139,7 +144,7 @@ export const protectedProcedure = t.procedure.use(enforceUserIsAuthed);
 
 /** Reusable middleware that enforces the user has an active Pro subscription. */
 const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.session || !ctx.session.user) {
+  if (!ctx.session?.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
@@ -147,7 +152,7 @@ const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
     where: { userId: ctx.session.user.id },
   });
 
-  if (!subscription || !subscription.isActive) {
+  if (!subscription?.isActive) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "An active Pro subscription is required to access this feature.",

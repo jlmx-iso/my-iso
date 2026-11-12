@@ -22,12 +22,13 @@ import {
 } from "@tabler/icons-react";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { Suspense, useState } from "react";
 
-import logo from "../../../public/img/logo.webp";
 import { api } from "~/trpc/react";
+
+import logo from "../../../public/img/logo.webp";
 
 function JoinContent() {
   const searchParams = useSearchParams();
@@ -109,6 +110,9 @@ function JoinContent() {
       redirect: false,
     });
     if (result?.ok) {
+      // Full page load (not router.push) so the server-rendered layout picks up
+      // the session cookie that signIn() just set.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- see above
       window.location.href = "/app/events";
     } else {
       setOtpError("Invalid or expired code.");
