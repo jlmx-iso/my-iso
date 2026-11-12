@@ -61,3 +61,15 @@ test("a signed-in member loads the feed and creates an event", async ({ context,
   await page.reload();
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
 });
+
+test("the page follows the system colour scheme", async ({ context, page }, testInfo) => {
+  await signIn(context);
+  const scheme = testInfo.project.use.colorScheme === "dark" ? "dark" : "light";
+
+  await page.goto("/app/events");
+
+  await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
+  // The page background is the scheme's: white, or the dark page colour.
+  const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(background).toBe(scheme === "dark" ? "rgb(35, 31, 30)" : "rgb(255, 255, 255)");
+});

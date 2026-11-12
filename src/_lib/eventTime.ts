@@ -38,13 +38,18 @@ export type EventTimeOptions = {
 /** Whether `zone` is an IANA time zone this runtime knows. */
 export function isValidTimeZone(zone: string | null | undefined): zone is string {
   if (!zone) return false;
+  if (knownZones.has(zone)) return true;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    knownZones.add(zone);
     return true;
   } catch {
     return false;
   }
 }
+
+/** Zones already found valid (a cache only: see `formatters`). */
+const knownZones = new Set<string>();
 
 /**
  * A zone as the runtime spells it ("america/chicago" → "America/Chicago",
@@ -66,18 +71,36 @@ export function localTimeZone(): string | null {
 
 type Parts = Partial<Record<Intl.DateTimeFormatPartTypes, string>>;
 
+/**
+ * One formatter per zone, made once: building an Intl.DateTimeFormat is the
+ * slow part (a feed card formats several times; the zone list many zones).
+ * Formatters hold no request data, so keeping them between requests is
+ * harmless on a Worker (a new isolate just builds them again).
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string | undefined): Intl.DateTimeFormat {
+  const key = timeZone ?? "";
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      day: "numeric",
+      hour: "numeric",
+      hour12: true,
+      minute: "2-digit",
+      month: "short",
+      timeZone,
+      timeZoneName: "short",
+      weekday: "short",
+      year: "numeric",
+    });
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 function partsOf(date: Date, timeZone: string | undefined): Parts {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    hour: "numeric",
-    hour12: true,
-    minute: "2-digit",
-    month: "short",
-    timeZone,
-    timeZoneName: "short",
-    weekday: "short",
-    year: "numeric",
-  }).formatToParts(date);
+  const parts = formatterFor(timeZone).formatToParts(date);
   const result: Parts = {};
   for (const part of parts) result[part.type] = part.value;
   return result;
@@ -179,9 +202,10 @@ export function dateToZonedWallTime(date: Date | string, zone: string | null | u
 }
 
 /**
- * Time zones to choose from in the event form: a handful of common ones
- * first (with the browser's and the event's own), then every zone the
- * runtime knows. Each value appears once.
+ * Time zones to choose from in the event form: the browser's and the
+ * event's own, the US zones, then the places members travel to shoot
+ * (destination weddings). A curated list rather than all ~420: a Select
+ * that long makes the whole form slow to type in, and nobody scrolls it.
  */
 export const COMMON_TIME_ZONES = [
   "America/New_York",
@@ -191,6 +215,31 @@ export const COMMON_TIME_ZONES = [
   "America/Los_Angeles",
   "America/Anchorage",
   "Pacific/Honolulu",
+  "America/Puerto_Rico",
+] as const;
+
+export const TRAVEL_TIME_ZONES = [
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Mexico_City",
+  "America/Cancun",
+  "America/Costa_Rica",
+  "America/Sao_Paulo",
+  "Atlantic/Reykjavik",
+  "Europe/London",
+  "Europe/Dublin",
+  "Europe/Lisbon",
+  "Europe/Paris",
+  "Europe/Rome",
+  "Europe/Athens",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Bangkok",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
 ] as const;
 
 export function timeZoneChoices(
@@ -199,10 +248,10 @@ export function timeZoneChoices(
 ): Array<{ group: string; items: Array<{ label: string; value: string }> }> {
   const option = (zone: string) => ({ label: `${zone.replaceAll("_", " ")} (${timeZoneLabel(now, zone)})`, value: zone });
   const common = [...new Set([...include.filter(isValidTimeZone), ...COMMON_TIME_ZONES])];
-  const all = Intl.supportedValuesOf("timeZone").filter((zone) => !common.includes(zone));
+  const travel = TRAVEL_TIME_ZONES.filter((zone) => !common.includes(zone) && isValidTimeZone(zone));
   return [
     { group: "Common", items: common.map(option) },
-    { group: "All time zones", items: all.map(option) },
+    { group: "Elsewhere", items: travel.map(option) },
   ];
 }
 

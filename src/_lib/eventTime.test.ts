@@ -78,7 +78,7 @@ describe("wall-clock times in a zone", () => {
 });
 
 describe("timeZoneChoices", () => {
-  it("lists common zones first, with the ones asked for, then every other zone once", () => {
+  it("lists common zones first, with the ones asked for, then travel destinations, each once", () => {
     const [common, all] = timeZoneChoices(["Europe/Berlin", null, "Mars/Base"], START);
     expect(common?.group).toBe("Common");
     expect(common?.items[0]).toEqual({ label: "Europe/Berlin (GMT+1)", value: "Europe/Berlin" });
@@ -88,6 +88,7 @@ describe("timeZoneChoices", () => {
     const values = [...(common?.items ?? []), ...(all?.items ?? [])].map((item) => item.value);
     expect(new Set(values).size).toBe(values.length);
     expect(values).toContain("Asia/Tokyo");
+    expect(all?.group).toBe("Elsewhere");
   });
 });
 
