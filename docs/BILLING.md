@@ -9,6 +9,9 @@ access from that mirror.
 | Access rules (the one place state becomes access) | `src/server/_billing/entitlements.ts` |
 | Stripe subscription → stored state; which of several subscriptions counts | `src/server/_billing/subscriptionState.ts` |
 | Reading from Stripe and the guarded writes | `src/server/_billing/subscriptionStore.ts` |
+| Disputes and refunds, derived from Stripe | `src/server/_billing/paymentStanding.ts` |
+| Leases (one sequence per customer / per user at a time) | `src/server/_billing/lease.ts` |
+| First sync of a legacy row on an access check | `src/server/_billing/lazySync.ts` |
 | Webhook (events, status codes) and its HTTP shell | `src/server/_billing/webhook.ts`, `webhookRequest.ts`, `src/app/webhooks/stripe/route.ts` |
 | Checkout and the billing portal | `src/server/_billing/checkout.ts` |
 | Client, pinned API version, configuration guards | `src/server/_billing/stripe.ts` |
@@ -20,15 +23,31 @@ access from that mirror.
   read from the Stripe API (`latest_invoice` expanded) and stored. Event
   bodies are never trusted for state, so events may arrive late, twice or in
   any order.
-- Every write is one conditional statement (D1 has no transactions). A
-  reading replaces the stored one only if it is newer on Stripe's clock
+- Every read-then-store sequence (a webhook event, checkout's refresh,
+  `syncStatus`, the re-sync, the lazy first sync) runs under a **lease per
+  Stripe customer** (`BillingLease`, key `customer:<id>`), so two readings
+  for one customer are taken and stored one after the other. A webhook that
+  cannot get the lease within ten seconds answers `409` and is redelivered.
+- Every write is also one conditional statement (D1 has no transactions),
+  which is what still holds if a holder outlives its lease. A reading
+  replaces the stored one only if it is newer on Stripe's clock
   (`stripeSyncedAt`, from the response's `Date` header); that timestamp never
-  moves backwards. Two different readings from the same second cannot be
-  ordered, so the subscription is read again once that second has passed.
+  moves backwards. Two readings from the same second cannot be ordered: one
+  is accepted only if it equals the stored one in **every** field read from
+  Stripe, and otherwise (including a reading that would switch the row to
+  another subscription) the subscription is read again once that second has
+  passed.
 - A user has one row. If a reading is for a different subscription than the
   row shows, the row is re-derived from the customer's complete subscription
-  list (all that are not cancelled, following pagination, plus the most
-  recent cancelled ones) using the precedence below.
+  list (everything that is not cancelled and everything that is, following
+  pagination to the end) using the precedence below.
+- **A partial list decides nothing.** If a customer has more subscriptions
+  than are read (five pages of 100, of either kind), nothing is stored from
+  what was read, it is reported, and the outcome is `listing_truncated`:
+  not "this is the primary", and not "there is none". Checkout is refused
+  ("billing unavailable") rather than risk a second subscription. The same
+  holds for the charges behind the payment standing (three pages of 100):
+  past that, the stored standing is left as it is and reported.
 - A user is matched to a Stripe customer by the customer id stored on the
   user when checkout starts, else by `metadata.userId` (which only this
   server writes). Never by email address.
@@ -55,7 +74,7 @@ first that matches decides.
 | --- | --- | --- | --- |
 | 1 | Comped account (`isLifetime`) | Yes | Open-ended; nothing below applies |
 | 2 | A dispute is **open** on a payment of the subscription (any status) | **No** | The dispute is closed |
-| 3 | The payment of the **current** period's invoice was **lost** to a dispute (any status) | **No** | A later invoice is paid |
+| 3 | The most recent **paid** invoice was **lost** to a dispute (any status, `past_due` and its grace included) | **No** | A later invoice is **paid** (issued is not enough) |
 | 4 | `active` | Yes | Open-ended; if set to cancel, until `cancelAt`, and **no** from that moment on even if Stripe's cancellation event has not arrived |
 | 5 | `trialing` | Yes | As `active` |
 | 6 | `past_due` | Yes, for **21 days from when it first became past due** (`pastDueSince`) | `pastDueSince` + 21 days. No anchor stored: **no** |
@@ -85,22 +104,38 @@ The rules behind the columns the status alone does not explain:
   opening while still past due therefore does not start another 21 days, and
   a `past_due` row without the anchor has no access. `PAST_DUE_GRACE_DAYS`
   must be at least as long as the retry schedule configured in Stripe.
-- **Disputes** (`disputeId`, `disputeStatus`, `disputeInvoiceId`). A
-  chargeback suspends access at once, whatever the subscription's status,
-  until it is closed. Won (or withdrawn, or prevented): access returns.
-  Lost: the invoice that charge paid counts as unpaid, so there is no access
-  until a later invoice is paid. An *inquiry* (`warning_*` statuses) takes no
-  money and does not suspend; if it escalates, `charge.dispute.updated`
-  brings the new status. Limitation: one dispute is tracked per
-  subscription; with two open at once, the row follows the most recent.
-- **Refunds** (`refundedInvoiceId`). A **full** refund of the payment of the
-  current period's invoice ends the paid-period entitlement of a
-  **cancelled** subscription (rule 7 becomes rule 8). It does not remove
-  access from a subscription that is still `active`: refunding without
-  cancelling is the merchant's decision to keep it running. To end access
-  for a refunded customer, cancel the subscription (refund and cancel, in
-  either order). A partial refund changes nothing; a refund that is reversed
-  restores the period.
+- **Disputes and refunds are derived, not accumulated**
+  (`paymentStanding.ts`; columns `disputeId`, `disputeStatus`,
+  `disputeInvoiceId`, `refundedInvoiceId`). A dispute, refund or invoice
+  event only says that a subscription's standing may have changed. The
+  standing is then computed from what Stripe has at that moment (the
+  customer's charges, the disputes on those that are disputed, the
+  subscription's invoices and the payments of its latest one) and stored
+  whole, in a statement that also requires the customer's lease to be held
+  still. So events may arrive late, twice or in any order; two disputes open
+  at once are both seen, and winning one does not hide the other; and
+  nothing depends on which event was handled last.
+- **Disputes.** A chargeback suspends access at once, whatever the
+  subscription's status and whichever of its invoices the charge paid, until
+  it is closed. Won (or withdrawn, or prevented): access returns. Lost, on
+  the most recent paid invoice: nothing that was paid for stands behind the
+  subscription any more, so there is no access until a later invoice is
+  **paid**. A renewal that is only issued, or whose payment fails
+  (`past_due`), does not lift it: there is no grace window on top of a lost
+  payment. A loss on an older invoice, with a later one already paid,
+  withholds nothing. An *inquiry* (`warning_*` statuses) takes no money and
+  does not suspend; if it escalates, `charge.dispute.updated` brings the new
+  status.
+- **Refunds.** A **full** refund of the payment of the latest invoice ends
+  the paid-period entitlement of a **cancelled** subscription (rule 7
+  becomes rule 8). It does not remove access from a subscription that is
+  still `active`: refunding without cancelling is the merchant's decision to
+  keep it running. To end access for a refunded customer, cancel the
+  subscription (refund and cancel, in either order). A partial refund
+  changes nothing. A refund that **fails** or is cancelled after the fact
+  (`refund.failed`, `refund.updated`) puts the amount back on the charge, the
+  charge is then no longer refunded in full, and the period is restored. A
+  refund of an older invoice says nothing about the latest one.
 
 What the client is told is `subscription.getStatus` (`SubscriptionView`):
 `hasProAccess`, `accessEndsAt`, `canStartCheckout`, and `billingIssue`
@@ -118,16 +153,17 @@ these; anything else is acknowledged and ignored.
 | --- | --- |
 | `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` | The customer is linked to the user; the session's subscription is read and stored |
 | `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed` | The subscription is read and stored |
-| `invoice.paid`, `invoice.payment_succeeded`, `invoice.payment_failed` | The invoice's subscription is read and stored (this is what sets and clears `paidThroughAt` and `pastDueSince`) |
-| `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed` | The dispute is read from Stripe, traced to its subscription (charge → payment intent → invoice payment → invoice → subscription), and its standing recorded |
-| `charge.refunded` | The charge is read from Stripe and traced the same way; a full refund is recorded, anything else clears the marker |
+| `invoice.paid`, `invoice.payment_succeeded`, `invoice.payment_failed` | The invoice's subscription is read and stored (this is what sets and clears `paidThroughAt` and `pastDueSince`), and its payment standing derived again (a paid invoice is what ends a lost dispute's hold) |
+| `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed` | The event's payment intent is traced to its subscription (payment intent → invoice payment → invoice → subscription); the subscription is read and stored and its whole payment standing derived from Stripe |
+| `charge.refunded`, `charge.refund.updated`, `refund.updated`, `refund.failed` | The same: traced by payment intent, then the standing is derived (is the latest invoice's payment refunded in full *now*?) |
 | `customer.deleted` | The customer id is forgotten and the row ended |
 
 Responses: `200` handled, duplicate, ignored, or about a customer that is not
 a user (logged; a retry could not help). `400` missing or invalid signature,
 before the body is read when the header is absent. `413` body over 1 MB
 (refused from `Content-Length`, or while reading when that header is absent
-or wrong). `409` the same event is being handled right now. `500` a
+or wrong). `409` the same event is being handled right now, or another
+event for the same customer is (`busy`). `500` a
 transient failure, or `STRIPE_WEBHOOK_SECRET` is not set (reported once);
 Stripe retries.
 
@@ -166,14 +202,15 @@ production, in `.dev.vars` for `wrangler dev`, and in `.env` for `next dev`;
   endpoint on another version sends objects this code does not parse
   correctly. When the `stripe` package is upgraded, change the constant and
   the endpoint's version in the same release.
-- Events: the sixteen in the table above, namely
+- Events: the nineteen in the table above, namely
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   `checkout.session.async_payment_failed`, `customer.subscription.created`,
   `customer.subscription.updated`, `customer.subscription.deleted`,
   `customer.subscription.paused`, `customer.subscription.resumed`,
   `invoice.paid`, `invoice.payment_succeeded`, `invoice.payment_failed`,
   `charge.dispute.created`, `charge.dispute.updated`,
-  `charge.dispute.closed`, `charge.refunded`, `customer.deleted`.
+  `charge.dispute.closed`, `charge.refunded`, `charge.refund.updated`,
+  `refund.updated`, `refund.failed`, `customer.deleted`.
 - Put the endpoint's signing secret (`whsec_...`) in `STRIPE_WEBHOOK_SECRET`.
 
 ### Customer portal (Settings → Billing → Customer portal)
@@ -216,12 +253,81 @@ Order:
 
 1. Apply the migration (`npm run db:migrate:production`). The previous
    release keeps working: nothing it uses is removed.
-2. In the Stripe dashboard, set the webhook endpoint's API version and
-   event list as above.
-3. Deploy the new release, with the four price ids set.
-4. Once the previous release is no longer serving any traffic, run the
+2. **Cutover, steps 2a and 2b back to back.** Have the new release built
+   and ready before starting; the time between the two is the cutover
+   window, and it should be minutes.
+   - **2a.** In the Stripe dashboard, set the webhook endpoint's API version
+     and event list as above.
+   - **2b.** Deploy the new release, with the four price ids set.
+3. Once the previous release is no longer serving any traffic, run the
    re-sync. Running it earlier is harmless but must then be repeated, since
    the previous release may still write rows.
+
+### The cutover window
+
+There is one URL and one endpoint, so for a moment one of the two releases
+receives events rendered in the API version of the other. With the order
+above it is the **previous** release that does, between 2a and the moment
+2b has replaced it everywhere:
+
+- It reads `invoice.subscription` and `subscription.current_period_end`,
+  which the new API version does not send. Its handlers do not fail (Stripe
+  sees `200`, nothing is retried); they **store null**: `subscriptionId` and
+  `expiresAt` on `invoice.payment_succeeded`, `expiresAt` on
+  `customer.subscription.created` / `.updated`. It still writes its
+  `isActive` flag correctly, from the status.
+- So what is wrong during the window is stored values, on the rows of
+  customers who had a billing event in those minutes: a row that has lost
+  its subscription id or its expiry date. Decisions made from such a row
+  can be wrong until it is repaired: by the previous release for as long as
+  it still serves (whatever it derives from `expiresAt`), and by the new
+  release if it reads the row before repairing it.
+- Repair is by reading Stripe again, and needs no event to arrive:
+  - the **re-sync** (step 3) selects exactly these rows: its `pending`
+    scope covers a null `subscriptionId` and a null `expiresAt` next to a
+    known period end, besides rows never read from Stripe and rows whose
+    legacy flags contradict their `status`
+    (`resyncScopeFilter`; the test "repairs rows the previous release wrote
+    after the endpoint's API version changed" in
+    `src/server/api/routers/subscription.test.ts` holds it to that);
+  - and each such row also repairs **itself** the first time the new
+    release decides access on it (below), so a customer who shows up before
+    the re-sync has run is not judged on the nulled row.
+- The window is closed when the re-sync has run to the end with exit code
+  0 after the previous release stopped serving. Until then, treat stored
+  billing state as provisional.
+
+The other order (deploy first, change the endpoint afterwards) was not
+chosen: the new release would receive invoice events in the old rendering,
+find no `parent` on them, and acknowledge them as "not a subscription".
+Those are lost without a trace, where the order above leaves rows that are
+recognisably in need of repair.
+
+### Lazy first sync
+
+A row that has never been read from Stripe (`stripeSyncedAt IS NULL`), or
+that lost its `subscriptionId` / `expiresAt` in the cutover window, is read
+from Stripe the first time access is decided on it (`proProcedure`,
+`subscription.getStatus`): `loadSubscriptionForAccess` in `lazySync.ts`.
+The rule:
+
+- It never fails the request and takes at most 5 seconds. If Stripe cannot
+  be reached in that time, or gives an answer that does not settle the row
+  (`unknown_customer`, `subscription_missing`, `listing_truncated`, or
+  nothing at Stripe for a row that grants access), **the decision is made
+  from the row as stored**: what the migration back-filled, which is what
+  the previous release decided. Access is neither granted nor taken away on
+  a guess.
+- It is attempted at most once per 10 minutes per row, across all isolates
+  (a claim in `BillingLease`, key `first-sync:<Subscription id>`), and once
+  per 24 hours after a definite answer that did not settle the row.
+- A row that is not settled is reported through `reportBillingError` with
+  its `Subscription` id and the outcome.
+
+It does not replace the re-sync: rows of users who never come back are only
+reached by the script.
+
+### Running the re-sync
 
 ```sh
 RESYNC_COOKIE='<session cookie of a founder or ambassador>' \
@@ -233,16 +339,27 @@ batches of up to 10 rows until nothing is left, and prints the outcome of
 each batch. It can be interrupted and run again at any time: each row is
 brought up to date by the same idempotent sync the webhook uses, and a row
 that fails (Stripe unavailable) is counted, skipped, and picked up by the
-next run. The default scope, `pending`, covers rows that were never read
-from Stripe (`stripeSyncedAt IS NULL`) and rows whose legacy flags
-contradict their `status` (written by the previous release during the
-overlap); `--scope all` revisits every row with a Stripe subscription or
-customer.
+next run. Each row's payment standing (disputes, refunds) is derived along
+with it. The default scope, `pending`, covers rows that were never read
+from Stripe (`stripeSyncedAt IS NULL`), rows whose legacy flags contradict
+their `status`, and rows with a null `subscriptionId` or a null `expiresAt`
+next to a known period end (all three written by the previous release
+during the overlap); `--scope all` revisits every row with a Stripe
+subscription or customer.
+
+**Exit code.** `0`: every batch ran and every row is settled. `1`: a batch
+could not be run, or at least one row `failed`; the re-sync is **not**
+complete, run it again. `3`: nothing failed, but rows are left that need a
+person; their `Subscription` ids and outcomes are printed (and returned by
+the procedure as `unresolved`). A deployment job must not continue on
+anything but `0`.
 
 Outcomes: `applied` (row now mirrors Stripe), `stale` (it already did),
-`nothing_at_stripe` (the customer has no subscriptions), `subscription_missing`
-(the row names a subscription Stripe does not have, for example test data;
-reported), `unknown_customer`, `failed`.
+`nothing_at_stripe` (the customer has no subscriptions; unresolved only if
+the row still grants access, in which case nothing was changed: look at it),
+`subscription_missing` (the row names a subscription Stripe does not have,
+for example test data; reported), `listing_truncated` (more subscriptions
+than are read; nothing stored), `unknown_customer`, `failed`.
 
 **`unknown_customer`**: the row has a subscription id but its user has no
 stored Stripe customer id, and the subscription's `metadata.userId` does not
@@ -270,12 +387,22 @@ subscription row already exists), so it keeps the access the migration
 back-filled. If the subscription cannot be confirmed as that user's, set the
 row's `status` to `canceled` by hand so it stops granting access.
 
-To see what is still pending afterwards:
+To see what is still pending afterwards (the second query: rows the
+previous release left without a subscription id, on users without a stored
+customer, which nothing can look up and the re-sync therefore does not
+select; resolve them by hand the same way):
 
 ```sql
 SELECT "status", COUNT(*) FROM "Subscription"
-WHERE "stripeSyncedAt" IS NULL AND "subscriptionId" IS NOT NULL
+WHERE NOT "isLifetime"
+  AND ("stripeSyncedAt" IS NULL OR "subscriptionId" IS NULL
+       OR ("expiresAt" IS NULL AND "currentPeriodEnd" IS NOT NULL))
 GROUP BY "status";
+
+SELECT s."id", s."status" FROM "Subscription" s
+JOIN "User" u ON u."id" = s."userId"
+WHERE NOT s."isLifetime" AND s."subscriptionId" IS NULL AND u."stripeId" IS NULL
+  AND s."status" IN ('active', 'trialing', 'past_due');
 ```
 
 ## Testing locally with the stub
@@ -284,7 +411,9 @@ GROUP BY "status";
 the Stripe API. The real Stripe SDK talks to it, so request encoding, error
 mapping and response parsing are exercised; only Stripe's servers are
 replaced. It holds customers, subscriptions, invoices, invoice payments,
-charges, disputes and Checkout sessions in memory, in the shapes of the
+charges, disputes and Checkout sessions in memory (with the listings the
+payment standing reads: charges by customer, disputes by charge, invoices
+by subscription, invoice payments by invoice), in the shapes of the
 pinned API version.
 
 - **Unit and router tests** (`npm test`) start their own stub; nothing to
