@@ -73,6 +73,9 @@ p {
   --iso-accent-border: var(--mantine-color-orange-3);
   /* Hairlines inside a card or list. */
   --iso-divider: var(--mantine-color-gray-2);
+  /* The landing page's highlighted word (large text, at least 3:1). */
+  --iso-hero-from: var(--mantine-color-orange-6);
+  --iso-hero-to: var(--mantine-color-orange-8);
   /* The profile banner when there is no cover photo. */
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%);
 }
@@ -86,6 +89,8 @@ p {
   --iso-accent-surface-strong: var(--mantine-color-orange-light-hover);
   --iso-accent-border: var(--mantine-color-orange-8);
   --iso-divider: var(--mantine-color-dark-4);
+  --iso-hero-from: var(--mantine-color-orange-4);
+  --iso-hero-to: var(--mantine-color-orange-5);
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-light) 0%, var(--mantine-color-teal-light) 55%, var(--mantine-color-purple-light) 100%);
   /* Keyboard focus: the lighter blue reads on the dark surfaces. */
   --focus-ring-color: var(--mantine-color-blue-4);

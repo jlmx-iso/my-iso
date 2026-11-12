@@ -7,7 +7,7 @@
   border: 1px solid var(--iso-accent-border);
   border-radius: var(--mantine-radius-lg);
   background: var(--iso-accent-surface);
-  color: var(--mantine-color-black);
+  color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-sm);
   line-height: 1.4;
   text-align: left;

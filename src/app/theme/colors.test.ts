@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import colors, { black } from "./colors";
+import { DARK_LIGHT_ALPHA, DARK_LIGHT_HOVER_ALPHA, DARK_TINTED, darkLightVariables, withAlpha } from "./darkVariants";
 
 /** WCAG 2.x relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -83,13 +84,14 @@ describe("theme palette contrast (WCAG AA)", () => {
     });
 });
 
-/**
- * Mantine's dark light-variant surface: shade 9 mixed halfway to black
- * (its `darken(color, 0.5)`).
- */
-function darkLight(hex: string): string {
+/** `hex` at `alpha` over the opaque `under`, as the composited `#rrggbb`. */
+function over(hex: string, alpha: number, under: string): string {
     return `#${[1, 3, 5]
-        .map((start) => Math.round(parseInt(hex.slice(start, start + 2), 16) * 0.5).toString(16).padStart(2, "0"))
+        .map((start) => {
+            const top = parseInt(hex.slice(start, start + 2), 16);
+            const bottom = parseInt(under.slice(start, start + 2), 16);
+            return Math.round(top * alpha + bottom * (1 - alpha)).toString(16).padStart(2, "0");
+        })
         .join("")}`;
 }
 
@@ -119,8 +121,18 @@ describe("dark mode contrast (WCAG AA), as Mantine maps the palette", () => {
         }
     });
 
-    it.each(textPalettes)("%s: light variant (shade 0 on darkened shade 9)", (name) => {
-        expect(contrast(colors[name][0], darkLight(colors[name][9]))).toBeGreaterThanOrEqual(AA_TEXT);
+    it.each(DARK_TINTED)("%s: light variant (shade 0 on translucent shade 6) reads, and shows on the page and on cards", (name) => {
+        expect(darkLightVariables[`--mantine-color-${name}-light`]).toBe(withAlpha(colors[name][6], DARK_LIGHT_ALPHA));
+        for (const surface of [page, card]) {
+            for (const alpha of [DARK_LIGHT_ALPHA, DARK_LIGHT_HOVER_ALPHA]) {
+                const tint = over(colors[name][6], alpha, surface);
+                // The text on it.
+                expect(contrast(colors[name][0], tint)).toBeGreaterThanOrEqual(AA_TEXT);
+                // The badge itself stands out from what it sits on (Mantine's
+                // default, half-darkened shade 9, is about 1.0:1: invisible).
+                expect(contrast(tint, surface)).toBeGreaterThanOrEqual(1.1);
+            }
+        }
     });
 
     it("filled controls keep white text on shade 6, and borders and input borders show", () => {

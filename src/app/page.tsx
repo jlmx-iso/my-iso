@@ -70,7 +70,8 @@ function HeroSection() {
             span
             inherit
             variant="gradient"
-            gradient={{ from: "orange.6", to: "orange.8", deg: 135 }}
+            // Tokens: orange.6 to .8 on white, orange.4 to .5 on the dark page (both at least 3:1, large text).
+            gradient={{ from: "var(--iso-hero-from)", to: "var(--iso-hero-to)", deg: 135 }}
           >
             again
           </Text>

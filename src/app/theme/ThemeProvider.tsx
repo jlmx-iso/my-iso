@@ -3,6 +3,7 @@
 import { type CSSVariablesResolver, MantineProvider } from "@mantine/core";
 import { MotionConfig } from "motion/react";
 
+import { darkLightVariables } from "./darkVariants";
 import theme from "./index";
 
 /**
@@ -13,6 +14,8 @@ import theme from "./index";
  */
 const cssVariablesResolver: CSSVariablesResolver = () => ({
     dark: {
+        // Light-variant surfaces that show on the dark page (darkVariants.ts).
+        ...darkLightVariables,
         // Purple's shade 4 is 4.1:1 on the dark page; shade 3 reads.
         "--mantine-color-purple-text": "var(--mantine-color-purple-3)",
     },

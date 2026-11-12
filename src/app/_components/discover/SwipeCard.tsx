@@ -254,7 +254,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
           <Collapse expanded={expanded}>
             <div onPointerDownCapture={(e) => e.stopPropagation()}>
             <Stack gap="md">
-              <Divider color="gray.2" />
+              <Divider color="var(--iso-divider)" />
 
               {/* Portfolio */}
               <Stack gap="xs">
