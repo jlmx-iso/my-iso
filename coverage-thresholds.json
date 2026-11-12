@@ -1,0 +1,36 @@
+{
+  "branches": 57,
+  "functions": 57,
+  "lines": 62,
+  "statements": 62,
+  "src/server/_billing/**": {
+    "branches": 90,
+    "functions": 95,
+    "lines": 96,
+    "statements": 93
+  },
+  "src/server/_db/**": {
+    "branches": 88,
+    "functions": 100,
+    "lines": 93,
+    "statements": 92
+  },
+  "src/server/api/routers/**": {
+    "branches": 76,
+    "functions": 90,
+    "lines": 86,
+    "statements": 85
+  },
+  "src/server/_jobs/**": {
+    "branches": 95,
+    "functions": 100,
+    "lines": 100,
+    "statements": 98
+  },
+  "src/_lib/**": {
+    "branches": 85,
+    "functions": 89,
+    "lines": 75,
+    "statements": 77
+  }
+}

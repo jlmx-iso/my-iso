@@ -49,6 +49,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Diff coverage compares against the pull request's base branch,
+          # so it needs history back to the merge base.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -71,8 +75,27 @@ jobs:
       - name: Migrations match the Prisma schema
         run: npm run db:check
 
-      - name: Test
+      # Vitest with coverage. Fails if any threshold in
+      # coverage-thresholds.json is missed (global and per directory); see
+      # docs/TESTING.md for the bar and how it ratchets up.
+      - name: Test with coverage
         run: npm run test:coverage
+
+      # Of the lines this pull request adds or edits under src/ (tests
+      # excluded), at least 90% must be run by the suite. The report lists
+      # each uncovered line and is also written to the job summary.
+      - name: Diff coverage (90% of changed lines)
+        if: github.event_name == 'pull_request'
+        run: npm run coverage:diff -- --base "origin/${{ github.base_ref }}" --threshold 90
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: ignore
 
   build:
     name: Build (Next.js + Cloudflare Worker)
@@ -119,3 +142,43 @@ jobs:
       # is 10 MiB) or the Prisma WASM module is missing from the bundle.
       - name: Worker bundle dry run and size budget
         run: npm run check:bundle -- --outdir "$RUNNER_TEMP/worker-bundle"
+
+  e2e:
+    name: End-to-end smoke (workerd + local D1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The origin the tests use (e2e/config.mjs), baked into the build.
+      NEXT_PUBLIC_BASE_URL: http://localhost:8788
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js and the Cloudflare Worker (OpenNext)
+        run: npm run build:cf
+
+      # e2e/serve.mjs migrates and seeds a fresh local D1, then runs the built
+      # Worker under `wrangler dev`; Playwright drives Chromium against it.
+      - name: Playwright smoke tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore

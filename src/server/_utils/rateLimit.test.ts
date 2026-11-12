@@ -175,6 +175,8 @@ describe("rate limiter against SQLite", () => {
     await expect(waitAfter(900, 10)).resolves.toBe("Too many requests. Try again in 15 minutes.");
     await expect(waitAfter(3600, 3540)).resolves.toBe("Too many requests. Try again in 1 minute.");
     await expect(waitAfter(86_400, 3600)).resolves.toBe("Too many requests. Try again in 23 hours.");
+    // Exactly an hour reads as one hour, not sixty minutes.
+    await expect(waitAfter(7200, 3600)).resolves.toBe("Too many requests. Try again in 1 hour.");
   });
 
   it("checks limits in order and does not count the ones after a refusal", async () => {
@@ -331,5 +333,92 @@ describe("RateLimits", () => {
   it("gives every policy a distinct bucket name", () => {
     const names = Object.values(RateLimits).map((p) => p.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it.each([
+    ["request", otpRequestLimits],
+    ["verify", otpVerifyLimits],
+  ] as const)("keys every sign-in %s limit on its client or its address, never on nothing", (_kind, limits) => {
+    const ada = limits("203.0.113.9", "ada@example.com");
+    const bob = limits("203.0.113.10", "bob@example.com");
+    // Another client and another address share no counter with this one,
+    // so one person can never use up everyone's allowance.
+    for (const [i, check] of ada.entries()) {
+      expect(check.identifier).not.toBe(bob[i]?.identifier);
+      expect(check.identifier).toMatch(/^(ip:203\.0\.113\.9|email:ada@example\.com)/);
+    }
+  });
+});
+
+// Cases found by mutation testing (npm run test:mutation).
+describe("rate limiter edge cases", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  afterAll(async () => {
+    await testDb.close();
+  });
+
+  beforeEach(async () => {
+    await testDb.db.$executeRaw`DELETE FROM "RateLimit"`;
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it("refunds into the window the clock is in, also part-way through it", async () => {
+    await consumeRateLimit(testDb.db, policy, "user:mid", { cost: 3, nowMs: T0 + 30_000 });
+    await refundRateLimit(testDb.db, policy, "user:mid", 2, { nowMs: T0 + 45_000 });
+    const next = await consumeRateLimit(testDb.db, policy, "user:mid", { nowMs: T0 + 50_000 });
+    expect(next).toMatchObject({ allowed: true, remaining: 1 });
+  });
+
+  it("treats a statement that returns no count as a limiter failure", async () => {
+    const noCount: RateLimitDb = { $executeRaw: testDb.db.$executeRaw.bind(testDb.db), $queryRaw: async () => [] } as never;
+    await expect(consumeRateLimit(noCount, policy, "user:1", { nowMs: T0 })).rejects.toThrow(
+      "Rate limit statement returned no count",
+    );
+    expect(await checkRateLimit(noCount, policy, "user:1")).toEqual({
+      allowed: false,
+      limiterFailed: true,
+      remaining: 0,
+      retryAfter: 30,
+    });
+    expect(await checkRateLimit(noCount, { ...policy, onError: "allow" }, "user:1")).toEqual({
+      allowed: true,
+      limiterFailed: true,
+      remaining: 0,
+      retryAfter: 0,
+    });
+    await expect(enforceRateLimit(noCount, policy, "user:1")).rejects.toThrow(
+      "Temporarily unavailable. Please try again shortly.",
+    );
+  });
+
+  it("sweeps only when a window opens, and only under the probability", async () => {
+    const executeRaw = vi.fn(testDb.db.$executeRaw.bind(testDb.db));
+    const db = { $executeRaw: executeRaw, $queryRaw: testDb.db.$queryRaw.bind(testDb.db) } as unknown as RateLimitDb;
+
+    await consumeRateLimit(db, policy, "user:a", { nowMs: T0, random: () => 0.02 });
+    expect(executeRaw).not.toHaveBeenCalled();
+    await consumeRateLimit(db, policy, "user:a", { nowMs: T0, random: () => 0 });
+    expect(executeRaw).not.toHaveBeenCalled();
+    await consumeRateLimit(db, policy, "user:b", { nowMs: T0, random: () => 0.0199 });
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("still answers when the sweep fails", async () => {
+    const db: RateLimitDb = {
+      $executeRaw: () => {
+        throw new Error("D1 busy");
+      },
+      $queryRaw: testDb.db.$queryRaw.bind(testDb.db),
+    };
+    await expect(consumeRateLimit(db, policy, "user:sweep", { nowMs: T0, random: () => 0 })).resolves.toMatchObject({
+      allowed: true,
+      remaining: 2,
+    });
   });
 });
