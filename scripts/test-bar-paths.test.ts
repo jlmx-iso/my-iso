@@ -11,6 +11,7 @@ import {
   isProtectedPath,
   isRegistryRange,
   lockfileChangeIsSafe,
+  registryTarball,
   packageJsonOnlyDependencies,
   PROTECTED_PATHS,
   protectedChanges,
@@ -27,6 +28,7 @@ describe("isProtectedPath", () => {
     "package.json",
     "package-lock.json",
     ".npmrc",
+    ".nvmrc",
     "stryker.config.mjs",
     "scripts/coverage-guard.mjs",
     "scripts/coverage-ratchet.mjs",
@@ -336,6 +338,58 @@ describe("lockfileChangeIsSafe", () => {
     ).toBe(true);
     const own = readFileSync(path.join(root, "package-lock.json"), "utf8");
     expect(lockfileChangeIsSafe(own, own)).toBe(true);
+  });
+
+  describe("a tarball that is not the entry's own needs the label", () => {
+    const withVitest = (vitest: Record<string, unknown>, next: Record<string, unknown> = entry("next", "16.4.6")) =>
+      lock({
+        "node_modules/next": next,
+        "node_modules/vitest": vitest,
+        "node_modules/@vitest/coverage-v8/node_modules/ast-v8-to-istanbul": entry("ast-v8-to-istanbul", "0.3.0"),
+      });
+
+    it("the same version number on another version's tarball", () => {
+      expect(
+        lockfileChangeIsSafe(base, withVitest({ integrity: "sha512-old", resolved: tarball("vitest", "4.0.0"), version: "5.1.0" })),
+      ).toBe(false);
+    });
+
+    it("another package's tarball, for a measurement tool or any other package", () => {
+      expect(lockfileChangeIsSafe(base, withVitest({ resolved: tarball("not-vitest", "5.1.0"), version: "5.1.0" }))).toBe(false);
+      expect(
+        lockfileChangeIsSafe(base, withVitest(entry("vitest", "5.1.0"), { resolved: tarball("evil", "16.4.6"), version: "16.4.6" })),
+      ).toBe(false);
+    });
+
+    it("a changed name field (an alias in place of the real package), even with a consistent tarball", () => {
+      expect(
+        lockfileChangeIsSafe(base, withVitest({ name: "not-vitest", resolved: tarball("not-vitest", "5.1.0"), version: "5.1.0" })),
+      ).toBe(false);
+    });
+
+    it("a changed integrity hash on a measurement tool, and a measurement tool aliased in under another folder", () => {
+      expect(lockfileChangeIsSafe(base, withVitest({ ...entry("vitest", "5.1.0"), integrity: "sha512-other" }))).toBe(false);
+      expect(
+        lockfileChangeIsSafe(
+          base,
+          lock({
+            "node_modules/next": entry("next", "16.4.6"),
+            "node_modules/vitest": entry("vitest", "5.1.0"),
+            "node_modules/@vitest/coverage-v8/node_modules/ast-v8-to-istanbul": entry("ast-v8-to-istanbul", "0.3.0"),
+            "node_modules/innocent": { name: "vitest", resolved: tarball("vitest", "4.0.0"), version: "4.0.0" },
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it("a name or version the registry could not hold (no path tricks in the URL)", () => {
+      expect(registryTarball("vitest", "5.1.0/../../evil/-/evil-1.0.0")).toBeNull();
+      expect(registryTarball("../evil", "1.0.0")).toBeNull();
+      expect(registryTarball("Vitest", "1.0.0")).toBeNull();
+      expect(registryTarball("@vitest/coverage-v8", "5.1.0")).toBe(
+        "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-5.1.0.tgz",
+      );
+    });
   });
 
   it.each([

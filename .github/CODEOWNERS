@@ -12,6 +12,7 @@
 /package.json                           @jlamoreaux
 /package-lock.json                      @jlamoreaux
 /.npmrc                                 @jlamoreaux
+/.nvmrc                                 @jlamoreaux
 /scripts/coverage-guard.mjs             @jlamoreaux
 /scripts/coverage-ratchet.mjs           @jlamoreaux
 /scripts/diff-coverage.mjs              @jlamoreaux

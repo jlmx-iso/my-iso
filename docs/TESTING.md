@@ -206,11 +206,27 @@ node-semver's grammar (`^1.2.3`, `>=26 <27`, `1.0.0-beta.2`, `1 - 2`; in
   coverage library pinned through `overrides` counts).
 
 `package-lock.json` is checked the same way, from its two texts: a lockfile
-change passes without the label only if every package it installs resolves
-to a tarball under `https://registry.npmjs.org/` (no other host, git, file
-or link) and no measurement package's resolved version changed, appeared
-or went anywhere in the tree. `.npmrc` (registry, scripts and install
-settings) always needs the label.
+change passes without the label only if
+
+- every package it installs resolves to exactly the registry's tarball for
+  its own name and version,
+  `https://registry.npmjs.org/<name>/-/<basename>-<version>.tgz` (the name
+  from the entry's `name` field, else its folder; the basename without the
+  scope). So no other host, git, file or link, and no other version's or
+  other package's tarball behind the right version number;
+- no measurement package changed, appeared or went anywhere in the tree:
+  name, version, tarball and integrity hash are compared together, by path
+  and by the package installed (an alias of one counts).
+
+`.npmrc` (registry, scripts and install settings) and `.nvmrc` (the Node
+version that runs the tests and coverage) always need the label.
+
+**Known limit.** Coverage also depends on packages that are not on the
+measurement list: glob, minimatch, @jridgewell/trace-mapping, tinypool,
+chai, esbuild, rollup and others. A lockfile bump of those passes the
+guard without the label, as any dependency bump does. The list is kept to
+the tools that measure; code-owner review of `package-lock.json` is what
+covers the rest.
 
 All three files are also in CODEOWNERS. Owners cannot be set per field or
 per package, and a dependency bump is worth the owner's eyes anyway, so

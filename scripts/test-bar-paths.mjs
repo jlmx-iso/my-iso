@@ -47,6 +47,8 @@ export const PROTECTED_PATHS = [
   "package-lock.json",
   // Registry, scripts and install settings for npm.
   ".npmrc",
+  // The Node version that runs the tests and coverage (CI reads it).
+  ".nvmrc",
   "stryker.config.mjs",
   "scripts/coverage-*.mjs",
   "scripts/diff-coverage.mjs",
@@ -295,13 +297,50 @@ export function packageJsonOnlyDependencies(baseText, headText) {
 /** Where every package in the lockfile must come from. */
 export const REGISTRY_TARBALLS = "https://registry.npmjs.org/";
 
+/** A package name as the registry allows it: lower case, optionally scoped. */
+const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+/** An exact version (no range): the only kind a lockfile entry holds. */
+const EXACT_VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+/**
+ * The package a lockfile entry installs: its `name` field (set for an
+ * alias), else the folder after the last `node_modules/` in its path.
+ *
+ * @param {string} path
+ * @param {Record<string, unknown>} entry
+ */
+function lockedName(path, entry) {
+  return typeof entry.name === "string" ? entry.name : (path.split("node_modules/").at(-1) ?? "");
+}
+
+/**
+ * The one tarball the registry serves for a package at a version:
+ * https://registry.npmjs.org/<name>/-/<basename>-<version>.tgz, where
+ * <basename> drops the scope ("@vitest/coverage-v8" -> "coverage-v8").
+ * Null when the name or version is not one the registry could hold.
+ *
+ * @param {string} name
+ * @param {unknown} version
+ */
+export function registryTarball(name, version) {
+  if (!PACKAGE_NAME.test(name) || typeof version !== "string" || !EXACT_VERSION.test(version)) return null;
+  return `${REGISTRY_TARBALLS}${name}/-/${name.split("/").pop()}-${version}.tgz`;
+}
+
 /**
  * Whether a package-lock.json change is a plain dependency bump, so it
- * needs no label: every package the head lockfile installs is a tarball
- * from the npm registry (`resolved` under REGISTRY_TARBALLS; no git, file,
- * link or other host), and no measurement package's resolved version
- * changed, appeared or went (at any place in the tree). Anything that is
- * not a version 2/3 lockfile on either side counts as not safe.
+ * needs no label:
+ *
+ * - every package the head lockfile installs resolves to exactly the
+ *   registry tarball of its own name and version (registryTarball): not
+ *   another host, git, a file or a link, and not another version's or
+ *   another package's tarball under the right version number;
+ * - no measurement package changed, appeared or went anywhere in the tree:
+ *   its name, version, tarball and integrity hash are compared together,
+ *   by path and by the package installed (an alias counts).
+ *
+ * Anything that is not a version 2/3 lockfile on either side counts as not
+ * safe.
  *
  * @param {string} baseText
  * @param {string} headText
@@ -313,24 +352,30 @@ export function lockfileChangeIsSafe(baseText, headText) {
     if (!isObject(base) || !isObject(head) || !isObject(base.packages) || !isObject(head.packages)) return false;
     for (const [path, entry] of Object.entries(head.packages)) {
       if (path === "") continue;
-      if (!isObject(entry)) return false;
-      if (entry.link === true) return false;
-      if (typeof entry.resolved !== "string" || !entry.resolved.startsWith(REGISTRY_TARBALLS)) return false;
+      if (!isObject(entry) || entry.link === true) return false;
+      const tarball = registryTarball(lockedName(path, entry), entry.version);
+      if (tarball === null || entry.resolved !== tarball) return false;
     }
     /** @param {Record<string, unknown>} packages */
     const measured = (packages) => {
-      /** @type {Map<string, unknown>} */
-      const versions = new Map();
+      /** @type {Map<string, string>} */
+      const entries = new Map();
       for (const [path, entry] of Object.entries(packages)) {
-        const name = path.split("node_modules/").at(-1) ?? "";
-        if (path !== "" && isMeasurementPackage(name)) versions.set(path, isObject(entry) ? entry.version : undefined);
+        if (path === "") continue;
+        const folder = path.split("node_modules/").at(-1) ?? "";
+        const record = isObject(entry) ? entry : {};
+        if (!isMeasurementPackage(folder) && !isMeasurementPackage(lockedName(path, record))) continue;
+        entries.set(
+          path,
+          JSON.stringify([record.name ?? null, record.version ?? null, record.resolved ?? null, record.integrity ?? null]),
+        );
       }
-      return versions;
+      return entries;
     };
     const before = measured(base.packages);
     const after = measured(head.packages);
     if (before.size !== after.size) return false;
-    for (const [path, version] of after) if (before.get(path) !== version) return false;
+    for (const [path, locked] of after) if (before.get(path) !== locked) return false;
     return true;
   } catch {
     return false;
