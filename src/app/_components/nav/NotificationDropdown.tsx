@@ -1,10 +1,10 @@
 "use client";
 
 import {
+    Box,
     Button,
     Divider,
     Group,
-    Paper,
     Popover,
     ScrollArea,
     Stack,
@@ -32,24 +32,17 @@ export function NotificationDropdown({
     const router = useRouter();
     const utils = api.useUtils();
 
-    const { data } = api.notification.getAll.useQuery(
+    const { data, isPending, isError } = api.notification.getAll.useQuery(
         { limit: 5, offset: 0, unreadOnly: false },
         { enabled: opened },
     );
 
-    const markAsRead = api.notification.markAsRead.useMutation({
-        onSuccess: () => {
-            void utils.notification.getAll.invalidate();
-            void utils.notification.getUnreadCount.invalidate();
-        },
-    });
-
-    const markAllAsRead = api.notification.markAllAsRead.useMutation({
-        onSuccess: () => {
-            void utils.notification.getAll.invalidate();
-            void utils.notification.getUnreadCount.invalidate();
-        },
-    });
+    const invalidate = () => {
+        void utils.notification.getAll.invalidate();
+        void utils.notification.getUnreadCount.invalidate();
+    };
+    const markAsRead = api.notification.markAsRead.useMutation({ onSuccess: invalidate });
+    const markAllAsRead = api.notification.markAllAsRead.useMutation({ onSuccess: invalidate });
 
     const handleNotificationClick = (notificationId: string, linkUrl: string | null, isRead: boolean) => {
         if (!isRead) {
@@ -59,10 +52,6 @@ export function NotificationDropdown({
             router.push(linkUrl);
         }
         onClose();
-    };
-
-    const handleMarkAllAsRead = () => {
-        markAllAsRead.mutate();
     };
 
     const notifications = data?.notifications ?? [];
@@ -76,9 +65,11 @@ export function NotificationDropdown({
             width={360}
             shadow="lg"
             radius="md"
+            trapFocus
+            returnFocus
         >
             <Popover.Target>{target}</Popover.Target>
-            <Popover.Dropdown p={0}>
+            <Popover.Dropdown p={0} aria-label="Notifications">
                 <Group justify="space-between" px="md" py="sm">
                     <Text fw={600} size="sm">
                         Notifications
@@ -87,9 +78,8 @@ export function NotificationDropdown({
                         <Button
                             variant="subtle"
                             size="compact-xs"
-                            color="orange"
                             leftSection={<IconCheck size={14} />}
-                            onClick={handleMarkAllAsRead}
+                            onClick={() => markAllAsRead.mutate()}
                             loading={markAllAsRead.isPending}
                         >
                             Mark all read
@@ -97,16 +87,21 @@ export function NotificationDropdown({
                     )}
                 </Group>
                 <Divider />
-                <ScrollArea.Autosize mah={320} aria-live="polite">
+                <ScrollArea.Autosize mah={320}>
                     {notifications.length === 0 ? (
                         <Text c="dimmed" size="sm" ta="center" py="xl" px="md">
-                            No notifications yet
+                            {isError
+                                ? "Couldn't load notifications."
+                                : isPending
+                                    ? "Loading…"
+                                    : "No notifications yet"}
                         </Text>
                     ) : (
                         <Stack gap={0}>
                             {notifications.map((notification) => (
                                 <UnstyledButton
                                     key={notification.id}
+                                    className="row-interactive"
                                     onClick={() =>
                                         handleNotificationClick(
                                             notification.id,
@@ -114,75 +109,44 @@ export function NotificationDropdown({
                                             notification.isRead,
                                         )
                                     }
-                                    style={{
-                                        display: "block",
-                                        width: "100%",
-                                    }}
+                                    px="md"
+                                    py="sm"
+                                    w="100%"
+                                    display="block"
+                                    bg={notification.isRead ? undefined : "orange.0"}
+                                    style={{ outlineOffset: -2 }}
                                 >
-                                    <Paper
-                                        px="md"
-                                        py="sm"
-                                        radius={0}
-                                        pos="relative"
-                                        style={{
-                                            backgroundColor: notification.isRead
-                                                ? "transparent"
-                                                : "var(--mantine-color-orange-0)",
-                                            cursor: "pointer",
-                                            transition: "background-color 150ms ease",
-                                        }}
-                                        onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
-                                            if (notification.isRead) {
-                                                e.currentTarget.style.backgroundColor =
-                                                    "var(--mantine-color-gray-0)";
-                                            }
-                                        }}
-                                        onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
-                                            if (notification.isRead) {
-                                                e.currentTarget.style.backgroundColor =
-                                                    "transparent";
-                                            }
-                                        }}
-                                    >
-                                        <Group justify="space-between" align="flex-start" wrap="nowrap">
-                                            <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                                                <Text
-                                                    size="sm"
-                                                    fw={notification.isRead ? 400 : 600}
-                                                    lineClamp={1}
-                                                >
-                                                    {notification.title}
-                                                </Text>
-                                                <Text
-                                                    size="xs"
-                                                    c="dimmed"
-                                                    lineClamp={2}
-                                                >
-                                                    {notification.body}
-                                                </Text>
-                                            </Stack>
+                                    <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+                                        <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                                             <Text
-                                                size="xs"
-                                                c="dimmed"
-                                                style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                                                size="sm"
+                                                fw={notification.isRead ? 400 : 600}
+                                                lineClamp={1}
                                             >
+                                                {!notification.isRead && (
+                                                    <span className="sr-only">Unread: </span>
+                                                )}
+                                                {notification.title}
+                                            </Text>
+                                            <Text size="xs" c="dimmed" lineClamp={2}>
+                                                {notification.body}
+                                            </Text>
+                                        </Stack>
+                                        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+                                            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                                                 {dayjs(notification.createdAt).fromNow()}
                                             </Text>
+                                            {!notification.isRead && (
+                                                <Box
+                                                    aria-hidden
+                                                    w={8}
+                                                    h={8}
+                                                    bg="orange.6"
+                                                    style={{ borderRadius: "50%" }}
+                                                />
+                                            )}
                                         </Group>
-                                        {!notification.isRead && (
-                                            <div
-                                                style={{
-                                                    width: 6,
-                                                    height: 6,
-                                                    borderRadius: "50%",
-                                                    backgroundColor: "var(--mantine-color-orange-5)",
-                                                    position: "absolute",
-                                                    top: 12,
-                                                    right: 12,
-                                                }}
-                                            />
-                                        )}
-                                    </Paper>
+                                    </Group>
                                 </UnstyledButton>
                             ))}
                         </Stack>
@@ -193,7 +157,6 @@ export function NotificationDropdown({
                     <Button
                         variant="subtle"
                         size="compact-sm"
-                        color="orange"
                         component={Link}
                         href="/app/notifications"
                         onClick={onClose}

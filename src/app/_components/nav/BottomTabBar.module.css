@@ -1,0 +1,33 @@
+.bar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  height: 100%;
+  padding: 0 var(--mantine-spacing-xs) env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--mantine-color-gray-2);
+  background: var(--mantine-color-body);
+}
+
+.tab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--mantine-color-gray-7);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.tab[aria-current="page"] {
+  color: var(--mantine-color-orange-7);
+  font-weight: 600;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--mantine-color-orange-6);
+  outline-offset: -2px;
+  border-radius: var(--mantine-radius-md);
+}

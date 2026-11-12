@@ -1,8 +1,10 @@
 "use client";
 
-import { Anchor, Group } from "@mantine/core";
+import { Group } from "@mantine/core";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import classes from "./NavLinks.module.css";
 
 type NavLink = {
     href: string;
@@ -17,45 +19,19 @@ export default function NavLinks({ links }: NavLinksProps) {
     const pathname = usePathname();
 
     return (
-        <Group gap={4}>
+        <Group component="nav" aria-label="Main" gap={4} wrap="nowrap">
             {links.map((link) => {
-                const isActive = pathname.startsWith(link.href);
+                // "/#features" style links never match a pathname.
+                const isActive = !link.href.includes("#") && pathname.startsWith(link.href);
                 return (
-                    <Anchor
+                    <Link
                         key={link.href}
-                        component={Link}
                         href={link.href}
-                        px="md"
-                        py={6}
-                        fw={500}
-                        fz="sm"
-                        style={{
-                            borderRadius: "var(--mantine-radius-xl)",
-                            textDecoration: "none",
-                            transition: "background-color 150ms ease",
-                            ...(isActive
-                                ? {
-                                      backgroundColor: "var(--mantine-color-orange-1)",
-                                      color: "var(--mantine-color-orange-7)",
-                                  }
-                                : {
-                                      color: "var(--mantine-color-gray-7)",
-                                  }),
-                        }}
-                        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
-                            if (!isActive) {
-                                e.currentTarget.style.backgroundColor =
-                                    "var(--mantine-color-gray-1)";
-                            }
-                        }}
-                        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
-                            if (!isActive) {
-                                e.currentTarget.style.backgroundColor = "transparent";
-                            }
-                        }}
+                        className={classes.link}
+                        aria-current={isActive ? "page" : undefined}
                     >
                         {link.label}
-                    </Anchor>
+                    </Link>
                 );
             })}
         </Group>
