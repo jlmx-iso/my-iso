@@ -1,5 +1,3 @@
-import { logger } from "~/_utils";
-
 import type { ExtendedPrismaClient } from "./softDelete";
 
 /**
@@ -25,10 +23,11 @@ import type { ExtendedPrismaClient } from "./softDelete";
  * hours): a ten-hour job that began a minute ago is not complete, and
  * cannot be reviewed yet.
  *
- * An event has ONE second-shooter slot: the schema models "filled" as the
- * boolean Event.isFulfilled, not a number of places. So at most one booking
- * of an event is accepted (or completed) at a time, and isFulfilled mirrors
- * whether there is one.
+ * An event has ONE second-shooter slot, not a number of places. So at most
+ * one booking of an event is accepted (or completed) at a time, and an
+ * event "is fulfilled" exactly when there is one: that is derived from the
+ * bookings wherever it is shown (withDerivedFulfilled). The stored column
+ * Event.isFulfilled is legacy; nothing reads or writes it.
  */
 
 export const BOOKING_STATUSES = ["applied", "accepted", "declined", "completed", "canceled"] as const;
@@ -201,19 +200,20 @@ const FULFILLED_LOOKUP_CHUNK = 80;
 
 /**
  * Sets `isFulfilled` on each event from the bookings themselves: true when
- * a booking holds the event's slot. This is what every read of an event
- * returns.
+ * a booking holds the event's slot. This is the ONLY source of the value:
+ * every read of an event goes through here.
  *
- * The stored column Event.isFulfilled is only a copy (kept for the
- * previous release and for ad-hoc queries), written after a transition by
- * syncEventFulfilled in a separate statement that can fail. Reading the
- * truth instead means a failed or missed write can never leave an event
- * showing the wrong state. One query per FULFILLED_LOOKUP_CHUNK events.
+ * The stored column Event.isFulfilled is legacy (see docs/DATABASE.md): it
+ * is not written any more, and whatever it holds is replaced here, so it
+ * can be stale, or dropped, without anything showing. Deriving the value
+ * means there is no second write after a booking transition that could
+ * fail and leave an event showing the wrong state. One query per
+ * FULFILLED_LOOKUP_CHUNK events.
  */
-export async function withDerivedFulfilled<T extends { id: string; isFulfilled: boolean }>(
+export async function withDerivedFulfilled<T extends { id: string }>(
   db: Pick<ExtendedPrismaClient, "booking">,
   events: readonly T[],
-): Promise<T[]> {
+): Promise<Array<T & { isFulfilled: boolean }>> {
   const fulfilled = new Set<string>();
   for (let start = 0; start < events.length; start += FULFILLED_LOOKUP_CHUNK) {
     const ids = events.slice(start, start + FULFILLED_LOOKUP_CHUNK).map((event) => event.id);
@@ -225,31 +225,4 @@ export async function withDerivedFulfilled<T extends { id: string; isFulfilled: 
     for (const holder of holders) fulfilled.add(holder.eventId);
   }
   return events.map((event) => ({ ...event, isFulfilled: fulfilled.has(event.id) }));
-}
-
-/**
- * Makes the stored Event.isFulfilled say whether a booking holds the
- * event's slot.
- *
- * Two conditional statements, each of which looks at the bookings as they
- * are when it runs, so the flag converges on the truth whatever else is
- * happening and however often this is called. A failure is logged, not
- * thrown: the booking transition has already happened. Nothing the app
- * shows depends on this write succeeding: reads derive the value
- * (withDerivedFulfilled), and reading a single event repairs the column.
- */
-export async function syncEventFulfilled(db: BookingDb, eventId: string): Promise<void> {
-  const holdsSlot = { isDeleted: false, status: { in: [...SLOT_HOLDING_STATUSES] } };
-  try {
-    await db.event.updateMany({
-      data: { isFulfilled: true },
-      where: { bookings: { some: holdsSlot }, id: eventId, isFulfilled: false },
-    });
-    await db.event.updateMany({
-      data: { isFulfilled: false },
-      where: { bookings: { none: holdsSlot }, id: eventId, isFulfilled: true },
-    });
-  } catch (error) {
-    logger.error("Failed to update Event.isFulfilled", { error, eventId });
-  }
 }

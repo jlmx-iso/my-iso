@@ -124,7 +124,7 @@ describe("events feed", () => {
 
     for (const [when, expected] of [["upcoming", ["+3", "+4"]], ["past", ["-3", "-4"]]] as const) {
       const first = await as(viewer).getFeedPage({ limit: 2, when });
-      await testDb.raw.event.update({ data: { isDeleted: true }, where: { id: first.nextCursor ?? "" } });
+      await testDb.raw.event.update({ data: { isDeleted: true }, where: { id: first.items.at(-1)?.id ?? "" } });
 
       const second = await as(viewer).getFeedPage({ cursor: first.nextCursor ?? undefined, limit: 2, when });
 
@@ -144,10 +144,63 @@ describe("events feed", () => {
     expect(await allPages({ limit: 1, when: "past" })).toEqual([["-1"], ["-2"], ["-3"]]);
   });
 
-  it("refuses a cursor that names no event", async () => {
-    await createEvent("+1", DAY_MS);
+  it("keeps the page boundary where it was when the cursor event is rescheduled LATER: the events in between are not skipped", async () => {
+    for (let day = 1; day <= 4; day++) await createEvent(`+${day}`, day * DAY_MS);
+    const first = await as(viewer).getFeedPage({ limit: 2 });
+    expect(first.items.map((event) => event.title)).toEqual(["+1", "+2"]);
 
-    await expect(as(viewer).getFeedPage({ cursor: "no-such-event" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // The owner moves the last event of page one from day 2 to day 5.
+    await testDb.db.event.update({ data: { date: new Date(Date.now() + 5 * DAY_MS) }, where: { id: first.items.at(-1)?.id ?? "" } });
+    const second = await as(viewer).getFeedPage({ cursor: first.nextCursor ?? undefined, limit: 2 });
+
+    // Day 3 and day 4 come next, as they would have.
+    expect(second.items.map((event) => event.title)).toEqual(["+3", "+4"]);
+    // The moved event is then met at its new place.
+    const third = await as(viewer).getFeedPage({ cursor: second.nextCursor ?? undefined, limit: 2 });
+    expect(third).toMatchObject({ items: [{ title: "+2" }], nextCursor: null });
+  });
+
+  it("keeps the page boundary where it was when the cursor event is rescheduled EARLIER: nothing already shown is repeated", async () => {
+    for (let day = 2; day <= 5; day++) await createEvent(`+${day}`, day * DAY_MS);
+    for (let day = 2; day <= 5; day++) await createEvent(`-${day}`, -day * DAY_MS);
+
+    const first = await as(viewer).getFeedPage({ limit: 2 });
+    expect(first.items.map((event) => event.title)).toEqual(["+2", "+3"]);
+    // Day 3 is brought forward to day 1, before everything on page one.
+    await testDb.db.event.update({ data: { date: new Date(Date.now() + DAY_MS) }, where: { id: first.items.at(-1)?.id ?? "" } });
+    const second = await as(viewer).getFeedPage({ cursor: first.nextCursor ?? undefined, limit: 5 });
+    expect(second.items.map((event) => event.title)).toEqual(["+4", "+5"]);
+
+    // The same for the past feed (most recent first).
+    const past = await as(viewer).getFeedPage({ limit: 2, when: "past" });
+    expect(past.items.map((event) => event.title)).toEqual(["-2", "-3"]);
+    await testDb.raw.event.update({ data: { date: new Date(Date.now() - HOUR_MS) }, where: { id: past.items.at(-1)?.id ?? "" } });
+    const older = await as(viewer).getFeedPage({ cursor: past.nextCursor ?? undefined, limit: 5, when: "past" });
+    expect(older.items.map((event) => event.title)).toEqual(["-4", "-5"]);
+  });
+
+  it("refuses anything that is not a cursor it issued", async () => {
+    const event = await createEvent("+1", DAY_MS);
+    await createEvent("+2", 2 * DAY_MS);
+    const issued = (await as(viewer).getFeedPage({ limit: 1 })).nextCursor ?? "";
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+
+    // The cursor is a token, not the event's id.
+    expect(issued).not.toBe(event.id);
+    for (const cursor of [
+      "no-such-event",
+      event.id,
+      "!!!",
+      encode({ date: 1, id: "x" }),
+      encode(["2031-01-01", event.id]),
+      encode([Date.now(), ""]),
+      encode([Date.now()]),
+      encode([-5, event.id]),
+      `${issued}AAAA`,
+    ]) {
+      await expect(as(viewer).getFeedPage({ cursor })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    await expect(as(viewer).getFeedPage({ cursor: issued })).resolves.toMatchObject({ items: [{ title: "+2" }] });
   });
 
   it("combines the cursor with the city filter", async () => {
@@ -182,7 +235,7 @@ describe("events feed", () => {
       ).toMatchObject(expected);
     });
 
-    it("reading one event also repairs the stored column, in both directions", async () => {
+    it("reading one event derives the value too, and leaves the legacy column alone", async () => {
       const filled = await createEvent("filled", DAY_MS);
       await acceptedBookingOn(filled.id);
       const open = await createEvent("open", 2 * DAY_MS);
@@ -192,8 +245,9 @@ describe("events feed", () => {
       expect((await as(viewer).getById({ id: filled.id })).isFulfilled).toBe(true);
       expect((await as(viewer).getById({ id: open.id })).isFulfilled).toBe(false);
 
-      expect(await stored(filled.id)).toBe(true);
-      expect(await stored(open.id)).toBe(false);
+      // Nothing depends on the column, so nothing writes it either.
+      expect(await stored(filled.id)).toBe(false);
+      expect(await stored(open.id)).toBe(true);
     });
 
     it("does not count a deleted booking, or one that does not hold the slot", async () => {

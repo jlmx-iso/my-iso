@@ -8,6 +8,7 @@ import {
   checkTransition,
   type BookingAction,
   type BookingRole,
+  withDerivedFulfilled,
 } from "~/server/_db/bookingTransitions";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
@@ -67,8 +68,9 @@ describe("booking state machine", () => {
   const statusOf = async (bookingId: string) =>
     (await testDb.raw.booking.findUniqueOrThrow({ where: { id: bookingId } })).status;
 
+  /** Whether the event is filled, as every read of an event reports it: derived from the bookings. */
   const isFulfilled = async (eventId: string) =>
-    (await testDb.raw.event.findUniqueOrThrow({ where: { id: eventId } })).isFulfilled;
+    (await withDerivedFulfilled(testDb.db, [{ id: eventId }]))[0]?.isFulfilled;
 
   const notificationsFor = (user: TestUser) =>
     testDb.db.notification.findMany({ orderBy: { createdAt: "asc" }, where: { recipientId: user.id } });
@@ -179,6 +181,27 @@ describe("booking state machine", () => {
       const again = await as(applicant).applyToEvent({ eventId: event.id, notes: "Changed my mind" });
 
       expect(again).toMatchObject({ id: booking.id, notes: "Changed my mind", status: "applied" });
+    });
+
+    it("a re-application is a new application: it is dated now and heads the owner's list", async () => {
+      const { booking, event } = await applied();
+      await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+      // That was months ago, and the owner has had other applications since.
+      const longAgo = new Date(Date.now() - 90 * DAY_MS);
+      await testDb.raw.booking.update({ data: { createdAt: longAgo }, where: { id: booking.id } });
+      const other = await createEvent(40);
+      const newer = await as(rival).applyToEvent({ eventId: other.id });
+      expect((await as(owner).getReceivedApplications()).map((row) => row.id)).toEqual([newer.id, booking.id]);
+
+      const before = Date.now();
+      const again = await as(applicant).applyToEvent({ eventId: event.id });
+
+      expect(again.id).toBe(booking.id);
+      expect(again.createdAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect((await as(owner).getReceivedApplications()).map((row) => row.id)).toEqual([booking.id, newer.id]);
+      expect((await as(owner).getReceivedApplicationsPage({ limit: 1 })).items.map((row) => row.id)).toEqual([booking.id]);
+      // The applicant's own list is ordered the same way.
+      expect((await as(applicant).getMyApplications())[0]).toMatchObject({ id: booking.id });
     });
 
     it("re-applying keeps what the owner wrote and clears how the booking was cancelled", async () => {

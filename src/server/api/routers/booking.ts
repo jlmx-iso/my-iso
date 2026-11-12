@@ -9,7 +9,6 @@ import {
   checkTransition,
   isSlotTaken,
   REAPPLIABLE_CANCEL_ORIGIN,
-  syncEventFulfilled,
   type BookingAction,
   type TransitionRefusal,
 } from "~/server/_db/bookingTransitions";
@@ -273,8 +272,19 @@ export const bookingRouter = createTRPCRouter({
       // the owner declined, and not a booking that was accepted and then
       // cancelled by either side (cancelOrigin says which it was). Only the
       // applicant's own fields are rewritten; what the owner wrote stays.
+      //
+      // `createdAt` becomes now: it is "applied at", the time the lists sort
+      // by (newest first) and the card shows. A new application must stand
+      // among the new ones, where the owner who has just been notified
+      // looks for it, not where the withdrawn one was months ago.
       const reapplied = await ctx.db.booking.updateMany({
-        data: { cancelOrigin: null, notes: input.notes ?? null, rate: input.rate ?? null, status: "applied" },
+        data: {
+          cancelOrigin: null,
+          createdAt: new Date(),
+          notes: input.notes ?? null,
+          rate: input.rate ?? null,
+          status: "applied",
+        },
         where: {
           ...applicationKey,
           cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
@@ -506,8 +516,6 @@ export const bookingRouter = createTRPCRouter({
         }
         throw REFUSALS.invalid_transition();
       }
-
-      await syncEventFulfilled(ctx.db, booking.eventId);
 
       const actor = await ctx.db.user.findUnique({
         select: { firstName: true, lastName: true },

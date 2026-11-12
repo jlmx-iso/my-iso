@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
-import { syncEventFulfilled, withDerivedFulfilled } from "~/server/_db/bookingTransitions";
+import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
@@ -26,6 +26,38 @@ const pageInput = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The feed's cursor: the place in (date, id) order where the previous page
+ * ended, as it was WHEN that page was read. Opaque to the client (base64url
+ * of `[date in ms, id]`).
+ *
+ * It carries the date instead of looking the event up again, because the
+ * event's date can be edited between two requests: a boundary taken from
+ * the event as it is now would jump with it, skipping the events in between
+ * (moved later) or repeating earlier ones (moved earlier). A place that was
+ * once the end of a page stays where it was, whatever has become of the
+ * event since: rescheduled, started, or deleted.
+ */
+const feedCursorShape = z.tuple([z.number().int().min(0).max(8.64e15), idInput]);
+
+function encodeFeedCursor(event: { date: Date; id: string }): string {
+  return btoa(JSON.stringify([event.date.getTime(), event.id]))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+/** The place a cursor names, or null when it is not a cursor this server issued. */
+function decodeFeedCursor(cursor: string): { date: Date; id: string } | null {
+  try {
+    const json: unknown = JSON.parse(atob(cursor.replaceAll("-", "+").replaceAll("_", "/")));
+    const parsed = feedCursorShape.safeParse(json);
+    return parsed.success ? { date: new Date(parsed.data[0]), id: parsed.data[1] } : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * An event date: a full ISO-8601 timestamp, not in the past (one day of
@@ -346,13 +378,9 @@ export const eventRouter = createTRPCRouter({
         where: { eventId: event.id },
       });
 
-      // `isFulfilled` is derived from the bookings, not read from the
-      // column; if the column disagrees (the write after a booking
-      // transition failed), it is put right here, idempotently.
+      // `isFulfilled` is derived from the bookings; the stored column is
+      // legacy and is neither read nor written.
       const [derived] = await withDerivedFulfilled(ctx.db, [event]);
-      if (derived && derived.isFulfilled !== event.isFulfilled) {
-        await syncEventFulfilled(ctx.db, event.id);
-      }
 
       return { ...(derived ?? event), commentCount };
     }),
@@ -440,14 +468,18 @@ export const eventRouter = createTRPCRouter({
    * `locations` narrows to events in those places (city match, as
    * getRecentByLocation); empty or omitted means everywhere. Pass
    * `nextCursor` back as `cursor` for the next page; it is null on the last.
-   * Deleted events never appear. The next page continues after the cursor
-   * event's place in the order even if that event has since started (and so
-   * left the upcoming feed) or been deleted; a cursor that names no event
-   * at all is a BAD_REQUEST.
+   * The cursor is an opaque token (not an event id): do not build or parse
+   * it. Deleted events never appear. The next page continues after the
+   * place where the previous one ended, even if the event that stood there
+   * has since been rescheduled, has started (and so left the upcoming
+   * feed) or been deleted; an event moved to a later date is met again at
+   * its new place. Anything that is not a cursor from this procedure is a
+   * BAD_REQUEST.
    */
   getFeedPage: protectedProcedure
     .input(z.object({
       ...pageInput,
+      cursor: z.string().min(1).max(200).optional(),
       locations: feedLocationsInput.optional(),
       when: z.enum(["upcoming", "past"]).default("upcoming"),
     }))
@@ -457,28 +489,19 @@ export const eventRouter = createTRPCRouter({
       const upcoming = input.when === "upcoming";
       const direction = upcoming ? "asc" : "desc";
 
-      // Keyset paging: the next page is "everything after the cursor event
-      // in (date, id) order", stated as a condition on those two columns.
-      // (Prisma's `cursor` + `skip: 1` positions itself within the FILTERED
-      // rows: once the cursor event has started, or been deleted, it is no
-      // longer among them, and the skip would swallow the first event of
-      // the next page instead.) The cursor event is therefore looked up
-      // whatever has become of it, deleted included; its position is still
-      // where the previous page ended.
-      let after: { date: Date; id: string } | null = null;
-      if (input.cursor) {
-        after = await ctx.db.event.findFirst({
-          select: { date: true, id: true },
-          // Naming isDeleted (with no condition on it) opts out of the
-          // soft-delete filter.
-          where: { id: input.cursor, isDeleted: {} },
+      // Keyset paging: the next page is "everything after the cursor's
+      // place in (date, id) order", stated as a condition on those two
+      // columns. (Prisma's `cursor` + `skip: 1` positions itself within the
+      // FILTERED rows: once the cursor event has started, or been deleted,
+      // it is no longer among them, and the skip would swallow the first
+      // event of the next page instead.) The place comes from the cursor
+      // itself, not from the event as it is now: see encodeFeedCursor.
+      const after = input.cursor ? decodeFeedCursor(input.cursor) : null;
+      if (input.cursor && !after) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This page of the feed is no longer available. Reload the feed.",
         });
-        if (!after) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "This page of the feed is no longer available. Reload the feed.",
-          });
-        }
       }
       // "After the cursor" in (date, id) order. The cursor's own instant is
       // matched as the range [date, date + 1 ms) rather than by equality:
@@ -514,7 +537,11 @@ export const eventRouter = createTRPCRouter({
         },
       });
       const { items, nextCursor } = toPage(rows, input.limit);
-      return { items: await withDerivedFulfilled(ctx.db, items), nextCursor };
+      const last = items.at(-1);
+      return {
+        items: await withDerivedFulfilled(ctx.db, items),
+        nextCursor: nextCursor && last ? encodeFeedCursor(last) : null,
+      };
     }),
 
   /**
