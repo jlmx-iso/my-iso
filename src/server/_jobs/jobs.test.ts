@@ -358,7 +358,9 @@ describe("reconcileInviteSlots", () => {
     const muchLater = new Date(NOW.getTime() + 30 * 24 * HOUR);
     await expect(reconcileInviteSlots(testDb.db, muchLater)).resolves.toEqual({ checked: 50, corrected: 50 });
     expect(await testDb.raw.inviteCode.count({ where: { currentRedemptions: { gt: 0 } } })).toBe(0);
-  });
+    // Over a thousand rows: takes ~2s plain and well over the 5s default under
+    // coverage instrumentation on a shared runner.
+  }, 30_000);
 
   it("works through more codes than one batch, within the bound-parameter limit", async () => {
     for (let i = 0; i < 120; i++) {
