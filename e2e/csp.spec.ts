@@ -115,6 +115,8 @@ test("a signed-in member's pages load without a policy violation", async ({ cont
     "/app/photographer/seed_u2",
     "/app/settings",
     "/app/notifications",
+    "/app/insights",
+    "/app/support",
     "/photographer/sarahchen",
   ]) {
     await visit(page, path);
