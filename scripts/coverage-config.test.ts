@@ -16,10 +16,17 @@ import vitestConfig from "../vitest.config";
 const root = path.resolve(import.meta.dirname, "..");
 
 describe("coverage.config.mjs", () => {
-  it("is what Vitest measures with: include and exclude come from it alone", () => {
-    const coverage = vitestConfig.test?.coverage as { exclude?: string[]; include?: string[] };
+  it("is what Vitest measures with: include, exclude and thresholds come from it and the JSON alone", () => {
+    const coverage = vitestConfig.test?.coverage as {
+      exclude?: string[];
+      include?: string[];
+      thresholds?: unknown;
+    };
     expect(coverage.include).toEqual(COVERAGE_INCLUDE);
     expect(coverage.exclude).toEqual(coverageExclude(root));
+    expect(coverage.thresholds).toEqual(JSON.parse(readFileSync(path.join(root, "coverage-thresholds.json"), "utf8")));
+    // Nothing else that narrows what is measured or how it is judged.
+    expect(Object.keys(coverage).sort()).toEqual(["exclude", "include", "provider", "reporter", "thresholds"]);
   });
 
   it("recognises the use client directive, after comments too", () => {
