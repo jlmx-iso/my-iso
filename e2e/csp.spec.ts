@@ -75,6 +75,7 @@ test("public pages load without a policy violation", async ({ page }) => {
     "/about",
     "/privacy",
     "/terms",
+    "/subprocessors",
     "/contact",
     "/photographer/marcusrivera",
   ]) {

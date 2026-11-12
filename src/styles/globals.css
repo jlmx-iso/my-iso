@@ -183,6 +183,22 @@ html {
   border-width: 0;
 }
 
+/* Tables on the legal pages (cookies, service providers). */
+.legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.5;
+}
+
+.legal-table th,
+.legal-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mantine-color-gray-3);
+  text-align: left;
+  vertical-align: top;
+}
+
 /* Honour the reduced-motion preference for every CSS animation/transition. */
 @media (prefers-reduced-motion: reduce) {
   *,
