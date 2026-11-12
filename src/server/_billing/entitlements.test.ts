@@ -21,7 +21,6 @@ function snapshot(overrides: Partial<SubscriptionSnapshot>): SubscriptionSnapsho
     cancelAt: null,
     cancelAtPeriodEnd: false,
     cancellationReason: null,
-    disputeInvoiceId: null,
     disputeStatus: null,
     isLifetime: false,
     latestInvoiceId: "in_current",
@@ -166,7 +165,6 @@ describe("entitlementsFor", () => {
         const result = entitlementsFor(
           snapshot({
             cancellationReason: "cancellation_requested",
-            disputeInvoiceId: "in_old",
             disputeStatus: "open",
             pastDueSince: NOW,
             status,
@@ -178,23 +176,35 @@ describe("entitlementsFor", () => {
       },
     );
 
-    it("withholds the current period when its payment was lost to a dispute, until a later invoice is paid", () => {
-      const lost = snapshot({ disputeInvoiceId: "in_1", disputeStatus: "lost", latestInvoiceId: "in_1" });
+    it("withholds access while the last payment stands lost to a dispute, and gives it back once that is cleared", () => {
+      const lost = snapshot({ disputeStatus: "lost", latestInvoiceId: "in_1" });
 
       expect(entitlementsFor(lost, NOW)).toMatchObject({ hasProAccess: false, isDisputed: true });
-      expect(entitlementsFor({ ...lost, latestInvoiceId: "in_2" }, NOW)).toMatchObject({
+      // The standing is derived again when a later invoice is paid, and is then no longer "lost".
+      expect(entitlementsFor({ ...lost, disputeStatus: null, latestInvoiceId: "in_2" }, NOW)).toMatchObject({
         hasProAccess: true,
         isDisputed: false,
       });
     });
 
-    it("does not treat a lost dispute as covering an unknown invoice", () => {
-      const result = entitlementsFor(
-        snapshot({ disputeInvoiceId: null, disputeStatus: "lost", latestInvoiceId: null }),
-        NOW,
-      );
+    it("a new invoice that is not paid does not lift a lost dispute: no grace access on a failed renewal", () => {
+      const failedRenewal = snapshot({
+        disputeStatus: "lost",
+        latestInvoiceId: "in_2",
+        paidThroughAt: null,
+        pastDueSince: NOW,
+        status: "past_due",
+      });
 
-      expect(result.hasProAccess).toBe(true);
+      expect(entitlementsFor(failedRenewal, NOW)).toMatchObject({
+        accessEndsAt: null,
+        hasProAccess: false,
+        isDisputed: true,
+        isPastDue: true,
+        reason: "none",
+      });
+      // The same row without the loss is in its grace window.
+      expect(entitlementsFor({ ...failedRenewal, disputeStatus: null }, NOW).reason).toBe("past_due_grace");
     });
 
     it("never suspends a comped account", () => {

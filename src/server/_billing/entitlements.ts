@@ -79,8 +79,10 @@ export type SubscriptionSnapshot = {
   cancelAt: Date | null;
   cancelAtPeriodEnd: boolean;
   cancellationReason: string | null;
-  /** The invoice a disputed charge paid, and "open" | "lost". */
-  disputeInvoiceId: string | null;
+  /**
+   * "open" | "lost" | null, as derived from Stripe (./paymentStanding.ts).
+   * "lost" already means "and no later invoice has been paid".
+   */
   disputeStatus: string | null;
   isLifetime: boolean;
   latestInvoiceId: string | null;
@@ -115,8 +117,8 @@ export type Entitlements = {
   hasProAccess: boolean;
   /**
    * Access is withheld because of a dispute (chargeback): one is open on a
-   * payment of this subscription, or the payment for the current period
-   * was lost to one.
+   * payment of this subscription, or its last payment was lost to one and
+   * nothing has been paid since.
    */
   isDisputed: boolean;
   /** A payment failed and has not been recovered. */
@@ -134,15 +136,6 @@ const NO_ACCESS: Entitlements = {
 
 const GRANTED = { hasProAccess: true, isDisputed: false, isPastDue: false } as const;
 
-/** The payment for the current period was taken back through a dispute. */
-function currentPeriodLostToDispute(subscription: SubscriptionSnapshot): boolean {
-  return (
-    subscription.disputeStatus === "lost" &&
-    subscription.disputeInvoiceId !== null &&
-    subscription.disputeInvoiceId === subscription.latestInvoiceId
-  );
-}
-
 /** The payment for the current period was refunded in full. */
 function currentPeriodRefunded(subscription: SubscriptionSnapshot): boolean {
   return (
@@ -158,8 +151,10 @@ function currentPeriodRefunded(subscription: SubscriptionSnapshot): boolean {
  *
  * 1. A lifetime (comped) account always has access.
  * 2. A dispute comes before the status: no access while one is open on a
- *    payment of the subscription, nor when the payment for the current
- *    period was lost to one (until a later invoice is paid).
+ *    payment of the subscription, nor while the last payment made was lost
+ *    to one. That lasts until a later invoice is PAID: a new invoice that
+ *    is merely issued (a renewal whose payment fails, leaving the
+ *    subscription `past_due`) does not bring access back, grace included.
  * 3. `active`, `trialing`: access, unless the subscription is set to end
  *    and that time has passed.
  * 4. `past_due`: access for PAST_DUE_GRACE_DAYS from `pastDueSince`. No
@@ -180,7 +175,7 @@ export function entitlementsFor(
   }
 
   const isPastDue = subscription.status === "past_due" || subscription.status === "unpaid";
-  if (subscription.disputeStatus === "open" || currentPeriodLostToDispute(subscription)) {
+  if (subscription.disputeStatus === "open" || subscription.disputeStatus === "lost") {
     return { ...NO_ACCESS, isDisputed: true, isPastDue };
   }
 

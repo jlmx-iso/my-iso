@@ -15,6 +15,7 @@ import {
   isSubscriptionStatus,
   isTerminalStatus,
 } from "~/server/_billing/entitlements";
+import { loadSubscriptionForAccess } from "~/server/_billing/lazySync";
 import { LeaseBusyError } from "~/server/_billing/lease";
 import { reportBillingError } from "~/server/_billing/report";
 import { RESYNC_MAX_BATCH, resyncSubscriptionBatch } from "~/server/_billing/resync";
@@ -141,12 +142,11 @@ export const subscriptionRouter = createTRPCRouter({
 
   /**
    * The caller's subscription as stored (kept current by Stripe webhooks),
-   * or null when they have never had one. See SubscriptionView.
+   * or null when they have never had one. See SubscriptionView. A row that
+   * was never read from Stripe is synced first (see _billing/lazySync.ts).
    */
   getStatus: protectedProcedure.query(async ({ ctx }): Promise<SubscriptionView | null> => {
-    const row = await ctx.db.subscription.findUnique({
-      where: { userId: ctx.session.user.id },
-    });
+    const row = await loadSubscriptionForAccess(ctx.db, getStripe, ctx.session.user.id);
     return row ? toSubscriptionView(row, new Date()) : null;
   }),
 
@@ -282,6 +282,9 @@ export const subscriptionRouter = createTRPCRouter({
    * `scope` "pending" (default): rows never read from Stripe, or whose
    * legacy flags disagree with their status. "all": every row with a
    * Stripe subscription or customer. See docs/BILLING.md.
+   *
+   * `unresolved` lists the rows of the batch that are not settled, by
+   * Subscription id with the outcome that left them so.
    *
    * Errors: SERVICE_UNAVAILABLE, reason `billing_unavailable`.
    */

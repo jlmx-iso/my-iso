@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type Stripe from "stripe";
 
 import { logger } from "~/_utils";
@@ -6,6 +6,8 @@ import { isUniqueViolation } from "~/server/_db/errors";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 
 import { isSubscriptionStatus, isTerminalStatus, TERMINAL_STATUSES } from "./entitlements";
+import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
+import { readPaymentStanding, type PaymentStanding } from "./paymentStanding";
 import { reportBillingError } from "./report";
 import { isStripeResourceMissing, stripeResponseTime } from "./stripe";
 import {
@@ -15,7 +17,6 @@ import {
   SUBSCRIPTION_EXPAND,
   SUBSCRIPTION_LIST_EXPAND,
   subscriptionStateFromStripe,
-  type DisputeStanding,
   type SubscriptionState,
 } from "./subscriptionState";
 
@@ -25,9 +26,15 @@ import {
  * D1 has no interactive transactions, so every write here is a single
  * conditional statement (or an insert guarded by the unique userId), and
  * every function can be repeated or run concurrently with itself.
+ *
+ * On top of that, every read-from-Stripe-then-write sequence runs under a
+ * lease per Stripe CUSTOMER (./lease.ts), so two readings for one customer
+ * are taken and stored one after the other and cannot interleave. The
+ * conditional writes remain as the second line of defence, for a holder
+ * that outlives its lease.
  */
 
-export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "user">;
+export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "user"> & LeaseDb;
 
 /**
  * The legacy boolean columns, derived from the status. The previous release
@@ -57,7 +64,9 @@ type Where = Prisma.SubscriptionWhereInput;
  *   and a subscription object carries no "updated" marker of its own, so
  *   two readings can bear the same second without saying which is newer.
  *   A reading from the same second is accepted only when it says the same
- *   as the stored one (it is then a harmless rewrite). When it says
+ *   as the stored one in EVERY field read from Stripe (it is then a
+ *   harmless rewrite); the comparison is the whole state, not a selection
+ *   of fields, so no difference (a cancellation date, say) slips through. When it says
  *   something else the write is refused as a TIE, and the caller reads the
  *   subscription again once that second has passed (see storeReading):
  *   the new reading is strictly newer than both and settles it.
@@ -71,13 +80,7 @@ function notOlderThanStored(state: SubscriptionState): Where {
     OR: [
       { stripeSyncedAt: null },
       { stripeSyncedAt: { lt: state.stripeSyncedAt } },
-      {
-        cancelAtPeriodEnd: state.cancelAtPeriodEnd,
-        currentPeriodEnd: state.currentPeriodEnd,
-        latestInvoiceId: state.latestInvoiceId,
-        status: state.status,
-        stripeSyncedAt: state.stripeSyncedAt,
-      },
+      { ...state },
     ],
   };
 }
@@ -104,8 +107,9 @@ type WriteVariant = { data: Prisma.SubscriptionUpdateManyMutationInput; where: W
  *   slow handler holding an older reading loses to a faster one.
  * - A different subscription of the same user: only for an `authoritative`
  *   caller, one that chose this subscription from the customer's complete
- *   list (syncUserFromStripe), and only when that reading is not older than
- *   the stored one. A reading of a single subscription never replaces
+ *   list (syncUserFromStripe), and only when that reading is strictly newer
+ *   than the stored one (a reading from the same second is a tie, settled
+ *   by reading again). A reading of a single subscription never replaces
  *   another subscription's row: the caller reconciles through the list
  *   instead (see syncSubscriptionById). Dispute and refund markers of the
  *   replaced subscription are dropped.
@@ -129,7 +133,7 @@ function writeVariants(
   const otherSubscription: Where = {
     AND: [
       { subscriptionId: { not: state.subscriptionId } },
-      { OR: [{ stripeSyncedAt: null }, { stripeSyncedAt: { lte: state.stripeSyncedAt } }] },
+      { OR: [{ stripeSyncedAt: null }, { stripeSyncedAt: { lt: state.stripeSyncedAt } }] },
     ],
   };
   const replaceOther = (pastDueSince: Date | null): WriteVariant[] =>
@@ -164,7 +168,10 @@ export type ApplyOutcome =
    * second: read the subscription again and retry.
    */
   | "tie"
-  /** The row belongs to another subscription of the user. */
+  /**
+   * The row belongs to another subscription of the user (and, for an
+   * authoritative caller, holds a strictly newer reading).
+   */
   | "other_subscription";
 
 /**
@@ -229,75 +236,42 @@ export async function applySubscriptionState(
     select: { stripeSyncedAt: true, subscriptionId: true },
     where: { userId },
   });
-  if (stored?.subscriptionId && stored.subscriptionId !== state.subscriptionId) return "other_subscription";
-  return stored?.stripeSyncedAt?.getTime() === state.stripeSyncedAt.getTime() ? "tie" : "stale";
+  const sameSecond = stored?.stripeSyncedAt?.getTime() === state.stripeSyncedAt.getTime();
+  if (stored?.subscriptionId && stored.subscriptionId !== state.subscriptionId) {
+    return options.authoritative && sameSecond ? "tie" : "other_subscription";
+  }
+  return sameSecond ? "tie" : "stale";
 }
 
 /**
- * Records what a dispute on a payment of `subscriptionId` currently means
- * (derived from the dispute as just read from Stripe, so it can be repeated
- * and applied in any order). Returns false when no row tracks that
- * subscription.
+ * Stores the payment standing of `subscriptionId` (./paymentStanding.ts) on
+ * the row that tracks it, in ONE statement that also requires the caller
+ * to still hold the customer's lease: a holder that ran past its lease
+ * cannot put an older standing over the one its successor derived.
  *
- * An open dispute is not displaced by the loss of another one, and a
- * cleared dispute only clears its own marker.
+ * - "recorded": stored.
+ * - "not_tracked": the user's row shows another subscription (or there is
+ *   no row).
+ *
+ * Throws LeaseLostError when the lease was taken over.
  */
-export async function recordDispute(
+export async function writePaymentStanding(
   db: BillingDb,
+  lease: LeaseHandle,
   subscriptionId: string,
-  dispute: { id: string; invoiceId: string; standing: DisputeStanding },
-): Promise<boolean> {
-  if (dispute.standing === "cleared") {
-    await db.subscription.updateMany({
-      data: { disputeId: null, disputeInvoiceId: null, disputeStatus: null },
-      where: { disputeId: dispute.id, subscriptionId },
-    });
-    return (await db.subscription.count({ where: { subscriptionId } })) > 0;
-  }
-
-  const anotherIsOpen: Where = { disputeId: { not: dispute.id }, disputeStatus: "open" };
-  const result = await db.subscription.updateMany({
-    data: {
-      disputeId: dispute.id,
-      disputeInvoiceId: dispute.invoiceId,
-      disputeStatus: dispute.standing,
-    },
-    where:
-      dispute.standing === "open"
-        ? { subscriptionId }
-        : {
-            // NOT anotherIsOpen, with the NULL cases spelled out.
-            OR: [{ disputeId: null }, { disputeId: dispute.id }, { disputeStatus: null }, { disputeStatus: { not: "open" } }],
-            subscriptionId,
-          },
-  });
-  if (result.count > 0) return true;
-  return (await db.subscription.count({ where: { AND: [{ subscriptionId }, anotherIsOpen] } })) > 0;
-}
-
-/**
- * Records whether the payment of `invoiceId` is (still) refunded in full,
- * as just read from Stripe. Returns false when no row tracks the
- * subscription.
- */
-export async function recordRefund(
-  db: BillingDb,
-  subscriptionId: string,
-  refund: { fullyRefunded: boolean; invoiceId: string },
-): Promise<boolean> {
-  if (refund.fullyRefunded) {
-    const result = await db.subscription.updateMany({
-      data: { refundedInvoiceId: refund.invoiceId },
-      where: { subscriptionId },
-    });
-    return result.count > 0;
-  }
-  // A partial refund, or a refund that failed and was reversed.
-  await db.subscription.updateMany({
-    data: { refundedInvoiceId: null },
-    where: { refundedInvoiceId: refund.invoiceId, subscriptionId },
-  });
-  return (await db.subscription.count({ where: { subscriptionId } })) > 0;
+  standing: PaymentStanding,
+): Promise<"recorded" | "not_tracked"> {
+  const written = await db.$executeRaw(Prisma.sql`
+    UPDATE "Subscription" SET
+      "disputeId" = ${standing.disputeId},
+      "disputeStatus" = ${standing.disputeStatus},
+      "disputeInvoiceId" = ${standing.disputeInvoiceId},
+      "refundedInvoiceId" = ${standing.refundedInvoiceId}
+    WHERE "subscriptionId" = ${subscriptionId} AND ${lease.heldCondition()}`);
+  if (written > 0) return "recorded";
+  if ((await db.subscription.count({ where: { subscriptionId } })) === 0) return "not_tracked";
+  // The row is there, so it was the lease condition that failed.
+  throw new LeaseLostError(lease.key);
 }
 
 /** The user a Stripe customer id is stored on, or null. */
@@ -391,10 +365,50 @@ export async function resolveUserForSubscription(
 
 /** How the sync functions wait; replaceable in tests. */
 export type SyncOptions = {
+  /**
+   * The Stripe customer the subscription is on, when the caller knows it
+   * (a webhook event names it). Identity only, never state: it selects the
+   * lease, and a reading that turns out to be another customer's is taken
+   * again under the right one.
+   */
+  customerId?: string | null;
+  /** How the customer's lease is waited for; for tests. */
+  lease?: Pick<LeaseOptions, "now" | "sleep">;
+  /** Page size and page limit when listing a customer's subscriptions; for tests. */
+  listing?: { maxPages: number; pageSize: number };
   /** The local clock in milliseconds. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Also derive the payment standing (disputes, refunds) of the stored
+   * subscription from Stripe and store it, under the same lease.
+   */
+  standing?: boolean;
 };
+
+/**
+ * The per-customer lease: held for one read-and-store sequence (a handful
+ * of Stripe calls), waited for by the next. A webhook that cannot get it in
+ * time answers 409 and is redelivered.
+ */
+const SYNC_LEASE_SECONDS = 90;
+const SYNC_LEASE_WAIT_MS = 10_000;
+
+const customerLeaseKey = (customerId: string) => `customer:${customerId}`;
+
+function withCustomerLease<T>(
+  db: BillingDb,
+  customerId: string,
+  options: SyncOptions,
+  work: (lease: LeaseHandle) => Promise<T>,
+): Promise<T> {
+  return withLease(
+    db,
+    customerLeaseKey(customerId),
+    { ...options.lease, ttlSeconds: SYNC_LEASE_SECONDS, waitMs: SYNC_LEASE_WAIT_MS },
+    work,
+  );
+}
 
 /** Readings of one subscription taken to get past a same-second tie. */
 const MAX_READINGS = 3;
@@ -436,7 +450,17 @@ async function storeReading<T extends { outcome: ApplyOutcome; state: Subscripti
 }
 
 export type SubscriptionSyncResult =
-  | { outcome: "applied" | "stale"; state: SubscriptionState; userId: string }
+  | {
+      outcome: "applied" | "stale";
+      /**
+       * With `options.standing`: the standing derived and stored for this
+       * subscription; null when it was not stored (the row shows another
+       * subscription, or the charge history was too long to read).
+       */
+      standing?: PaymentStanding | null;
+      state: SubscriptionState;
+      userId: string;
+    }
   /** Stripe has no such subscription (deleted test data, wrong account). */
   | { outcome: "subscription_missing" }
   /** The subscription's customer is not a user of this app. */
@@ -444,9 +468,106 @@ export type SubscriptionSyncResult =
 
 type SingleReading = { outcome: ApplyOutcome; state: SubscriptionState; userId: string };
 
+/** The subscription is on a customer other than the one whose lease is held. */
+type OtherCustomer = { customerId: string; outcome: "other_customer" };
+
+/** Derives the standing of `subscription` from Stripe and stores it; null when not stored. */
+async function storePaymentStanding(
+  db: BillingDb,
+  stripe: Stripe,
+  lease: LeaseHandle,
+  subscription: Stripe.Subscription,
+): Promise<PaymentStanding | null> {
+  const standing = await readPaymentStanding(stripe, subscription);
+  if (!standing) return null;
+  const written = await writePaymentStanding(db, lease, subscription.id, standing);
+  return written === "recorded" ? standing : null;
+}
+
+/** syncSubscriptionById, for a caller that holds the lease of `leasedCustomerId`. */
+async function syncSubscriptionLocked(
+  db: BillingDb,
+  stripe: Stripe,
+  lease: LeaseHandle,
+  leasedCustomerId: string,
+  subscriptionId: string,
+  hintUserId: string | null,
+  options: SyncOptions,
+): Promise<SubscriptionSyncResult | OtherCustomer> {
+  type Early = Exclude<SubscriptionSyncResult, { state: SubscriptionState }> | OtherCustomer;
+  const isReading = (result: SingleReading | Early): result is SingleReading => "state" in result;
+  const read: { subscription: Stripe.Subscription | null } = { subscription: null };
+
+  const result = await storeReading<SingleReading, Early>(
+    `subscription ${subscriptionId}`,
+    async () => {
+      const requestedAt = new Date();
+      let subscription: Stripe.Response<Stripe.Subscription>;
+      try {
+        subscription = await stripe.subscriptions.retrieve(subscriptionId, { expand: SUBSCRIPTION_EXPAND });
+      } catch (error) {
+        if (isStripeResourceMissing(error)) return { outcome: "subscription_missing" } satisfies Early;
+        throw error;
+      }
+      const customerId = stripeId(subscription.customer);
+      if (customerId && customerId !== leasedCustomerId) {
+        return { customerId, outcome: "other_customer" } satisfies Early;
+      }
+
+      const userId = await resolveUserForSubscription(db, stripe, subscription, hintUserId);
+      if (!userId) {
+        return { customerId, outcome: "unknown_customer" } satisfies Early;
+      }
+
+      const state = subscriptionStateFromStripe(subscription, stripeResponseTime(subscription, requestedAt));
+      const outcome = await applySubscriptionState(db, userId, state, {
+        pastDueAnchor: pastDueAnchorOf(subscription, state.stripeSyncedAt),
+      });
+      read.subscription = subscription;
+      return { outcome, state, userId };
+    },
+    isReading,
+    options,
+  );
+  if (!isReading(result)) return result;
+
+  const { state, userId } = result;
+  let outcome: "applied" | "stale";
+  if (result.outcome === "applied" || result.outcome === "stale") {
+    if (result.outcome === "stale") {
+      logger.info("Stripe subscription reading not stored: the row holds a newer one", { subscriptionId, userId });
+    }
+    outcome = result.outcome;
+  } else {
+    // other_subscription: let the customer's complete list decide.
+    const user = await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } });
+    if (user?.stripeId && user.stripeId !== state.stripeCustomerId) {
+      // Already reported by resolveUserForSubscription when it matters.
+      logger.warn("Stripe subscription of a customer other than the user's stored one: row left as it is", {
+        subscriptionId,
+        userId,
+      });
+      return { outcome: "stale", state, userId };
+    }
+    const reconciled = await syncUserLocked(db, stripe, lease, userId, state.stripeCustomerId, {
+      ...options,
+      standing: false,
+    });
+    const shown =
+      (reconciled.outcome === "applied" || reconciled.outcome === "stale") &&
+      reconciled.state.subscriptionId === subscriptionId;
+    outcome = shown ? "applied" : "stale";
+  }
+
+  if (!options.standing || !read.subscription) return { outcome, state, userId };
+  const standing = await storePaymentStanding(db, stripe, lease, read.subscription);
+  return { outcome, standing, state, userId };
+}
+
 /**
- * Reads one subscription from Stripe and stores its current state. Stripe
- * errors other than "no such subscription" propagate (the caller retries).
+ * Reads one subscription from Stripe and stores its current state, under
+ * the lease of its customer. Stripe errors other than "no such
+ * subscription" propagate (the caller retries), as does LeaseBusyError.
  *
  * When the user's row belongs to a DIFFERENT subscription, a single
  * reading cannot say which of the two should be shown: the row is then
@@ -461,60 +582,35 @@ export async function syncSubscriptionById(
   hintUserId: string | null = null,
   options: SyncOptions = {},
 ): Promise<SubscriptionSyncResult> {
-  type Early = Exclude<SubscriptionSyncResult, { state: SubscriptionState }>;
-  const isReading = (result: SingleReading | Early): result is SingleReading => "state" in result;
-
-  const result = await storeReading<SingleReading, Early>(
-    `subscription ${subscriptionId}`,
-    async () => {
-      const requestedAt = new Date();
-      let subscription: Stripe.Response<Stripe.Subscription>;
-      try {
-        subscription = await stripe.subscriptions.retrieve(subscriptionId, { expand: SUBSCRIPTION_EXPAND });
-      } catch (error) {
-        if (isStripeResourceMissing(error)) return { outcome: "subscription_missing" } satisfies Early;
-        throw error;
-      }
-
-      const userId = await resolveUserForSubscription(db, stripe, subscription, hintUserId);
-      if (!userId) {
-        return { customerId: stripeId(subscription.customer), outcome: "unknown_customer" } satisfies Early;
-      }
-
-      const state = subscriptionStateFromStripe(subscription, stripeResponseTime(subscription, requestedAt));
-      const outcome = await applySubscriptionState(db, userId, state, {
-        pastDueAnchor: pastDueAnchorOf(subscription, state.stripeSyncedAt),
-      });
-      return { outcome, state, userId };
-    },
-    isReading,
-    options,
-  );
-  if (!isReading(result)) return result;
-
-  const { state, userId } = result;
-  if (result.outcome === "applied" || result.outcome === "stale") {
-    if (result.outcome === "stale") {
-      logger.info("Stripe subscription reading not stored: the row holds a newer one", { subscriptionId, userId });
+  // Whose lease: the caller's word, else the row that tracks the
+  // subscription, else Stripe (identity only; the state is read under the
+  // lease).
+  let customerId =
+    options.customerId ??
+    (await db.subscription.findFirst({ select: { stripeCustomerId: true }, where: { subscriptionId } }))
+      ?.stripeCustomerId ??
+    null;
+  if (!customerId) {
+    try {
+      customerId = stripeId((await stripe.subscriptions.retrieve(subscriptionId)).customer);
+    } catch (error) {
+      if (isStripeResourceMissing(error)) return { outcome: "subscription_missing" };
+      throw error;
     }
-    return { outcome: result.outcome, state, userId };
+    if (!customerId) return { customerId: null, outcome: "unknown_customer" };
   }
 
-  // other_subscription: let the customer's complete list decide.
-  const user = await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } });
-  if (user?.stripeId && user.stripeId !== state.stripeCustomerId) {
-    // Already reported by resolveUserForSubscription when it matters.
-    logger.warn("Stripe subscription of a customer other than the user's stored one: row left as it is", {
-      subscriptionId,
-      userId,
-    });
-    return { outcome: "stale", state, userId };
+  // A subscription never changes customer, so a second round (the hint or
+  // the legacy row named the wrong one) is the last.
+  for (let round = 0; round < 2; round += 1) {
+    const leased: string = customerId;
+    const result: SubscriptionSyncResult | OtherCustomer = await withCustomerLease(db, leased, options, (lease) =>
+      syncSubscriptionLocked(db, stripe, lease, leased, subscriptionId, hintUserId, options),
+    );
+    if (result.outcome !== "other_customer") return result;
+    customerId = result.customerId;
   }
-  const reconciled = await syncUserFromStripe(db, stripe, userId, options, state.stripeCustomerId);
-  const shown =
-    (reconciled.outcome === "applied" || reconciled.outcome === "stale") &&
-    reconciled.state.subscriptionId === subscriptionId;
-  return { outcome: shown ? "applied" : "stale", state, userId };
+  throw new Error(`Stripe subscription ${subscriptionId} could not be read under its customer's lease`);
 }
 
 export type UserSyncResult =
@@ -524,98 +620,115 @@ export type UserSyncResult =
       outcome: "applied" | "stale";
       state: SubscriptionState;
     }
-  | { outcome: "no_customer" | "no_subscription" };
+  | { outcome: "no_customer" | "no_subscription" }
+  /**
+   * The customer has more subscriptions than are read. Nothing was
+   * concluded and nothing written: neither "this one is the primary" nor
+   * "there is none" can be said from part of the list.
+   */
+  | { outcome: "listing_truncated" };
 
 /** Page size, and the most pages read, when listing a customer's subscriptions. */
 const SUBSCRIPTIONS_PAGE_SIZE = 100;
 const MAX_SUBSCRIPTION_PAGES = 5;
-/** Cancelled subscriptions looked at (newest first) when none is live. */
-const CANCELED_SUBSCRIPTIONS_CONSIDERED = 10;
 
 type CustomerSubscriptions = {
   canceled: Stripe.Subscription[];
   /** Everything that is not `canceled`, however old. */
   notCanceled: Stripe.Subscription[];
   syncedAt: Date;
+  /** A listing still had more when the page limit was reached. */
+  truncated: boolean;
 };
 
 /**
- * Everything needed to choose a customer's subscription, read so that a
- * long history cannot hide the one that matters:
+ * Everything needed to choose a customer's subscription, read to the end
+ * so that a long history cannot hide the one that matters:
  *
- * 1. ALL subscriptions that are not cancelled (Stripe's default listing),
- *    following `has_more` to the end. This is where a live subscription
- *    is, however many newer cancelled ones there are.
- * 2. The most recent cancelled ones. Only one with paid time left, or the
- *    most recent of all, can matter, and both are at the top.
+ * 1. ALL subscriptions that are not cancelled (Stripe's default listing).
+ *    This is where a live subscription is, however many newer cancelled
+ *    ones there are.
+ * 2. ALL cancelled ones: one with paid time left can be older than any
+ *    number of later, finished ones.
+ *
+ * Both follow `has_more`, up to `maxPages` pages each. Past that the result
+ * is marked `truncated`, and the caller must not decide anything from it.
  */
-async function listCustomerSubscriptions(stripe: Stripe, customerId: string): Promise<CustomerSubscriptions> {
+async function listCustomerSubscriptions(
+  stripe: Stripe,
+  customerId: string,
+  limits: { maxPages: number; pageSize: number },
+): Promise<CustomerSubscriptions> {
   const requestedAt = new Date();
-  const notCanceled: Stripe.Subscription[] = [];
   let syncedAt: Date | null = null;
-  let startingAfter: string | undefined;
-  for (let page = 1; ; page += 1) {
-    const list = await stripe.subscriptions.list({
-      customer: customerId,
-      expand: SUBSCRIPTION_LIST_EXPAND,
-      limit: SUBSCRIPTIONS_PAGE_SIZE,
-      ...(startingAfter ? { starting_after: startingAfter } : {}),
-    });
-    syncedAt ??= stripeResponseTime(list, requestedAt);
-    notCanceled.push(...list.data);
-    startingAfter = list.data.at(-1)?.id;
-    if (!list.has_more || !startingAfter) break;
-    if (page >= MAX_SUBSCRIPTION_PAGES) {
-      reportBillingError("Customer has more subscriptions than are read; the oldest were not considered", {
-        customerId,
-        read: notCanceled.length,
-      });
-      break;
-    }
-  }
+  let truncated = false;
 
-  const canceled = await stripe.subscriptions.list({
-    customer: customerId,
-    expand: SUBSCRIPTION_LIST_EXPAND,
-    limit: CANCELED_SUBSCRIPTIONS_CONSIDERED,
-    status: "canceled",
-  });
-  return { canceled: canceled.data, notCanceled, syncedAt: syncedAt ?? requestedAt };
+  const listAll = async (status?: "canceled"): Promise<Stripe.Subscription[]> => {
+    const all: Stripe.Subscription[] = [];
+    let startingAfter: string | undefined;
+    for (let page = 1; ; page += 1) {
+      const list = await stripe.subscriptions.list({
+        customer: customerId,
+        expand: SUBSCRIPTION_LIST_EXPAND,
+        limit: limits.pageSize,
+        ...(status ? { status } : {}),
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      syncedAt ??= stripeResponseTime(list, requestedAt);
+      all.push(...list.data);
+      startingAfter = list.data.at(-1)?.id;
+      if (!list.has_more || !startingAfter) return all;
+      if (page >= limits.maxPages) {
+        truncated = true;
+        return all;
+      }
+    }
+  };
+
+  const notCanceled = await listAll();
+  const canceled = truncated ? [] : await listAll("canceled");
+  return { canceled, notCanceled, syncedAt: syncedAt ?? requestedAt, truncated };
 }
 
-/**
- * Re-derives a user's subscription row from everything Stripe has for their
- * customer: the subscription with precedence (pickPrimarySubscription).
- * Repairs the row after a missed or failed webhook. `customerId` overrides
- * the stored customer (for a user who has none stored yet).
- */
-export async function syncUserFromStripe(
+/** syncUserFromStripe, for a caller that holds the lease of `customer`. */
+async function syncUserLocked(
   db: BillingDb,
   stripe: Stripe,
+  lease: LeaseHandle,
   userId: string,
-  options: SyncOptions = {},
-  customerId?: string,
+  customer: string,
+  options: SyncOptions,
 ): Promise<UserSyncResult> {
-  const customer =
-    customerId ??
-    (await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } }))?.stripeId ??
-    null;
-  if (!customer) return { outcome: "no_customer" };
-
-  type Reading = { hasLiveSubscription: boolean; outcome: ApplyOutcome; state: SubscriptionState };
-  type Early = { outcome: "no_subscription" };
+  type Reading = {
+    hasLiveSubscription: boolean;
+    outcome: ApplyOutcome;
+    primary: Stripe.Subscription;
+    state: SubscriptionState;
+  };
+  type Early = { outcome: "no_subscription" | "listing_truncated" };
   const isReading = (result: Reading | Early): result is Reading => "state" in result;
+  const limits = options.listing ?? { maxPages: MAX_SUBSCRIPTION_PAGES, pageSize: SUBSCRIPTIONS_PAGE_SIZE };
 
   const result = await storeReading<Reading, Early>(
     `the subscriptions of customer ${customer}`,
     async () => {
       let listed: CustomerSubscriptions;
       try {
-        listed = await listCustomerSubscriptions(stripe, customer);
+        listed = await listCustomerSubscriptions(stripe, customer, limits);
       } catch (error) {
         // The stored customer no longer exists at Stripe.
         if (isStripeResourceMissing(error)) return { outcome: "no_subscription" } satisfies Early;
         throw error;
+      }
+      if (listed.truncated) {
+        // Fail closed: the part that was not read may hold the subscription
+        // that decides (an older live one, or one with paid time left).
+        reportBillingError("Customer has more subscriptions than are read: nothing was stored from the partial list", {
+          customerId: customer,
+          read: listed.notCanceled.length + listed.canceled.length,
+          userId,
+        });
+        return { outcome: "listing_truncated" } satisfies Early;
       }
 
       const { syncedAt } = listed;
@@ -636,18 +749,43 @@ export async function syncUserFromStripe(
         authoritative: true,
         pastDueAnchor: pastDueAnchorOf(primary, syncedAt),
       });
-      return { hasLiveSubscription: live.length > 0, outcome, state } satisfies Reading;
+      return { hasLiveSubscription: live.length > 0, outcome, primary, state } satisfies Reading;
     },
     isReading,
     options,
   );
   if (!isReading(result)) return result;
+  if (options.standing) await storePaymentStanding(db, stripe, lease, result.primary);
   return {
     hasLiveSubscription: result.hasLiveSubscription,
     // An authoritative write is only ever refused for being older.
     outcome: result.outcome === "applied" ? "applied" : "stale",
     state: result.state,
   };
+}
+
+/**
+ * Re-derives a user's subscription row from everything Stripe has for their
+ * customer: the subscription with precedence (pickPrimarySubscription).
+ * Repairs the row after a missed or failed webhook. `customerId` overrides
+ * the stored customer (for a user who has none stored yet). Runs under the
+ * customer's lease.
+ */
+export async function syncUserFromStripe(
+  db: BillingDb,
+  stripe: Stripe,
+  userId: string,
+  options: SyncOptions = {},
+  customerId?: string,
+): Promise<UserSyncResult> {
+  const customer =
+    customerId ??
+    (await db.user.findUnique({ select: { stripeId: true }, where: { id: userId } }))?.stripeId ??
+    null;
+  if (!customer) return { outcome: "no_customer" };
+  return withCustomerLease(db, customer, options, (lease) =>
+    syncUserLocked(db, stripe, lease, userId, customer, options),
+  );
 }
 
 /**

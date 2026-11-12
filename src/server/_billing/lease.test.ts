@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
-import { LeaseBusyError, withLease } from "./lease";
+import { claimFor, extendClaim, LeaseBusyError, withLease } from "./lease";
 
 let testDb: TestDb;
 
@@ -78,5 +78,60 @@ describe("withLease", () => {
     });
 
     expect(await testDb.raw.billingLease.findUnique({ where: { key: "k" } })).toMatchObject({ holder: "third" });
+  });
+
+  it("renew extends the lease while it is held, and fails once another request has taken it over", async () => {
+    let clock = 1_900_000_000_000;
+    const timing = { now: () => clock };
+
+    await withLease(testDb.db, "k", { ...OPTIONS, ...timing }, async (lease) => {
+      clock += 20_000;
+      expect(await lease.renew()).toBe(true);
+      expect((await testDb.raw.billingLease.findUniqueOrThrow({ where: { key: "k" } })).expiresAt).toBe(clock / 1000 + 30);
+
+      // Renewed, so 20 more seconds do not let anyone in...
+      clock += 20_000;
+      await expect(
+        withLease(testDb.db, "k", { ...timing, sleep: async (ms) => void (clock += ms), ttlSeconds: 30, waitMs: 300 }, async () => "ran"),
+      ).rejects.toBeInstanceOf(LeaseBusyError);
+
+      // ...but overrunning the renewed lease does, and then it is lost.
+      clock += 31_000;
+      await withLease(testDb.db, "k", { ...OPTIONS, ...timing }, async (other) => {
+        expect(await lease.renew()).toBe(false);
+        expect(await other.renew()).toBe(true);
+      });
+      expect(await lease.renew()).toBe(false);
+    });
+  });
+
+  it("heldCondition makes a write depend on still holding the lease, in the same statement", async () => {
+    let clock = 1_900_000_000_000;
+    const timing = { now: () => clock };
+    await testDb.raw.billingLease.create({ data: { expiresAt: 0, holder: "x", key: "target" } });
+    const write = (condition: ReturnType<Parameters<Parameters<typeof withLease>[3]>[0]["heldCondition"]>) =>
+      testDb.db.$executeRaw`UPDATE "BillingLease" SET "expiresAt" = "expiresAt" + 1 WHERE "key" = 'target' AND ${condition}`;
+
+    await withLease(testDb.db, "k", { ...OPTIONS, ...timing }, async (lease) => {
+      expect(await write(lease.heldCondition())).toBe(1);
+      clock += 31_000;
+      await withLease(testDb.db, "k", { ...OPTIONS, ...timing }, async () => {
+        expect(await write(lease.heldCondition())).toBe(0);
+      });
+    });
+  });
+});
+
+describe("claimFor", () => {
+  it("is granted once per period, across callers, and can be extended", async () => {
+    const t0 = 1_900_000_000_000;
+
+    expect(await claimFor(testDb.db, "first-sync:row", 600, t0)).toBe(true);
+    expect(await claimFor(testDb.db, "first-sync:row", 600, t0 + 599_000)).toBe(false);
+    expect(await claimFor(testDb.db, "first-sync:row", 600, t0 + 600_000)).toBe(true);
+
+    await extendClaim(testDb.db, "first-sync:row", 86_400, t0 + 600_000);
+    expect(await claimFor(testDb.db, "first-sync:row", 600, t0 + 3_600_000)).toBe(false);
+    expect(await claimFor(testDb.db, "first-sync:row", 600, t0 + 600_000 + 86_400_000)).toBe(true);
   });
 });

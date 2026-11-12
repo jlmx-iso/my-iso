@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type Stripe from "stripe";
 
 import { refreshBillingState, type RefreshOutcome } from "./checkout";
-import { ENTITLING_STATUSES } from "./entitlements";
+import { ENTITLING_STATUSES, entitlementsFor } from "./entitlements";
 import { reportBillingError } from "./report";
 import type { BillingDb, SyncOptions } from "./subscriptionStore";
 
@@ -16,7 +16,7 @@ import type { BillingDb, SyncOptions } from "./subscriptionStore";
  * that Stripe does not say, and a row that fails is counted and skipped.
  */
 
-/** Rows per call: each costs up to four Stripe requests, and a Worker invocation has a subrequest budget. */
+/** Rows per call: each costs a handful of Stripe requests, and a Worker invocation has a subrequest budget. */
 export const RESYNC_MAX_BATCH = 10;
 
 /**
@@ -24,9 +24,12 @@ export const RESYNC_MAX_BATCH = 10;
  *
  * - "pending": rows that were never read from Stripe (`stripeSyncedAt` is
  *   null: back-filled by the migration, or created by the previous release
- *   while both were serving), and rows whose legacy flags disagree with
- *   `status` (the previous release changed the flags of an existing row
- *   during that overlap; this release always writes both together).
+ *   while both were serving), and rows the previous release wrote to
+ *   during that overlap: legacy flags that disagree with `status`, a
+ *   `subscriptionId` that is null, or an `expiresAt` that is null although
+ *   the period end is known (this release always writes these together;
+ *   the previous one, once the webhook endpoint's API version has been
+ *   changed, writes null for both: see docs/BILLING.md, "cutover").
  * - "all": every row that has a Stripe subscription or customer.
  */
 export type ResyncScope = "pending" | "all";
@@ -45,19 +48,77 @@ const hasSomethingAtStripe: Prisma.SubscriptionWhereInput = {
   OR: [{ subscriptionId: { not: null } }, { user: { stripeId: { not: null } } }],
 };
 
+/** Written by the previous release after the endpoint's API version changed. */
+const WRITTEN_BY_PREVIOUS_RELEASE: Prisma.SubscriptionWhereInput[] = [
+  { subscriptionId: null },
+  { currentPeriodEnd: { not: null }, expiresAt: null },
+];
+
 export function resyncScopeFilter(scope: ResyncScope): Prisma.SubscriptionWhereInput {
   if (scope === "all") return hasSomethingAtStripe;
   return {
-    AND: [hasSomethingAtStripe, { OR: [{ stripeSyncedAt: null }, ...LEGACY_FLAGS_DISAGREE] }],
+    AND: [
+      hasSomethingAtStripe,
+      { OR: [{ stripeSyncedAt: null }, ...LEGACY_FLAGS_DISAGREE, ...WRITTEN_BY_PREVIOUS_RELEASE] },
+    ],
   };
+}
+
+/**
+ * The same question for one row in hand, without the legacy-flag
+ * comparison: has this row never been read from Stripe, or been written by
+ * the previous release since? Used for the lazy first sync on an access
+ * check (./lazySync.ts).
+ */
+export function rowNeedsFirstSync(row: {
+  currentPeriodEnd: Date | null;
+  expiresAt: Date | null;
+  isLifetime: boolean;
+  stripeSyncedAt: Date | null;
+  subscriptionId: string | null;
+}): boolean {
+  if (row.isLifetime) return false;
+  return (
+    row.stripeSyncedAt === null ||
+    row.subscriptionId === null ||
+    (row.expiresAt === null && row.currentPeriodEnd !== null)
+  );
+}
+
+export type ResyncOutcome = RefreshOutcome | "failed";
+
+/**
+ * Whether a row is settled after a sync that ended in `outcome`. Not
+ * settled: the sync failed or could not read everything, the row's
+ * subscription cannot be matched to the user or does not exist at Stripe,
+ * or Stripe has nothing for the customer while the row still grants access
+ * (nothing was changed: someone has to look).
+ */
+export function isUnresolved(outcome: ResyncOutcome, grantsAccess: boolean): boolean {
+  switch (outcome) {
+    case "applied":
+    case "stale":
+      return false;
+    case "nothing_at_stripe":
+      return grantsAccess;
+    default:
+      return true;
+  }
 }
 
 export type ResyncBatchResult = {
   /** Pass back as `cursor` for the next batch; null when this was the last. */
   nextCursor: string | null;
   /** How many rows ended in each outcome ("failed": Stripe or the database threw). */
-  outcomes: Partial<Record<RefreshOutcome | "failed", number>>;
+  outcomes: Partial<Record<ResyncOutcome, number>>;
   processed: number;
+  /**
+   * The rows of this batch that are NOT settled (see isUnresolved), by
+   * Subscription id, with the outcome that left them so. "failed" rows are
+   * retried by running the batch again; the others need a person
+   * (docs/BILLING.md).
+   */
+  unresolved: Array<{ id: string; outcome: ResyncOutcome }>;
 };
 
 /**
@@ -88,20 +149,33 @@ export async function resyncSubscriptionBatch(
   const batch = rows.slice(0, limit);
 
   const outcomes: ResyncBatchResult["outcomes"] = {};
+  const unresolved: ResyncBatchResult["unresolved"] = [];
   for (const row of batch) {
-    let outcome: RefreshOutcome | "failed";
+    let outcome: ResyncOutcome;
     try {
-      outcome = (await refreshBillingState(db, stripe, row.userId, options)).outcome;
+      // With the payment standing: disputes and refunds are derived from
+      // Stripe along with the subscription.
+      outcome = (await refreshBillingState(db, stripe, row.userId, { ...options, standing: true })).outcome;
     } catch (error) {
       outcome = "failed";
       reportBillingError("Subscription re-sync failed for a row", { error, subscriptionRowId: row.id });
     }
     outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+
+    if (outcome === "applied" || outcome === "stale") continue;
+    const stored = outcome === "nothing_at_stripe" ? await db.subscription.findUnique({ where: { id: row.id } }) : null;
+    const grantsAccess = entitlementsFor(stored, new Date()).hasProAccess;
+    if (!isUnresolved(outcome, grantsAccess)) continue;
+    unresolved.push({ id: row.id, outcome });
+    if (outcome !== "failed") {
+      reportBillingError("Subscription row could not be settled from Stripe", { outcome, subscriptionRowId: row.id });
+    }
   }
 
   return {
     nextCursor: rows.length > limit ? (batch.at(-1)?.id ?? null) : null,
     outcomes,
     processed: batch.length,
+    unresolved,
   };
 }

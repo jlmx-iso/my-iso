@@ -466,6 +466,46 @@ describe("two readings in the same second", () => {
     expect((await row(user.id)).status).toBe("active");
   });
 
+  it("a delayed reading that differs only in the cancellation date cannot restore the old date", async () => {
+    const user = await createCustomerUser();
+    const second = T0 + 12 * DAY;
+    const newDate = T0 + 30 * DAY;
+    const oldDate = T0 + 20 * DAY;
+    stripeHas({ cancelAt: newDate, customer: "cus_alice", id: "sub_1", status: "active" });
+    stripeClock(second);
+    await syncSubscriptionById(testDb.db, stub.client, "sub_1");
+
+    // Read in that same second, when the cancellation was still set for the
+    // earlier date; status, period, invoice and the cancel flag all match.
+    stripeHas({ cancelAt: oldDate, customer: "cus_alice", id: "sub_1", status: "active" });
+    const delayed = subscriptionStateFromStripe(await read("sub_1"), at(second), PRICES);
+
+    expect(await applySubscriptionState(testDb.db, user.id, delayed)).toBe("tie");
+    expect(await row(user.id)).toMatchObject({ cancelAt: at(newDate), cancelAtPeriodEnd: true });
+  });
+
+  it("a customer-list reading for ANOTHER subscription cannot replace a selection made in the same second", async () => {
+    const user = await createCustomerUser();
+    const second = T0 + 60 * DAY;
+    stripeHas({ created: T0 + 50 * DAY, customer: "cus_alice", id: "sub_new", status: "active" });
+    stripeClock(second);
+    await syncUserFromStripe(testDb.db, stub.client, user.id);
+    expect((await row(user.id)).subscriptionId).toBe("sub_new");
+
+    // A list read in that same second, before sub_new existed, chose sub_old.
+    stripeHas({ created: T0, customer: "cus_alice", id: "sub_old", status: "active" });
+    const delayed = subscriptionStateFromStripe(await read("sub_old"), at(second), PRICES);
+
+    expect(await applySubscriptionState(testDb.db, user.id, delayed, { authoritative: true })).toBe("tie");
+    expect(await row(user.id)).toMatchObject({ stripeSyncedAt: at(second), subscriptionId: "sub_new" });
+
+    // A list read after that second is strictly newer and may choose.
+    stub.subscriptions.delete("sub_new");
+    stripeClock(second + 1);
+    expect(await syncUserFromStripe(testDb.db, stub.client, user.id)).toMatchObject({ outcome: "applied" });
+    expect((await row(user.id)).subscriptionId).toBe("sub_old");
+  });
+
   it("a reading taken earlier never replaces one taken later", async () => {
     const user = await createCustomerUser();
     stripeHas({ customer: "cus_alice", id: "sub_1", status: "active" });
@@ -590,6 +630,59 @@ describe("syncUserFromStripe", () => {
     const pages = stub.requests.filter((request) => request.path === "/v1/subscriptions" && request.params.status === undefined);
     expect(pages.map((request) => request.params.starting_after)).toEqual([undefined, "sub_expired_2"]);
     expect(await row(user.id)).toMatchObject({ status: "past_due", subscriptionId: "sub_live" });
+  });
+
+  it("concludes and stores nothing from a truncated list: an active subscription may be beyond the page limit", async () => {
+    const user = await createCustomerUser();
+    stripeHas({ created: T0, customer: "cus_alice", id: "sub_active", status: "active" });
+    for (let i = 1; i <= 4; i += 1) {
+      stripeHas({ created: T0 + i * DAY, customer: "cus_alice", id: `sub_newer_${i}`, status: "incomplete_expired" });
+    }
+    const listing = { maxPages: 2, pageSize: 2 };
+
+    // No row yet: nothing is created from the four that were read.
+    expect(await syncUserFromStripe(testDb.db, stub.client, user.id, { listing })).toEqual({ outcome: "listing_truncated" });
+    expect(await testDb.db.subscription.count()).toBe(0);
+    expect(errors.mock.calls.flat().join(" ")).toContain("more subscriptions than are read");
+
+    // A row that exists is not replaced by a lower-ranking one from the partial list.
+    await syncSubscriptionById(testDb.db, stub.client, "sub_active");
+    const before = await row(user.id);
+    expect(await syncUserFromStripe(testDb.db, stub.client, user.id, { listing })).toEqual({ outcome: "listing_truncated" });
+    expect(await row(user.id)).toEqual(before);
+
+    // The cancelled list is read to the end too, and is subject to the same limit.
+    for (let i = 1; i <= 4; i += 1) stub.subscriptions.delete(`sub_newer_${i}`);
+    for (let i = 1; i <= 5; i += 1) {
+      stripeHas({ created: T0 + i * DAY, customer: "cus_alice", id: `sub_ended_${i}`, status: "canceled" });
+    }
+    expect(await syncUserFromStripe(testDb.db, stub.client, user.id, { listing })).toEqual({ outcome: "listing_truncated" });
+    expect(await syncUserFromStripe(testDb.db, stub.client, user.id)).toMatchObject({ outcome: expect.stringMatching(/applied|stale/), state: { subscriptionId: "sub_active" } });
+  });
+
+  it("two syncs for one customer run one after the other, never interleaved", async () => {
+    const user = await createCustomerUser();
+    stripeHas({ created: T0, customer: "cus_alice", id: "sub_1", status: "active" });
+    await syncSubscriptionById(testDb.db, stub.client, "sub_1");
+    stub.requests.length = 0;
+    let inFlight = 0;
+    let mostAtOnce = 0;
+    stub.onRequest(async () => {
+      inFlight += 1;
+      mostAtOnce = Math.max(mostAtOnce, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+    });
+
+    await Promise.all([
+      syncSubscriptionById(testDb.db, stub.client, "sub_1"),
+      syncUserFromStripe(testDb.db, stub.client, user.id),
+      syncSubscriptionById(testDb.db, stub.client, "sub_1", null, { customerId: "cus_alice" }),
+    ]);
+
+    expect(mostAtOnce).toBe(1);
+    expect(stub.requests.length).toBeGreaterThanOrEqual(4);
+    expect(await testDb.raw.billingLease.count()).toBe(0);
   });
 
   it("with nothing live, shows the most recent finished subscription", async () => {

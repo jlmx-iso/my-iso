@@ -2,9 +2,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, t
 
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 import { startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
+import { buildSubscription, type StubSubscriptionInput } from "~/test/helpers/stripeStub";
 
-import { startCheckout, type StartCheckoutInput } from "./checkout";
-import { LeaseBusyError } from "./lease";
+import { BillingStateUnknownError, startCheckout, type StartCheckoutInput } from "./checkout";
+import { LeaseBusyError, LeaseLostError } from "./lease";
 
 const PRICES = {
   STRIPE_FOUNDING_ANNUAL_PRICE_ID: "price_founding_annual",
@@ -150,5 +151,80 @@ describe("startCheckout", () => {
 
     expect(await start(user.id)).toMatchObject({ kind: "url" });
     expect(await testDb.raw.billingLease.count()).toBe(0);
+  });
+
+  /** A member whose Stripe customer exists. */
+  async function createCustomerUser(customerId = "cus_alice") {
+    const user = await createTestUser(testDb.db);
+    await testDb.db.user.update({ data: { stripeId: customerId }, where: { id: user.id } });
+    stub.customers.set(customerId, { id: customerId, metadata: { userId: user.id }, object: "customer" });
+    return user;
+  }
+
+  const stripeHas = (input: StubSubscriptionInput) => stub.subscriptions.set(input.id, buildSubscription(input));
+
+  it("reviews EVERY open session, not just the first page: none is left payable next to the new one", async () => {
+    const user = await createCustomerUser();
+    // Sessions for the other plan, more than one page of them.
+    for (let i = 1; i <= 130; i += 1) {
+      stub.sessions.set(`cs_old_${i}`, {
+        customer: "cus_alice",
+        expires_at: Math.floor(Date.now() / 1000) + 20 * 60 * 60,
+        id: `cs_old_${i}`,
+        metadata: { priceId: "price_standard_annual", userId: user.id },
+        mode: "subscription",
+        object: "checkout.session",
+        status: "open",
+        success_url: "https://app.example.test/app/settings?checkout=success",
+        url: `https://checkout.stripe.test/c/pay/cs_old_${i}`,
+      });
+    }
+
+    const result = await start(user.id);
+
+    const lists = stub.requests.filter((request) => request.method === "GET" && request.path === "/v1/checkout/sessions");
+    expect(lists.map((request) => request.params.starting_after)).toEqual([undefined, "cs_old_100"]);
+    expect(stub.requests.filter(isExpire)).toHaveLength(130);
+    expect(openSessions().map((session) => session.id)).toEqual([result.kind === "url" ? result.sessionId : null]);
+  });
+
+  it("creates nothing when it ran past its lease and another request took over", async () => {
+    const user = await createCustomerUser();
+    // While this request is still refreshing from Stripe, its lease expires
+    // and another request of the same user takes it.
+    stub.onRequest(async (request) => {
+      if (request.path !== "/v1/subscriptions") return;
+      await testDb.raw.billingLease.update({ data: { holder: "the-next-request" }, where: { key: `checkout:${user.id}` } });
+    });
+
+    const attempt = start(user.id);
+
+    await expect(attempt).rejects.toBeInstanceOf(LeaseLostError);
+    await expect(attempt).rejects.toBeInstanceOf(LeaseBusyError);
+    expect(stub.requests.filter((request) => request.method === "POST")).toHaveLength(0);
+    expect(openSessions()).toHaveLength(0);
+    // The new holder's lease is not released by the one that lost it.
+    expect(await testDb.raw.billingLease.findUnique({ where: { key: `checkout:${user.id}` } })).toMatchObject({ holder: "the-next-request" });
+  });
+
+  it("refuses, creating nothing, when the customer's subscriptions cannot all be read (an active one may be beyond the limit)", async () => {
+    const user = await createCustomerUser();
+    const T0 = 1_800_000_000;
+    stripeHas({ created: T0, customer: "cus_alice", id: "sub_active", status: "active" });
+    for (let i = 1; i <= 4; i += 1) {
+      stripeHas({ created: T0 + i * 86_400, customer: "cus_alice", id: `sub_newer_${i}`, status: "incomplete_expired" });
+    }
+
+    // Two pages of two: the active subscription is the fifth.
+    const attempt = start(user.id, { sync: { listing: { maxPages: 2, pageSize: 2 } } });
+
+    await expect(attempt).rejects.toBeInstanceOf(BillingStateUnknownError);
+    expect(openSessions()).toHaveLength(0);
+    expect(await testDb.db.subscription.count()).toBe(0);
+    expect(logged[0]?.mock.calls.flat().join(" ")).toContain("more subscriptions than are read");
+
+    // Read to the end, the active subscription is found and checkout is refused for the right reason.
+    expect(await start(user.id)).toEqual({ kind: "subscription_exists" });
+    expect(openSessions()).toHaveLength(0);
   });
 });

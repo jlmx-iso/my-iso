@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import type { RateLimitDb } from "~/server/_utils/rateLimit";
 
 /**
@@ -9,8 +11,12 @@ import type { RateLimitDb } from "~/server/_utils/rateLimit";
  *
  * A lease carries an expiry, so a holder that died (the isolate was evicted)
  * blocks nobody for longer than `ttlSeconds`. A holder that outlives its
- * lease is not interrupted: keep the TTL above the longest the sequence can
- * take.
+ * lease is not interrupted, so the work is handed a LeaseHandle and makes
+ * the step that must not happen twice depend on still holding it: either
+ * `renew()` immediately before the step (a conditional update: it fails once
+ * someone else has taken the lease over, and otherwise gives the step a
+ * full TTL), or a write that carries `heldCondition()` in its own WHERE
+ * clause, which is atomic.
  */
 
 export type LeaseDb = RateLimitDb;
@@ -26,11 +32,37 @@ export type LeaseOptions = {
   waitMs: number;
 };
 
+/** What the holder of a lease can do with it while it works. */
+export type LeaseHandle = {
+  /**
+   * SQL condition, for the WHERE clause of a write, that is true only while
+   * this holder still has the lease: the write and the check are then ONE
+   * statement.
+   */
+  heldCondition: () => Prisma.Sql;
+  key: string;
+  /**
+   * Extends the lease by a full TTL if this holder still has it. False when
+   * another request has taken it over (this one ran past its expiry): the
+   * caller must stop before doing anything that the new holder also does.
+   */
+  renew: () => Promise<boolean>;
+};
+
 /** The lease could not be taken in time: someone else is still at work. */
 export class LeaseBusyError extends Error {
   constructor(key: string) {
     super(`Billing lease "${key}" is held by another request`);
     this.name = "LeaseBusyError";
+  }
+}
+
+/** The holder ran past its lease and another request took it over. */
+export class LeaseLostError extends LeaseBusyError {
+  constructor(key: string) {
+    super(key);
+    this.message = `Billing lease "${key}" expired and was taken over by another request`;
+    this.name = "LeaseLostError";
   }
 }
 
@@ -59,7 +91,7 @@ export async function withLease<T>(
   db: LeaseDb,
   key: string,
   options: LeaseOptions,
-  work: () => Promise<T>,
+  work: (lease: LeaseHandle) => Promise<T>,
 ): Promise<T> {
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
@@ -72,10 +104,48 @@ export async function withLease<T>(
     await sleep(RETRY_EVERY_MS);
   }
 
+  const handle: LeaseHandle = {
+    heldCondition: () =>
+      Prisma.sql`EXISTS (SELECT 1 FROM "BillingLease" WHERE "key" = ${key} AND "holder" = ${holder})`,
+    key,
+    renew: async () => {
+      const expiresAt = Math.floor(now() / 1000) + options.ttlSeconds;
+      const renewed = await db.$executeRaw`
+        UPDATE "BillingLease" SET "expiresAt" = ${expiresAt} WHERE "key" = ${key} AND "holder" = ${holder}`;
+      return renewed > 0;
+    },
+  };
+
   try {
-    return await work();
+    return await work(handle);
   } finally {
     await db.$executeRaw`
       DELETE FROM "BillingLease" WHERE "key" = ${key} AND "holder" = ${holder}`.catch(() => undefined);
   }
+}
+
+/**
+ * Takes `key` for `ttlSeconds` WITHOUT a holder that releases it: a durable
+ * "not again before" marker, for work that should be attempted at most once
+ * per period across all isolates (the lazy first sync of a legacy row).
+ * True when this caller got it; false while an earlier claim is running.
+ * `extendClaim` moves the expiry of a claim that exists.
+ */
+export async function claimFor(
+  db: LeaseDb,
+  key: string,
+  ttlSeconds: number,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  return tryAcquire(db, key, crypto.randomUUID(), Math.floor(nowMs / 1000), ttlSeconds);
+}
+
+export async function extendClaim(
+  db: LeaseDb,
+  key: string,
+  ttlSeconds: number,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  const expiresAt = Math.floor(nowMs / 1000) + ttlSeconds;
+  await db.$executeRaw`UPDATE "BillingLease" SET "expiresAt" = ${expiresAt} WHERE "key" = ${key}`;
 }

@@ -7,6 +7,7 @@ import {
   buildEvent,
   buildInvoice,
   buildInvoicePayment,
+  buildRefund,
   buildSubscription,
   signEvent,
   startStripeStub,
@@ -634,11 +635,89 @@ describe("disputes and refunds", () => {
     expect(await subscriptionRow(user.id)).toMatchObject({ disputeInvoiceId: "in_1", disputeStatus: "lost" });
     expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
 
-    // The next renewal is paid: a new latest invoice.
-    stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", status: "active" });
-    await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_2", status: "paid", subscriptionId: "sub_1" })));
+    // The renewal is issued but its payment fails: a new latest invoice,
+    // unpaid, and the subscription past due. That is not "a later invoice
+    // is paid": no grace access on top of a lost payment.
+    const renewal = (status: "open" | "paid") =>
+      buildInvoice({ created: T0 + 30 * DAY, customer: "cus_alice", id: "in_2", status, subscriptionId: "sub_1" });
+    stub.invoices.set("in_2", renewal("open"));
+    stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", status: "past_due" });
+    await deliver(buildEvent("invoice.payment_failed", renewal("open")));
 
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeInvoiceId: "in_1", disputeStatus: "lost", latestInvoiceId: "in_2", status: "past_due" });
+    expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true, isPastDue: true });
+
+    // The retry succeeds: now a later invoice is paid.
+    stub.invoices.set("in_2", renewal("paid"));
+    stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", status: "active" });
+    await deliver(buildEvent("invoice.paid", renewal("paid")));
+
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeInvoiceId: null, disputeStatus: null });
     expect(await access(user.id)).toMatchObject({ hasProAccess: true, isDisputed: false });
+  });
+
+  it("winning one dispute does not hide another that is still open, in either order of arrival", async () => {
+    const user = await paidSubscription();
+    await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response", "dp_a")));
+    await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response", "dp_b")));
+
+    // B, the one recorded last, is won. A is still open.
+    const wonB = await deliver(buildEvent("charge.dispute.closed", disputeIs("won", "dp_b")));
+
+    expect(wonB).toMatchObject({ result: "dispute_recorded", status: 200 });
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_a", disputeStatus: "open" });
+    expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+
+    await deliver(buildEvent("charge.dispute.closed", disputeIs("won", "dp_a")));
+
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: null });
+    expect((await access(user.id)).hasProAccess).toBe(true);
+  });
+
+  it("two dispute events handled at once are stored in the order they were read: an older reading cannot overwrite a newer one", async () => {
+    const user = await paidSubscription();
+    disputeIs("needs_response");
+    const created = buildEvent("charge.dispute.created", buildDispute({ charge: "ch_1", id: "dp_1", paymentIntent: "pi_1", status: "needs_response" }));
+    const closed = buildEvent("charge.dispute.closed", buildDispute({ charge: "ch_1", id: "dp_1", paymentIntent: "pi_1", status: "won" }));
+
+    // While the first handler is reading the standing ("open"), the dispute
+    // is won and the second event is delivered. The first handler is held
+    // long enough for the second to overtake it, if anything let it.
+    const overtaker: { delivery: ReturnType<typeof deliver> | null } = { delivery: null };
+    stub.onRequest(async (request) => {
+      if (overtaker.delivery || request.path !== "/v1/disputes") return;
+      disputeIs("won");
+      overtaker.delivery = deliver(closed);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    const first = await deliver(created);
+    const overtaking = await overtaker.delivery;
+
+    expect(first).toMatchObject({ result: "dispute_recorded", status: 200 });
+    expect(overtaking).toMatchObject({ result: "dispute_recorded", status: 200 });
+    expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: null });
+    expect((await access(user.id)).hasProAccess).toBe(true);
+  });
+
+  it("answers 409 while the customer's lease is held elsewhere, and handles the redelivery", async () => {
+    const user = await paidSubscription();
+    const event = buildEvent("charge.dispute.created", disputeIs("needs_response"));
+    const farFuture = Math.floor(Date.now() / 1000) + 3600;
+    await testDb.raw.$executeRaw`
+      INSERT INTO "BillingLease" ("key", "holder", "expiresAt") VALUES ('customer:cus_alice', 'someone-else', ${farFuture})`;
+    // Each look at the clock is five seconds on: the wait is over at once.
+    let clock = Date.now();
+    deps = { ...deps, sync: { lease: { now: () => (clock += 5000), sleep: () => Promise.resolve() } } };
+
+    const busy = await deliver(event);
+
+    expect(busy).toMatchObject({ result: "busy", status: 409 });
+    expect((await subscriptionRow(user.id))?.disputeStatus).toBeNull();
+
+    await testDb.raw.$executeRaw`DELETE FROM "BillingLease" WHERE "key" = 'customer:cus_alice'`;
+    expect(await deliver(event)).toMatchObject({ result: "dispute_recorded", status: 200 });
+    expect((await subscriptionRow(user.id))?.disputeStatus).toBe("open");
   });
 
   it("reads the dispute from Stripe, so `created` delivered after `closed` does not suspend again", async () => {
@@ -716,6 +795,48 @@ describe("disputes and refunds", () => {
     expect((await access(user.id)).reason).toBe("canceled_paid_period");
   });
 
+  it.each(["refund.failed", "refund.updated", "charge.refund.updated"])(
+    "a full refund that then fails gives the paid period back (%s)",
+    async (eventType) => {
+      const user = await paidSubscription("canceled", { cancellationReason: "cancellation_requested" });
+      stub.charges.set("ch_1", buildCharge({ customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1", refunded: true }));
+      await deliver(buildEvent("charge.refunded", buildCharge({ customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1", refunded: true })));
+      expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBe("in_1");
+      expect((await access(user.id)).hasProAccess).toBe(false);
+
+      // The refund bounces: Stripe puts the amount back on the charge and
+      // says so with a Refund object, not a Charge.
+      stub.charges.set("ch_1", buildCharge({ customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+      const failed = await deliver(
+        buildEvent(eventType, buildRefund({ charge: "ch_1", id: "re_1", paymentIntent: "pi_1", status: "failed" })),
+      );
+
+      expect(failed).toMatchObject({ result: "refund_recorded", status: 200 });
+      expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBeNull();
+      expect((await access(user.id)).reason).toBe("canceled_paid_period");
+    },
+  );
+
+  it("a delayed refund event for an older invoice does not undo the refund of the current one", async () => {
+    const user = await paidSubscription("canceled", { cancellationReason: "cancellation_requested", latestInvoice: "in_2" });
+    stub.invoices.set("in_2", buildInvoice({ created: T0 + 30 * DAY, customer: "cus_alice", id: "in_2", status: "paid", subscriptionId: "sub_1" }));
+    stub.invoicePayments.set("inpay_2", buildInvoicePayment({ id: "inpay_2", invoice: "in_2", paymentIntent: "pi_2" }));
+    const refunded = (id: string, paymentIntent: string) =>
+      buildCharge({ customer: "cus_alice", id, paymentIntent, refunded: true });
+    stub.charges.set("ch_1", refunded("ch_1", "pi_1"));
+    stub.charges.set("ch_2", refunded("ch_2", "pi_2"));
+
+    await deliver(buildEvent("charge.refunded", refunded("ch_2", "pi_2")));
+    expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBe("in_2");
+
+    // The event for last period's refund arrives only now.
+    const late = await deliver(buildEvent("charge.refunded", refunded("ch_1", "pi_1")));
+
+    expect(late).toMatchObject({ result: "refund_recorded", status: 200 });
+    expect(await subscriptionRow(user.id)).toMatchObject({ latestInvoiceId: "in_2", refundedInvoiceId: "in_2" });
+    expect(await access(user.id)).toMatchObject({ hasProAccess: false, reason: "none" });
+  });
+
   it("a refund while the subscription stays active does not remove access (the merchant kept it running)", async () => {
     const user = await paidSubscription();
     stub.charges.set("ch_1", buildCharge({ customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1", refunded: true }));
@@ -737,7 +858,7 @@ describe("disputes and refunds", () => {
     const legacy = await deliver(buildEvent("charge.refunded", buildCharge({ customer: "cus_alice", id: "ch_legacy", paymentIntent: null, refunded: true })));
     const gone = await deliver(buildEvent("charge.dispute.created", buildDispute({ charge: "ch_x", id: "dp_gone", paymentIntent: "pi_x", status: "needs_response" })));
 
-    expect([refund.result, dispute.result, legacy.result, gone.result]).toEqual(["not_a_subscription", "not_a_subscription", "not_a_subscription", "object_missing"]);
+    expect([refund.result, dispute.result, legacy.result, gone.result]).toEqual(["not_a_subscription", "not_a_subscription", "not_a_subscription", "not_a_subscription"]);
     expect(await subscriptionRow(user.id)).toMatchObject({ disputeStatus: null, refundedInvoiceId: null });
   });
 

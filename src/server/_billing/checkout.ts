@@ -8,7 +8,7 @@ import {
 } from "~/server/_utils/pricing";
 
 import { isTerminalStatus } from "./entitlements";
-import { withLease, type LeaseDb, type LeaseOptions } from "./lease";
+import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
 import { reportBillingError } from "./report";
 import { isStripeResourceMissing } from "./stripe";
 import {
@@ -88,7 +88,12 @@ export type RefreshOutcome =
   /** The row's subscription is not the user's customer's: left as it is. */
   | "unknown_customer"
   /** The row points at a subscription Stripe does not have. */
-  | "subscription_missing";
+  | "subscription_missing"
+  /**
+   * The customer has more subscriptions than are read: nothing was stored
+   * and nothing is known. Whoever decides on this must fail closed.
+   */
+  | "listing_truncated";
 
 /**
  * Brings the user's subscription row up to date with Stripe before a
@@ -107,6 +112,11 @@ export async function refreshBillingState(
   const result = await syncUserFromStripe(db, stripe, userId, options);
   if ("state" in result) {
     return { hasLiveSubscription: result.hasLiveSubscription, outcome: result.outcome };
+  }
+  if (result.outcome === "listing_truncated") {
+    // Unknown, and reported. "Live" is the answer that cannot lead to a
+    // second subscription; startCheckout refuses on the outcome itself.
+    return { hasLiveSubscription: true, outcome: "listing_truncated" };
   }
 
   // Stripe lists nothing for the user's customer. A row that still claims a
@@ -130,18 +140,38 @@ export async function refreshBillingState(
   return { hasLiveSubscription: !isTerminalStatus(single.state.status), outcome: single.outcome };
 }
 
-/** Open Checkout sessions looked at when starting a new one. */
-const OPEN_SESSIONS_TO_REVIEW = 10;
+/** Open Checkout sessions read per page, and the most pages, when starting a new one. */
+const OPEN_SESSIONS_PAGE_SIZE = 100;
+const MAX_OPEN_SESSION_PAGES = 10;
+
+/**
+ * The billing state could not be established (see "listing_truncated"), or
+ * the customer has more open Checkout sessions than can be reviewed.
+ * Nothing was created.
+ */
+export class BillingStateUnknownError extends Error {
+  constructor(what: string) {
+    super(`Checkout refused: ${what}`);
+    this.name = "BillingStateUnknownError";
+  }
+}
 
 /** An open session is handed out again only if it stays payable this long. */
 const REUSE_MIN_REMAINING_MS = 30 * 60 * 1000;
 
 /**
  * The lease that makes starting Checkout run for one user at a time: held
- * for at most CHECKOUT_LEASE_SECONDS (longer than the sequence can take:
- * a handful of Stripe calls of at most 15 s each), waited for up to
+ * for at most CHECKOUT_LEASE_SECONDS, waited for up to
  * CHECKOUT_LEASE_WAIT_MS by a second request, which then finds the first
  * one's session open and reuses it.
+ *
+ * The sequence has no fixed length (every open session is closed, each
+ * Stripe call may be retried), so it is not assumed to fit in the TTL: the
+ * lease is RENEWED immediately before the session is created, which fails
+ * if another request has taken it over in the meantime. A request that ran
+ * past its lease therefore stops without creating anything, and the one
+ * call that follows a successful renewal (create, at most three attempts
+ * of 15 s) fits in a fresh TTL.
  */
 const CHECKOUT_LEASE_SECONDS = 120;
 const CHECKOUT_LEASE_WAIT_MS = 10_000;
@@ -199,13 +229,27 @@ async function reuseOrCloseOpenSessions(
   request: SessionRequest,
   nowMs: number,
 ): Promise<Stripe.Checkout.Session | null> {
-  const open = await stripe.checkout.sessions.list({
-    customer: request.customerId,
-    limit: OPEN_SESSIONS_TO_REVIEW,
-    status: "open",
-  });
+  // ALL of them, following has_more: one that was never looked at would
+  // stay payable next to the session handed out below.
+  const open: Stripe.Checkout.Session[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 1; ; page += 1) {
+    const list = await stripe.checkout.sessions.list({
+      customer: request.customerId,
+      limit: OPEN_SESSIONS_PAGE_SIZE,
+      status: "open",
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    open.push(...list.data);
+    startingAfter = list.data.at(-1)?.id;
+    if (!list.has_more || !startingAfter) break;
+    if (page >= MAX_OPEN_SESSION_PAGES) {
+      throw new BillingStateUnknownError("the customer has more open Checkout sessions than can be reviewed");
+    }
+  }
+
   let reusable: Stripe.Checkout.Session | null = null;
-  for (const session of open.data) {
+  for (const session of open) {
     if (!reusable && isReusable(session, request, nowMs)) {
       reusable = session;
       continue;
@@ -224,6 +268,8 @@ export type StartCheckoutInput = {
   now?: () => number;
   prices?: PriceConfig;
   successPath: CheckoutSuccessPath;
+  /** How the refresh from Stripe reads and waits, for tests. */
+  sync?: SyncOptions;
   userId: string;
 };
 
@@ -240,7 +286,10 @@ export type CheckoutDb = BillingDb & LeaseDb;
  * entitles them to, or returns the one already open for the same purchase.
  * Throws PriceNotConfiguredError when that price has no Stripe Price id
  * configured, LeaseBusyError when another request of the same user is
- * still at it, and Stripe's errors when Stripe fails.
+ * still at it (LeaseLostError, a kind of it, when this request ran past its
+ * lease and another took over), BillingStateUnknownError when Stripe has
+ * more for the customer than can be read, and Stripe's errors when Stripe
+ * fails. In all of these nothing was created by this request.
  *
  * One purchase, one payable session. The whole sequence (close other open
  * sessions, refresh from Stripe, create) runs under a per-user lease, so
@@ -264,14 +313,17 @@ export async function startCheckout(
   const successUrl = appUrl(input.baseUrl, input.successPath);
   const now = input.now ?? Date.now;
 
-  const createSession = async (customer: string) => {
+  const createSession = async (customer: string, lease: LeaseHandle) => {
     const request: SessionRequest = { customerId: customer, priceId, successUrl, userId: user.id };
     const reusable = await reuseOrCloseOpenSessions(stripe, request, now());
-    const refreshed = await refreshBillingState(db, stripe, user.id);
+    const refreshed = await refreshBillingState(db, stripe, user.id, input.sync);
 
     // A subscription that has not ended, on the row or anywhere on the
     // customer (a second one the row does not show), is managed in the
     // portal. That includes a status this code does not know.
+    if (refreshed.outcome === "listing_truncated") {
+      throw new BillingStateUnknownError("the customer's subscriptions could not all be read");
+    }
     const row = await db.subscription.findUnique({ where: { userId: user.id } });
     if (refreshed.hasLiveSubscription || (row && (row.isLifetime || !isTerminalStatus(row.status)))) {
       // Whatever was open must not be paid on top of it.
@@ -279,6 +331,9 @@ export async function startCheckout(
       return null;
     }
     if (reusable) return reusable;
+
+    // Still this request's turn? (See CHECKOUT_LEASE_SECONDS.)
+    if (!(await lease.renew())) throw new LeaseLostError(lease.key);
 
     return stripe.checkout.sessions.create({
       cancel_url: appUrl(input.baseUrl, CHECKOUT_CANCEL_PATH),
@@ -300,10 +355,10 @@ export async function startCheckout(
     db,
     `checkout:${user.id}`,
     { ...input.lease, ttlSeconds: CHECKOUT_LEASE_SECONDS, waitMs: CHECKOUT_LEASE_WAIT_MS },
-    async () => {
+    async (lease) => {
       let customerId = await ensureCustomer(db, stripe, user, `my-iso:customer:${user.id}`);
       try {
-        return await createSession(customerId);
+        return await createSession(customerId, lease);
       } catch (error) {
         if (!isStripeResourceMissing(error, "customer")) throw error;
         // The stored customer no longer exists at Stripe (deleted in the
@@ -315,7 +370,7 @@ export async function startCheckout(
           { ...user, stripeId: null },
           `my-iso:customer:${user.id}:after:${customerId}`,
         );
-        return createSession(customerId);
+        return createSession(customerId, lease);
       }
     },
   );

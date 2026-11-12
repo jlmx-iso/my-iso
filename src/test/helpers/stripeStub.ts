@@ -131,6 +131,7 @@ export function buildInvoice(input: {
 export function buildCharge(input: {
   amount?: number;
   amountRefunded?: number;
+  created?: number;
   customer: string;
   disputed?: boolean;
   id: string;
@@ -143,6 +144,7 @@ export function buildCharge(input: {
     amount_captured: amount,
     amount_refunded: input.amountRefunded ?? (input.refunded ? amount : 0),
     captured: true,
+    created: input.created ?? 1_800_000_000,
     currency: "usd",
     customer: input.customer,
     disputed: input.disputed ?? false,
@@ -177,6 +179,27 @@ export function buildDispute(input: {
     object: "dispute",
     payment_intent: input.paymentIntent,
     reason: "fraudulent",
+    status: input.status,
+  };
+}
+
+/** A refund of `charge`, as `refund.updated` / `refund.failed` carry it. */
+export function buildRefund(input: {
+  amount?: number;
+  charge: string;
+  id: string;
+  paymentIntent: string | null;
+  status: "pending" | "succeeded" | "failed" | "canceled";
+}): Json {
+  return {
+    amount: input.amount ?? 1900,
+    charge: input.charge,
+    created: 1_800_000_000,
+    currency: "usd",
+    id: input.id,
+    metadata: {},
+    object: "refund",
+    payment_intent: input.paymentIntent,
     status: input.status,
   };
 }
@@ -290,8 +313,6 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("error", reject);
   });
 }
-
-const list = (data: Json[], url: string): Json => ({ data, has_more: false, object: "list", url });
 
 class StubError extends Error {
   constructor(
@@ -412,16 +433,46 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
       }
     }
 
+    if (resource === "invoices" && method === "GET" && !second) {
+      // Newest first, like Stripe.
+      const data = [...invoices.values()]
+        .filter((invoice) => {
+          const parent = invoice.parent as { subscription_details?: { subscription?: string } } | null;
+          return parent?.subscription_details?.subscription === params.subscription;
+        })
+        .filter((invoice) => params.status === undefined || invoice.status === params.status)
+        .sort((a, b) => Number(b.created) - Number(a.created));
+      return page(data, params, "/v1/invoices");
+    }
+
     if (resource === "invoices" && method === "GET" && second) {
       const invoice = invoices.get(second);
       if (!invoice) throw missing("invoice", second, "id");
       return invoice;
     }
 
+    if (resource === "charges" && method === "GET" && !second) {
+      liveCustomer(params.customer ?? "", "customer");
+      const data = [...charges.values()]
+        .filter((charge) => charge.customer === params.customer)
+        // Like Stripe: a charge says so once a dispute exists on it.
+        .map((charge): Json => ({
+          ...charge,
+          disputed: charge.disputed === true || [...disputes.values()].some((dispute) => dispute.charge === charge.id),
+        }))
+        .sort((a, b) => Number(b.created) - Number(a.created));
+      return page(data, params, "/v1/charges");
+    }
+
     if (resource === "charges" && method === "GET" && second) {
       const charge = charges.get(second);
       if (!charge) throw missing("charge", second, "id");
       return charge;
+    }
+
+    if (resource === "disputes" && method === "GET" && !second) {
+      const data = [...disputes.values()].filter((dispute) => dispute.charge === params.charge);
+      return page(data, params, "/v1/disputes");
     }
 
     if (resource === "disputes" && method === "GET" && second) {
@@ -435,8 +486,10 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
       const data = [...invoicePayments.values()]
         .filter((payment) => {
           const paid = payment.payment as { payment_intent?: string } | undefined;
-          return paid?.payment_intent === paymentIntent;
+          return paymentIntent === undefined || paid?.payment_intent === paymentIntent;
         })
+        .filter((payment) => params.invoice === undefined || payment.invoice === params.invoice)
+        .filter((payment) => params.status === undefined || payment.status === params.status)
         .map((payment) => {
           const invoice = expands(params, "data.invoice") ? invoices.get(String(payment.invoice)) : undefined;
           return invoice ? { ...payment, invoice } : payment;
@@ -452,7 +505,7 @@ export async function startStripeStub(options: { port?: number } = {}): Promise<
         const data = [...sessions.values()].filter(
           (session) => session.customer === customerId && session.status === (params.status ?? session.status),
         );
-        return list(data, "/v1/checkout/sessions");
+        return page(data, params, "/v1/checkout/sessions");
       }
       if (method === "POST" && !sessionId) {
         liveCustomer(params.customer ?? "", "customer");

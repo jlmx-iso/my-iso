@@ -15,8 +15,17 @@
  *
  * Sign in to the app as a founder or ambassador and copy the session cookie
  * from the browser (never commit or log it), or pass a bearer token in
- * RESYNC_AUTHORIZATION ("Bearer ..."). Exit code 0 when every batch ran,
- * 1 on the first batch that failed (run it again to continue).
+ * RESYNC_AUTHORIZATION ("Bearer ...").
+ *
+ * Exit code, so that a deployment job cannot take an incomplete re-sync
+ * for a finished one:
+ *
+ *   0  every batch ran and every row is settled
+ *   1  a batch could not be run, or at least one row FAILED (Stripe or the
+ *      database was unavailable for it): run the script again
+ *   2  wrong usage
+ *   3  nothing failed, but rows are left that need a person (their ids and
+ *      outcomes are printed; see docs/BILLING.md)
  */
 
 const args = process.argv.slice(2);
@@ -44,7 +53,8 @@ if (!baseUrl || (!cookie && !authorization) || !["pending", "all"].includes(scop
   process.exit(2);
 }
 
-/** @typedef {{ nextCursor: string | null, outcomes: Record<string, number>, processed: number }} Batch */
+/** @typedef {{ id: string, outcome: string }} Unresolved */
+/** @typedef {{ nextCursor: string | null, outcomes: Record<string, number>, processed: number, unresolved: Unresolved[] }} Batch */
 
 /**
  * @param {unknown} value
@@ -66,10 +76,18 @@ function batchOf(body) {
   for (const [outcome, count] of Object.entries(batch.outcomes)) {
     if (typeof count === "number") outcomes[outcome] = count;
   }
+  /** @type {Unresolved[]} */
+  const unresolved = [];
+  for (const row of Array.isArray(batch.unresolved) ? batch.unresolved : []) {
+    if (isObject(row) && typeof row.id === "string" && typeof row.outcome === "string") {
+      unresolved.push({ id: row.id, outcome: row.outcome });
+    }
+  }
   return {
     nextCursor: typeof batch.nextCursor === "string" ? batch.nextCursor : null,
     outcomes,
     processed: batch.processed,
+    unresolved,
   };
 }
 
@@ -86,6 +104,8 @@ function errorOf(body) {
 const endpoint = new URL("/api/trpc/subscription.resyncFromStripe", baseUrl);
 /** @type {Record<string, number>} */
 const totals = {};
+/** @type {Unresolved[]} */
+const unresolved = [];
 let processed = 0;
 let batches = 0;
 /** @type {string | null} */
@@ -117,12 +137,22 @@ do {
   for (const [outcome, count] of Object.entries(batch.outcomes)) {
     totals[outcome] = (totals[outcome] ?? 0) + count;
   }
+  unresolved.push(...batch.unresolved);
   console.log(`batch ${batches}: ${batch.processed} row(s) ${JSON.stringify(batch.outcomes)}`);
   cursor = batch.nextCursor;
 } while (cursor);
 
 console.log(`Done: ${processed} row(s) in ${batches} batch(es). Outcomes: ${JSON.stringify(totals)}`);
-if (totals.failed) console.log("Some rows failed (see the app's error log); run the script again to retry them.");
-if (totals.unknown_customer) {
-  console.log("unknown_customer rows were left unchanged: their user has no stored Stripe customer id (docs/BILLING.md).");
+
+const failed = unresolved.filter((row) => row.outcome === "failed");
+const needAttention = unresolved.filter((row) => row.outcome !== "failed");
+if (needAttention.length > 0) {
+  console.error(`${needAttention.length} row(s) are not settled and need a person (docs/BILLING.md, "Outcomes"):`);
+  for (const row of needAttention) console.error(`  Subscription ${row.id}: ${row.outcome}`);
 }
+if (failed.length > 0 || totals.failed) {
+  console.error(`${failed.length || totals.failed} row(s) FAILED (see the app's error log). The re-sync is NOT complete; run the script again:`);
+  for (const row of failed) console.error(`  Subscription ${row.id}`);
+  process.exit(1);
+}
+if (needAttention.length > 0) process.exit(3);

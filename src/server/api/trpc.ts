@@ -14,6 +14,8 @@ import { ZodError } from "zod";
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
 import { entitlementsFor } from "~/server/_billing/entitlements";
+import { loadSubscriptionForAccess } from "~/server/_billing/lazySync";
+import { getStripe } from "~/server/_billing/stripe";
 import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
 import { getClientIp } from "~/server/_utils/clientIp";
 import { enforceRateLimit, type RateLimitPolicy } from "~/server/_utils/rateLimit";
@@ -166,9 +168,9 @@ const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
-  const subscription = await ctx.db.subscription.findUnique({
-    where: { userId: ctx.session.user.id },
-  });
+  // The stored row; one that was never read from Stripe syncs itself
+  // first (bounded, and never an error: see _billing/lazySync.ts).
+  const subscription = await loadSubscriptionForAccess(ctx.db, getStripe, ctx.session.user.id);
 
   // Access is derived from the stored Stripe state in one place.
   if (!entitlementsFor(subscription, new Date()).hasProAccess) {
