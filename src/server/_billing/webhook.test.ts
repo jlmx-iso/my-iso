@@ -1119,6 +1119,26 @@ describe("disputes and refunds", () => {
         expect(delivered).toMatchObject({ result: "standing_incomplete", status: 200 });
       });
 
+      it("clears a stored refund marker when a charge that was read is not refunded, even with a payment left unread", async () => {
+        const user = await paidSubscription("canceled", { cancellationReason: "cancellation_requested" });
+        longHistory();
+        // in_1 was paid in three parts, by charges the listing does not reach; only two are read directly.
+        // Two are not refunded, so whichever two are read, one of them says the invoice was not refunded in full.
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+        stub.invoicePayments.set("inpay_1b", buildInvoicePayment({ id: "inpay_1b", invoice: "in_1", paymentIntent: "pi_1b" }));
+        stub.charges.set("ch_1b", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1b", paymentIntent: "pi_1b", refunded: true }));
+        stub.invoicePayments.set("inpay_1c", buildInvoicePayment({ id: "inpay_1c", invoice: "in_1", paymentIntent: "pi_1c" }));
+        stub.charges.set("ch_1c", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1c", paymentIntent: "pi_1c" }));
+        // The refund was recorded earlier and has since been reversed.
+        await testDb.db.subscription.updateMany({ data: { refundedInvoiceId: "in_1" }, where: { userId: user.id } });
+        expect((await access(user.id)).hasProAccess).toBe(false);
+
+        await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+        expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBeNull();
+        expect((await access(user.id)).reason).toBe("canceled_paid_period");
+      });
+
       it("is not called incomplete when the unread charges are older than any dispute can be", async () => {
         const user = await paidSubscription();
         for (let i = 1; i <= 320; i += 1) {
