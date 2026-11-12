@@ -17,6 +17,18 @@ import { MAX_MESSAGE_LENGTH, MAX_RECIPIENT_RESULTS, messageRouter } from "./mess
 
 type TestUser = { email: string; id: string };
 
+/** A `Prisma.sql` statement, as $queryRaw receives it. */
+function isSqlObject(query: unknown): query is { sql: string; values: unknown[] } {
+  return (
+    typeof query === "object" &&
+    query !== null &&
+    "sql" in query &&
+    typeof query.sql === "string" &&
+    "values" in query &&
+    Array.isArray(query.values)
+  );
+}
+
 // Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
 const limiterClock = freezeRateLimitClock();
 
@@ -644,6 +656,226 @@ describe("messageRouter against SQLite", () => {
       await expect(
         as(carol).getThreadByParticipants({ participants: [alice.id, bob.id] }),
       ).resolves.toBeNull();
+    });
+  });
+  describe("daily cap counts people, not threads", () => {
+    const strangers = (count: number) =>
+      Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          createTestUser(testDb.db, { firstName: `Group${i}`, isDiscoverable: true }),
+        ),
+      );
+
+    it("counts a new group thread once per recipient", async () => {
+      const people = await strangers(MAX_NEW_CONVERSATIONS_PER_DAY + 1);
+      const ids = people.map((person) => person.id);
+      // Two groups of nine: 18 of the 20 people allowed today.
+      await as(alice).createThread({ initialMessage: "team a", participants: ids.slice(0, 9) });
+      await as(alice).createThread({ initialMessage: "team b", participants: ids.slice(9, 18) });
+
+      // Two more people fit; a third does not.
+      await as(alice).createThread({ initialMessage: "hi", participants: [ids[18] ?? ""] });
+      await as(alice).createThread({ initialMessage: "hi", participants: [ids[19] ?? ""] });
+      const error = await errorOf(
+        as(alice).createThread({ initialMessage: "hi", participants: [ids[20] ?? ""] }),
+      );
+
+      expect(error).toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      expect(reasonOf(error)).toBe(ErrorReason.NEW_CONVERSATION_LIMIT);
+      expect(await testDb.db.messageThread.count()).toBe(4);
+    });
+
+    it("a group that does not fit is refused whole, without using up what was left", async () => {
+      const people = await strangers(MAX_NEW_CONVERSATIONS_PER_DAY);
+      const ids = people.map((person) => person.id);
+      for (const id of ids.slice(0, MAX_NEW_CONVERSATIONS_PER_DAY - 2)) {
+        await as(alice).createThread({ initialMessage: "hi", participants: [id] });
+      }
+
+      // Two places left; a group of three would need three.
+      const error = await errorOf(
+        as(alice).createThread({
+          initialMessage: "all of you",
+          participants: [bob.id, ids.at(-1) ?? "", ids.at(-2) ?? ""],
+        }),
+      );
+      expect(reasonOf(error)).toBe(ErrorReason.NEW_CONVERSATION_LIMIT);
+      expect(await testDb.db.messageThread.count()).toBe(MAX_NEW_CONVERSATIONS_PER_DAY - 2);
+
+      // The refusal cost nothing: the two places are still there.
+      await as(alice).createThread({ initialMessage: "hi", participants: [ids.at(-1) ?? ""] });
+      await as(alice).createThread({ initialMessage: "hi", participants: [ids.at(-2) ?? ""] });
+      await expect(
+        as(alice).createThread({ initialMessage: "hi", participants: [bob.id] }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    });
+  });
+
+  describe("thread activity time", () => {
+    it("moves with the message insert itself (database trigger), for any writer", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "first", participants: [bob.id] });
+      const at = new Date("2031-03-04T05:06:07.890Z");
+
+      // Not through the router: a bare insert, as any code path would do.
+      await testDb.raw.message.create({
+        data: { content: "direct", createdAt: at, senderId: bob.id, threadId: thread.id },
+      });
+
+      expect((await testDb.raw.messageThread.findUniqueOrThrow({ where: { id: thread.id } })).updatedAt).toEqual(at);
+    });
+
+    it("a reply brings an older conversation back to the top", async () => {
+      const older = await as(alice).createThread({ initialMessage: "older", participants: [bob.id] });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const dave = await createTestUser(testDb.db, { isDiscoverable: true });
+      const newer = await as(alice).createThread({ initialMessage: "newer", participants: [dave.id] });
+      expect((await as(alice).getThreadsByUserId()).map((t) => t.id)).toEqual([newer.id, older.id]);
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await as(bob).create({ content: "reply", threadId: older.id });
+
+      expect((await as(alice).getThreadsByUserId()).map((t) => t.id)).toEqual([older.id, newer.id]);
+    });
+  });
+
+  describe("read state", () => {
+    const unreadOf = async (user: TestUser, threadId: string) =>
+      (await as(user).getThreadsByUserId()).find((thread) => thread.id === threadId);
+
+    /** Later than anything sent so far (read state has millisecond resolution). */
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+    it("counts messages from others as unread until the thread is marked read", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+      await as(alice).create({ content: "two", threadId: thread.id });
+
+      // The sender has nothing unread; the recipient has both messages.
+      expect(await unreadOf(alice, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: true, unreadCount: 2 });
+      expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 2, unreadThreads: 1 });
+      expect(await as(alice).getUnreadCount()).toEqual({ unreadMessages: 0, unreadThreads: 0 });
+
+      await tick();
+      const marked = await as(bob).markThreadRead({ threadId: thread.id });
+
+      expect(marked.threadId).toBe(thread.id);
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
+      expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 0, unreadThreads: 0 });
+
+      // A later message is unread again, and only that one.
+      await tick();
+      await as(alice).create({ content: "three", threadId: thread.id });
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: true, unreadCount: 1 });
+    });
+
+    it("keeps read state per participant in a group thread", async () => {
+      const dave = await createTestUser(testDb.db, { isDiscoverable: true });
+      const thread = await as(alice).createThread({ initialMessage: "hello both", participants: [bob.id, dave.id] });
+      await tick();
+
+      await as(bob).markThreadRead({ threadId: thread.id });
+
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+      expect(await unreadOf(dave, thread.id)).toMatchObject({ unreadCount: 1 });
+
+      // Bob's reply is unread for Alice and Dave, not for Bob.
+      await tick();
+      await as(bob).create({ content: "hi", threadId: thread.id });
+      expect(await unreadOf(alice, thread.id)).toMatchObject({ unreadCount: 1 });
+      expect(await unreadOf(dave, thread.id)).toMatchObject({ unreadCount: 2 });
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+    });
+
+    it("sending in a thread marks it read for the sender", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "question", participants: [bob.id] });
+      await tick();
+
+      await as(bob).create({ content: "answer", threadId: thread.id });
+
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+    });
+
+    it("does not count deleted messages", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "oops", participants: [bob.id] });
+      const message = await testDb.db.message.findFirstOrThrow({ where: { threadId: thread.id } });
+
+      await as(alice).delete({ id: message.id });
+
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
+      expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 0, unreadThreads: 0 });
+    });
+
+    it("totals across conversations and puts unread info on getThreadsPage", async () => {
+      const dave = await createTestUser(testDb.db, { isDiscoverable: true });
+      const fromAlice = await as(alice).createThread({ initialMessage: "a1", participants: [bob.id] });
+      await as(alice).create({ content: "a2", threadId: fromAlice.id });
+      const fromDave = await as(dave).createThread({ initialMessage: "d1", participants: [bob.id] });
+
+      expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 3, unreadThreads: 2 });
+      const page = await as(bob).getThreadsPage();
+      expect(Object.fromEntries(page.items.map((thread) => [thread.id, thread.unreadCount]))).toEqual({
+        [fromAlice.id]: 2,
+        [fromDave.id]: 1,
+      });
+      expect(page.items.every((thread) => thread.hasUnread)).toBe(true);
+    });
+
+    it("only lets a participant mark a thread read, and only changes their own state", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "private", participants: [bob.id] });
+
+      await expect(as(carol).markThreadRead({ threadId: thread.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(as(carol).markThreadRead({ threadId: "missing" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(anonymous().markThreadRead({ threadId: thread.id })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+      expect(await testDb.raw.threadRead.count({ where: { userId: carol.id } })).toBe(0);
+      expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+    });
+
+    it("marking read twice at once is fine, and it is rate limited", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "hey", participants: [bob.id] });
+
+      await Promise.all([
+        as(bob).markThreadRead({ threadId: thread.id }),
+        as(bob).markThreadRead({ threadId: thread.id }),
+      ]);
+      expect(await testDb.raw.threadRead.count({ where: { threadId: thread.id, userId: bob.id } })).toBe(1);
+
+      for (let i = 2; i < RateLimits.MESSAGE_MARK_READ.limit; i++) {
+        await as(bob).markThreadRead({ threadId: thread.id });
+      }
+      await expect(as(bob).markThreadRead({ threadId: thread.id })).rejects.toMatchObject({
+        code: "TOO_MANY_REQUESTS",
+      });
+    });
+
+    it("counts a full page of conversations in one grouped query, within D1's parameter limit", async () => {
+      const senders = await Promise.all(
+        Array.from({ length: 50 }, () => createTestUser(testDb.db, { isDiscoverable: true })),
+      );
+      for (const sender of senders) {
+        await as(sender).createThread({ initialMessage: "hi bob", participants: [bob.id] });
+      }
+      const queryRaw = vi.spyOn(testDb.db, "$queryRaw");
+
+      const page = await as(bob).getThreadsPage({ limit: 50 });
+
+      expect(page.items).toHaveLength(50);
+      expect(page.items.every((thread) => thread.unreadCount === 1)).toBe(true);
+      const unreadQueries = queryRaw.mock.calls
+        .map(([query]): unknown => query)
+        .filter(isSqlObject)
+        .filter((query) => query.sql.includes("ThreadRead"));
+      expect(unreadQueries).toHaveLength(1);
+      expect(unreadQueries[0]?.values.length).toBeLessThanOrEqual(100);
+      queryRaw.mockRestore();
+    });
+
+    it("does not expose the dead isRead column on new messages", async () => {
+      const thread = await as(alice).createThread({ initialMessage: "one", participants: [bob.id] });
+
+      const message = await as(alice).create({ content: "two", threadId: thread.id });
+
+      expect(message).not.toHaveProperty("isRead");
     });
   });
 });
