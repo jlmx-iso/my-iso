@@ -19,7 +19,6 @@ This project is built with the [T3 Stack](https://create.t3.gg/):
 - [Next.js](https://nextjs.org) - React framework with App Router
 - [NextAuth.js](https://next-auth.js.org) - Authentication
 - [Prisma](https://prisma.io) - Type-safe ORM
-- [Tailwind CSS](https://tailwindcss.com) - Utility-first CSS
 - [tRPC](https://trpc.io) - End-to-end type safety
 - [Mantine](https://mantine.dev) - React component library
 

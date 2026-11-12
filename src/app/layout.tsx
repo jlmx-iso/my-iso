@@ -2,8 +2,10 @@ import "~/styles/globals.css";
 import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
+import '@mantine/notifications/styles.css';
 
-import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { ColorSchemeScript } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 
@@ -15,13 +17,13 @@ import { Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
 import { CSPostHogProvider } from './providers';
-import theme from "./theme";
+import { ThemeProvider } from "./theme/ThemeProvider";
 
 
 
 const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
 });
 
 export const metadata = {
@@ -65,13 +67,14 @@ export default async function RootLayout({
   const isAuthed = !!session?.user;
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <ColorSchemeScript />
       </head>
-      <body className={`font-sans ${inter.variable}`}>
+      <body>
         <CSPostHogProvider>
-          <MantineProvider theme={theme}>
+          <ThemeProvider>
+            <Notifications position="top-center" />
             <TRPCReactProvider cookies={cookieStore.toString()}>
               <AppShell
                 header={<Navbar />}
@@ -81,7 +84,7 @@ export default async function RootLayout({
                 {children}
               </AppShell>
             </TRPCReactProvider>
-          </MantineProvider>
+          </ThemeProvider>
         </CSPostHogProvider>
       </body>
     </html>

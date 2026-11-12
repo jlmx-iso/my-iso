@@ -1,9 +1,8 @@
 "use client";
 
 import { Button, Textarea } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { schemaResolver, useForm } from "@mantine/form";
 import { getHotkeyHandler } from '@mantine/hooks';
-import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
 import { useCommentsRefetch } from "~/context/CommentsRefetchContext";
@@ -29,7 +28,7 @@ export default function AddCommentForm({ eventId }: AddCommentFormProps) {
         initialValues: {
             comment: "",
         },
-        validate: zod4Resolver(schema),
+        validate: schemaResolver(schema, { sync: true }),
     });
     const { mutate, isPending, error } = api.event.addCommentToEvent.useMutation({
         onSuccess: () => {

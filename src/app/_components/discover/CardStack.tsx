@@ -2,7 +2,7 @@
 
 import { Box, Center, Loader, Stack } from "@mantine/core";
 import { IconHeartHandshake } from "@tabler/icons-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import EmptyState from "~/app/_components/EmptyState";

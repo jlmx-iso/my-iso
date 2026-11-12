@@ -8,7 +8,7 @@ A photographer marketplace and social platform built with the T3 Stack, enabling
 - **Authentication**: NextAuth.js
 - **Database**: PostgreSQL with Prisma ORM
 - **API**: tRPC for end-to-end type safety
-- **Styling**: Tailwind CSS + Mantine UI
+- **Styling**: Mantine UI
 - **Image Management**: Cloudinary
 - **Realtime**: Cloudflare Durable Objects (ChatRoom WebSocket)
 - **Analytics**: PostHog, Vercel Analytics

@@ -40,7 +40,7 @@ export default async function Layout({ children, params }: LayoutProps) {
                 action={<Suspense><NewMessageModal /></Suspense>}
             />
             <Grid
-                gutter={0}
+                gap={0}
                 styles={{ inner: { height: "100%" } }}
                 style={{
                     flex: 1,

@@ -2,11 +2,10 @@
 
 import { Button, FileInput, Group, Select, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
-import { useForm } from "@mantine/form";
+import { schemaResolver, useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
-import { zod4Resolver } from "mantine-form-zod-resolver";
 import { z } from "zod";
 
 
@@ -46,7 +45,7 @@ export default function CreateEventForm({ title }: CreateEventProps) {
             location: "",
             title: title ?? "",
         },
-        validate: zod4Resolver(schema)
+        validate: schemaResolver(schema, { sync: true })
     });
 
     const handleSubmit = (values: typeof form.values) => {

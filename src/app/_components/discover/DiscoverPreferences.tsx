@@ -85,7 +85,7 @@ export default function DiscoverPreferences() {
         </Group>
       </UnstyledButton>
 
-      <Collapse in={opened}>
+      <Collapse expanded={opened}>
         <Stack gap="md" p="md" style={{
           borderRadius: "var(--mantine-radius-md)",
           border: "1px solid var(--mantine-color-gray-2)",
