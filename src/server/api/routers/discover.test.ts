@@ -232,4 +232,20 @@ describe("discoverRouter.getMatchById: icebreakers of an expired match", () => {
     expect(result.icebreakers).toEqual([]);
     expect(result.icebreakersStatus).toBe("unavailable");
   });
+
+  it("is not expired past its deadline once its conversation holds a message", async () => {
+    const alice = await createTestUser(testDb.db, { firstName: "Alice" });
+    const bob = await createTestUser(testDb.db, { firstName: "Bob" });
+    const [user1Id, user2Id] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
+    const thread = await testDb.db.messageThread.create({
+      data: { participantKey: threadParticipantKey([alice.id, bob.id]), participants: { connect: [{ id: alice.id }, { id: bob.id }] } },
+    });
+    await testDb.db.message.create({ data: { content: "hi", senderId: bob.id, threadId: thread.id } });
+    const match = await testDb.db.match.create({
+      data: { expiresAt: new Date(Date.now() - 60_000), messageThreadId: thread.id, user1Id, user2Id },
+    });
+
+    const result = await createDbCaller(discoverRouter, testDb.db, { user: alice }).getMatchById({ matchId: match.id });
+    expect(result.status).toBe("matched");
+  });
 });
