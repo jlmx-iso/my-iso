@@ -3,12 +3,15 @@
 # review (docs/TESTING.md). Takes effect with branch protection's "Require
 # review from Code Owners". scripts/test-bar-paths.mjs lists the same paths
 # for the test-bar guard workflow; keep the two in step. (The guard checks
-# package.json field by field: a dependency-only bump needs no label. Code
-# owners cannot be set per field, so the whole file stays listed here.)
+# package.json and package-lock.json as data: a plain dependency bump needs
+# no label. Code owners cannot be set per field, so both files are listed
+# here: dependency changes still get the owner's review.)
 /coverage-thresholds.json               @jlamoreaux
 /coverage.config.mjs                    @jlamoreaux
 /vitest.config.ts                       @jlamoreaux
 /package.json                           @jlamoreaux
+/package-lock.json                      @jlamoreaux
+/.npmrc                                 @jlamoreaux
 /scripts/coverage-guard.mjs             @jlamoreaux
 /scripts/coverage-ratchet.mjs           @jlamoreaux
 /scripts/diff-coverage.mjs              @jlamoreaux

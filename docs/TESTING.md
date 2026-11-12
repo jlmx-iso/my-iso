@@ -188,13 +188,36 @@ without the label; it compares the two JSON texts read through the API.
 same way. A change that only touches dependency versions passes without the
 label: `dependencies`, `devDependencies`, `optionalDependencies`,
 `peerDependencies`, `overrides`, `engines` (node and npm only) and
-`packageManager` (an exact `npm@x.y.z`), each
-version a registry range (`^1.2.3`, `>=26`, `1.0.0-beta.2`; in `overrides`
-also `$name`). Anything else needs the label: a change to `scripts`, a field
-added, removed or changed outside that list (`imports` or `type` can
-redirect what a test runs), or a version that is an alias (`npm:`), a URL,
-a git or GitHub reference, a path or a dist-tag. CODEOWNERS cannot review a
-single field, so `package.json` still needs code-owner review either way.
+`packageManager` (an exact `npm@x.y.z`), each version a registry range by
+node-semver's grammar (`^1.2.3`, `>=26 <27`, `1.0.0-beta.2`, `1 - 2`; in
+`overrides` also `$name`). Anything else needs the label:
+
+- a change to `scripts`, or to a field outside that list (`imports` or
+  `type` can redirect what a test runs; `allowScripts` decides which
+  dependency code runs at install);
+- a version that is an alias (`npm:`), a URL, a git or GitHub reference, a
+  path or a dist-tag (`latest`, `5next`);
+- any change to a **measurement package** (`MEASUREMENT_PACKAGES` in the
+  script): vitest, `@vitest/*`, vite, `@stryker-mutator/*`,
+  `@playwright/test`, `playwright*`, happy-dom, `@testing-library/*`,
+  `istanbul-*`, v8-to-istanbul, ast-v8-to-istanbul, `@bcoe/v8-coverage`,
+  test-exclude and magicast. Added, removed, upgraded or downgraded in any
+  dependency field, or named as an override key at any depth (a transitive
+  coverage library pinned through `overrides` counts).
+
+`package-lock.json` is checked the same way, from its two texts: a lockfile
+change passes without the label only if every package it installs resolves
+to a tarball under `https://registry.npmjs.org/` (no other host, git, file
+or link) and no measurement package's resolved version changed, appeared
+or went anywhere in the tree. `.npmrc` (registry, scripts and install
+settings) always needs the label.
+
+All three files are also in CODEOWNERS. Owners cannot be set per field or
+per package, and a dependency bump is worth the owner's eyes anyway, so
+`package.json` and `package-lock.json` are listed whole: the guard decides
+whether the **label** is needed, code-owner review is required for every
+change to them. The guard runs the base branch's copy, so a change to
+these rules takes effect once it has merged.
 
 It takes effect once it is on the default branch (so not for the pull
 request that adds it). Make "Test bar guard" a **required status check** in
