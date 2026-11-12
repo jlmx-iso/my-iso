@@ -35,7 +35,7 @@ Workers Builds, so every push to `main` deploys production. Its settings
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| Build command | `npm ci` | Install only; the deploy command builds. |
+| Build command | *(empty)* | Workers Builds installs dependencies itself (`npm clean-install`) before the build command; a build command of `npm run build` fails, because a plain `next build` validates runtime secrets that do not exist at build time. The deploy command builds. |
 | Deploy command | `npm run deploy:production` | The default, `npx wrangler deploy`, skips the database check and the migrations above: new code would go live against a database that lacks its tables. |
 | Build variables | The build-time values below (`NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY`, `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY`, …) | On Workers Builds (`WORKERS_CI=1`) the deploy script reads them from the build environment instead of `.env.deploy.production`. A missing one stops the deploy before anything changes. |
 | API token | One with **Workers Scripts: Edit** and **D1: Edit** on the account | The script queries the database and applies migrations with it. Without D1 access the deploy stops at step 1. |
