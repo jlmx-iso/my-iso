@@ -1,91 +1,153 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+
+import {
+  classifyHandshakeFailure,
+  REALTIME_PATH,
+  reconnectDelay,
+} from "~/_utils/realtimeConnection";
+import { parseThreadMessageEvent, type ThreadMessage } from "~/_utils/threadMessages";
 
 import { useLatestRef } from "./useLatestRef";
 
-export type WsMessage = {
-  id: string;
-  content: string;
-  senderId: string;
-  createdAt: string;
-  isEncrypted: boolean;
-};
+/**
+ * - `connecting`: first attempt in progress.
+ * - `open`: receiving messages.
+ * - `reconnecting`: the connection failed or dropped; retrying with backoff.
+ * - `denied`: the server refused (signed out or not a participant); stopped.
+ * - `unavailable`: this deployment has no realtime endpoint; stopped.
+ */
+export type RealtimeStatus =
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "denied"
+  | "unavailable";
 
 type UseMessageWebSocketOptions = {
+  /** Called for every message pushed to the thread. */
+  onMessage: (message: ThreadMessage) => void;
+  /**
+   * Called each time a connection is established, including reconnects.
+   * Messages sent while there was no connection are not replayed, so this is
+   * the moment to refetch the thread.
+   */
+  onOpen?: () => void;
   threadId: string;
-  onMessage?: (msg: WsMessage) => void;
 };
 
-const MAX_RECONNECT_DELAY = 30_000;
+const CLOSE_NORMAL = 1000;
 
-export function useMessageWebSocket({ threadId, onMessage }: UseMessageWebSocketOptions) {
-  const [messages, setMessages] = useState<WsMessage[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+/**
+ * Give up on a handshake that has not completed by then. Some servers never
+ * answer an upgrade they do not handle (the Next.js server, for one), which
+ * would otherwise leave the socket connecting forever.
+ */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/** Subscribes to a thread's realtime messages for as long as it is mounted. */
+export function useMessageWebSocket({
+  onMessage,
+  onOpen,
+  threadId,
+}: UseMessageWebSocketOptions): RealtimeStatus {
+  const [state, setState] = useState<{ status: RealtimeStatus; threadId: string }>({
+    status: "connecting",
+    threadId,
+  });
   const onMessageRef = useLatestRef(onMessage);
+  const onOpenRef = useLatestRef(onOpen);
 
   useEffect(() => {
-    if (!threadId) return;
+    const query = `?threadId=${encodeURIComponent(threadId)}`;
+    const probe = new AbortController();
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let handshakeTimer: ReturnType<typeof setTimeout> | undefined;
 
-    // Clear stale messages from previous thread
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset belongs with the socket (re)connect for the new thread
-    setMessages([]);
-
-    let cancelled = false;
-    let reconnectAttempt = 0;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-
-    function connect() {
-      if (cancelled) return;
-
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${protocol}//${window.location.host}/api/messages/ws?threadId=${encodeURIComponent(threadId)}`;
-
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        reconnectAttempt = 0;
-      };
-
-      ws.onmessage = (event: MessageEvent) => {
-        try {
-          const msg = JSON.parse(event.data as string) as WsMessage;
-          setMessages((prev) => [...prev, msg]);
-          onMessageRef.current?.(msg);
-        } catch {
-          // Ignore malformed payloads
-        }
-      };
-
-      ws.onclose = (event) => {
-        if (cancelled) return;
-        // Don't reconnect on normal closure (code 1000)
-        if (event.code === 1000) return;
-        scheduleReconnect();
-      };
-
-      ws.onerror = () => {
-        // onerror is always followed by onclose, so reconnection is handled there
-      };
-    }
+    const setStatus = (status: RealtimeStatus) => setState({ status, threadId });
 
     function scheduleReconnect() {
-      if (cancelled) return;
-      const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
-      reconnectAttempt++;
-      reconnectTimer = setTimeout(connect, delay);
+      setStatus("reconnecting");
+      retryTimer = setTimeout(connect, reconnectDelay(attempt));
+      attempt += 1;
+    }
+
+    /** Asks the endpoint why the handshake failed (see the gateway). */
+    async function probeStatus(): Promise<number | null> {
+      try {
+        const response = await fetch(`${REALTIME_PATH}${query}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: probe.signal,
+        });
+        return response.status;
+      } catch {
+        return null;
+      }
+    }
+
+    async function handleFailedHandshake() {
+      const failure = classifyHandshakeFailure(await probeStatus());
+      if (disposed) return;
+
+      if (failure === "retry") {
+        scheduleReconnect();
+      } else {
+        setStatus(failure);
+      }
+    }
+
+    function connect() {
+      if (disposed) return;
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${protocol}//${window.location.host}${REALTIME_PATH}${query}`);
+      let opened = false;
+      socket = ws;
+      handshakeTimer = setTimeout(() => ws.close(), HANDSHAKE_TIMEOUT_MS);
+
+      ws.onopen = () => {
+        clearTimeout(handshakeTimer);
+        opened = true;
+        attempt = 0;
+        setStatus("open");
+        onOpenRef.current?.();
+      };
+
+      ws.onmessage = (event: MessageEvent<unknown>) => {
+        const message = parseThreadMessageEvent(event.data);
+        if (message) onMessageRef.current(message);
+      };
+
+      // A failed attempt fires `error` and then `close`; `close` handles both.
+      ws.onclose = () => {
+        clearTimeout(handshakeTimer);
+        if (disposed) return;
+        socket = null;
+
+        if (opened) {
+          scheduleReconnect();
+        } else {
+          void handleFailedHandshake();
+        }
+      };
     }
 
     connect();
 
     return () => {
-      cancelled = true;
-      clearTimeout(reconnectTimer);
-      wsRef.current?.close(1000, "Component unmounted");
-      wsRef.current = null;
+      disposed = true;
+      clearTimeout(retryTimer);
+      clearTimeout(handshakeTimer);
+      probe.abort();
+      socket?.close(CLOSE_NORMAL, "Unmounted");
     };
-  }, [threadId, onMessageRef]);
+  }, [threadId, onMessageRef, onOpenRef]);
 
-  return { messages };
+  // Until the effect for a new thread has reported, that thread is connecting.
+  return state.threadId === threadId ? state.status : "connecting";
 }

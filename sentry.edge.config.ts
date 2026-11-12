@@ -4,20 +4,26 @@
 
 import * as Sentry from "@sentry/nextjs";
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN ?? "https://1eb20c8eba215e47c37eee6a32c80349@o4507352188977152.ingest.us.sentry.io/4507352192909312",
+// Sentry only starts when a DSN is configured, so local runs, CI and preview
+// builds never report into the production project by accident.
+const dsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
 
-  // Lower sample rate in production to reduce costs
-  // Use 0.1 (10%) for production, 1.0 (100%) for development
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+if (dsn) {
+  Sentry.init({
+    dsn,
 
-  // Enable debug mode in development
-  debug: process.env.NODE_ENV === 'development',
+    // Lower sample rate in production to reduce costs
+    // Use 0.1 (10%) for production, 1.0 (100%) for development
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
 
-  // Tag with environment
-  environment: process.env.NODE_ENV ?? 'development',
+    // Enable debug mode in development
+    debug: process.env.NODE_ENV === 'development',
 
-  // Enable edge runtime features
-  // Note: Some features may not be available on Cloudflare Workers
-  integrations: [],
-});
+    // Tag with environment
+    environment: process.env.NODE_ENV ?? 'development',
+
+    // Enable edge runtime features
+    // Note: Some features may not be available on Cloudflare Workers
+    integrations: [],
+  });
+}

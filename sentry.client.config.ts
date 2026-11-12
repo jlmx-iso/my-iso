@@ -4,26 +4,33 @@
 
 import * as Sentry from "@sentry/nextjs";
 
-Sentry.init({
-  dsn: "https://1eb20c8eba215e47c37eee6a32c80349@o4507352188977152.ingest.us.sentry.io/4507352192909312",
+// Sentry only starts when a DSN is configured, so local runs, CI and preview
+// builds never report into the production project by accident.
+// NEXT_PUBLIC_SENTRY_DSN is inlined into the browser bundle at build time.
+const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
-  // Adjust this value in production, or use tracesSampler for greater control
-  tracesSampleRate: 1,
+if (dsn) {
+  Sentry.init({
+    dsn,
 
-  // Setting this option to true will print useful information to the console while you're setting up Sentry.
-  debug: false,
-  replaysOnErrorSampleRate: 1.0,
+    // Adjust this value in production, or use tracesSampler for greater control
+    tracesSampleRate: 1,
 
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
-  replaysSessionSampleRate: 0.1,
+    // Setting this option to true will print useful information to the console while you're setting up Sentry.
+    debug: false,
+    replaysOnErrorSampleRate: 1.0,
 
-  // You can remove this option if you're not planning to use the Sentry Session Replay feature:
-  integrations: [
-    Sentry.replayIntegration({
-      // Additional Replay configuration goes in here, for example:
-      maskAllText: true,
-      blockAllMedia: true,
-    }),
-  ],
-});
+    // This sets the sample rate to be 10%. You may want this to be 100% while
+    // in development and sample at a lower rate in production
+    replaysSessionSampleRate: 0.1,
+
+    // You can remove this option if you're not planning to use the Sentry Session Replay feature:
+    integrations: [
+      Sentry.replayIntegration({
+        // Additional Replay configuration goes in here, for example:
+        maskAllText: true,
+        blockAllMedia: true,
+      }),
+    ],
+  });
+}

@@ -5,87 +5,80 @@ import { useScrollIntoView } from "@mantine/hooks";
 import { IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
 import ScrollButton from "~/app/_components/buttons/ScrollButton";
-import { useE2EE } from "~/app/_hooks/useE2EE";
+import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
 import { api } from "~/trpc/react";
 
 import ComposeMessage from "./ComposeMessage";
-import MessageListener from "./MessageListener";
 import MessageTile from "./MessageTile";
 
-
-type DecryptedMessage = {
-  content: string;
-  createdAt: Date;
-  id: string;
-  isAuthor: boolean;
-  senderId: string;
-};
+/** How often to refetch the thread while the realtime socket is not open. */
+const POLL_INTERVAL_MS = 5_000;
 
 type MessageFeedProps = {
     threadId: string;
 };
 
+/**
+ * Renders one thread. Mount it with `key={threadId}` so that the messages
+ * collected for one thread never carry over to another.
+ */
 export default function MessageFeed({ threadId }: MessageFeedProps) {
     const { scrollIntoView, targetRef, scrollableRef } = useScrollIntoView<HTMLDivElement>({
         offset: 60,
     });
     const session = useSession();
     const userId = session.data?.user.id;
+    const utils = api.useUtils();
 
     const [isScrollButtonHidden, setIsScrollButtonHidden] = useState(true);
-    const [decryptedMessages, setDecryptedMessages] = useState<DecryptedMessage[]>([]);
+    // Messages received over the socket or just sent from here. They are
+    // merged with the query result below, so each message renders once and in
+    // order no matter which of the two delivers it first.
+    const [liveMessages, setLiveMessages] = useState<ThreadMessage[]>([]);
 
-    const { data } = api.message.getThreadById.useQuery({ threadId }, { enabled: !!userId });
-    const messages = data?.messages ?? [];
+    const addLiveMessage = useCallback((message: ThreadMessage) => {
+        setLiveMessages((current) => mergeThreadMessages(current, [message]));
+    }, []);
 
-    const { decryptForThread, ready: e2eeReady } = useE2EE();
+    const realtimeStatus = useMessageWebSocket({
+        onMessage: (message) => {
+            addLiveMessage(message);
+            if (message.sender.id !== userId) {
+                setIsScrollButtonHidden(false);
+            }
+        },
+        // Nothing is replayed after a gap in the connection: fetch what was missed.
+        onOpen: () => void utils.message.getThreadById.invalidate({ threadId }),
+        threadId,
+    });
 
-    const decryptWsMessage = useCallback(async (tid: string, ciphertext: string) => {
-        const encryptedThreadKey = data?.threadKeys?.[0]?.encryptedKey;
-        return decryptForThread(tid, ciphertext, encryptedThreadKey);
-    }, [decryptForThread, data?.threadKeys]);
+    const { data } = api.message.getThreadById.useQuery({ threadId }, {
+        enabled: !!userId,
+        // Without an open socket, poll instead (only while the tab is visible).
+        refetchInterval: realtimeStatus === "open" ? false : POLL_INTERVAL_MS,
+        refetchIntervalInBackground: false,
+    });
 
-    // Decrypt messages from tRPC query when they load or E2EE becomes ready
-    useEffect(() => {
-        if (!e2eeReady || !userId || messages.length === 0) return;
-
-        const encryptedThreadKey = data?.threadKeys?.[0]?.encryptedKey;
-
-        async function decryptAll() {
-            const results = await Promise.all(
-                messages.map(async (msg) => {
-                    const content = msg.isEncrypted
-                        ? await decryptForThread(threadId, msg.content, encryptedThreadKey)
-                        : msg.content;
-                    return {
-                        content,
-                        createdAt: msg.createdAt,
-                        id: msg.id,
-                        isAuthor: userId === msg.sender.id,
-                        senderId: msg.sender.id,
-                    };
-                }),
-            );
-            setDecryptedMessages(results);
-        }
-
-        void decryptAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [e2eeReady, messages, threadId, userId]);
+    const messages = useMemo(
+        () => mergeThreadMessages(data?.messages ?? [], liveMessages),
+        [data?.messages, liveMessages],
+    );
 
     const hideScrollButton = () => setIsScrollButtonHidden(true);
-    const showScrollButton = () => setIsScrollButtonHidden(false);
 
     const scrollToBottom = () => {
         scrollIntoView({ alignment: "end" });
         hideScrollButton();
     };
 
-    const onNewMessage = () => {
-        showScrollButton();
+    const onSent = (message: ThreadMessage) => {
+        addLiveMessage(message);
+        // Wait for the new tile to render before scrolling to it.
+        requestAnimationFrame(scrollToBottom);
     };
 
     const title = data?.participants
@@ -96,17 +89,6 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     if (!userId) {
         return null;
     }
-
-    // Use decrypted messages when E2EE is ready, fall back to raw content
-    const displayMessages: DecryptedMessage[] = e2eeReady
-        ? decryptedMessages
-        : messages.map((msg) => ({
-            content: msg.content,
-            createdAt: msg.createdAt,
-            id: msg.id,
-            isAuthor: userId === msg.sender.id,
-            senderId: msg.sender.id,
-          }));
 
     return (
         <Stack h="100%" w="100%" gap={0}>
@@ -139,14 +121,13 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
                     px="xs"
                     py="sm"
                 >
-                    <MessageListener threadId={threadId} userId={userId} newMessageCb={onNewMessage} decryptMessage={decryptWsMessage} />
-                    {displayMessages.map((message, index) => {
-                        const nextMessage = displayMessages[index + 1];
-                        const isLastInGroup = nextMessage?.senderId !== message.senderId;
+                    {messages.map((message, index) => {
+                        const isLastInGroup = messages[index + 1]?.sender.id !== message.sender.id;
                         return (
                             <MessageTile
                                 key={message.id}
                                 message={message}
+                                isAuthor={message.sender.id === userId}
                                 showTimestamp={isLastInGroup}
                                 isLastInGroup={isLastInGroup}
                             />
@@ -163,7 +144,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
 
             {/* Compose */}
             <Box px="md" pb="md">
-                <ComposeMessage threadId={threadId} />
+                <ComposeMessage threadId={threadId} onSent={onSent} />
             </Box>
         </Stack>
     );

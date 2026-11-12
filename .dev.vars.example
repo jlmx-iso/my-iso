@@ -77,3 +77,10 @@ NEXT_PUBLIC_POSTHOG_PUBLIC_KEY=
 
 BASE_URL=http://localhost:8788
 NODE_ENV=development
+
+# ==============================================================================
+# SENTRY - Error Reporting (optional)
+# ==============================================================================
+
+# Sentry is off unless a DSN is set. Leave empty for local development.
+SENTRY_DSN=

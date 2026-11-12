@@ -24,6 +24,7 @@
   "include": [
     "worker.ts",
     "src/do/**/*.ts",
+    "src/types/chatRoom.ts",
     "cloudflare-env.d.ts",
     "open-next-worker.d.ts"
   ]

@@ -59,6 +59,7 @@
        by tsconfig.worker.json (see `npm run typecheck`). */
     "worker.ts",
     "src/do",
+    "cloudflare-env.d.ts",
     "open-next-worker.d.ts"
   ]
 }

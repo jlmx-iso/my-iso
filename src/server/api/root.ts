@@ -8,7 +8,6 @@ import { eventRouter } from "./routers/event";
 import { favoriteRouter } from "./routers/favorite";
 import { googleRouter } from "./routers/google";
 import { inviteRouter } from "./routers/invite";
-import { keysRouter } from "./routers/keys";
 import { messageRouter } from "./routers/message";
 import { notificationRouter } from "./routers/notification";
 import { photographerRouter } from "./routers/photographer";
@@ -32,7 +31,6 @@ export const appRouter = createTRPCRouter({
   favorite: favoriteRouter,
   google: googleRouter,
   invite: inviteRouter,
-  keys: keysRouter,
   message: messageRouter,
   notification: notificationRouter,
   photographer: photographerRouter,
