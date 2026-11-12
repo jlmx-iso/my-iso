@@ -13,3 +13,17 @@ export function markReadRetryDelayMs(consecutiveFailures: number): number | null
   if (consecutiveFailures > MARK_READ_MAX_RETRIES) return null;
   return Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** (consecutiveFailures - 1));
 }
+
+/**
+ * Whether a failed mark-read is the one to act on. Two requests can be in
+ * flight at once (a new message arrived while the first was pending). Only
+ * a failure of the LATEST attempt may schedule a retry or touch the retry
+ * timer: an older request failing afterwards must not cancel the newer
+ * one's retry, which is the one that matters.
+ */
+export function isLatestMarkReadAttempt(
+  latestAttemptMessageId: string | null | undefined,
+  failedMessageId: string | null | undefined,
+): boolean {
+  return !!failedMessageId && failedMessageId === latestAttemptMessageId;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MARK_READ_MAX_RETRIES, markReadRetryDelayMs } from "./markReadRetry";
+import { isLatestMarkReadAttempt, MARK_READ_MAX_RETRIES, markReadRetryDelayMs } from "./markReadRetry";
 
 describe("markReadRetryDelayMs", () => {
   it("backs off from five seconds to a minute, then gives up", () => {
@@ -17,5 +17,22 @@ describe("markReadRetryDelayMs", () => {
       total += delay;
     }
     expect(total).toBe(195_000);
+  });
+});
+
+describe("isLatestMarkReadAttempt", () => {
+  it("acts on a failure of the latest attempt only", () => {
+    // Request A (message m1) is pending when m2 arrives and request B starts.
+    const latest = "m2";
+
+    // B fails first: it is the latest, so its retry is scheduled.
+    expect(isLatestMarkReadAttempt(latest, "m2")).toBe(true);
+    // A fails afterwards: it must not clear B's timer or reschedule for itself.
+    expect(isLatestMarkReadAttempt(latest, "m1")).toBe(false);
+  });
+
+  it("ignores a failure when nothing has been attempted, or the call named no message", () => {
+    expect(isLatestMarkReadAttempt(null, "m1")).toBe(false);
+    expect(isLatestMarkReadAttempt("m1", undefined)).toBe(false);
   });
 });

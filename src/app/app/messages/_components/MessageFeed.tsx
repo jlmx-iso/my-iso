@@ -13,7 +13,7 @@ import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
 import { api } from "~/trpc/react";
 
 import ComposeMessage from "./ComposeMessage";
-import { markReadRetryDelayMs } from "./markReadRetry";
+import { isLatestMarkReadAttempt, markReadRetryDelayMs } from "./markReadRetry";
 import MessageTile from "./MessageTile";
 
 /** How often to refetch the thread while the realtime socket is not open. */
@@ -111,6 +111,9 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     const [markReadRetry, setMarkReadRetry] = useState(0);
     const { mutate: markThreadRead } = api.message.markThreadRead.useMutation({
         onError: (_error, variables) => {
+            // An older request failing after a newer one was made changes
+            // nothing: the retry state belongs to the latest attempt.
+            if (!isLatestMarkReadAttempt(lastMarkReadAttempt.current?.messageId, variables.upToMessageId)) return;
             markReadFailures.current += 1;
             const delay = markReadRetryDelayMs(markReadFailures.current);
             if (delay === null) return;

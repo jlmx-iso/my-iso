@@ -279,6 +279,41 @@ describe("booking state machine", () => {
         });
       });
 
+      it("a first application that is committed is answered and notified even if nothing can be read afterwards", async () => {
+        const event = await createEvent();
+        // After the insert, every read of bookings fails.
+        let inserted = false;
+        const db = new Proxy(testDb.db, {
+          get(target, property) {
+            if (property === "$queryRaw") {
+              return async (...args: unknown[]) => {
+                const result = await (target.$queryRaw as (...rest: unknown[]) => Promise<unknown>)(...args);
+                if (sqlOf(args).includes('INSERT INTO "Booking"')) inserted = true;
+                return result;
+              };
+            }
+            if (property === "booking") {
+              return new Proxy(target.booking, {
+                get(model, method) {
+                  if (!inserted || !String(method).startsWith("find")) return Reflect.get(model, method) as unknown;
+                  return () => Promise.reject(new Error("database unavailable"));
+                },
+              });
+            }
+            return Reflect.get(target, property) as unknown;
+          },
+        });
+        const before = Date.now();
+
+        const booking = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Hello", rate: "$300" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { eventId_applicantId: { applicantId: applicant.id, eventId: event.id } } });
+        expect(booking).toEqual(stored);
+        expect(booking).toMatchObject({ cancelOrigin: null, isDeleted: false, notes: "Hello", ownerId: owner.id, ownerNotes: null, rate: "$300", status: "applied" });
+        expect(booking.createdAt.getTime()).toBeGreaterThanOrEqual(before - 1);
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(1);
+      });
+
       it("a second application of the same person is still a conflict, not 'filled'", async () => {
         const { event } = await applied();
 
