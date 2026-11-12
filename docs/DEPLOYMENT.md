@@ -25,7 +25,27 @@ first failure:
 
 Migrations go first because they are written to be safe for the code that is
 already deployed, while new code may not work without them
-([DATABASE.md](DATABASE.md)). CI never deploys.
+([DATABASE.md](DATABASE.md)). GitHub Actions CI never deploys.
+
+### Production deploys from `main`: Workers Builds
+
+The repository is connected to the `my-iso` Worker through Cloudflare
+Workers Builds, so every push to `main` deploys production. Its settings
+(Workers & Pages → `my-iso` → Settings → Build) must be:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Build command | `npm ci` | Install only; the deploy command builds. |
+| Deploy command | `npm run deploy:production` | The default, `npx wrangler deploy`, skips the database check and the migrations above: new code would go live against a database that lacks its tables. |
+| Build variables | The build-time values below (`NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY`, `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY`, …) | On Workers Builds (`WORKERS_CI=1`) the deploy script reads them from the build environment instead of `.env.deploy.production`. A missing one stops the deploy before anything changes. |
+| API token | One with **Workers Scripts: Edit** and **D1: Edit** on the account | The script queries the database and applies migrations with it. Without D1 access the deploy stops at step 1. |
+| Preview builds (non-production branches) | Off, until staging is wired | A preview version uses the production bindings, including the production database. |
+
+Staging is deployed by hand with `npm run deploy:staging`.
+
+A failed deploy changes nothing: the previous version keeps serving. In
+particular, while the database still predates the baseline, every deploy
+from `main` stops at step 1 and names `npm run db:upgrade-legacy`.
 
 **Plan.** The app assumes the **Workers Paid** plan: the bundle is over the
 Free plan's size limit, and the billing code is sized for the Paid plan's
@@ -43,7 +63,8 @@ read, not by how secret it is.
 `NEXT_PUBLIC_*` values are inlined into the JavaScript when the app is built.
 Staging and production therefore need **separate builds**, which the deploy
 script does. Create `.env.deploy.staging` and `.env.deploy.production` from
-[`.env.deploy.example`](../.env.deploy.example) (both are gitignored).
+[`.env.deploy.example`](../.env.deploy.example) (both are gitignored). On
+Workers Builds the same values are set as Build variables instead.
 
 | Variable | What it is for | Where to get it |
 | --- | --- | --- |
