@@ -1,13 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorReason } from "~/_utils/errorReason";
-import { setStripeClientForTests } from "~/server/_billing/stripe";
+import type * as StripeModule from "~/server/_billing/stripe";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
 import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
-import { buildSubscription, startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
+import { buildInvoice, buildSubscription, startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
 
 vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
@@ -30,6 +30,16 @@ const envMock = vi.hoisted(() => {
 });
 vi.mock("~/env", () => envMock);
 
+// The router's Stripe client is the real SDK pointed at the local stub.
+const stripeRef = vi.hoisted((): { stub: { client: unknown } | null } => ({ stub: null }));
+vi.mock("~/server/_billing/stripe", async (importOriginal) => ({
+  ...(await importOriginal<typeof StripeModule>()),
+  getStripe: () => {
+    if (!stripeRef.stub) throw new Error("the Stripe stub is not running");
+    return stripeRef.stub.client;
+  },
+}));
+
 import { subscriptionRouter } from "./subscription";
 
 type TestUser = { email: string; id: string };
@@ -38,16 +48,15 @@ const DAY = 24 * 60 * 60;
 const limiterClock = freezeRateLimitClock();
 
 let stub: StripeStub;
-let restoreStripe: () => void;
 let testDb: TestDb;
 
 beforeAll(async () => {
   stub = await startStripeStub();
-  restoreStripe = setStripeClientForTests(stub.client);
+  stripeRef.stub = stub;
 });
 
 afterAll(async () => {
-  restoreStripe();
+  stripeRef.stub = null;
   await stub.close();
 });
 
@@ -56,11 +65,11 @@ beforeEach(async () => {
     vi.spyOn(console, method).mockImplementation(() => undefined);
   }
   testDb = await createTestDb();
-  stub.customers.clear();
-  stub.subscriptions.clear();
-  stub.sessions.clear();
-  stub.portalSessions.length = 0;
-  stub.requests.length = 0;
+  stub.reset();
+  // Stripe's clock moves a second with every response: two readings never
+  // bear the same second by accident (subscriptionStore.test.ts covers that).
+  let stripeNow = Date.now();
+  stub.setNow(() => new Date((stripeNow += 1000)));
   envMock.env.STRIPE_STANDARD_MONTHLY_PRICE_ID = "price_standard_monthly";
 });
 
@@ -149,13 +158,50 @@ describe("createCheckoutSession", () => {
     expect(await storedCustomer(user)).toBe([...stub.customers.keys()][0]);
   });
 
-  it("expires an earlier unfinished session, so only one can ever be paid", async () => {
+  it("hands out the session that is already open for the same purchase instead of a second one", async () => {
+    const user = await createTestUser(testDb.db);
+
+    const first = await as(user).createCheckoutSession({ billingInterval: "monthly" });
+    const second = await as(user).createCheckoutSession({ billingInterval: "monthly" });
+
+    expect(second.url).toBe(first.url);
+    expect([...stub.sessions.values()].map((session) => session.status)).toEqual(["open"]);
+    expect(posts("/v1/checkout/sessions")).toHaveLength(1);
+  });
+
+  it("expires an earlier unfinished session for a different plan or return path, so only one can ever be paid", async () => {
     const user = await createTestUser(testDb.db);
 
     await as(user).createCheckoutSession({ billingInterval: "monthly" });
-    await as(user).createCheckoutSession({ billingInterval: "monthly" });
+    await as(user).createCheckoutSession({ billingInterval: "annual" });
+    await as(user).createCheckoutSession({ billingInterval: "annual", successPath: "/app/onboarding/complete?plan=pro" });
 
-    expect([...stub.sessions.values()].map((session) => session.status)).toEqual(["expired", "open"]);
+    expect([...stub.sessions.values()].map((session) => session.status)).toEqual(["expired", "expired", "open"]);
+  });
+
+  it("two simultaneous checkout starts produce ONE payable session", async () => {
+    const user = await createTestUser(testDb.db);
+
+    const [first, second] = await Promise.all([
+      as(user).createCheckoutSession({ billingInterval: "monthly" }),
+      as(user).createCheckoutSession({ billingInterval: "monthly" }),
+    ]);
+
+    expect(second.url).toBe(first.url);
+    expect([...stub.sessions.values()].filter((session) => session.status === "open")).toHaveLength(1);
+    expect(posts("/v1/checkout/sessions")).toHaveLength(1);
+    expect(await testDb.raw.billingLease.count()).toBe(0);
+  });
+
+  it("two simultaneous starts for different plans leave one payable session", async () => {
+    const user = await createTestUser(testDb.db);
+
+    await Promise.all([
+      as(user).createCheckoutSession({ billingInterval: "monthly" }),
+      as(user).createCheckoutSession({ billingInterval: "annual" }),
+    ]);
+
+    expect([...stub.sessions.values()].filter((session) => session.status === "open")).toHaveLength(1);
   });
 
   it("only returns to an allowed path", async () => {
@@ -199,6 +245,42 @@ describe("createCheckoutSession", () => {
       expect((await testDb.db.subscription.findUnique({ where: { userId: user.id } }))?.status).toBe(status);
     },
   );
+
+  it("refuses checkout, without a dead end, for a status this release does not know", async () => {
+    const user = await createTestUser(testDb.db);
+    await as(user).createCheckoutSession({ billingInterval: "monthly" });
+    const customerId = (await storedCustomer(user)) ?? "";
+    stub.subscriptions.set("sub_1", buildSubscription({ customer: customerId, id: "sub_1", status: "some_future_status" }));
+
+    const error = await errorOf(as(user).createCheckoutSession({ billingInterval: "monthly" }));
+
+    expect(reasonOf(error)).toBe(ErrorReason.SUBSCRIPTION_EXISTS);
+    // The open session from before must not be payable on top of it.
+    expect([...stub.sessions.values()].map((session) => session.status)).toEqual(["expired"]);
+    expect(await as(user).getStatus()).toMatchObject({
+      billingIssue: "unknown_status",
+      canStartCheckout: false,
+      hasProAccess: false,
+      status: "some_future_status",
+    });
+    expect((await as(user).createPortalSession()).url).toMatch(/^https:\/\/billing\.stripe\.test\//);
+  });
+
+  it("refuses checkout while a second, unfinished subscription exists that the row does not show", async () => {
+    const user = await createTestUser(testDb.db);
+    await as(user).createCheckoutSession({ billingInterval: "monthly" });
+    const customerId = (await storedCustomer(user)) ?? "";
+    const now = Math.floor(Date.now() / 1000);
+    // Cancelled with paid time left (that is what the row shows), and a new
+    // subscription whose first payment is still being confirmed.
+    stub.subscriptions.set("sub_old", buildSubscription({ cancellationReason: "cancellation_requested", created: now - 10 * DAY, customer: customerId, id: "sub_old", periodEnd: now + 20 * DAY, periodStart: now - 10 * DAY, status: "canceled" }));
+    stub.subscriptions.set("sub_new", buildSubscription({ created: now - 60, customer: customerId, id: "sub_new", status: "incomplete" }));
+
+    const error = await errorOf(as(user).createCheckoutSession({ billingInterval: "monthly" }));
+
+    expect(reasonOf(error)).toBe(ErrorReason.SUBSCRIPTION_EXISTS);
+    expect(await as(user).getStatus()).toMatchObject({ hasProAccess: true, status: "canceled" });
+  });
 
   it("allows a new checkout after the previous subscription has ended, even if the database missed it", async () => {
     const user = await createTestUser(testDb.db);
@@ -289,6 +371,36 @@ describe("createPortalSession", () => {
       return_url: "https://app.example.test/app/settings",
     });
   });
+
+  it.each([
+    ["unpaid", {}, "payment_failed"],
+    ["paused", {}, "paused"],
+    ["incomplete", {}, "incomplete"],
+    // Past due for longer than the grace window.
+    ["past_due", { invoiceCreatedDaysAgo: 30 }, "payment_failed"],
+  ] as const)(
+    "a lapsed subscriber (%s) is not left at a dead end: no checkout, no access, but the portal opens",
+    async (status, options, billingIssue) => {
+      const user = await createTestUser(testDb.db);
+      await as(user).createCheckoutSession({ billingInterval: "monthly" });
+      const customerId = (await storedCustomer(user)) ?? "";
+      const now = Math.floor(Date.now() / 1000);
+      stub.subscriptions.set("sub_1", buildSubscription({ customer: customerId, id: "sub_1", status }));
+      if ("invoiceCreatedDaysAgo" in options) {
+        stub.invoices.set(
+          "in_sub_1",
+          buildInvoice({ created: now - options.invoiceCreatedDaysAgo * DAY, customer: customerId, id: "in_sub_1", status: "open", subscriptionId: "sub_1" }),
+        );
+      }
+
+      const view = await as(user).syncStatus();
+
+      expect(view).toMatchObject({ billingIssue, canStartCheckout: false, hasProAccess: false, status });
+      const portal = await as(user).createPortalSession();
+      expect(portal.url).toMatch(/^https:\/\/billing\.stripe\.test\//);
+      expect(stub.portalSessions.at(-1)).toMatchObject({ customer: customerId });
+    },
+  );
 
   it("answers no_billing_account for someone who never subscribed", async () => {
     const user = await createTestUser(testDb.db);
@@ -405,11 +517,109 @@ describe("getStatus / syncStatus", () => {
 
   it("rate limits syncStatus", async () => {
     const user = await createTestUser(testDb.db);
-    for (let i = 0; i < RateLimits.BILLING_SYNC.limit; i++) await as(user).syncStatus();
+    await spendRateLimit(testDb.db, RateLimits.BILLING_SYNC, `user:${user.id}`, RateLimits.BILLING_SYNC.limit - 1);
+    expect(await as(user).syncStatus()).toBeNull();
 
     await expect(as(user).syncStatus()).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
 
     limiterClock.advance(RateLimits.BILLING_SYNC.windowSeconds);
     expect(await as(user).syncStatus()).toBeNull();
+  });
+});
+
+describe("resyncFromStripe (admin)", () => {
+  const legacyFlags = { isActive: false, isCanceled: false, isExpired: false, isLifetime: false, isPaused: false, isPending: false, isTrial: false };
+
+  /** A row as the migration back-fills it: never read from Stripe. */
+  async function legacyRow(options: { customerId: string | null; status: string; stripeStatus: string; subscriptionId: string }) {
+    const user = await createTestUser(testDb.db);
+    const customer = options.customerId ?? `cus_unlinked_${options.subscriptionId}`;
+    stub.customers.set(customer, { id: customer, metadata: {}, object: "customer" });
+    if (options.customerId) {
+      await testDb.db.user.update({ data: { stripeId: options.customerId }, where: { id: user.id } });
+    }
+    stub.subscriptions.set(options.subscriptionId, buildSubscription({ customer, id: options.subscriptionId, status: options.stripeStatus }));
+    await testDb.db.subscription.create({
+      data: { ...legacyFlags, isActive: options.status === "active", status: options.status, subscriptionId: options.subscriptionId, userId: user.id },
+    });
+    return user;
+  }
+
+  const statusOf = async (user: TestUser) =>
+    (await testDb.db.subscription.findUniqueOrThrow({ where: { userId: user.id } })).status;
+
+  it("is refused for anyone who is not a founder or ambassador", async () => {
+    const member = await createTestUser(testDb.db);
+    const anonymous = createDbCaller(subscriptionRouter, testDb.db);
+
+    await expect(as(member).resyncFromStripe({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(anonymous.resyncFromStripe({})).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("brings legacy rows up to date in bounded batches, and can be run again", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    // The migration guessed "active"; Stripe says it was cancelled long ago.
+    const lapsed = await legacyRow({ customerId: "cus_a", status: "active", stripeStatus: "canceled", subscriptionId: "sub_a" });
+    // Guessed "unpaid" (the old release cleared isActive on a failed invoice); Stripe says active.
+    const paying = await legacyRow({ customerId: "cus_b", status: "unpaid", stripeStatus: "active", subscriptionId: "sub_b" });
+    // No customer id stored on the user: cannot be attributed, left alone.
+    const unlinked = await legacyRow({ customerId: null, status: "active", stripeStatus: "active", subscriptionId: "sub_c" });
+    // A comped account is never touched.
+    const comped = await createTestUser(testDb.db);
+    await testDb.db.subscription.create({ data: { ...legacyFlags, isLifetime: true, status: "incomplete_expired", userId: comped.id } });
+
+    const outcomes: Record<string, number> = {};
+    let cursor: string | null | undefined;
+    let batches = 0;
+    do {
+      const batch = await as(admin).resyncFromStripe({ cursor, limit: 2 });
+      expect(batch.processed).toBeLessThanOrEqual(2);
+      for (const [outcome, count] of Object.entries(batch.outcomes)) outcomes[outcome] = (outcomes[outcome] ?? 0) + count;
+      cursor = batch.nextCursor;
+      batches += 1;
+    } while (cursor);
+
+    expect(batches).toBe(2);
+    expect(outcomes).toEqual({ applied: 2, unknown_customer: 1 });
+    expect(await statusOf(lapsed)).toBe("canceled");
+    expect(await statusOf(paying)).toBe("active");
+    expect(await as(paying).getStatus()).toMatchObject({ hasProAccess: true, isActive: true });
+    expect(await testDb.db.subscription.findUniqueOrThrow({ where: { userId: unlinked.id } })).toMatchObject({ status: "active", stripeSyncedAt: null });
+
+    // Again: only the row that could not be attributed is still pending.
+    const again = await as(admin).resyncFromStripe({});
+    expect(again).toEqual({ nextCursor: null, outcomes: { unknown_customer: 1 }, processed: 1 });
+    // "all" also revisits the rows that are already in step.
+    expect((await as(admin).resyncFromStripe({ scope: "all" })).processed).toBe(3);
+  });
+
+  it("picks up rows the previous release wrote during the deploy overlap (flags that contradict the status)", async () => {
+    const admin = await createTestUser(testDb.db, { role: "ambassador" });
+    const user = await legacyRow({ customerId: "cus_a", status: "active", stripeStatus: "active", subscriptionId: "sub_a" });
+    await as(admin).resyncFromStripe({});
+    // The previous release handles a cancellation: it only knows the flags.
+    await testDb.db.subscription.update({ data: { isActive: false, isExpired: true }, where: { userId: user.id } });
+    stub.subscriptions.set("sub_a", buildSubscription({ customer: "cus_a", id: "sub_a", status: "canceled" }));
+
+    const batch = await as(admin).resyncFromStripe({});
+
+    expect(batch).toMatchObject({ outcomes: { applied: 1 }, processed: 1 });
+    expect(await statusOf(user)).toBe("canceled");
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+  });
+
+  it("counts a row that fails and carries on with the rest", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    await legacyRow({ customerId: "cus_a", status: "active", stripeStatus: "canceled", subscriptionId: "sub_a" });
+    const second = await legacyRow({ customerId: "cus_b", status: "unpaid", stripeStatus: "active", subscriptionId: "sub_b" });
+    stub.failWhen((request) => request.params.customer === "cus_a");
+
+    const batch = await as(admin).resyncFromStripe({});
+
+    expect(batch.processed).toBe(2);
+    expect(Object.values(batch.outcomes).reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(batch.outcomes.failed).toBe(1);
+    expect(await statusOf(second)).toBe("active");
   });
 });

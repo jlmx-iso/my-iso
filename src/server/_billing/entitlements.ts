@@ -4,7 +4,7 @@
  *
  * This is the ONE place that turns billing state into access. Everything
  * here is pure except `getEntitlements`/`hasProAccess`, which only read the
- * row. Nothing gates on it yet; feature gating uses these functions.
+ * row. Feature gating uses these functions (see `proProcedure`).
  */
 
 /** Stripe's subscription statuses. */
@@ -24,6 +24,15 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 /** Statuses a subscription never leaves: a new checkout may start. */
 export const TERMINAL_STATUSES = ["canceled", "incomplete_expired"] as const satisfies readonly SubscriptionStatus[];
 
+/**
+ * Statuses that can carry Pro access on their own (subject to the grace,
+ * dispute and refund rules below).
+ */
+export const ENTITLING_STATUSES = ["active", "trialing", "past_due"] as const satisfies readonly SubscriptionStatus[];
+
+/** Stripe's `cancellation_details.reason` for a cancellation someone asked for. */
+export const CANCELLATION_REQUESTED = "cancellation_requested";
+
 export function isSubscriptionStatus(value: string): value is SubscriptionStatus {
   return SUBSCRIPTION_STATUSES.some((status) => status === value);
 }
@@ -32,19 +41,25 @@ export function isTerminalStatus(status: string): boolean {
   return TERMINAL_STATUSES.some((terminal) => terminal === status);
 }
 
+export function isEntitlingStatus(status: string): boolean {
+  return ENTITLING_STATUSES.some((entitling) => entitling === status);
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * How long a `past_due` subscription keeps access, counted from the start
- * of the unpaid period (the renewal whose invoice failed).
+ * How long a `past_due` subscription keeps access, counted from the moment
+ * it FIRST became past due (`pastDueSince`), not from the start of whatever
+ * billing period it is in.
  *
  * `past_due` means Stripe is still retrying the payment. Access continues
  * through that window instead of being cut on the first failed charge, but
  * not for ever: if the account's retry settings leave subscriptions
- * `past_due` after the last retry, access still ends here. Keep this at or
- * above the retry schedule configured in the Stripe dashboard (Billing →
- * Revenue recovery → Retries; Smart Retries run for up to 3 weeks by
- * default).
+ * `past_due` after the last retry, access still ends here, and a new
+ * billing period opening while the subscription is still past due does not
+ * start another window. Keep this at or above the retry schedule configured
+ * in the Stripe dashboard (Billing → Revenue recovery → Retries; Smart
+ * Retries run for up to 3 weeks by default).
  */
 export const PAST_DUE_GRACE_DAYS = 21;
 
@@ -53,11 +68,9 @@ export const PAST_DUE_GRACE_DAYS = 21;
  * the merchant's request (status `canceled` before the end of the period it
  * had paid for) keeps access until that period ends.
  *
- * Does not apply to subscriptions Stripe cancelled for non-payment or a
- * dispute: those never paid for the period. NOTE: Stripe does not tell a
- * plain "cancel immediately" from "refund and cancel"; to end access at
- * once for a refunded customer, set this to false or cancel with the
- * subscription's period shortened.
+ * Only for a period that WAS paid for (`paidThroughAt`) and whose payment
+ * has not been refunded in full or lost to a dispute. Does not apply to
+ * subscriptions Stripe cancelled for non-payment or a dispute.
  */
 export const CANCELED_KEEPS_PAID_PERIOD = true;
 
@@ -66,11 +79,17 @@ export type SubscriptionSnapshot = {
   cancelAt: Date | null;
   cancelAtPeriodEnd: boolean;
   cancellationReason: string | null;
-  currentPeriodEnd: Date | null;
-  currentPeriodStart: Date | null;
-  interval: string | null;
+  /** The invoice a disputed charge paid, and "open" | "lost". */
+  disputeInvoiceId: string | null;
+  disputeStatus: string | null;
   isLifetime: boolean;
-  plan: string | null;
+  latestInvoiceId: string | null;
+  /** End of the current period, when its invoice is paid; else null. */
+  paidThroughAt: Date | null;
+  /** When the subscription first became past due; null when it is not. */
+  pastDueSince: Date | null;
+  /** The invoice whose payment was refunded in full, if any. */
+  refundedInvoiceId: string | null;
   status: string;
 };
 
@@ -94,6 +113,12 @@ export type Entitlements = {
    */
   accessEndsAt: Date | null;
   hasProAccess: boolean;
+  /**
+   * Access is withheld because of a dispute (chargeback): one is open on a
+   * payment of this subscription, or the payment for the current period
+   * was lost to one.
+   */
+  isDisputed: boolean;
   /** A payment failed and has not been recovered. */
   isPastDue: boolean;
   reason: AccessReason;
@@ -102,28 +127,48 @@ export type Entitlements = {
 const NO_ACCESS: Entitlements = {
   accessEndsAt: null,
   hasProAccess: false,
+  isDisputed: false,
   isPastDue: false,
   reason: "none",
 };
 
-/** End of the grace window of a past-due subscription, if it can be told. */
-function pastDueGraceEnd(subscription: SubscriptionSnapshot): Date | null {
-  return subscription.currentPeriodStart
-    ? new Date(subscription.currentPeriodStart.getTime() + PAST_DUE_GRACE_DAYS * DAY_MS)
-    : null;
+const GRANTED = { hasProAccess: true, isDisputed: false, isPastDue: false } as const;
+
+/** The payment for the current period was taken back through a dispute. */
+function currentPeriodLostToDispute(subscription: SubscriptionSnapshot): boolean {
+  return (
+    subscription.disputeStatus === "lost" &&
+    subscription.disputeInvoiceId !== null &&
+    subscription.disputeInvoiceId === subscription.latestInvoiceId
+  );
+}
+
+/** The payment for the current period was refunded in full. */
+function currentPeriodRefunded(subscription: SubscriptionSnapshot): boolean {
+  return (
+    subscription.refundedInvoiceId !== null &&
+    subscription.refundedInvoiceId === subscription.latestInvoiceId
+  );
 }
 
 /**
  * Entitlements of a user whose subscription row is `subscription` (null: no
- * row) at time `now`.
+ * row) at time `now`. The full table, with the reasoning, is in
+ * docs/BILLING.md.
  *
- * - `active`, `trialing`: access.
- * - `past_due`: access during the grace window (see PAST_DUE_GRACE_DAYS).
- * - `canceled`: access until the end of the period already paid for, when
- *   the cancellation was requested rather than caused by non-payment.
- * - `unpaid`, `incomplete`, `incomplete_expired`, `paused`, anything
- *   unknown: no access.
- * - A lifetime (comped) account always has access.
+ * 1. A lifetime (comped) account always has access.
+ * 2. A dispute comes before the status: no access while one is open on a
+ *    payment of the subscription, nor when the payment for the current
+ *    period was lost to one (until a later invoice is paid).
+ * 3. `active`, `trialing`: access, unless the subscription is set to end
+ *    and that time has passed.
+ * 4. `past_due`: access for PAST_DUE_GRACE_DAYS from `pastDueSince`. No
+ *    anchor, no access.
+ * 5. `canceled`: access until `paidThroughAt` when the cancellation was
+ *    requested (not non-payment), the period was paid for, and that payment
+ *    was not refunded in full.
+ * 6. `unpaid`, `incomplete`, `incomplete_expired`, `paused`, and any status
+ *    this code does not know: no access.
  */
 export function entitlementsFor(
   subscription: SubscriptionSnapshot | null,
@@ -131,39 +176,46 @@ export function entitlementsFor(
 ): Entitlements {
   if (!subscription) return NO_ACCESS;
   if (subscription.isLifetime) {
-    return { accessEndsAt: null, hasProAccess: true, isPastDue: false, reason: "lifetime" };
+    return { ...GRANTED, accessEndsAt: null, reason: "lifetime" };
+  }
+
+  const isPastDue = subscription.status === "past_due" || subscription.status === "unpaid";
+  if (subscription.disputeStatus === "open" || currentPeriodLostToDispute(subscription)) {
+    return { ...NO_ACCESS, isDisputed: true, isPastDue };
   }
 
   const nowMs = now.getTime();
   switch (subscription.status) {
     case "active":
-    case "trialing":
-      return {
-        accessEndsAt: subscription.cancelAtPeriodEnd ? subscription.cancelAt : null,
-        hasProAccess: true,
-        isPastDue: false,
-        reason: subscription.status,
-      };
+    case "trialing": {
+      const endsAt = subscription.cancelAtPeriodEnd ? subscription.cancelAt : null;
+      // Set to end, and that time has come: Stripe cancels it now, and the
+      // event saying so may still be on its way. Access does not wait for it.
+      if (endsAt && endsAt.getTime() <= nowMs) return NO_ACCESS;
+      return { ...GRANTED, accessEndsAt: endsAt, reason: subscription.status };
+    }
 
     case "past_due": {
-      const graceEnd = pastDueGraceEnd(subscription);
-      // Without a period start there is nothing to count the window from;
-      // Stripe is retrying, so access continues.
-      if (!graceEnd || graceEnd.getTime() > nowMs) {
-        return { accessEndsAt: graceEnd, hasProAccess: true, isPastDue: true, reason: "past_due_grace" };
+      // Without the anchor there is nothing to count the window from, and
+      // an uncounted window would be access without limit: deny.
+      if (!subscription.pastDueSince) return { ...NO_ACCESS, isPastDue: true };
+      const graceEnd = new Date(subscription.pastDueSince.getTime() + PAST_DUE_GRACE_DAYS * DAY_MS);
+      if (graceEnd.getTime() > nowMs) {
+        return { ...GRANTED, accessEndsAt: graceEnd, isPastDue: true, reason: "past_due_grace" };
       }
       return { ...NO_ACCESS, isPastDue: true };
     }
 
     case "canceled": {
-      const paidUntil = subscription.currentPeriodEnd;
+      const paidUntil = subscription.paidThroughAt;
       if (
         CANCELED_KEEPS_PAID_PERIOD &&
-        subscription.cancellationReason === "cancellation_requested" &&
+        subscription.cancellationReason === CANCELLATION_REQUESTED &&
         paidUntil &&
-        paidUntil.getTime() > nowMs
+        paidUntil.getTime() > nowMs &&
+        !currentPeriodRefunded(subscription)
       ) {
-        return { accessEndsAt: paidUntil, hasProAccess: true, isPastDue: false, reason: "canceled_paid_period" };
+        return { ...GRANTED, accessEndsAt: paidUntil, reason: "canceled_paid_period" };
       }
       return NO_ACCESS;
     }

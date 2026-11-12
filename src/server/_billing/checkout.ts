@@ -8,6 +8,7 @@ import {
 } from "~/server/_utils/pricing";
 
 import { isTerminalStatus } from "./entitlements";
+import { withLease, type LeaseDb, type LeaseOptions } from "./lease";
 import { reportBillingError } from "./report";
 import { isStripeResourceMissing } from "./stripe";
 import {
@@ -15,6 +16,7 @@ import {
   syncSubscriptionById,
   syncUserFromStripe,
   type BillingDb,
+  type SyncOptions,
 } from "./subscriptionStore";
 
 /**
@@ -78,61 +80,148 @@ async function ensureCustomer(
   throw new Error("Could not store the Stripe customer for the user");
 }
 
+export type RefreshOutcome =
+  | "applied"
+  | "stale"
+  /** Stripe has nothing for the user (no customer, or no subscription). */
+  | "nothing_at_stripe"
+  /** The row's subscription is not the user's customer's: left as it is. */
+  | "unknown_customer"
+  /** The row points at a subscription Stripe does not have. */
+  | "subscription_missing";
+
 /**
  * Brings the user's subscription row up to date with Stripe before a
  * decision is made on it, so that a missed webhook can neither let someone
  * buy a second subscription nor lock them out of buying one.
+ *
+ * `hasLiveSubscription`: Stripe has a subscription for the user's customer
+ * that has not ended, whichever one the row ends up showing.
  */
 export async function refreshBillingState(
   db: BillingDb,
   stripe: Stripe,
   userId: string,
-): Promise<void> {
-  const result = await syncUserFromStripe(db, stripe, userId);
-  if (result.outcome !== "no_subscription" && result.outcome !== "no_customer") return;
+  options: SyncOptions = {},
+): Promise<{ hasLiveSubscription: boolean; outcome: RefreshOutcome }> {
+  const result = await syncUserFromStripe(db, stripe, userId, options);
+  if ("state" in result) {
+    return { hasLiveSubscription: result.hasLiveSubscription, outcome: result.outcome };
+  }
 
   // Stripe lists nothing for the user's customer. A row that still claims a
   // running subscription is then either on another customer, or gone.
   const row = await db.subscription.findUnique({ where: { userId } });
-  if (!row?.subscriptionId || isTerminalStatus(row.status)) return;
+  if (!row?.subscriptionId || isTerminalStatus(row.status)) {
+    return { hasLiveSubscription: false, outcome: "nothing_at_stripe" };
+  }
 
-  const single = await syncSubscriptionById(db, stripe, row.subscriptionId);
+  const single = await syncSubscriptionById(db, stripe, row.subscriptionId, null, options);
   if (single.outcome === "subscription_missing") {
     reportBillingError("Subscription row points at a subscription Stripe does not have", {
       subscriptionId: row.subscriptionId,
       userId,
     });
+    return { hasLiveSubscription: false, outcome: "subscription_missing" };
   }
+  if (single.outcome === "unknown_customer") {
+    return { hasLiveSubscription: false, outcome: "unknown_customer" };
+  }
+  return { hasLiveSubscription: !isTerminalStatus(single.state.status), outcome: single.outcome };
 }
 
 /** Open Checkout sessions looked at when starting a new one. */
-const OPEN_SESSIONS_TO_EXPIRE = 10;
+const OPEN_SESSIONS_TO_REVIEW = 10;
+
+/** An open session is handed out again only if it stays payable this long. */
+const REUSE_MIN_REMAINING_MS = 30 * 60 * 1000;
 
 /**
- * Expires the customer's unfinished Checkout sessions. Each open session can
- * still be paid; leaving an older one open (a second tab, a double click)
- * is how a customer ends up with two subscriptions.
+ * The lease that makes starting Checkout run for one user at a time: held
+ * for at most CHECKOUT_LEASE_SECONDS (longer than the sequence can take:
+ * a handful of Stripe calls of at most 15 s each), waited for up to
+ * CHECKOUT_LEASE_WAIT_MS by a second request, which then finds the first
+ * one's session open and reuses it.
  */
-async function expireOpenCheckoutSessions(stripe: Stripe, customerId: string): Promise<void> {
+const CHECKOUT_LEASE_SECONDS = 120;
+const CHECKOUT_LEASE_WAIT_MS = 10_000;
+
+type SessionRequest = {
+  customerId: string;
+  priceId: string;
+  successUrl: string;
+  userId: string;
+};
+
+/** An open session this server created for exactly this purchase. */
+function isReusable(session: Stripe.Checkout.Session, request: SessionRequest, nowMs: number): boolean {
+  return (
+    session.status === "open" &&
+    session.mode === "subscription" &&
+    session.url !== null &&
+    session.metadata?.userId === request.userId &&
+    session.metadata?.priceId === request.priceId &&
+    session.success_url === request.successUrl &&
+    session.expires_at * 1000 - nowMs > REUSE_MIN_REMAINING_MS
+  );
+}
+
+/**
+ * Expires a session, or makes sure it can no longer be paid. If the expire
+ * call fails, the session is read back: only one that is confirmed
+ * `complete` or `expired` is let go (a completed one shows up as a
+ * subscription in the refresh that follows). Anything else, including a
+ * Stripe outage, propagates: a session that may still be open must not be
+ * joined by a second one.
+ */
+async function closeSession(stripe: Stripe, sessionId: string): Promise<void> {
+  try {
+    await stripe.checkout.sessions.expire(sessionId);
+    return;
+  } catch (expireError) {
+    const current = await stripe.checkout.sessions.retrieve(sessionId);
+    if (current.status !== "complete" && current.status !== "expired") throw expireError;
+    // Only the id and the status: the error and the session carry URLs and
+    // customer details that do not belong in a log.
+    logger.info("Checkout session was already closed", { sessionId, status: current.status });
+  }
+}
+
+/**
+ * Looks at the customer's unfinished Checkout sessions: returns one that is
+ * for this same purchase (to be handed out again) and closes the others.
+ * Each open session can still be paid; leaving a different one open (the
+ * other plan in a second tab) is how a customer ends up with two
+ * subscriptions.
+ */
+async function reuseOrCloseOpenSessions(
+  stripe: Stripe,
+  request: SessionRequest,
+  nowMs: number,
+): Promise<Stripe.Checkout.Session | null> {
   const open = await stripe.checkout.sessions.list({
-    customer: customerId,
-    limit: OPEN_SESSIONS_TO_EXPIRE,
+    customer: request.customerId,
+    limit: OPEN_SESSIONS_TO_REVIEW,
     status: "open",
   });
+  let reusable: Stripe.Checkout.Session | null = null;
   for (const session of open.data) {
-    try {
-      await stripe.checkout.sessions.expire(session.id);
-    } catch (error) {
-      // It was completed or expired in the meantime. A completed one shows
-      // up as a subscription in the refresh that follows.
-      logger.info("Could not expire a Checkout session", { error, sessionId: session.id });
+    if (!reusable && isReusable(session, request, nowMs)) {
+      reusable = session;
+      continue;
     }
+    await closeSession(stripe, session.id);
   }
+  return reusable;
 }
 
 export type StartCheckoutInput = {
   baseUrl: string;
   billingInterval: BillingInterval;
+  /** How the per-user lease waits, for tests. */
+  lease?: Pick<LeaseOptions, "now" | "sleep">;
+  /** The clock (milliseconds), for tests. */
+  now?: () => number;
   prices?: PriceConfig;
   successPath: CheckoutSuccessPath;
   userId: string;
@@ -144,13 +233,26 @@ export type StartCheckoutResult =
   | { kind: "subscription_exists" }
   | { kind: "user_not_found" };
 
+export type CheckoutDb = BillingDb & LeaseDb;
+
 /**
  * Creates a Checkout session for the Pro plan at the price the user's role
- * entitles them to. Throws PriceNotConfiguredError when that price has no
- * Stripe Price id configured, and Stripe's errors when Stripe fails.
+ * entitles them to, or returns the one already open for the same purchase.
+ * Throws PriceNotConfiguredError when that price has no Stripe Price id
+ * configured, LeaseBusyError when another request of the same user is
+ * still at it, and Stripe's errors when Stripe fails.
+ *
+ * One purchase, one payable session. The whole sequence (close other open
+ * sessions, refresh from Stripe, create) runs under a per-user lease, so
+ * two requests at the same moment (a double click, two tabs, either plan)
+ * cannot both find "nothing open" and both create: the second waits, then
+ * finds the first one's session and reuses it (same price and return path)
+ * or closes it (a different one). No fixed idempotency key is used for
+ * that: Stripe would replay the stored response for a reused key, and a
+ * later, legitimate checkout could be handed a session that is long dead.
  */
 export async function startCheckout(
-  db: BillingDb,
+  db: CheckoutDb,
   stripe: Stripe,
   input: StartCheckoutInput,
 ): Promise<StartCheckoutResult> {
@@ -159,15 +261,24 @@ export async function startCheckout(
 
   // Before anything is created at Stripe: a misconfigured plan fails here.
   const priceId = getPriceIdForCheckout(user.role, input.billingInterval, input.prices);
-
-  let customerId = await ensureCustomer(db, stripe, user, `my-iso:customer:${user.id}`);
+  const successUrl = appUrl(input.baseUrl, input.successPath);
+  const now = input.now ?? Date.now;
 
   const createSession = async (customer: string) => {
-    await expireOpenCheckoutSessions(stripe, customer);
-    await refreshBillingState(db, stripe, user.id);
+    const request: SessionRequest = { customerId: customer, priceId, successUrl, userId: user.id };
+    const reusable = await reuseOrCloseOpenSessions(stripe, request, now());
+    const refreshed = await refreshBillingState(db, stripe, user.id);
 
+    // A subscription that has not ended, on the row or anywhere on the
+    // customer (a second one the row does not show), is managed in the
+    // portal. That includes a status this code does not know.
     const row = await db.subscription.findUnique({ where: { userId: user.id } });
-    if (row && (row.isLifetime || !isTerminalStatus(row.status))) return null;
+    if (refreshed.hasLiveSubscription || (row && (row.isLifetime || !isTerminalStatus(row.status)))) {
+      // Whatever was open must not be paid on top of it.
+      if (reusable) await closeSession(stripe, reusable.id);
+      return null;
+    }
+    if (reusable) return reusable;
 
     return stripe.checkout.sessions.create({
       cancel_url: appUrl(input.baseUrl, CHECKOUT_CANCEL_PATH),
@@ -176,29 +287,38 @@ export async function startCheckout(
       line_items: [{ price: priceId, quantity: 1 }],
       // The user id travels on the session and on the subscription it
       // creates, so webhooks can be matched to the user without the email.
-      metadata: { userId: user.id },
+      // The price and (through success_url) the return path identify the
+      // purchase, for reuse.
+      metadata: { priceId, userId: user.id },
       mode: "subscription",
       subscription_data: { metadata: { userId: user.id } },
-      success_url: appUrl(input.baseUrl, input.successPath),
+      success_url: successUrl,
     });
   };
 
-  let session: Stripe.Checkout.Session | null;
-  try {
-    session = await createSession(customerId);
-  } catch (error) {
-    if (!isStripeResourceMissing(error, "customer")) throw error;
-    // The stored customer no longer exists at Stripe (deleted in the
-    // dashboard before the webhook arrived). Start over with a new one.
-    await db.user.updateMany({ data: { stripeId: null }, where: { id: user.id, stripeId: customerId } });
-    customerId = await ensureCustomer(
-      db,
-      stripe,
-      { ...user, stripeId: null },
-      `my-iso:customer:${user.id}:after:${customerId}`,
-    );
-    session = await createSession(customerId);
-  }
+  const session = await withLease(
+    db,
+    `checkout:${user.id}`,
+    { ...input.lease, ttlSeconds: CHECKOUT_LEASE_SECONDS, waitMs: CHECKOUT_LEASE_WAIT_MS },
+    async () => {
+      let customerId = await ensureCustomer(db, stripe, user, `my-iso:customer:${user.id}`);
+      try {
+        return await createSession(customerId);
+      } catch (error) {
+        if (!isStripeResourceMissing(error, "customer")) throw error;
+        // The stored customer no longer exists at Stripe (deleted in the
+        // dashboard before the webhook arrived). Start over with a new one.
+        await db.user.updateMany({ data: { stripeId: null }, where: { id: user.id, stripeId: customerId } });
+        customerId = await ensureCustomer(
+          db,
+          stripe,
+          { ...user, stripeId: null },
+          `my-iso:customer:${user.id}:after:${customerId}`,
+        );
+        return createSession(customerId);
+      }
+    },
+  );
 
   if (!session) return { kind: "subscription_exists" };
   if (!session.url) throw new Error("Stripe returned a Checkout session without a URL");

@@ -9,14 +9,17 @@ import {
   type EventLogDb,
 } from "./eventLog";
 import { reportBillingError } from "./report";
-import { constructWebhookEvent } from "./stripe";
-import { stripeId } from "./subscriptionState";
+import { constructWebhookEvent, isStripeResourceMissing, isWebhookSecretConfigured } from "./stripe";
+import { disputeStanding, stripeId } from "./subscriptionState";
 import {
   forgetDeletedCustomer,
   linkCustomerToUser,
+  recordDispute,
+  recordRefund,
   syncSubscriptionById,
   type BillingDb,
   type SubscriptionSyncResult,
+  type SyncOptions,
 } from "./subscriptionStore";
 
 /**
@@ -27,13 +30,16 @@ import {
  *
  * - 400: the signature is missing or wrong (or the delivery is a replay
  *   older than the tolerance). Nothing was read from the body.
+ * - 413: the body is larger than any event Stripe sends (the HTTP shell,
+ *   ./webhookRequest.ts, refuses it before or while reading).
  * - 200: handled, a duplicate of an event already handled, an event type
  *   this app has no use for, or an event about a customer/subscription that
  *   does not belong to a user here (logged; retrying could never help).
  * - 409: the same event is being handled by another delivery right now.
  *   Stripe retries, and the retry finds it handled.
- * - 500: something transient failed (database, Stripe API). Stripe retries
- *   with back-off for up to three days; every handler is idempotent.
+ * - 500: something transient failed (database, Stripe API), or this server
+ *   has no webhook signing secret configured. Stripe retries with back-off
+ *   for up to three days; every handler is idempotent.
  *
  * Event order is not trusted: an event only says WHICH subscription
  * changed. Its state is then read from the Stripe API and stored under the
@@ -57,6 +63,10 @@ export const HANDLED_EVENT_TYPES = [
   "invoice.paid",
   "invoice.payment_succeeded",
   "invoice.payment_failed",
+  "charge.dispute.created",
+  "charge.dispute.updated",
+  "charge.dispute.closed",
+  "charge.refunded",
   "customer.deleted",
 ] as const satisfies ReadonlyArray<Stripe.Event["type"]>;
 
@@ -72,11 +82,15 @@ export type WebhookDeps = {
   db: WebhookDb;
   /** Called only when an event needs the API (lazy: see getStripe). */
   getStripe: () => Stripe;
+  /** Whether a signing secret is configured. Defaults to the environment's. */
+  secretConfigured?: () => boolean;
+  /** How a same-second tie between two readings is waited out; for tests. */
+  sync?: SyncOptions;
   /** Verifies the signature and parses the event. Defaults to the configured secret. */
   verify?: (rawBody: string, signature: string) => Promise<Stripe.Event>;
 };
 
-export type WebhookResponse = { body: string; status: 200 | 400 | 409 | 500 };
+export type WebhookResponse = { body: string; status: 200 | 400 | 409 | 413 | 500 };
 
 /** What handling an event came to, for the log and the response body. */
 type Outcome =
@@ -85,6 +99,10 @@ type Outcome =
   | "subscription_missing"
   | "unknown_customer"
   | "not_a_subscription"
+  | "dispute_recorded"
+  | "refund_recorded"
+  /** The dispute or charge the event names no longer exists at Stripe. */
+  | "object_missing"
   | "customer_forgotten";
 
 const respond = (status: WebhookResponse["status"], result: string): WebhookResponse => ({
@@ -106,6 +124,7 @@ async function syncFromEvent(
     deps.getStripe(),
     subscriptionId,
     hintUserId,
+    deps.sync,
   );
 
   if (result.outcome === "unknown_customer") {
@@ -125,6 +144,117 @@ async function syncFromEvent(
     });
   }
   return result.outcome;
+}
+
+/** Invoice payments looked at when tracing a payment back to its invoice. */
+const INVOICE_PAYMENTS_CONSIDERED = 10;
+
+/**
+ * The subscription invoice a payment paid, if it paid one.
+ *
+ * In this API version neither a charge nor a payment intent points at an
+ * invoice: the link is the InvoicePayment object, listed by payment intent.
+ * The invoice then names its subscription through `parent`.
+ */
+async function findSubscriptionInvoice(
+  stripe: Stripe,
+  paymentIntentId: string | null,
+): Promise<{ invoiceId: string; subscriptionId: string } | null> {
+  if (!paymentIntentId) return null;
+  const payments = await stripe.invoicePayments.list({
+    expand: ["data.invoice"],
+    limit: INVOICE_PAYMENTS_CONSIDERED,
+    payment: { payment_intent: paymentIntentId, type: "payment_intent" },
+  });
+  for (const payment of payments.data) {
+    const invoiceId = stripeId(payment.invoice);
+    if (!invoiceId) continue;
+    const invoice =
+      typeof payment.invoice === "string" ? await stripe.invoices.retrieve(invoiceId) : payment.invoice;
+    if (invoice.deleted) continue;
+    const subscriptionId = stripeId(invoice.parent?.subscription_details?.subscription);
+    if (subscriptionId) return { invoiceId, subscriptionId };
+  }
+  return null;
+}
+
+/**
+ * A dispute was opened, changed or closed. Only its id is taken from the
+ * event; what it means is read from the dispute as Stripe has it now
+ * (disputeStanding), so `created` arriving after `closed` records the
+ * closed state. An open dispute suspends access to the subscription whose
+ * invoice the charge paid; a won one restores it; a lost one leaves the
+ * period it paid for unpaid (entitlements.ts).
+ */
+async function handleDispute(deps: WebhookDeps, event: HandledEvent, disputeId: string): Promise<Outcome> {
+  const stripe = deps.getStripe();
+  let dispute: Stripe.Dispute;
+  try {
+    dispute = await stripe.disputes.retrieve(disputeId);
+  } catch (error) {
+    if (isStripeResourceMissing(error)) return "object_missing";
+    throw error;
+  }
+
+  const invoice = await findSubscriptionInvoice(stripe, stripeId(dispute.payment_intent));
+  if (!invoice) return "not_a_subscription";
+
+  // The row first (it may not exist yet, or lag), then the marker on it.
+  const synced = await syncFromEvent(deps, event, invoice.subscriptionId);
+  if (synced !== "applied" && synced !== "stale") return synced;
+
+  const standing = disputeStanding(dispute.status);
+  const recorded = await recordDispute(deps.db, invoice.subscriptionId, {
+    id: dispute.id,
+    invoiceId: invoice.invoiceId,
+    standing,
+  });
+  if (standing !== "cleared") {
+    reportBillingError("Dispute on a subscription payment", {
+      disputeId: dispute.id,
+      disputeStatus: dispute.status,
+      eventId: event.id,
+      standing,
+      subscriptionId: invoice.subscriptionId,
+    });
+  }
+  // Not recorded: the user's row shows another subscription of theirs.
+  return recorded ? "dispute_recorded" : "stale";
+}
+
+/**
+ * A charge was refunded (in part or in full). Whether it is fully refunded
+ * is read from the charge as Stripe has it now; a full refund of the
+ * payment of a subscription invoice is recorded on the row, a partial one
+ * (or a refund that was reversed) clears that marker.
+ */
+async function handleRefund(deps: WebhookDeps, event: HandledEvent, chargeId: string): Promise<Outcome> {
+  const stripe = deps.getStripe();
+  let charge: Stripe.Charge;
+  try {
+    charge = await stripe.charges.retrieve(chargeId);
+  } catch (error) {
+    if (isStripeResourceMissing(error)) return "object_missing";
+    throw error;
+  }
+
+  const invoice = await findSubscriptionInvoice(stripe, stripeId(charge.payment_intent));
+  if (!invoice) return "not_a_subscription";
+
+  const synced = await syncFromEvent(deps, event, invoice.subscriptionId);
+  if (synced !== "applied" && synced !== "stale") return synced;
+
+  const recorded = await recordRefund(deps.db, invoice.subscriptionId, {
+    fullyRefunded: charge.refunded,
+    invoiceId: invoice.invoiceId,
+  });
+  logger.info("Refund on a subscription payment", {
+    chargeId: charge.id,
+    eventId: event.id,
+    fullyRefunded: charge.refunded,
+    subscriptionId: invoice.subscriptionId,
+  });
+  return recorded ? "refund_recorded" : "stale";
 }
 
 async function handleEvent(deps: WebhookDeps, event: HandledEvent): Promise<Outcome> {
@@ -188,6 +318,14 @@ async function handleEvent(deps: WebhookDeps, event: HandledEvent): Promise<Outc
       return outcome;
     }
 
+    case "charge.dispute.created":
+    case "charge.dispute.updated":
+    case "charge.dispute.closed":
+      return handleDispute(deps, event, event.data.object.id);
+
+    case "charge.refunded":
+      return handleRefund(deps, event, event.data.object.id);
+
     case "customer.deleted": {
       const result = await forgetDeletedCustomer(
         deps.db,
@@ -198,6 +336,15 @@ async function handleEvent(deps: WebhookDeps, event: HandledEvent): Promise<Outc
       return "customer_forgotten";
     }
   }
+}
+
+let missingSecretReported = false;
+
+/** Once per isolate: every delivery would otherwise repeat it. */
+function reportMissingSecretOnce(): void {
+  if (missingSecretReported) return;
+  missingSecretReported = true;
+  reportBillingError("STRIPE_WEBHOOK_SECRET is not set: Stripe webhooks are answered with 500 until it is");
 }
 
 /**
@@ -212,6 +359,14 @@ export async function handleStripeWebhook(
   if (!signature) {
     logger.warn("Stripe webhook rejected: missing signature header");
     return respond(400, "missing_signature");
+  }
+
+  // A server without a signing secret cannot tell Stripe's deliveries from
+  // forgeries. That is this server's fault, not the sender's: 500, so that
+  // Stripe keeps the events and redelivers them once it is fixed.
+  if (!(deps.secretConfigured ?? isWebhookSecretConfigured)()) {
+    reportMissingSecretOnce();
+    return respond(500, "webhook_secret_missing");
   }
 
   let event: Stripe.Event;
