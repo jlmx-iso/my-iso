@@ -480,7 +480,22 @@ export const eventRouter = createTRPCRouter({
           });
         }
       }
-      const beyond = upcoming ? ("gt" as const) : ("lt" as const);
+      // "After the cursor" in (date, id) order. The cursor's own instant is
+      // matched as the range [date, date + 1 ms) rather than by equality:
+      // timestamps are stored as text, and a row written by another tool
+      // (the seed file writes "...Z", the D1 adapter "...+00:00") is the
+      // same instant under a different spelling. A range holds for both;
+      // equality would not, and the cursor row would come back again.
+      const tieStart = after?.date;
+      const tieEnd = after ? new Date(after.date.getTime() + 1) : undefined;
+      const afterCursor = after
+        ? {
+            OR: [
+              { date: upcoming ? { gte: tieEnd } : { lt: tieStart } },
+              { date: { gte: tieStart, lt: tieEnd }, id: upcoming ? { gt: after.id } : { lt: after.id } },
+            ],
+          }
+        : null;
 
       const rows = await ctx.db.event.findMany({
         include: {
@@ -494,9 +509,7 @@ export const eventRouter = createTRPCRouter({
           AND: [
             { date: upcoming ? { gte: now } : { lt: now } },
             ...(filters.length > 0 ? [{ OR: filters }] : []),
-            ...(after
-              ? [{ OR: [{ date: { [beyond]: after.date } }, { date: after.date, id: { [beyond]: after.id } }] }]
-              : []),
+            ...(afterCursor ? [afterCursor] : []),
           ],
         },
       });

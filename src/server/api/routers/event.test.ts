@@ -133,6 +133,17 @@ describe("events feed", () => {
     }
   });
 
+  it("does not repeat the cursor event when its timestamp is stored in another spelling of the same instant", async () => {
+    for (let day = 1; day <= 3; day++) await createEvent(`+${day}`, day * DAY_MS);
+    for (let day = 1; day <= 3; day++) await createEvent(`-${day}`, -day * DAY_MS);
+    // Rows written outside Prisma (a seed file, another adapter): "+00:00"
+    // where this adapter writes "Z". Same instants, different text.
+    await testDb.raw.$executeRaw`UPDATE "Event" SET "date" = replace("date", 'Z', '+00:00') WHERE "title" IN ('+1', '+2', '-1', '-2')`;
+
+    expect(await allPages({ limit: 1 })).toEqual([["+1"], ["+2"], ["+3"]]);
+    expect(await allPages({ limit: 1, when: "past" })).toEqual([["-1"], ["-2"], ["-3"]]);
+  });
+
   it("refuses a cursor that names no event", async () => {
     await createEvent("+1", DAY_MS);
 
