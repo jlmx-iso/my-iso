@@ -74,7 +74,7 @@ export default async function RootLayout({
       <body>
         <CSPostHogProvider>
           <ThemeProvider>
-            <Notifications />
+            <Notifications position="top-center" />
             <TRPCReactProvider cookies={cookieStore.toString()}>
               <AppShell
                 header={<Navbar />}
