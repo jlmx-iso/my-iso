@@ -82,34 +82,38 @@ jobs:
       - name: Migrations match the Prisma schema
         run: npm run db:check
 
+      # The three test-bar steps below call their tools directly, not through
+      # package.json scripts, so editing a script cannot switch a gate off.
+
       # Vitest with coverage. Fails if any threshold in
       # coverage-thresholds.json is missed (global and per directory); see
       # docs/TESTING.md for the bar and how it ratchets up.
       - name: Test with coverage
-        run: npm run test:coverage
+        run: npx vitest run --coverage
 
       # Of the lines this pull request adds or edits under src/ (tests
       # excluded), at least 90% must be run by the suite. The report lists
       # each uncovered line and is also written to the job summary.
       - name: Diff coverage (90% of changed lines)
         if: github.event_name == 'pull_request'
-        run: npm run coverage:diff -- --base "origin/${{ github.base_ref }}" --threshold 90
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/diff-coverage.mjs --base "$BASE" --threshold 90
 
       # The bar only rises: fails if a threshold in coverage-thresholds.json
-      # is lowered or removed, or coverage.config.mjs excludes more, compared
+      # is lowered or removed, or coverage.config.mjs measures less, compared
       # with the base branch. The `coverage-exception` label allows it
-      # (docs/TESTING.md).
-      - name: Coverage guard (thresholds and exclusions)
+      # (docs/TESTING.md). --bootstrap only while the base predates the guard.
+      - name: Coverage guard (thresholds and what is measured)
         if: github.event_name == 'pull_request'
         env:
           BASE: origin/${{ github.base_ref }}
           EXCEPTION: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-exception') }}
         run: |
-          if [ "$EXCEPTION" = "true" ]; then
-            npm run coverage:guard -- --base "$BASE" --exception
-          else
-            npm run coverage:guard -- --base "$BASE"
-          fi
+          args=(--base "$BASE")
+          if [ "$EXCEPTION" = "true" ]; then args+=(--exception); fi
+          if ! git cat-file -e "$BASE:coverage.config.mjs" 2>/dev/null; then args+=(--bootstrap); fi
+          node scripts/coverage-guard.mjs "${args[@]}"
 
       - name: Upload coverage report
         if: always()
