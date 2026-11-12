@@ -4,7 +4,7 @@
 // stays open with a confirmation after sending and keeps the message when
 // sending fails; everyone else is pointed at the support address.
 
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -78,6 +78,28 @@ describe("SupportCard for a Pro member", () => {
     expect(error.textContent).toContain(`email ${SUPPORT_EMAIL}`);
     expect(within(dialog).getByRole<HTMLInputElement>("textbox", { name: /Subject/ }).value).toBe("Invoice");
     expect(within(dialog).queryByText("Message sent")).toBeNull();
+  });
+
+  it("locks the subject and message while the message is being sent", async () => {
+    let release: (value: { sent: true }) => void = () => undefined;
+    renderWithProviders(<SupportCard isPro replyTo={REPLY_TO} />, {
+      trpc: {
+        support: {
+          contact: () =>
+            new Promise<{ sent: true }>((resolve) => {
+              release = resolve;
+            }),
+        },
+      },
+    });
+    const dialog = await openAndFill();
+    const subject = within(dialog).getByRole<HTMLInputElement>("textbox", { name: /Subject/ });
+    const message = within(dialog).getByRole<HTMLTextAreaElement>("textbox", { name: /Message/ });
+    expect([subject.disabled, message.disabled]).toEqual([false, false]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send to support" }));
+    await waitFor(() => expect([subject.disabled, message.disabled]).toEqual([true, true]));
+    release({ sent: true });
+    expect(await within(dialog).findByText("Message sent")).toBeTruthy();
   });
 
   it("will not send a message that is too short", async () => {

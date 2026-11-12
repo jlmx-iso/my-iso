@@ -42,7 +42,11 @@ const number = (value: number) => value.toLocaleString("en-US");
 export function changeLabel(compared: Compared, days: number): string {
     if (compared.previous === null) return "No earlier period to compare with yet";
     if (compared.changePercent === null) return compared.value > 0 ? `New: none in the previous ${days} days` : `None in the previous ${days} days either`;
-    if (compared.changePercent === 0) return `Same as the previous ${days} days`;
+    if (compared.value === compared.previous) return `Same as the previous ${days} days`;
+    // A real change that rounds to 0%: say which way, not "the same".
+    if (compared.changePercent === 0) {
+        return `Less than 1% ${compared.value > compared.previous ? "up" : "down"} vs previous ${days} days`;
+    }
     const sign = compared.changePercent > 0 ? "+" : "−";
     return `${sign}${Math.abs(compared.changePercent)}% vs previous ${days} days`;
 }
@@ -238,8 +242,8 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                             <Paper withBorder radius="md" p={{ base: "md", sm: "lg" }}>
                                 <Title order={2} size="h5">Where your views came from</Title>
                                 <Text size="xs" c="dimmed" mb="sm">
-                                    {number(data.profileViews.value)} {data.profileViews.value === 1 ? "view" : "views"}, by the part of ISO (or the web)
-                                    they came from.
+                                    {number(data.profileViews.value)} {data.profileViews.value === 1 ? "view" : "views"}, by the page they came from.{" "}
+                                    <span data-testid="sources-approximate">Approximate.</span>
                                     {data.profileViews.sources.some(({ source }) => source === "other") && (
                                         <span data-testid="sources-other-note">
                                             {" "}Sources with fewer than {MIN_SOURCE_COUNT} views are counted under &ldquo;Other&rdquo;.

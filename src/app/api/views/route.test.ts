@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { logger } from "~/_utils";
-import { VIEW_ANON_LIMIT, VIEW_RATE_LIMIT } from "~/server/_lib/viewCounter";
+import { utcDay, VIEW_ANON_LIMIT, VIEW_RATE_LIMIT, viewerKey, viewSourceToken } from "~/server/_lib/viewCounter";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 const holder = vi.hoisted(
@@ -121,6 +121,30 @@ describe("POST /api/views", () => {
     expect(keys[0]?.[1]).toMatch(/^ip:[0-9a-f]{32}$/);
     expect(keys[0]?.[1]).not.toContain("192.0.2.45");
     expect(await count()).toBe(0);
+  });
+
+  it("trusts the posted source only with the page's token: forged, wrong-target and stale-day tokens count as Other", async () => {
+    const other = await createTestUser(testDb.db);
+    const today = utcDay(new Date());
+    const twoDaysAgo = utcDay(new Date(Date.now() - 2 * 86_400_000));
+    const target = { id: owner.id, kind: "profile" } as const;
+    // Each case from its own address, so each is a first view today; the
+    // token is issued for that address unless the case is about the address.
+    const cases: Array<[string, (ip: string) => Promise<string | undefined>]> = [
+      ["forged", async () => "f".repeat(32)],
+      ["none", async () => undefined],
+      ["stale", (ip) => viewSourceToken(target, "search", twoDaysAgo, viewerKey(null, ip))],
+      ["wrong target", (ip) => viewSourceToken({ id: other.id, kind: "profile" }, "search", today, viewerKey(null, ip))],
+      ["another network", () => viewSourceToken(target, "search", today, viewerKey(null, "198.51.100.200"))],
+      ["valid", (ip) => viewSourceToken(target, "search", today, viewerKey(null, ip))],
+    ];
+    for (const [index, [, token]] of cases.entries()) {
+      const ip = `192.0.2.${100 + index}`;
+      const response = await POST(view({ ...profile(), token: await token(ip) }, { "cf-connecting-ip": ip }));
+      expect(response.status).toBe(204);
+    }
+    const rows = await testDb.db.profileView.findMany({ orderBy: { source: "asc" } });
+    expect(rows.map((row) => [row.source, row.count])).toEqual([["other", 5], ["search", 1]]);
   });
 
   it("refuses another origin, a bad body and an oversized one, writing nothing", async () => {

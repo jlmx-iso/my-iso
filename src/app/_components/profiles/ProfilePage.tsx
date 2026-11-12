@@ -4,7 +4,7 @@ import { IconArrowRight, IconChartBar, IconExternalLink, IconPencil } from "@tab
 
 import { NextLink } from "~/app/_components/NextLink";
 import ViewBeacon from "~/app/_components/ViewBeacon";
-import { viewSource } from "~/app/_server_utils/views";
+import { viewBeaconProps } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -33,11 +33,14 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
     const me = await caller.user.getMe();
     return <EditProfile photographer={photographer} handle={me.handle} />;
   }
-  const [images, favorite, owner, source, weekViews] = await Promise.all([
+  const [images, favorite, owner, beacon, weekViews] = await Promise.all([
     caller.photographer.getPortfolioImages({ photographerId: photographer.id }),
     isSelf ? Promise.resolve({ isFavorite: false }) : caller.user.isFavorite({ targetId: photographer.id }),
     isSelf ? caller.user.getMe() : Promise.resolve(null),
-    viewSource(),
+    viewBeaconProps(
+      { id: photographer.userId, kind: "profile" },
+      { ownerId: photographer.userId, viewerId: session.user.id },
+    ),
     // A Pro member's own profile links to their insights with last week's number.
     isSelf && photographer.isPro
       ? caller.insights
@@ -50,7 +53,7 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
   return (
     <Stack w="100%" gap="xl">
       {/* For the member's insights; the owner's own visits are not counted. */}
-      {!isSelf && <ViewBeacon kind="profile" id={photographer.userId} source={source} />}
+      {!isSelf && <ViewBeacon {...beacon} />}
       <ProfileHeader
         photographer={photographer}
         coverImage={images[0]?.image}

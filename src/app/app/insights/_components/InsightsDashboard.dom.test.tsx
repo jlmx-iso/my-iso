@@ -81,7 +81,9 @@ describe("InsightsDashboard", () => {
     const sources = screen.getByTestId("view-sources");
     expect(within(sources).getByText("Search")).toBeTruthy();
     expect(within(sources).getByText("Other")).toBeTruthy();
-    expect(screen.getByText(/12 views, by the part of ISO/)).toBeTruthy();
+    expect(screen.getByText(/12 views, by the page they came from/)).toBeTruthy();
+    // Sources come from the Referer the browser sends: said plainly.
+    expect(screen.getByTestId("sources-approximate").textContent).toBe("Approximate.");
     // There is an Other row, so the folding is explained.
     expect(screen.getByTestId("sources-other-note").textContent).toContain("fewer than 3 views are counted under");
 
@@ -128,7 +130,7 @@ describe("InsightsDashboard", () => {
     expect(screen.queryByTestId("daily-views-chart")).toBeNull();
     // No "0 views, by ..." breakdown.
     expect(screen.queryByTestId("view-sources")).toBeNull();
-    expect(screen.queryByText(/views?, by the part of ISO/)).toBeNull();
+    expect(screen.queryByText(/views?, by the page they came from/)).toBeNull();
 
     await userEvent.click(within(empty).getByRole("button", { name: "Copy your profile link" }));
     expect(await within(empty).findByRole("button", { name: "Link copied" })).toBeTruthy();
@@ -174,6 +176,9 @@ describe("changeLabel", () => {
     expect(changeLabel({ changePercent: null, previous: null, value: 4 }, 30)).toBe("No earlier period to compare with yet");
     expect(changeLabel({ changePercent: null, previous: 0, value: 0 }, 7)).toBe("None in the previous 7 days either");
     expect(changeLabel({ changePercent: 0, previous: 5, value: 5 }, 7)).toBe("Same as the previous 7 days");
+    // Rounds to 0%, but it is not the same.
+    expect(changeLabel({ changePercent: 0, previous: 400, value: 401 }, 30)).toBe("Less than 1% up vs previous 30 days");
+    expect(changeLabel({ changePercent: 0, previous: 400, value: 399 }, 30)).toBe("Less than 1% down vs previous 30 days");
     expect(changeLabel({ changePercent: null, previous: 0, value: 3 }, 7)).toBe("New: none in the previous 7 days");
     expect(changeLabel({ changePercent: 25, previous: 4, value: 5 }, 90)).toBe("+25% vs previous 90 days");
     expect(changeLabel({ changePercent: -100, previous: 4, value: 0 }, 90)).toBe("−100% vs previous 90 days");
@@ -223,6 +228,29 @@ describe("DailyViewsChart", () => {
       columns[3]?.blur();
     });
     expect(screen.getByTestId("chart-readout").textContent).toBe("Jun 10: 4 views (busiest day)");
+  });
+
+  it("moves the tab stop back to the latest day and clears the highlight when the range changes (30 days to 7)", async () => {
+    const month = days("2030-05-16", Array.from({ length: 30 }, (_, index) => (index % 5) + 1));
+    const week = days("2030-06-08", [1, 0, 4, 2, 0, 3, 2]);
+    const view = renderWithProviders(<DailyViewsChart daily={month} />);
+    await userEvent.tab();
+    await userEvent.keyboard("{Home}");
+    expect(screen.getAllByRole("img")[0]?.getAttribute("tabindex")).toBe("0");
+    expect(screen.getByTestId("chart-readout").textContent).toBe("May 16: 1 view");
+
+    view.rerender(<DailyViewsChart daily={week} />);
+    const columns = screen.getAllByRole("img");
+    expect(columns).toHaveLength(7);
+    expect(columns.map((column) => column.getAttribute("tabindex"))).toEqual(["-1", "-1", "-1", "-1", "-1", "-1", "0"]);
+    // Nothing from the old range is highlighted: the readout names the busiest day.
+    expect(screen.getByTestId("chart-readout").textContent).toBe("Jun 10: 4 views (busiest day)");
+
+    // An empty range says so instead of drawing nothing.
+    view.rerender(<DailyViewsChart daily={[]} />);
+    expect(screen.getByTestId("daily-views-empty").textContent).toBe("No days counted in this period yet.");
+    view.rerender(<DailyViewsChart daily={week} />);
+    expect(screen.getAllByRole("img").filter((column) => column.getAttribute("tabindex") === "0")).toHaveLength(1);
   });
 
   it("lists every day in a table for screen readers", () => {

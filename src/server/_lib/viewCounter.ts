@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import type { ViewSource } from "~/_utils/viewSources";
-import { keyedHash } from "~/server/_utils/hash";
+import { keyedHash, timingSafeEqualStrings } from "~/server/_utils/hash";
 
 /**
  * Daily view counters for Pro insights (tables "ProfileView" and
@@ -120,6 +120,93 @@ function normalizedPath(pathname: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// The source token
+// ---------------------------------------------------------------------------
+
+/**
+ * How long after midnight UTC yesterday's source token is still accepted:
+ * a page rendered at 23:59 reports its view a moment later, on the next day.
+ */
+export const VIEW_SOURCE_TOKEN_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * Who is viewing, as the dedupe and the source token key it: the member
+ * when signed in, else the client address (already an IPv6 /64, per
+ * clientIp.ts). Never stored as given.
+ */
+export function viewerKey(viewerId: string | null, clientIp: string): string {
+  return viewerId ? `member:${viewerId}` : `ip:${clientIp}`;
+}
+
+/**
+ * The token a page passes to its ViewBeacon with the source the server
+ * worked out: a keyed hash (AUTH_SECRET) of kind, target, source, UTC day
+ * and viewer (viewerKey). The endpoint trusts `source` only with a token
+ * that matches all of them, so the source cannot be swapped after the page
+ * is rendered, nor the token replayed by another account or network.
+ */
+export async function viewSourceToken(target: ViewTarget, source: ViewSource, day: string, viewer: string): Promise<string> {
+  return (await keyedHash("view-source", `${target.kind}|${target.id}|${source}|${day}|${viewer}`)).slice(0, 32);
+}
+
+/**
+ * `source` if `token` was issued for it, this target, this viewer and
+ * today (or yesterday, within the grace after midnight); otherwise "other".
+ * Compared in constant time.
+ */
+export async function verifiedViewSource(
+  target: ViewTarget,
+  source: ViewSource,
+  token: string | null | undefined,
+  viewer: string,
+  now: Date,
+): Promise<ViewSource> {
+  if (!token) return "other";
+  const startOfDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const days = [utcDay(now)];
+  if (now.getTime() - startOfDay < VIEW_SOURCE_TOKEN_GRACE_MS) days.push(utcDay(new Date(startOfDay - 1)));
+  for (const day of days) {
+    if (await timingSafeEqualStrings(token, await viewSourceToken(target, source, day, viewer))) return source;
+  }
+  return "other";
+}
+
+/** The one query sharesMessageThread runs. */
+type ThreadDb = { $queryRaw: <T>(query: Prisma.Sql) => Promise<T> };
+
+/**
+ * Whether `a` and `b` are both in some message thread: one lookup on the
+ * thread-membership table's user index, self-joined on the thread. Works
+ * for threads made before participantKey existed too.
+ */
+export async function sharesMessageThread(db: ThreadDb, a: string, b: string): Promise<boolean> {
+  const rows = await db.$queryRaw<unknown[]>(Prisma.sql`
+    SELECT 1 FROM "_MessageThreadToUser" mine
+    JOIN "_MessageThreadToUser" theirs ON theirs."A" = mine."A"
+    WHERE mine."B" = ${a} AND theirs."B" = ${b}
+    LIMIT 1`);
+  return rows.length > 0;
+}
+
+/**
+ * The source a page may vouch for, from what its Referer claims. The
+ * Referer is the browser's to send, so a claim of "messages" is checked:
+ * it stands only when the signed-in viewer shares a thread with the
+ * target's owner (for an event, the event's owner), and is "other"
+ * otherwise. The other categories are taken as the Referer gives them, as
+ * in any web analytics (docs/DATABASE.md). Queries only for "messages".
+ */
+export async function checkedViewSource(
+  db: ThreadDb,
+  claimed: ViewSource,
+  people: { viewerId: string | null; ownerId: string },
+): Promise<ViewSource> {
+  if (claimed !== "messages") return claimed;
+  if (!people.viewerId || people.viewerId === people.ownerId) return "other";
+  return (await sharesMessageThread(db, people.viewerId, people.ownerId)) ? "messages" : "other";
+}
+
+// ---------------------------------------------------------------------------
 // The dedupe cookie
 // ---------------------------------------------------------------------------
 
@@ -216,7 +303,10 @@ type ViewCounterDb = {
 
 export type ViewRequest = {
   target: ViewTarget;
+  /** The source the page's beacon reported; counted only with a matching `sourceToken`. */
   source: ViewSource;
+  /** viewSourceToken() from the page render; missing or wrong files the view under "other". */
+  sourceToken: string | null;
   /** Signed-in member, or null. */
   viewerId: string | null;
   /** The client address (already trusted, an IPv6 address as its /64, per clientIp.ts); keys the limiter when signed out. */
@@ -296,12 +386,13 @@ export async function countView(db: ViewCounterDb, limiters: ViewLimiters, reque
   if (ownerId === request.viewerId) return { cookie, outcome: "self" };
   // Once a day per target: a member on any device; signed out, an address,
   // whatever its cookie says (a script that drops cookies counts once).
-  const viewer = request.viewerId ? `member:${request.viewerId}` : `ip:${request.clientIp}`;
+  const viewer = viewerKey(request.viewerId, request.clientIp);
   if (!(await firstSeenToday(db, viewer, request.target, day))) return { cookie, outcome: "already_counted" };
 
   if (request.target.kind === "profile") {
+    const source = await verifiedViewSource(request.target, request.source, request.sourceToken, viewer, now);
     await db.$executeRaw(Prisma.sql`
-      INSERT INTO "ProfileView" ("userId", "day", "source", "count") VALUES (${ownerId}, ${day}, ${request.source}, 1)
+      INSERT INTO "ProfileView" ("userId", "day", "source", "count") VALUES (${ownerId}, ${day}, ${source}, 1)
       ON CONFLICT ("userId", "day", "source") DO UPDATE SET "count" = "count" + 1`);
   } else {
     await db.$executeRaw(Prisma.sql`
