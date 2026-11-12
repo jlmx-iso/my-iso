@@ -95,7 +95,7 @@ function parseData(raw: string): Result<Data, Error> {
 ### Database
 
 - All database access through Prisma client (`ctx.db`)
-- Use transactions for multi-step operations
+- Do NOT use interactive transactions (`$transaction(async (tx) => ...)`): Cloudflare D1 does not support them. Make multi-step writes safe with unique constraints, atomic conditional updates (`UPDATE ... WHERE <condition>`, then check the affected rows) and idempotent retries; see `src/server/_db/invite.ts` and `src/server/_db/messaging.ts`
 - Follow the naming convention: `userId`, `createdAt`, `updatedAt`
 - Use `@default(cuid())` for IDs
 - Use `@default(now())` for timestamps
