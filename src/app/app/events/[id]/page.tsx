@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { ErrorReason } from "~/_utils/errorReason";
+import { countEventView } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { reasonOf } from "~/server/api/reasonedError";
 import { api } from "~/trpc/server";
@@ -33,6 +34,10 @@ export default async function Page({ params }: PageProps) {
     const { id } = await params;
     const [session, event] = await Promise.all([auth(), findEvent(id)]);
     if (!event) notFound();
+    // For the owner's insights; their own visits are not counted.
+    if (session?.user && session.user.id !== event.photographer.userId) {
+        await countEventView(event.id, event.photographer.userId, session.user.id);
+    }
 
     return <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />;
 }

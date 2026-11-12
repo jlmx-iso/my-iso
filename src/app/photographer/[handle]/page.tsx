@@ -7,6 +7,7 @@ import PortfolioSection from "~/app/_components/portfolio/PortfolioSection";
 import { MessageAction } from "~/app/_components/profiles/MessageAction";
 import ProfileHeader from "~/app/_components/profiles/ProfileHeader";
 import ReviewsSection, { type ReviewViewer } from "~/app/_components/profiles/ReviewsSection";
+import { countProfileView } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -30,6 +31,10 @@ export default async function PhotographerProfilePage({ params }: PageProps) {
     : viewerId === photographer.userId
       ? "owner"
       : "member";
+
+  if (viewer !== "owner") {
+    await countProfileView(photographer.userId, viewerId ?? null, [`/photographer/${handle}`]);
+  }
 
   const messageHref = `/app/messages?new=${photographer.userId}`;
   const signInHref = (destination: string) => `/login?callbackUrl=${encodeURIComponent(destination)}`;

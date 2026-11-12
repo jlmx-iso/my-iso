@@ -3,6 +3,7 @@ import { type Photographer } from "@prisma/client";
 import { IconExternalLink, IconPencil } from "@tabler/icons-react";
 
 import { NextLink } from "~/app/_components/NextLink";
+import { countProfileView } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { api } from "~/trpc/server";
 
@@ -14,7 +15,8 @@ import ReviewsSection from "./ReviewsSection";
 import PortfolioSection from "../portfolio/PortfolioSection";
 
 type ProfilePageProps = {
-  photographer: Photographer;
+  /** `isPro` from the server, for the Pro badge. */
+  photographer: Photographer & { isPro: boolean };
   /** Render the edit form instead of the profile (owner only). */
   isEditing?: boolean;
 };
@@ -29,6 +31,10 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
   if (isEditing && isSelf) {
     const me = await caller.user.getMe();
     return <EditProfile photographer={photographer} handle={me.handle} />;
+  }
+  // For the member's insights; the owner's own visits are not counted.
+  if (!isSelf) {
+    await countProfileView(photographer.userId, session.user.id, [`/app/photographer/${photographer.userId}`]);
   }
 
   const [images, favorite, owner] = await Promise.all([

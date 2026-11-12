@@ -157,6 +157,19 @@ What follows from Prisma not knowing about it:
   `wrangler d1 execute DB --remote --env staging --command "SELECT name FROM sqlite_master WHERE type = 'trigger'"`
   must list `Message_touch_thread`.
 
+## View counters (Pro insights)
+
+`ProfileView` (profile owner, UTC day, source, count) and `EventView`
+(event, UTC day, count), created by `0005`, hold daily counts for
+`/app/insights`. Each view is one statement,
+`INSERT ... ON CONFLICT (...) DO UPDATE SET "count" = "count" + 1`
+(`src/server/_lib/viewCounter.ts`), so concurrent views never lose an
+increment and nothing needs a transaction. There is no viewer column, by
+design: these tables cannot say who looked. `source` is a fixed category
+(`src/_utils/viewSources.ts`) derived from the referrer's path on this site;
+other sites are just `external`. Rows go when the profile's user or the
+event is deleted (`ON DELETE CASCADE`).
+
 ## Timestamps are text: one spelling
 
 SQLite has no date type. Prisma stores a `DateTime` as ISO-8601 **text**,
