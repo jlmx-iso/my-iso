@@ -20,7 +20,7 @@ import { CLAIM_LEASE_SECONDS } from "./eventLog";
 import { MAX_DISPUTED_CHARGES, MAX_KNOWN_DISPUTES_REREAD, MAX_STANDING_STRIPE_CALLS } from "./paymentStanding";
 import { constructWebhookEvent } from "./stripe";
 import { subscriptionStateFromStripe } from "./subscriptionState";
-import { applySubscriptionState } from "./subscriptionStore";
+import { applySubscriptionState, KNOWN_DISPUTES_READ } from "./subscriptionStore";
 import { handleStripeWebhook, type WebhookDeps } from "./webhook";
 
 /** The code under test logs what it refuses; keep the test output readable. */
@@ -1011,6 +1011,67 @@ describe("disputes and refunds", () => {
           expect(Object.values(await known()).every((status) => status === "cleared")).toBe(true);
           expect((await access(user.id)).hasProAccess).toBe(true);
         });
+      });
+
+      it("an old open dispute outside the listing is not crowded out by fifty newer lost ones that a later paid invoice supersedes", async () => {
+        const user = await paidSubscription();
+        longHistory();
+        // A: open, on a charge five hundred days old, recorded by its own event.
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1" }));
+        await deliver(buildEvent("charge.dispute.created", disputeIs("needs_response")));
+        // Fifty disputes stored after it, all lost, on earlier invoices.
+        for (let i = 1; i <= KNOWN_DISPUTES_READ; i += 1) {
+          await testDb.db.subscriptionDispute.create({
+            data: { disputeId: `dp_n${String(i).padStart(2, "0")}`, invoiceId: `in_past_${i}`, status: "lost", subscriptionId: "sub_1", updatedAt: new Date(Date.now() + i * 1000) },
+          });
+        }
+        // A later invoice is paid for: every one of those losses is superseded.
+        const next = buildInvoice({ created: T0 + 30 * DAY, customer: "cus_alice", id: "in_2", status: "paid", subscriptionId: "sub_1" });
+        stub.invoices.set("in_2", next);
+        stripeHas({ customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", status: "active" });
+
+        await deliver(buildEvent("invoice.paid", next));
+
+        // A was loaded (open rows are queried on their own), re-read, and still withholds.
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_1", disputeStatus: "open", latestInvoiceId: "in_2" });
+        expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+        const statuses = await testDb.db.subscriptionDispute.groupBy({ _count: true, by: ["status"], where: { subscriptionId: "sub_1" } });
+        expect(Object.fromEntries(statuses.map((row) => [row.status, row._count]))).toMatchObject({ open: 1, superseded: KNOWN_DISPUTES_READ - 1 });
+
+        // Once A itself is won, and the remaining loss has been read too, access returns.
+        await deliver(buildEvent("charge.dispute.closed", disputeIs("won")));
+        expect((await access(user.id)).hasProAccess).toBe(true);
+      });
+
+      it("more unfinished known disputes than are loaded: the open ones are loaded first, and the cut is detected, withheld and reported", async () => {
+        const user = await paidSubscription();
+        // Sixty lost disputes recorded recently, and one OPEN dispute recorded long before them all.
+        for (let i = 1; i <= KNOWN_DISPUTES_READ + 10; i += 1) {
+          await testDb.db.subscriptionDispute.create({
+            data: { disputeId: `dp_l${String(i).padStart(2, "0")}`, invoiceId: "in_1", status: "lost", subscriptionId: "sub_1", updatedAt: new Date(T0 * 1000 + i * 1000) },
+          });
+        }
+        await testDb.db.subscriptionDispute.create({
+          data: { disputeId: "dp_old", invoiceId: "in_older", status: "open", subscriptionId: "sub_1", updatedAt: new Date(1_500_000_000_000) },
+        });
+        stub.disputes.set("dp_old", buildDispute({ charge: "ch_older", id: "dp_old", paymentIntent: "pi_older", status: "needs_response" }));
+
+        const delivered = await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+        // The old open dispute was not the one cut: it was re-read and decides.
+        expect(stub.requests.some((request) => request.path === "/v1/disputes/dp_old")).toBe(true);
+        expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: "dp_old", disputeStatus: "open" });
+        expect((await access(user.id)).hasProAccess).toBe(false);
+        // And that the set was not read whole is said, with the row's id.
+        expect(delivered).toMatchObject({ result: "standing_incomplete", status: 200 });
+        expect(errorText()).toContain((await subscriptionRow(user.id))?.id);
+
+        // With the open one won, the cut alone still withholds: fail closed.
+        stub.disputes.set("dp_old", buildDispute({ charge: "ch_older", id: "dp_old", paymentIntent: "pi_older", status: "won" }));
+        await testDb.db.subscriptionDispute.updateMany({ data: { invoiceId: "in_gone" }, where: { status: "lost" } });
+        const again = await deliver(buildEvent("invoice.payment_succeeded", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+        expect(again.result).toBe("standing_incomplete");
+        expect((await access(user.id)).hasProAccess).toBe(false);
       });
 
       it("is not called incomplete when the unread charges are older than any dispute can be", async () => {

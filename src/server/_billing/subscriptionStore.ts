@@ -9,7 +9,6 @@ import { isSubscriptionStatus, isTerminalStatus, TERMINAL_STATUSES } from "./ent
 import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
 import {
   readPaymentStanding,
-  UNFINISHED_DISPUTE_STATUSES,
   type KnownDispute,
   type PaymentStanding,
 } from "./paymentStanding";
@@ -488,8 +487,11 @@ type SingleReading = { outcome: ApplyOutcome; state: SubscriptionState; userId: 
 /** The subscription is on a customer other than the one whose lease is held. */
 type OtherCustomer = { customerId: string; outcome: "other_customer" };
 
-/** More unfinished disputes than this on one subscription are not even read; the re-read bound fails closed first. */
-const KNOWN_DISPUTES_READ = 50;
+/**
+ * Unfinished disputes of one subscription read per derivation. More than
+ * this is detected (see storePaymentStanding) and fails closed.
+ */
+export const KNOWN_DISPUTES_READ = 50;
 
 const isKnownDisputeStatus = (status: string): status is KnownDispute["status"] =>
   ["open", "inquiry", "lost", "superseded", "cleared"].includes(status);
@@ -530,15 +532,28 @@ async function storePaymentStanding(
 ): Promise<PaymentStanding | null> {
   // Every dispute known for the subscription that is not finished. Read
   // under the lease, which is what serialises it with the writes below.
-  const known = (
-    await db.subscriptionDispute.findMany({
-      orderBy: { updatedAt: "desc" },
-      select: { disputeId: true, invoiceId: true, status: true },
-      take: KNOWN_DISPUTES_READ,
-      where: { status: { in: [...UNFINISHED_DISPUTE_STATUSES] }, subscriptionId: subscription.id },
-    })
-  ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
-  const reading = await readPaymentStanding(stripe, subscription, { known, paymentIntentId });
+  // Those that can withhold access or still change (open, inquiry) are
+  // read first, so that they are never the ones a limit cuts; then the lost
+  // ones. One row more than the limit is asked for: if it is there, the set
+  // was not read whole, and the derivation is told so (it fails closed).
+  const knownOf = (statuses: string[], take: number) =>
+    take <= 0
+      ? Promise.resolve([])
+      : db.subscriptionDispute.findMany({
+          orderBy: [{ updatedAt: "desc" }, { disputeId: "asc" }],
+          select: { disputeId: true, invoiceId: true, status: true },
+          take,
+          where: { status: { in: statuses }, subscriptionId: subscription.id },
+        });
+  const live = await knownOf(["open", "inquiry"], KNOWN_DISPUTES_READ + 1);
+  const lost = await knownOf(["lost"], KNOWN_DISPUTES_READ + 1 - live.length);
+  const rows = [...live, ...lost];
+  const known = rows.slice(0, KNOWN_DISPUTES_READ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
+  const reading = await readPaymentStanding(stripe, subscription, {
+    known,
+    knownTruncated: rows.length > KNOWN_DISPUTES_READ,
+    paymentIntentId,
+  });
   if (!reading) return null;
   const { standing } = reading;
   // Remember every dispute this derivation knows of, as it is now. Each is

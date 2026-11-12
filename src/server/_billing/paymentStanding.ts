@@ -324,15 +324,21 @@ export type StandingReading = { disputes: KnownDispute[]; standing: PaymentStand
  *   result is `incomplete` (a dispute the app has never been told of, on
  *   one of those, would not be seen) and the row is reported for review.
  * - More disputed charges than are examined (MAX_DISPUTED_CHARGES), or more
- *   known disputes than are re-read (MAX_KNOWN_DISPUTES_REREAD): FAIL
- *   CLOSED. If nothing examined withholds access the standing is "open"
+ *   known disputes than are re-read (MAX_KNOWN_DISPUTES_REREAD) or even
+ *   loaded (`knownTruncated`): FAIL CLOSED. If nothing examined withholds access the standing is "open"
  *   with no dispute named, and `incomplete`. A customer like that needs a
  *   person; a comped account (`isLifetime`) is the override.
  */
 export async function readPaymentStanding(
   stripe: Stripe,
   subscription: Stripe.Subscription,
-  options: { known?: readonly KnownDispute[]; nowMs?: number; paymentIntentId?: string | null } = {},
+  options: {
+    known?: readonly KnownDispute[];
+    /** `known` is not the whole set: the subscription has more unfinished disputes than are read. */
+    knownTruncated?: boolean;
+    nowMs?: number;
+    paymentIntentId?: string | null;
+  } = {},
 ): Promise<StandingReading | null> {
   const customerId = stripeId(subscription.customer);
   if (!customerId) return null;
@@ -368,7 +374,8 @@ export async function readPaymentStanding(
   const refundedInvoiceId = refunded ? latestPaidInvoiceId : null;
 
   const disputes = all.map(({ disputeId, invoiceId, status }) => ({ disputeId, invoiceId, status }));
-  const notAllExamined = onCharges.unexamined || remembered.overflow;
+  const knownNotAllRead = remembered.overflow || options.knownTruncated === true;
+  const notAllExamined = onCharges.unexamined || knownNotAllRead;
   if (!deciding && notAllExamined) {
     return {
       disputes,
@@ -387,7 +394,7 @@ export async function readPaymentStanding(
       disputeInvoiceId: deciding?.invoiceId ?? null,
       disputeStatus: deciding?.status === "open" || deciding?.status === "lost" ? deciding.status : null,
       // What withholds access is definite whatever else there is.
-      incomplete: remembered.overflow || (!deciding && unreadWithinHorizon),
+      incomplete: knownNotAllRead || (!deciding && unreadWithinHorizon),
       refundedInvoiceId,
     },
   };
