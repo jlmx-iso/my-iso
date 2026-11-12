@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+    # labeled/unlabeled: the coverage guard reads the `coverage-exception`
+    # label, so adding or removing it re-runs the checks.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches:
       - main
@@ -55,6 +58,8 @@ jobs:
           # Always full: an expression like `cond && 0 || 1` evaluates to 1,
           # because 0 is falsy in Actions expressions.
           fetch-depth: 0
+          # No step pushes: do not leave the token in .git/config.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -90,6 +95,22 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run coverage:diff -- --base "origin/${{ github.base_ref }}" --threshold 90
 
+      # The bar only rises: fails if a threshold in coverage-thresholds.json
+      # is lowered or removed, or coverage.config.mjs excludes more, compared
+      # with the base branch. The `coverage-exception` label allows it
+      # (docs/TESTING.md).
+      - name: Coverage guard (thresholds and exclusions)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+          EXCEPTION: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-exception') }}
+        run: |
+          if [ "$EXCEPTION" = "true" ]; then
+            npm run coverage:guard -- --base "$BASE" --exception
+          else
+            npm run coverage:guard -- --base "$BASE"
+          fi
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -106,6 +127,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -155,6 +178,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -165,8 +190,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Chromium is cached per Playwright version; the system libraries it
+      # needs are installed on every run (they are not in the cache).
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
       - name: Install Chromium for Playwright
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Build Next.js and the Cloudflare Worker (OpenNext)
         run: npm run build:cf
