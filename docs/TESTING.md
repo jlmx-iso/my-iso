@@ -187,7 +187,8 @@ without the label; it compares the two JSON texts read through the API.
 `package.json` is guarded field by field, from its two JSON texts read the
 same way. A change that only touches dependency versions passes without the
 label: `dependencies`, `devDependencies`, `optionalDependencies`,
-`peerDependencies`, `overrides` and `engines` (node and npm only), each
+`peerDependencies`, `overrides`, `engines` (node and npm only) and
+`packageManager` (an exact `npm@x.y.z`), each
 version a registry range (`^1.2.3`, `>=26`, `1.0.0-beta.2`; in `overrides`
 also `$name`). Anything else needs the label: a change to `scripts`, a field
 added, removed or changed outside that list (`imports` or `type` can

@@ -133,6 +133,7 @@ describe("packageJsonOnlyDependencies", () => {
     devDependencies: { vitest: "^5.1.0" },
     engines: { node: ">=22" },
     name: "my-iso",
+    packageManager: "npm@10.9.9",
     overrides: { "@react-email/render": "$@react-email/render", glob: "^11.0.0" },
     scripts: { test: "vitest run", "test:coverage": "vitest run --coverage" },
     type: "module",
@@ -149,6 +150,7 @@ describe("packageJsonOnlyDependencies", () => {
           dependencies: { next: "^16.5.0", "new-lib": "~2.1", react: "19.3.2" },
           devDependencies: { vitest: ">=5.2.0 <6", "@types/node": "^26.1.0" },
           engines: { node: ">=26", npm: ">=11" },
+          packageManager: "npm@11.20.0",
           overrides: { "@react-email/render": "$@react-email/render", glob: "^13.0.0", "some-dep": { ".": "1.2.3-beta.4", inner: "^1 || ^2" } },
         }),
       ),
@@ -189,6 +191,9 @@ describe("packageJsonOnlyDependencies", () => {
     expect(packageJsonOnlyDependencies(base, withChange({ dependencies: ["next"] }))).toBe(false);
     expect(packageJsonOnlyDependencies(base, withChange({ engines: { node: ">=26", vscode: "^1" } }))).toBe(false);
     expect(packageJsonOnlyDependencies(base, withChange({ engines: ">=26" }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ packageManager: "yarn@4.1.0" }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ packageManager: "npm@11.20.0+sha512.abc" }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ packageManager: undefined }))).toBe(false);
   });
 
   it("refuses anything that is not a JSON object on either side", () => {

@@ -88,7 +88,8 @@ export function thresholdsOnlyRaised(baseText, headText) {
 
 /**
  * The package.json fields a pull request may change without the label:
- * the dependency lists and the Node/npm versions. Every other field (and a
+ * the dependency lists and the Node/npm versions (`engines`, and
+ * `packageManager` as long as it names an exact npm release). Every other field (and a
  * field added or removed) can change what the test commands run: `scripts`
  * most obviously, but also `imports` (it can redirect a module) or `type`.
  */
@@ -99,7 +100,10 @@ export const PACKAGE_JSON_DEPENDENCY_FIELDS = Object.freeze([
   "peerDependencies",
   "overrides",
   "engines",
+  "packageManager",
 ]);
+
+const NPM_RELEASE = /^npm@\d+\.\d+\.\d+$/;
 
 /**
  * A version range from the npm registry: "^1.2.3", "~4", ">=22",
@@ -153,6 +157,10 @@ export function packageJsonOnlyDependencies(baseText, headText) {
       if (same) continue;
       if (!PACKAGE_JSON_DEPENDENCY_FIELDS.includes(key) || !(key in head)) return false;
       const value = head[key];
+      if (key === "packageManager") {
+        if (typeof value !== "string" || !NPM_RELEASE.test(value)) return false;
+        continue;
+      }
       if (key === "engines") {
         if (!isObject(value)) return false;
         const names = Object.keys(value);
