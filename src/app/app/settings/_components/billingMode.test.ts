@@ -45,6 +45,7 @@ function modeOf(overrides: Partial<Subscription>) {
     plan: "standard",
     priceId: "price_standard_monthly",
     refundedInvoiceId: null,
+    standingSyncedAt: NOW,
     status: "active",
     stripeCreatedAt: inDays(-10),
     stripeCustomerId: "cus_1",

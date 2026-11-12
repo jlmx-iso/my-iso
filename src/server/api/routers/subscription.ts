@@ -117,26 +117,19 @@ export function toSubscriptionView(row: Subscription, now: Date): SubscriptionVi
 }
 
 /**
- * Stripe (or its configuration here) failed.
- *
- * `nothingCharged`: only for a failure to START checkout, where it is true
- * by construction (no session was created, so there was nothing to pay).
- * Everywhere else the message makes no claim about charges: a refresh, the
- * portal or a re-sync failing says nothing about what Stripe has or has not
- * collected.
+ * Stripe (or its configuration here) failed. The message makes NO claim
+ * about charges, on any path. Not even a failed checkout start can promise
+ * "you have not been charged": a session opened by an earlier request may
+ * still be payable (this request can fail before it has listed and closed
+ * the open ones), and a refresh, the portal or a re-sync failing says
+ * nothing about what Stripe has or has not collected.
  */
-function billingUnavailable(
-  message: string,
-  context: Record<string, unknown>,
-  options: { nothingCharged?: boolean } = {},
-): TRPCError {
+function billingUnavailable(message: string, context: Record<string, unknown>): TRPCError {
   reportBillingError(message, context);
   return reasonedError(
     "SERVICE_UNAVAILABLE",
     ErrorReason.BILLING_UNAVAILABLE,
-    options.nothingCharged
-      ? "Billing is temporarily unavailable. You have not been charged. Please try again in a few minutes."
-      : "Billing is temporarily unavailable. Please try again in a few minutes.",
+    "Billing is temporarily unavailable. Please try again in a few minutes.",
   );
 }
 
@@ -210,7 +203,6 @@ export const subscriptionRouter = createTRPCRouter({
             ? "Checkout is not available: a Stripe price id is not configured"
             : "Error creating Stripe checkout session",
           { error, userId },
-          { nothingCharged: true },
         );
       }
 

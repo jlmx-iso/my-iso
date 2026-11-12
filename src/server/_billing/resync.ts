@@ -36,18 +36,21 @@ import { MAX_READINGS, MAX_SUBSCRIPTION_PAGES, type BillingDb, type SyncOptions 
  *   MAX_READINGS readings, one to learn its customer, one for the customer;
  * - Stripe, the payment standing: MAX_STANDING_STRIPE_CALLS;
  * - D1: the lease (up to about eight attempts to take it, one to release),
- *   the guarded writes and the reads around them: under
- *   D1_STATEMENTS_PER_ROW.
+ *   the guarded writes and the reads around them, and one upsert per
+ *   dispute known for the subscription: under D1_STATEMENTS_PER_ROW.
  *
  * A row normally costs four or five Stripe requests and a dozen statements.
  */
 export const SUBREQUEST_BUDGET = 1000;
-export const D1_STATEMENTS_PER_ROW = 30;
+export const D1_STATEMENTS_PER_ROW = 50;
 export const MAX_STRIPE_CALLS_PER_ROW =
   2 * MAX_SUBSCRIPTION_PAGES * MAX_READINGS + (MAX_READINGS + 2) + MAX_STANDING_STRIPE_CALLS;
 export const MAX_SUBREQUESTS_PER_ROW = MAX_STRIPE_CALLS_PER_ROW + D1_STATEMENTS_PER_ROW;
 
-/** Rows per call: the most that fit in SUBREQUEST_BUDGET at the worst case per row, and no more than ten. */
+/**
+ * Rows per call: the most that fit in SUBREQUEST_BUDGET at the worst case
+ * per row, and no more than ten. (Eight, with the bounds as they are.)
+ */
 export const RESYNC_MAX_BATCH = Math.min(10, Math.floor(SUBREQUEST_BUDGET / MAX_SUBREQUESTS_PER_ROW));
 
 /**
@@ -55,7 +58,9 @@ export const RESYNC_MAX_BATCH = Math.min(10, Math.floor(SUBREQUEST_BUDGET / MAX_
  *
  * - "pending": rows that were never read from Stripe (`stripeSyncedAt` is
  *   null: back-filled by the migration, or created by the previous release
- *   while both were serving), and rows the previous release wrote to
+ *   while both were serving), rows whose payment standing has not been
+ *   derived completely and recorded (`standingSyncedAt` is null), and rows
+ *   the previous release wrote to
  *   during that overlap: legacy flags that disagree with `status`, a
  *   `subscriptionId` that is null, or an `expiresAt` that is null although
  *   the period end is known (this release always writes these together;
@@ -90,7 +95,16 @@ export function resyncScopeFilter(scope: ResyncScope): Prisma.SubscriptionWhereI
   return {
     AND: [
       hasSomethingAtStripe,
-      { OR: [{ stripeSyncedAt: null }, ...LEGACY_FLAGS_DISAGREE, ...WRITTEN_BY_PREVIOUS_RELEASE] },
+      {
+        OR: [
+          { stripeSyncedAt: null },
+          // Read from Stripe, but its payment standing never derived
+          // completely (the work was cut off, or the history was incomplete).
+          { standingSyncedAt: null },
+          ...LEGACY_FLAGS_DISAGREE,
+          ...WRITTEN_BY_PREVIOUS_RELEASE,
+        ],
+      },
     ],
   };
 }
@@ -105,12 +119,14 @@ export function rowNeedsFirstSync(row: {
   currentPeriodEnd: Date | null;
   expiresAt: Date | null;
   isLifetime: boolean;
+  standingSyncedAt: Date | null;
   stripeSyncedAt: Date | null;
   subscriptionId: string | null;
 }): boolean {
   if (row.isLifetime) return false;
   return (
     row.stripeSyncedAt === null ||
+    row.standingSyncedAt === null ||
     row.subscriptionId === null ||
     (row.expiresAt === null && row.currentPeriodEnd !== null)
   );

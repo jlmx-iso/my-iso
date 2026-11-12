@@ -261,10 +261,14 @@ The billing tables need no job. `StripeEvent` (webhook de-duplication, kept
 small share of the writes to each (`purgeOldStripeEvents` in
 `src/server/_billing/eventLog.ts`, `purgeExpiredLeases` in
 `src/server/_billing/lease.ts`); `purge-expired` deliberately leaves them
-alone. An expired lease or claim is never honoured, purged or not. Rows
-whose subscription state was never read from Stripe are brought up to date
-by the re-sync script and the lazy first sync ([BILLING.md](BILLING.md)),
-not by a scheduled job. Locally: `npx wrangler dev --test-scheduled`, then
+alone. An expired lease or claim is never honoured, purged or not.
+`SubscriptionDispute` is not housekeeping data: it is the record of the
+disputes known for a subscription, which the payment standing is derived
+from, and is never purged. Rows whose subscription state was never read
+from Stripe are brought up to date by the re-sync script and the lazy first
+sync ([BILLING.md](BILLING.md)), not by a scheduled job.
+
+To run the jobs locally: `npx wrangler dev --test-scheduled`, then
 `npm run jobs:local`.
 
 ## Rollback

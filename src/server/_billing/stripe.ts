@@ -145,10 +145,10 @@ let accessCheckClient: Stripe | null = null;
 /**
  * A Stripe client for work done inside someone's request with a small time
  * budget (the lazy first sync of a subscription row, ./lazySync.ts): each
- * call gives up after three seconds and is not retried. A sync that runs
- * past the request's budget is finished after the response (`waitUntil`,
- * at most 30 seconds on Workers); with these limits its handful of calls
- * fits in that, so it ends, and releases its lease, on its own.
+ * call gives up after three seconds and is not retried. The limit is per
+ * call, not for the sync: work handed to `waitUntil` usually finishes well
+ * inside the 30 seconds Workers allow, but is not guaranteed to. What
+ * makes a cut-off harmless is in ./lazySync.ts, not here.
  */
 export function getAccessCheckStripe(): Stripe {
   accessCheckClient ??= createStripeClient(

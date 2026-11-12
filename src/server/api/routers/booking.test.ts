@@ -267,7 +267,7 @@ describe("booking state machine", () => {
         const { booking, event } = await applied();
         await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
         const accept = await rivalIsAccepted(event.id);
-        const racing = asWithInterference(applicant, (model) => model === "booking.updateMany", accept);
+        const racing = asWithInterference(applicant, isTheReopen, accept);
 
         const error = await errorOf(racing.applyToEvent({ eventId: event.id, notes: "Back again" }));
 
@@ -277,6 +277,90 @@ describe("booking state machine", () => {
           notes: booking.notes,
           status: "canceled",
         });
+      });
+
+      /** A database on which, once `isTheWrite` has run, every read of bookings and users fails. */
+      function readsFailAfter(isTheWrite: (model: string, args: unknown[]) => boolean) {
+        let written = false;
+        const failing = <T extends object>(model: T, name: string): T =>
+          new Proxy(model, {
+            get(target, method) {
+              const original = Reflect.get(target, method) as unknown;
+              if (typeof original !== "function") return original;
+              return async (...args: unknown[]) => {
+                if (written && String(method).startsWith("find")) throw new Error("database unavailable");
+                const result: unknown = await (original as (...rest: unknown[]) => Promise<unknown>).apply(target, args);
+                if (isTheWrite(`${name}.${String(method)}`, args)) written = true;
+                return result;
+              };
+            },
+          });
+        return new Proxy(testDb.db, {
+          get(target, property) {
+            if (property === "$queryRaw") {
+              return async (...args: unknown[]) => {
+                const result = await (target.$queryRaw as (...rest: unknown[]) => Promise<unknown>)(...args);
+                if (isTheWrite("$queryRaw", args)) written = true;
+                return result;
+              };
+            }
+            if (property === "booking") return failing(target.booking, "booking");
+            if (property === "user") return failing(target.user, "user");
+            return Reflect.get(target, property) as unknown;
+          },
+        });
+      }
+
+      it("a first application that is committed is answered and notified even if nothing can be read afterwards", async () => {
+        const event = await createEvent();
+        const db = readsFailAfter((model, args) => model === "$queryRaw" && sqlOf(args).includes('INSERT INTO "Booking"'));
+        const before = Date.now();
+
+        const booking = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Hello", rate: "$300" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { eventId_applicantId: { applicantId: applicant.id, eventId: event.id } } });
+        expect(booking).toEqual(stored);
+        expect(booking).toMatchObject({ cancelOrigin: null, isDeleted: false, notes: "Hello", ownerId: owner.id, ownerNotes: null, rate: "$300", status: "applied" });
+        expect(booking.createdAt.getTime()).toBeGreaterThanOrEqual(before - 1);
+        const notes = (await notificationsFor(owner)).filter((note) => note.title === "New application");
+        expect(notes).toHaveLength(1);
+        // With the applicant's name, which was read before the write.
+        expect(notes[0]?.body).not.toMatch(/undefined|Someone applied/);
+      });
+
+      it("a re-application that is committed is answered and notified even if nothing can be read afterwards", async () => {
+        const { booking, event } = await applied();
+        await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+        await testDb.raw.booking.update({ data: { ownerNotes: "Kept for my records" }, where: { id: booking.id } });
+        const db = readsFailAfter(isTheReopen);
+
+        const again = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Back again", rate: "$350" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } });
+        expect(again).toEqual(stored);
+        expect(again).toMatchObject({ cancelOrigin: null, notes: "Back again", ownerNotes: "Kept for my records", rate: "$350", status: "applied" });
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(2);
+      });
+
+      const isTheReopen = (model: string, args: unknown[]) =>
+        model === "booking.updateMany" || (model === "$queryRaw" && sqlOf(args).includes('UPDATE "Booking"'));
+
+      it("a booking created and withdrawn by another request just before the re-open is re-applied, answered and notified, not refused as already applied", async () => {
+        const event = await createEvent();
+        // This request starts with no booking on record. Before its write,
+        // another request of the same applicant applies and withdraws.
+        const racing = asWithInterference(applicant, isTheReopen, async () => {
+          const other = await as(applicant).applyToEvent({ eventId: event.id, notes: "first try" });
+          await as(applicant).updateStatus({ bookingId: other.id, status: "canceled" });
+        });
+
+        const booking = await racing.applyToEvent({ eventId: event.id, notes: "second try", rate: "$200" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { eventId_applicantId: { applicantId: applicant.id, eventId: event.id } } });
+        expect(booking).toEqual(stored);
+        expect(booking).toMatchObject({ cancelOrigin: null, notes: "second try", ownerId: owner.id, rate: "$200", status: "applied" });
+        // One notification for the other request's application, one for this re-application.
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(2);
       });
 
       it("a second application of the same person is still a conflict, not 'filled'", async () => {

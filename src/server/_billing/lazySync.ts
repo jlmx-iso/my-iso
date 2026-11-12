@@ -34,8 +34,12 @@ import type { BillingDb, SyncOptions } from "./subscriptionStore";
  *   lease: it is handed to `waitUntil` (runAfterResponse), which lets it
  *   finish after the response, and the Stripe client it uses gives up on
  *   each call after three seconds without retrying
- *   (getAccessCheckStripe), so it ends, and releases the lease, well
- *   inside the 30 seconds Workers allow.
+ *   (getAccessCheckStripe). That limit is per call: a sync is normally
+ *   five or six calls, but a derivation can make many more in sequence and
+ *   so can still be cut off at the 30 seconds Workers allow. A row is
+ *   settled only when its standing has been recorded (`standingSyncedAt`),
+ *   so work cut off before or after the subscription write leaves a row
+ *   that still qualifies and is tried again; the lease it held expires.
  * - It is attempted at most once per LAZY_SYNC_RETRY_SECONDS per row,
  *   across all isolates (a claim in BillingLease). After ANY answer from
  *   Stripe that leaves the row still qualifying (nothing at Stripe for it,

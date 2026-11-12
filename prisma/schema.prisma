@@ -90,6 +90,10 @@ model Subscription {
   disputeInvoiceId   String?
   // The latest invoice, when its payment was refunded in full (same source).
   refundedInvoiceId  String?
+  // When the payment standing was last derived completely and recorded.
+  // Null: never, or the last derivation was incomplete. A row is settled
+  // only when both this and stripeSyncedAt are set.
+  standingSyncedAt   DateTime?
   // A comped account: Pro without a Stripe subscription. Set by hand.
   isLifetime         Boolean
 
@@ -105,6 +109,25 @@ model Subscription {
   isExpired          Boolean
   expiresAt          DateTime?
   user               User      @relation(fields: userId, references: id, onDelete: Cascade)
+}
+
+// Every dispute (chargeback or inquiry) the app has learned of, by Stripe
+// subscription id (sub_...). Never deleted: a dispute that is not finished
+// is re-read from Stripe by its id whenever the payment standing is derived,
+// so one on a charge too old for the charge listing cannot be forgotten.
+// `status`: "open" | "inquiry" | "lost" | "superseded" | "cleared" (see
+// src/server/_billing/paymentStanding.ts). The disputeId/disputeStatus/
+// disputeInvoiceId columns on Subscription are the summary derived from
+// this set, so that an access check needs no join.
+model SubscriptionDispute {
+  disputeId      String   @id
+  subscriptionId String
+  // The invoice the disputed charge paid.
+  invoiceId      String
+  status         String
+  updatedAt      DateTime
+
+  @@index([subscriptionId, status])
 }
 
 // Stripe webhook events this app has taken on (see

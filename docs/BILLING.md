@@ -9,7 +9,7 @@ access from that mirror.
 | Access rules (the one place state becomes access) | `src/server/_billing/entitlements.ts` |
 | Stripe subscription → stored state; which of several subscriptions counts | `src/server/_billing/subscriptionState.ts` |
 | Reading from Stripe and the guarded writes | `src/server/_billing/subscriptionStore.ts` |
-| Disputes and refunds, derived from Stripe | `src/server/_billing/paymentStanding.ts` |
+| Disputes and refunds, derived from Stripe; the set of known disputes | `src/server/_billing/paymentStanding.ts`, table `SubscriptionDispute` |
 | Leases (one sequence per customer / per user at a time) | `src/server/_billing/lease.ts` |
 | First sync of a legacy row on an access check | `src/server/_billing/lazySync.ts` |
 | Webhook (events, status codes) and its HTTP shell | `src/server/_billing/webhook.ts`, `webhookRequest.ts`, `src/app/webhooks/stripe/route.ts` |
@@ -117,8 +117,38 @@ The rules behind the columns the status alone does not explain:
   at once are both seen, and winning one does not hide the other; and
   nothing depends on which event was handled last. `subscription.syncStatus`
   derives it too, so a customer can put a stale standing right from the
-  settings page if an event is late. One derivation is bounded (at most 16
-  Stripe requests), and neither bound keeps the previous standing:
+  settings page if an event is late.
+- **Every dispute is remembered until Stripe says it is over**
+  (table `SubscriptionDispute`, keyed by dispute id, per Stripe
+  subscription). Whatever a derivation learns of, from an event's own
+  charge or from the listing, is upserted there (one statement each, under
+  the customer's lease) and never deleted. Its `status` is `open`,
+  `inquiry` (no money taken yet; can still become a chargeback), `lost`,
+  `superseded` (lost, and a later invoice has been paid for) or `cleared`
+  (won, withdrawn, closed, or gone at Stripe). A dispute that is `open` or
+  `inquiry` is **re-read from Stripe by its id in every derivation**; a
+  `lost` one is final at Stripe and is carried until superseded. The
+  standing is the worst across all of them: any `open` withholds access;
+  otherwise a `lost` one on the most recent invoice paid for does. So a
+  dispute stops withholding only on a direct read of that dispute, never
+  because a later derivation could not see its charge, and it makes no
+  difference how many disputes there are, in which order they open and
+  close, or which event triggers the derivation (an invoice event, another
+  dispute, the re-sync, the manual refresh). `disputeId`, `disputeStatus`
+  and `disputeInvoiceId` on `Subscription` are the summary of that set,
+  written with each derivation, so an access check needs no join.
+  The refund marker needs no memory: the charges that paid the latest
+  invoice are read directly when the listing does not hold them (for up to
+  two of its payments). "Refunded in full" is concluded only from **all**
+  of the invoice's paid payments: if one is left whose charge could not be
+  read, the marker is left as stored and the standing is incomplete.
+- **One derivation is bounded** (at most 28 Stripe requests), and a bound
+  that is hit withholds access or reports the row; it never restores
+  access that a complete reading would withhold:
+  - **More than ten known disputes still unfinished**: ten are re-read; the
+    others keep their stored status, so an open one still withholds, and
+    the row is reported (`standing_incomplete`). They are read the next
+    time.
   - **More than 300 charges** on the customer: the standing is derived from
     the newest 300 **plus the charge a dispute or refund event is about**,
     which is read directly by its payment intent whatever its age. So for
@@ -133,10 +163,18 @@ The rules behind the columns the status alone does not explain:
     access, that is the standing. If none does, the others were not looked
     at and may be open, so it **fails closed**: `disputeStatus` is `open`
     with no `disputeId`, access is withheld, and the row is reported as
-    above for a person to review. It lifts by itself when the disputed
-    charges age past two years; until then the override is a comped
-    account (`isLifetime`). Disputed charges older than two years are
-    history and are ignored.
+    above for a person to review. Those disputes have no ids on record, so
+    the hold itself is remembered: a marker row in `SubscriptionDispute`
+    (`unexamined:<subscription id>`, status `unexamined`). It is lifted
+    only by a derivation in which both of these hold: no disputed charge
+    within the two-year horizon that the listing shows is left unexamined,
+    and every charge the listing did **not** read is older than that
+    horizon. A truncated listing therefore counts as complete for this
+    purpose exactly when its unread part is too old to carry a live
+    dispute; the whole history need not fit. A later derivation that merely
+    no longer sees those charges while charges within the horizon are
+    unread (newer ones have pushed them out of the newest 300) keeps the
+    hold. Until it lifts, the override is a comped account (`isLifetime`).
 - **Disputes.** A chargeback suspends access at once, whatever the
   subscription's status and whichever of its invoices the charge paid, until
   it is closed. Won (or withdrawn, or prevented): access returns. Lost, on
@@ -210,8 +248,8 @@ plan's size limit). What the billing code assumes from it:
 
 | Limit | Value | Where it matters |
 | --- | --- | --- |
-| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 51 Stripe requests and 30 statements, so `RESYNC_MAX_BATCH` is 10. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 16 for the payment standing. The Free plan would not carry a batch. |
-| Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget finishes there; its Stripe calls are limited to 3 seconds each for that reason. |
+| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 63 Stripe requests and 50 statements, so `RESYNC_MAX_BATCH` is 8. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 28 for the payment standing. The Free plan would not carry a batch. |
+| Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget continues there. Its Stripe calls are limited to 3 seconds each, so it usually finishes, but that is per call and not guaranteed: if it is cut off, the row is still not settled and is tried again (see "Lazy first sync"). |
 
 If `limits.subrequests` is ever set below 1,000, lower `SUBREQUEST_BUDGET`
 with it; the batch size follows (a test holds the arithmetic).
@@ -354,7 +392,9 @@ recognisably in need of repair.
 
 ### Lazy first sync
 
-A row that has never been read from Stripe (`stripeSyncedAt IS NULL`), or
+A row that has never been read from Stripe (`stripeSyncedAt IS NULL`),
+whose payment standing has never been derived completely and recorded
+(`standingSyncedAt IS NULL`), or
 that lost its `subscriptionId` / `expiresAt` in the cutover window, is read
 from Stripe the first time access is decided on it (`proProcedure`,
 `subscription.getStatus`): `loadSubscriptionForAccess` in `lazySync.ts`.
@@ -375,9 +415,32 @@ The rule:
   customer's lease (which would make that customer's webhooks answer 409
   until the lease expired). It is handed to `waitUntil`
   (`runAfterResponse`), and it uses a Stripe client whose calls give up
-  after 3 seconds without retrying (`getAccessCheckStripe`), so it finishes
-  and releases the lease well inside the 30 seconds Workers allow after a
-  response. If the isolate dies anyway, the lease expires after 90 seconds.
+  after 3 seconds without retrying (`getAccessCheckStripe`). That limit is
+  **per call**, not for the sync: a sync normally makes five or six calls
+  and finishes in a second or two, but a derivation may make up to 28 in
+  sequence, so against a slow Stripe it can outlast the 30 seconds Workers
+  allow after a response and be cut off. Nothing is lost when that
+  happens, because a row counts as settled only once its payment standing
+  has been derived completely and recorded (`standingSyncedAt`, written
+  with the standing, not with the subscription). A subscription write
+  withdraws it again in two cases: always, when the same sync is about to
+  derive the standing (the lazy sync, the re-sync, the manual refresh, and
+  invoice, dispute and refund events), so that a cut-off in between never
+  leaves an earlier derivation vouching for the row; and, for a write that
+  no derivation follows (subscription and checkout events), when it changes
+  `status`, `latestInvoiceId` or `paidThroughAt`, which are what a standing
+  is derived against. A no-op subscription event leaves it alone. So:
+  - cut **before** the subscription write: the row is as it was, and is
+    tried again when the claim expires (10 minutes);
+  - cut **after** the subscription write but before the standing is
+    recorded: `stripeSyncedAt` is set, `standingSyncedAt` is not, so the
+    row still qualifies. The lazy sync picks it up again after the same 10
+    minutes and the re-sync's default scope selects it.
+
+  In both cases the customer's lease is not released by the cut-off work;
+  it expires after 90 seconds. Making the sync finish inside the window
+  (fewer or parallel reads) is a possible follow-up, not something this
+  relies on.
 - It is attempted at most once per 10 minutes per row, across all isolates
   (a claim in `BillingLease`, key `first-sync:<Subscription id>`). After
   **any** answer from Stripe that leaves the row still qualifying (nothing
@@ -398,13 +461,17 @@ RESYNC_COOKIE='<session cookie of a founder or ambassador>' \
 ```
 
 The script calls the admin procedure `subscription.resyncFromStripe` in
-batches of up to 10 rows until nothing is left, and prints the outcome of
+batches of up to 8 rows (`RESYNC_MAX_BATCH`; the script lets the server choose unless `--limit` is given) until nothing is left, and prints the outcome of
 each batch. It can be interrupted and run again at any time: each row is
 brought up to date by the same idempotent sync the webhook uses, and a row
 that fails (Stripe unavailable) is counted, skipped, and picked up by the
 next run. Each row's payment standing (disputes, refunds) is derived along
 with it. The default scope, `pending`, covers rows that were never read
-from Stripe (`stripeSyncedAt IS NULL`), rows whose legacy flags contradict
+from Stripe (`stripeSyncedAt IS NULL`), rows whose payment standing was
+never derived completely and recorded (`standingSyncedAt IS NULL`: a sync
+that was cut off, or an incomplete history, which keeps the row in scope
+and the script at exit 3 until a derivation completes), rows whose legacy
+flags contradict
 their `status`, and rows with a null `subscriptionId` or a null `expiresAt`
 next to a known period end (all three written by the previous release
 during the overlap); `--scope all` revisits every row with a Stripe

@@ -31,6 +31,10 @@ ALTER TABLE "Subscription" ADD COLUMN "disputeId" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "disputeStatus" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "disputeInvoiceId" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "refundedInvoiceId" TEXT;
+-- When the payment standing above was last derived COMPLETELY and recorded.
+-- NULL: never, or the last derivation was incomplete; such a row is not
+-- settled (the re-sync's default scope and the lazy sync select it).
+ALTER TABLE "Subscription" ADD COLUMN "standingSyncedAt" DATETIME;
 
 -- Back-fill from the legacy flags, as well as they can express it. Rows that
 -- belong to a Stripe subscription are corrected from Stripe by the next
@@ -60,6 +64,19 @@ UPDATE "Subscription" SET "stripeCustomerId" =
 -- ── Booking: how it was cancelled ───────────────────────────────────────────
 -- Existing canceled rows keep NULL (unknown), which never allows re-applying.
 ALTER TABLE "Booking" ADD COLUMN "cancelOrigin" TEXT;
+
+-- ── Every dispute the app has learned of, per Stripe subscription ──────────
+-- A dispute is never removed; one that is not finished is re-read from
+-- Stripe by its id whenever the subscription's payment standing is derived
+-- (src/server/_billing/paymentStanding.ts).
+CREATE TABLE "SubscriptionDispute" (
+    "disputeId" TEXT NOT NULL PRIMARY KEY,
+    "subscriptionId" TEXT NOT NULL,
+    "invoiceId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "updatedAt" DATETIME NOT NULL
+);
+CREATE INDEX "SubscriptionDispute_subscriptionId_status_idx" ON "SubscriptionDispute"("subscriptionId", "status");
 
 -- ── Leases that serialise billing work per user ─────────────────────────────
 CREATE TABLE "BillingLease" (

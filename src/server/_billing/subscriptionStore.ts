@@ -7,7 +7,11 @@ import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 
 import { isSubscriptionStatus, isTerminalStatus, TERMINAL_STATUSES } from "./entitlements";
 import { LeaseLostError, withLease, type LeaseDb, type LeaseHandle, type LeaseOptions } from "./lease";
-import { readPaymentStanding, type PaymentStanding } from "./paymentStanding";
+import {
+  readPaymentStanding,
+  type KnownDispute,
+  type PaymentStanding,
+} from "./paymentStanding";
 import { reportBillingError } from "./report";
 import { isStripeResourceMissing, stripeResponseTime } from "./stripe";
 import {
@@ -34,7 +38,7 @@ import {
  * that outlives its lease.
  */
 
-export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "user"> & LeaseDb;
+export type BillingDb = Pick<ExtendedPrismaClient, "subscription" | "subscriptionDispute" | "user"> & LeaseDb;
 
 /**
  * The legacy boolean columns, derived from the status. The previous release
@@ -91,6 +95,8 @@ const NO_PAYMENT_MARKERS = {
   disputeInvoiceId: null,
   disputeStatus: null,
   refundedInvoiceId: null,
+  // The standing of the subscription the row now shows has not been derived.
+  standingSyncedAt: null,
 } as const;
 
 type WriteVariant = { data: Prisma.SubscriptionUpdateManyMutationInput; where: Where };
@@ -122,6 +128,7 @@ function writeVariants(
   state: SubscriptionState,
   pastDueAnchor: Date,
   authoritative: boolean,
+  standingFollows: boolean,
 ): WriteVariant[] {
   const row = { ...state, ...legacyFlags(state) };
   const sameSubscription: Where = {
@@ -142,10 +149,13 @@ function writeVariants(
       : [];
 
   if (state.status !== "past_due") {
-    return [{ data: { ...row, pastDueSince: null }, where: sameSubscription }, ...replaceOther(null)];
+    return [
+      ...keepingSettledIfUnchanged(state, standingFollows, { data: { ...row, pastDueSince: null }, where: sameSubscription }),
+      ...replaceOther(null),
+    ];
   }
   return [
-    {
+    ...keepingSettledIfUnchanged(state, standingFollows, {
       data: row,
       where: {
         AND: [
@@ -153,10 +163,50 @@ function writeVariants(
           { pastDueSince: { not: null }, status: "past_due", subscriptionId: state.subscriptionId },
         ],
       },
-    },
-    { data: { ...row, pastDueSince: pastDueAnchor }, where: sameSubscription },
+    }),
+    ...keepingSettledIfUnchanged(state, standingFollows, { data: { ...row, pastDueSince: pastDueAnchor }, where: sameSubscription }),
     ...replaceOther(pastDueAnchor),
   ];
+}
+
+/**
+ * A same-subscription write, split in two so that `standingSyncedAt` (the
+ * row is settled: its payment standing was derived completely, see
+ * writePaymentStanding) follows the state it was derived for:
+ *
+ * (When the caller is about to derive the standing itself, `standingFollows`,
+ * the write always withdraws "settled" and the standing write restores it.)
+ * For a write that is NOT followed by a derivation (subscription and
+ * checkout events):
+ *
+ * 1. when the reading leaves `status`, `latestInvoiceId` and
+ *    `paidThroughAt` as stored, the row is written as before and stays
+ *    settled. This is every no-op delivery, and most real ones (a changed
+ *    cancellation date, period or price does not change the standing);
+ * 2. otherwise the same write also clears `standingSyncedAt`. Those three
+ *    are what the standing is derived against (which invoice is the latest,
+ *    whether it is paid, what the subscription's status makes of a refund
+ *    or a loss), so a standing derived before they changed no longer
+ *    vouches for the row. The dispute and refund markers themselves are
+ *    left as they are; only "settled" is withdrawn, until a derivation has
+ *    completed for the new state. If that derivation is cut off or fails,
+ *    the re-sync's default scope and the lazy sync still select the row.
+ */
+function keepingSettledIfUnchanged(
+  state: SubscriptionState,
+  standingFollows: boolean,
+  variant: WriteVariant,
+): WriteVariant[] {
+  const unsettling: WriteVariant = { data: { ...variant.data, standingSyncedAt: null }, where: variant.where };
+  // The caller derives the standing next and settles the row with it: until
+  // then it is not settled, changed or not (see applySubscriptionState).
+  if (standingFollows) return [unsettling];
+  const standingBasisUnchanged: Where = {
+    latestInvoiceId: state.latestInvoiceId,
+    paidThroughAt: state.paidThroughAt,
+    status: state.status,
+  };
+  return [{ data: variant.data, where: { AND: [variant.where, standingBasisUnchanged] } }, unsettling];
 }
 
 export type ApplyOutcome =
@@ -187,7 +237,18 @@ export async function applySubscriptionState(
   db: BillingDb,
   userId: string,
   state: SubscriptionState,
-  options: { authoritative?: boolean; pastDueAnchor?: Date } = {},
+  options: {
+    authoritative?: boolean;
+    pastDueAnchor?: Date;
+    /**
+     * The caller derives the payment standing right after this write. The
+     * write then always withdraws "settled" (`standingSyncedAt`), and the
+     * standing write gives it back when it has completed: if the work stops
+     * in between, the row does not pass for settled on an earlier
+     * derivation.
+     */
+    standingFollows?: boolean;
+  } = {},
 ): Promise<ApplyOutcome> {
   if (!isSubscriptionStatus(state.status)) {
     // Stored verbatim and treated as "no access, manage in the portal"
@@ -200,7 +261,12 @@ export async function applySubscriptionState(
   }
 
   const pastDueAnchor = options.pastDueAnchor ?? state.stripeSyncedAt;
-  const variants = writeVariants(state, pastDueAnchor, options.authoritative ?? false);
+  const variants = writeVariants(
+    state,
+    pastDueAnchor,
+    options.authoritative ?? false,
+    options.standingFollows ?? false,
+  );
   const update = async (): Promise<boolean> => {
     for (const { data, where } of variants) {
       const result = await db.subscription.updateMany({ data, where: { AND: [{ userId }, where] } });
@@ -249,7 +315,14 @@ export async function applySubscriptionState(
  * to still hold the customer's lease: a holder that ran past its lease
  * cannot put an older standing over the one its successor derived.
  *
- * - "recorded": stored.
+ * - "recorded": stored. `standingSyncedAt` is set in the same statement
+ *   when the derivation was complete, and cleared when it was not: it is
+ *   what says the row is settled (rowNeedsFirstSync, the re-sync's default
+ *   scope). It is deliberately NOT written with the subscription state
+ *   (`stripeSyncedAt`, which orders readings): work that is cut off after
+ *   the state write and before this one leaves a row that is visibly not
+ *   settled and is picked up again, and an incomplete derivation keeps the
+ *   row in scope until one completes.
  * - "not_tracked": the user's row shows another subscription (or there is
  *   no row).
  *
@@ -266,7 +339,8 @@ export async function writePaymentStanding(
       "disputeId" = ${standing.disputeId},
       "disputeStatus" = ${standing.disputeStatus},
       "disputeInvoiceId" = ${standing.disputeInvoiceId},
-      "refundedInvoiceId" = ${standing.refundedInvoiceId}
+      "refundedInvoiceId" = ${standing.refundedInvoiceId},
+      "standingSyncedAt" = ${standing.incomplete ? null : new Date()}
     WHERE "subscriptionId" = ${subscriptionId} AND ${lease.heldCondition()}`);
   if (written > 0) return "recorded";
   if ((await db.subscription.count({ where: { subscriptionId } })) === 0) return "not_tracked";
@@ -483,6 +557,41 @@ type SingleReading = { outcome: ApplyOutcome; state: SubscriptionState; userId: 
 /** The subscription is on a customer other than the one whose lease is held. */
 type OtherCustomer = { customerId: string; outcome: "other_customer" };
 
+/**
+ * Unfinished disputes of one subscription read per derivation. More than
+ * this is detected (see storePaymentStanding) and fails closed.
+ */
+export const KNOWN_DISPUTES_READ = 50;
+
+const isKnownDisputeStatus = (status: string): status is KnownDispute["status"] =>
+  ["open", "inquiry", "lost", "superseded", "cleared", "unexamined"].includes(status);
+
+/**
+ * Upserts one dispute into SubscriptionDispute, in ONE statement that also
+ * requires the customer's lease to be held (a holder that outlived its
+ * lease writes nothing). A dispute is never removed, and one that is
+ * finished is not looked at again; "superseded" is not undone by the same
+ * lost dispute being seen once more on a listing.
+ */
+async function rememberDispute(
+  db: BillingDb,
+  lease: LeaseHandle,
+  subscriptionId: string,
+  dispute: KnownDispute,
+): Promise<void> {
+  const now = new Date();
+  await db.$executeRaw(Prisma.sql`
+    INSERT INTO "SubscriptionDispute" ("disputeId", "subscriptionId", "invoiceId", "status", "updatedAt")
+    SELECT ${dispute.disputeId}, ${subscriptionId}, ${dispute.invoiceId}, ${dispute.status}, ${now}
+    WHERE ${lease.heldCondition()}
+    ON CONFLICT ("disputeId") DO UPDATE SET
+      "status" = CASE
+        WHEN "SubscriptionDispute"."status" = 'superseded' AND excluded."status" = 'lost' THEN 'superseded'
+        ELSE excluded."status"
+      END,
+      "updatedAt" = excluded."updatedAt"`);
+}
+
 /** Derives the standing of `subscription` from Stripe and stores it; null when not stored. */
 async function storePaymentStanding(
   db: BillingDb,
@@ -491,8 +600,40 @@ async function storePaymentStanding(
   subscription: Stripe.Subscription,
   paymentIntentId: string | null = null,
 ): Promise<PaymentStanding | null> {
-  const standing = await readPaymentStanding(stripe, subscription, { paymentIntentId });
-  if (!standing) return null;
+  // Every dispute known for the subscription that is not finished. Read
+  // under the lease, which is what serialises it with the writes below.
+  // Those that can withhold access or still change (open, inquiry) are
+  // read first, so that they are never the ones a limit cuts; then the lost
+  // ones. One row more than the limit is asked for: if it is there, the set
+  // was not read whole, and the derivation is told so (it fails closed).
+  const knownOf = (statuses: string[], take: number) =>
+    take <= 0
+      ? Promise.resolve([])
+      : db.subscriptionDispute.findMany({
+          orderBy: [{ updatedAt: "desc" }, { disputeId: "asc" }],
+          select: { disputeId: true, invoiceId: true, status: true },
+          take,
+          where: { status: { in: statuses }, subscriptionId: subscription.id },
+        });
+  const live = await knownOf(["open", "inquiry", "unexamined"], KNOWN_DISPUTES_READ + 1);
+  const lost = await knownOf(["lost"], KNOWN_DISPUTES_READ + 1 - live.length);
+  const rows = [...live, ...lost];
+  const known = rows.slice(0, KNOWN_DISPUTES_READ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
+  const storedRow = await db.subscription.findFirst({
+    select: { refundedInvoiceId: true },
+    where: { subscriptionId: subscription.id },
+  });
+  const reading = await readPaymentStanding(stripe, subscription, {
+    known,
+    knownTruncated: rows.length > KNOWN_DISPUTES_READ,
+    paymentIntentId,
+    storedRefundedInvoiceId: storedRow?.refundedInvoiceId ?? null,
+  });
+  if (!reading) return null;
+  const { standing } = reading;
+  // Remember every dispute this derivation knows of, as it is now. Each is
+  // one statement that also requires the lease to be held still.
+  for (const dispute of reading.disputes) await rememberDispute(db, lease, subscription.id, dispute);
   const written = await writePaymentStanding(db, lease, subscription.id, standing);
   if (written !== "recorded") return null;
   if (standing.incomplete) {
@@ -545,6 +686,7 @@ async function syncSubscriptionLocked(
       const state = subscriptionStateFromStripe(subscription, stripeResponseTime(subscription, requestedAt));
       const outcome = await applySubscriptionState(db, userId, state, {
         pastDueAnchor: pastDueAnchorOf(subscription, state.stripeSyncedAt),
+        standingFollows: options.standing === true,
       });
       read.subscription = subscription;
       return { outcome, state, userId };
@@ -572,14 +714,18 @@ async function syncSubscriptionLocked(
       });
       return { outcome: "stale", state, userId };
     }
-    const reconciled = await syncUserLocked(db, stripe, lease, userId, state.stripeCustomerId, {
-      ...options,
-      standing: false,
-    });
+    // With the standing of whichever subscription the list makes primary
+    // (the row's markers are cleared when it switches): derived there, for
+    // that subscription, with the event's payment only if it is this one.
+    const reconciled = await syncUserLocked(db, stripe, lease, userId, state.stripeCustomerId, options, subscriptionId);
     const shown =
       (reconciled.outcome === "applied" || reconciled.outcome === "stale") &&
       reconciled.state.subscriptionId === subscriptionId;
-    outcome = shown ? "applied" : "stale";
+    if (!options.standing) return { outcome: shown ? "applied" : "stale", state, userId };
+    // What is returned is THIS subscription's standing: the primary's when
+    // this is the primary, none when the row shows another.
+    const standing = shown && "standing" in reconciled ? (reconciled.standing ?? null) : null;
+    return { outcome: shown ? "applied" : "stale", standing, state, userId };
   }
 
   if (!options.standing || !read.subscription) return { outcome, state, userId };
@@ -729,6 +875,8 @@ async function syncUserLocked(
   userId: string,
   customer: string,
   options: SyncOptions,
+  /** The subscription `options.standingPaymentIntentId` belongs to, when there is one. */
+  eventSubscriptionId?: string,
 ): Promise<UserSyncResult> {
   type Reading = {
     hasLiveSubscription: boolean;
@@ -779,6 +927,7 @@ async function syncUserLocked(
       const outcome = await applySubscriptionState(db, userId, state, {
         authoritative: true,
         pastDueAnchor: pastDueAnchorOf(primary, syncedAt),
+        standingFollows: options.standing === true,
       });
       return { hasLiveSubscription: live.length > 0, outcome, primary, state } satisfies Reading;
     },
@@ -786,7 +935,11 @@ async function syncUserLocked(
     options,
   );
   if (!isReading(result)) return result;
-  const standing = options.standing ? await storePaymentStanding(db, stripe, lease, result.primary) : undefined;
+  const paymentIntentId =
+    eventSubscriptionId === result.primary.id ? (options.standingPaymentIntentId ?? null) : null;
+  const standing = options.standing
+    ? await storePaymentStanding(db, stripe, lease, result.primary, paymentIntentId)
+    : undefined;
   return {
     hasLiveSubscription: result.hasLiveSubscription,
     ...(options.standing ? { standing } : {}),

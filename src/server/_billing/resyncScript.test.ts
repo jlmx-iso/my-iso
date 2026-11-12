@@ -80,6 +80,16 @@ describe("scripts/billing-resync.mjs", () => {
     expect(result.output).toContain("Subscription row_9: unknown_customer");
   });
 
+  it("exits 3 for a row that was applied but whose payment standing is incomplete, on every run until it is settled", async () => {
+    const batch = { nextCursor: null, outcomes: { applied: 1 }, processed: 1, unresolved: [{ id: "row_4", outcome: "standing_incomplete" as const }] };
+
+    for (const run of [1, 2]) {
+      const result = await runAgainst([batch]);
+      expect([run, result.code]).toEqual([run, 3]);
+      expect(result.output).toContain("Subscription row_4: standing_incomplete");
+    }
+  });
+
   it("exits 1 when a batch cannot be run", async () => {
     expect((await runAgainst([])).code).toBe(1);
   });

@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type Booking } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -272,11 +272,6 @@ export const bookingRouter = createTRPCRouter({
       // between this read and that write while someone else is accepted.
       if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
 
-      const applicationKey = { applicantId: userId, eventId: input.eventId };
-      const slotIsOpen = {
-        bookings: { none: { isDeleted: false, status: { in: [...SLOT_HOLDING_STATUSES] } } },
-        isDeleted: false,
-      };
 
       // Someone who WITHDREW their application may apply again: the same
       // row goes back to "applied" (one conditional statement, so a double
@@ -289,36 +284,91 @@ export const bookingRouter = createTRPCRouter({
       // by (newest first) and the card shows. A new application must stand
       // among the new ones, where the owner who has just been notified
       // looks for it, not where the withdrawn one was months ago.
-      const reapplied = await ctx.db.booking.updateMany({
-        data: {
-          cancelOrigin: null,
-          createdAt: new Date(),
-          notes: input.notes ?? null,
-          rate: input.rate ?? null,
-          status: "applied",
-        },
-        where: {
-          ...applicationKey,
-          cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
-          event: slotIsOpen,
-          isDeleted: false,
-          status: "canceled",
-        },
+      //
+      // The applicant's name, for the owner's notification, is read BEFORE
+      // the write. Once a write has committed nothing is read again: a read
+      // that failed then would report a failure for an application that
+      // exists. And which path was taken is decided by what the write
+      // itself RETURNS, never by an earlier read: another request of the
+      // same applicant can create and withdraw the booking in between, and
+      // a row this statement re-opened must be answered as re-opened.
+      const applicant = await ctx.db.user.findUnique({
+        select: { firstName: true, lastName: true },
+        where: { id: userId },
       });
+      const now = new Date();
+      const reopened = {
+        cancelOrigin: null,
+        createdAt: now,
+        notes: input.notes ?? null,
+        rate: input.rate ?? null,
+        status: "applied",
+        updatedAt: now,
+      };
+      const reapplied = await ctx.db.$queryRaw<Array<{ id: string; ownerId: string; ownerNotes: string | null }>>(
+        Prisma.sql`
+        UPDATE "Booking" SET
+          "cancelOrigin" = NULL,
+          "createdAt" = ${reopened.createdAt},
+          "updatedAt" = ${reopened.updatedAt},
+          "notes" = ${reopened.notes},
+          "rate" = ${reopened.rate},
+          "status" = ${reopened.status}
+        WHERE "eventId" = ${event.id} AND "applicantId" = ${userId}
+          AND "cancelOrigin" = ${REAPPLIABLE_CANCEL_ORIGIN} AND "status" = 'canceled' AND NOT "isDeleted"
+          AND EXISTS (SELECT 1 FROM "Event" e WHERE e."id" = ${event.id} AND NOT e."isDeleted")
+          AND NOT EXISTS (
+            SELECT 1 FROM "Booking" held
+            WHERE held."eventId" = ${event.id} AND NOT held."isDeleted"
+              AND held."status" IN (${Prisma.join([...SLOT_HOLDING_STATUSES])})
+          )
+        RETURNING "id", "ownerId", "ownerNotes"`,
+      );
 
-      if (reapplied.count === 0) {
+      let booking: Booking;
+      const reopenedRow = reapplied[0];
+      if (reopenedRow) {
+        // The fields this statement did not set come back from it.
+        booking = {
+          ...reopened,
+          applicantId: userId,
+          eventId: event.id,
+          id: reopenedRow.id,
+          isDeleted: false,
+          ownerId: reopenedRow.ownerId,
+          ownerNotes: reopenedRow.ownerNotes,
+        };
+      } else {
         // A first application: inserted only if the slot is still open, in
         // one statement (INSERT ... SELECT ... WHERE NOT EXISTS). An
         // application that exists already makes it insert nothing too (the
         // unique (eventId, applicantId)); the two are told apart below.
-        const now = new Date();
+        //
+        // The answer is built from what this statement wrote, not read back:
+        // once the insert has committed, a read that failed would report a
+        // failure for an application that exists, skip the owner's
+        // notification, and leave a retry to be told "already applied".
+        const created: Booking = {
+          applicantId: userId,
+          cancelOrigin: null,
+          createdAt: now,
+          eventId: event.id,
+          id: crypto.randomUUID(),
+          isDeleted: false,
+          notes: input.notes ?? null,
+          ownerId,
+          ownerNotes: null,
+          rate: input.rate ?? null,
+          status: "applied",
+          updatedAt: now,
+        };
         const inserted = await ctx.db
           .$queryRaw<Array<{ id: string }>>(
             Prisma.sql`
             INSERT INTO "Booking"
               ("id", "createdAt", "updatedAt", "eventId", "applicantId", "ownerId", "status", "rate", "notes", "isDeleted")
-            SELECT ${crypto.randomUUID()}, ${now}, ${now}, ${event.id}, ${userId}, ${ownerId}, 'applied',
-              ${input.rate ?? null}, ${input.notes ?? null}, false
+            SELECT ${created.id}, ${created.createdAt}, ${created.updatedAt}, ${created.eventId}, ${created.applicantId},
+              ${created.ownerId}, ${created.status}, ${created.rate}, ${created.notes}, false
             WHERE NOT EXISTS (
               SELECT 1 FROM "Booking" held
               WHERE held."eventId" = ${event.id} AND NOT held."isDeleted"
@@ -336,22 +386,16 @@ export const bookingRouter = createTRPCRouter({
             });
           });
 
-        if (inserted.length === 0) {
+        if (inserted[0]?.id !== created.id) {
           // Nothing was written, by this statement or the re-open above.
           // Either the slot went to someone else in the meantime, or an
           // application is on record that cannot be sent again.
           if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
           throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
         }
+        booking = created;
       }
-      const booking = await ctx.db.booking.findUniqueOrThrow({
-        where: { eventId_applicantId: applicationKey },
-      });
 
-      const applicant = await ctx.db.user.findUnique({
-        select: { firstName: true, lastName: true },
-        where: { id: userId },
-      });
       await notify(ctx.db, {
         body: `${displayName(applicant)} applied to "${event.title}".`,
         bookingId: booking.id,
