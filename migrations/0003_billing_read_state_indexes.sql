@@ -31,6 +31,10 @@ ALTER TABLE "Subscription" ADD COLUMN "disputeId" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "disputeStatus" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "disputeInvoiceId" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "refundedInvoiceId" TEXT;
+-- When the payment standing above was last derived COMPLETELY and recorded.
+-- NULL: never, or the last derivation was incomplete; such a row is not
+-- settled (the re-sync's default scope and the lazy sync select it).
+ALTER TABLE "Subscription" ADD COLUMN "standingSyncedAt" DATETIME;
 
 -- Back-fill from the legacy flags, as well as they can express it. Rows that
 -- belong to a Stripe subscription are corrected from Stripe by the next

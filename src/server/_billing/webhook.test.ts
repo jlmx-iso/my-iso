@@ -731,6 +731,33 @@ describe("disputes and refunds", () => {
       expect(disputeLists() - disputeListsBefore).toBe(MAX_DISPUTED_CHARGES);
     });
 
+    it("the fail-closed hold is not lifted by a later derivation that can no longer see those disputed charges", async () => {
+      const user = await paidSubscription();
+      wonDisputes(7, nowSeconds() - 100 * DAY);
+      const invoice = buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" });
+      await deliver(buildEvent("invoice.paid", invoice));
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: "open" });
+
+      // 320 newer charges: the seven disputed ones are no longer among the newest 300.
+      for (let i = 1; i <= 320; i += 1) {
+        stub.charges.set(`ch_new_${i}`, buildCharge({ created: nowSeconds() - 50 * DAY + i, customer: "cus_alice", id: `ch_new_${i}`, paymentIntent: `pi_new_${i}` }));
+      }
+      const later = await deliver(buildEvent("invoice.payment_succeeded", invoice));
+
+      // Nothing was read that resolves them, and the history is incomplete: still withheld.
+      expect(later).toMatchObject({ result: "standing_incomplete", status: 200 });
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeId: null, disputeStatus: "open" });
+      expect(await access(user.id)).toMatchObject({ hasProAccess: false, isDisputed: true });
+
+      // A derivation that reads the whole history, with nothing left unexamined, lifts it.
+      for (let i = 1; i <= 320; i += 1) stub.charges.delete(`ch_new_${i}`);
+      for (let i = 3; i <= 7; i += 1) stub.charges.delete(`ch_old_${i}`);
+      const complete = await deliver(buildEvent("invoice.paid", buildInvoice({ attemptCount: 2, customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+      expect(complete.result).not.toBe("standing_incomplete");
+      expect(await subscriptionRow(user.id)).toMatchObject({ disputeStatus: null });
+      expect((await access(user.id)).hasProAccess).toBe(true);
+    });
+
     it("an open dispute among the newest is recorded as itself, however many older ones there are", async () => {
       const user = await paidSubscription();
       wonDisputes(9, nowSeconds() - 100 * DAY);
@@ -1087,6 +1114,36 @@ describe("disputes and refunds", () => {
         expect((await access(user.id)).hasProAccess).toBe(true);
       });
     });
+  });
+
+  it("an event for one subscription that reconciles the row to ANOTHER one records that one's standing, not a cleared row", async () => {
+    const user = await createCustomerUser();
+    const now = Math.floor(Date.now() / 1000);
+    // The row tracks a finished subscription.
+    stripeHas({ created: T0, customer: "cus_alice", endedAt: T0 + DAY, id: "sub_old", status: "canceled" });
+    await deliver(buildEvent("customer.subscription.deleted", buildSubscription({ customer: "cus_alice", id: "sub_old", status: "canceled" })));
+    expect((await subscriptionRow(user.id))?.subscriptionId).toBe("sub_old");
+    // Since then: the paid one, with an open dispute on its payment, and a newer one that never got going.
+    stripeHas({ created: T0 + 2 * DAY, customer: "cus_alice", id: "sub_paid", latestInvoice: "in_p", periodEnd: now + 20 * DAY, periodStart: now - 10 * DAY, status: "active" });
+    stub.invoices.set("in_p", buildInvoice({ customer: "cus_alice", id: "in_p", status: "paid", subscriptionId: "sub_paid" }));
+    stub.invoicePayments.set("inpay_p", buildInvoicePayment({ id: "inpay_p", invoice: "in_p", paymentIntent: "pi_p" }));
+    stub.charges.set("ch_p", buildCharge({ created: now - DAY, customer: "cus_alice", id: "ch_p", paymentIntent: "pi_p" }));
+    stub.disputes.set("dp_p", buildDispute({ charge: "ch_p", id: "dp_p", paymentIntent: "pi_p", status: "needs_response" }));
+    stripeHas({ created: T0 + 3 * DAY, customer: "cus_alice", id: "sub_x", latestInvoice: "in_x", status: "incomplete" });
+    stub.invoices.set("in_x", buildInvoice({ customer: "cus_alice", id: "in_x", status: "open", subscriptionId: "sub_x" }));
+
+    // An invoice event for sub_x: the row is reconciled from the customer's list, to sub_paid.
+    const response = await deliver(buildEvent("invoice.payment_failed", buildInvoice({ customer: "cus_alice", id: "in_x", status: "open", subscriptionId: "sub_x" })));
+
+    expect(response.status).toBe(200);
+    expect(await subscriptionRow(user.id)).toMatchObject({
+      disputeId: "dp_p",
+      disputeInvoiceId: "in_p",
+      disputeStatus: "open",
+      status: "active",
+      subscriptionId: "sub_paid",
+    });
+    expect(entitlementsFor(await subscriptionRow(user.id), new Date())).toMatchObject({ hasProAccess: false, isDisputed: true });
   });
 
   it("winning one dispute does not hide another that is still open, in either order of arrival", async () => {

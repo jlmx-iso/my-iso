@@ -90,6 +90,10 @@ model Subscription {
   disputeInvoiceId   String?
   // The latest invoice, when its payment was refunded in full (same source).
   refundedInvoiceId  String?
+  // When the payment standing was last derived completely and recorded.
+  // Null: never, or the last derivation was incomplete. A row is settled
+  // only when both this and stripeSyncedAt are set.
+  standingSyncedAt   DateTime?
   // A comped account: Pro without a Stripe subscription. Set by hand.
   isLifetime         Boolean
 

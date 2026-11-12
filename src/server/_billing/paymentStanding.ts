@@ -103,12 +103,21 @@ export const MAX_STANDING_STRIPE_CALLS =
  *   it is kept until superseded.
  * - "superseded": lost, and a later invoice has been paid for. Finished.
  * - "cleared": won, withdrawn, closed as an inquiry, or gone. Finished.
+ * - "unexamined": not a dispute but a MARKER (one row per subscription,
+ *   see unexaminedMarkerId): a derivation found disputes it could not
+ *   examine within its bounds. It withholds access like an open dispute,
+ *   and only a derivation that examined everything, on a charge history
+ *   read whole, turns it into "cleared". An incomplete derivation, which
+ *   may simply no longer see those charges, never does.
  */
-export type KnownDisputeStatus = "open" | "inquiry" | "lost" | "superseded" | "cleared";
+export type KnownDisputeStatus = "open" | "inquiry" | "lost" | "superseded" | "cleared" | "unexamined";
 export type KnownDispute = { disputeId: string; invoiceId: string; status: KnownDisputeStatus };
 
+/** The id of a subscription's "unexamined" marker row in SubscriptionDispute. */
+export const unexaminedMarkerId = (subscriptionId: string): string => `unexamined:${subscriptionId}`;
+
 /** Statuses a derivation still has to look at: not finished. */
-export const UNFINISHED_DISPUTE_STATUSES = ["open", "inquiry", "lost"] as const satisfies readonly KnownDisputeStatus[];
+export const UNFINISHED_DISPUTE_STATUSES = ["open", "inquiry", "unexamined", "lost"] as const satisfies readonly KnownDisputeStatus[];
 
 function knownStatusOf(stripeStatus: string): KnownDisputeStatus {
   if (stripeStatus === "warning_needs_response" || stripeStatus === "warning_under_review") return "inquiry";
@@ -325,9 +334,14 @@ export type StandingReading = { disputes: KnownDispute[]; standing: PaymentStand
  *   one of those, would not be seen) and the row is reported for review.
  * - More disputed charges than are examined (MAX_DISPUTED_CHARGES), or more
  *   known disputes than are re-read (MAX_KNOWN_DISPUTES_REREAD) or even
- *   loaded (`knownTruncated`): FAIL CLOSED. If nothing examined withholds access the standing is "open"
- *   with no dispute named, and `incomplete`. A customer like that needs a
- *   person; a comped account (`isLifetime`) is the override.
+ *   loaded (`knownTruncated`): FAIL CLOSED. If nothing examined withholds
+ *   access the standing is "open" with no dispute named, and `incomplete`,
+ *   and an "unexamined" marker is remembered for the subscription. That
+ *   hold is lifted only by a derivation that examined everything on a
+ *   history read whole (which happens by itself once the disputed charges
+ *   are older than the horizon), never by one that merely no longer sees
+ *   those charges. A customer like that needs a person; a comped account
+ *   (`isLifetime`) is the override.
  */
 export async function readPaymentStanding(
   stripe: Stripe,
@@ -373,9 +387,29 @@ export async function readPaymentStanding(
   const refunded = latestPaidInvoiceId !== null && (await isRefundedInFull(stripe, latestPaidInvoiceId, charges));
   const refundedInvoiceId = refunded ? latestPaidInvoiceId : null;
 
-  const disputes = all.map(({ disputeId, invoiceId, status }) => ({ disputeId, invoiceId, status }));
+  // Unread charges that are recent enough to carry a live dispute.
+  const oldestRead = listed.at(-1);
+  const unreadWithinHorizon =
+    truncated && oldestRead !== undefined && oldestRead.created >= nowSeconds - DISPUTE_HORIZON_SECONDS;
+
+  // The "unexamined" marker: set when this derivation found disputed
+  // charges it could not examine (nothing else records those disputes);
+  // kept while it is set and the charge history was not read whole (they
+  // may simply have dropped out of the listing); cleared only by a
+  // derivation that examined every disputed charge on a history read whole.
+  // Known disputes that could not all be re-read or loaded need no marker:
+  // they stay in the set themselves, and fail this derivation closed.
+  const markerId = unexaminedMarkerId(subscription.id);
+  const marker = all.find((dispute) => dispute.disputeId === markerId);
+  const held = onCharges.unexamined || (marker?.status === "unexamined" && unreadWithinHorizon);
+  if (marker) marker.status = held ? "unexamined" : "cleared";
+  const disputes: KnownDispute[] = [
+    ...all.map(({ disputeId, invoiceId, status }) => ({ disputeId, invoiceId, status })),
+    ...(!marker && held ? [{ disputeId: markerId, invoiceId: "", status: "unexamined" as const }] : []),
+  ];
   const knownNotAllRead = remembered.overflow || options.knownTruncated === true;
-  const notAllExamined = onCharges.unexamined || knownNotAllRead;
+  const notAllExamined = held || knownNotAllRead;
+
   if (!deciding && notAllExamined) {
     return {
       disputes,
@@ -383,10 +417,6 @@ export async function readPaymentStanding(
     };
   }
 
-  // Unread charges that are recent enough to carry a live dispute.
-  const oldestRead = listed.at(-1);
-  const unreadWithinHorizon =
-    truncated && oldestRead !== undefined && oldestRead.created >= nowSeconds - DISPUTE_HORIZON_SECONDS;
   return {
     disputes,
     standing: {
@@ -394,7 +424,7 @@ export async function readPaymentStanding(
       disputeInvoiceId: deciding?.invoiceId ?? null,
       disputeStatus: deciding?.status === "open" || deciding?.status === "lost" ? deciding.status : null,
       // What withholds access is definite whatever else there is.
-      incomplete: knownNotAllRead || (!deciding && unreadWithinHorizon),
+      incomplete: notAllExamined || (!deciding && unreadWithinHorizon),
       refundedInvoiceId,
     },
   };

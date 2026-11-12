@@ -939,6 +939,90 @@ describe("a dispute on a charge the listing does not reach, recorded by its own 
   });
 });
 
+describe("a row is settled only once its payment standing has been derived completely and recorded", () => {
+  const flags = { isActive: true, isCanceled: false, isExpired: false, isLifetime: false, isPaused: false, isPending: false, isTrial: false };
+
+  /** A legacy row for an active subscription of cus_a, never read from Stripe. */
+  async function legacyActive() {
+    const user = await createTestUser(testDb.db);
+    await testDb.db.user.update({ data: { stripeId: "cus_a" }, where: { id: user.id } });
+    stub.customers.set("cus_a", { id: "cus_a", metadata: {}, object: "customer" });
+    stub.subscriptions.set("sub_a", buildSubscription({ customer: "cus_a", id: "sub_a", latestInvoice: "in_0", status: "active" }));
+    const row = await testDb.db.subscription.create({ data: { ...flags, status: "active", subscriptionId: "sub_a", userId: user.id } });
+    return { row, user };
+  }
+
+  /** Twelve disputed charges, all won: more than are examined, so the standing is incomplete (and fails closed). */
+  function manyWonDisputes() {
+    const recent = Math.floor(Date.now() / 1000) - 30 * DAY;
+    for (let i = 0; i < 12; i += 1) {
+      stub.invoices.set(`in_${i}`, buildInvoice({ created: recent + i, customer: "cus_a", id: `in_${i}`, status: "paid", subscriptionId: "sub_a" }));
+      stub.invoicePayments.set(`inpay_${i}`, buildInvoicePayment({ id: `inpay_${i}`, invoice: `in_${i}`, paymentIntent: `pi_${i}` }));
+      stub.charges.set(`ch_${i}`, buildCharge({ created: recent + i, customer: "cus_a", id: `ch_${i}`, paymentIntent: `pi_${i}` }));
+      stub.disputes.set(`dp_${i}`, buildDispute({ charge: `ch_${i}`, id: `dp_${i}`, paymentIntent: `pi_${i}`, status: "won" }));
+    }
+  }
+
+  it("an incomplete standing keeps the row in the default re-sync: an unchanged second run reports it again", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const { row } = await legacyActive();
+    manyWonDisputes();
+    const incomplete = { outcomes: { applied: 1 }, processed: 1, unresolved: [{ id: row.id, outcome: "standing_incomplete" }] };
+
+    expect(await as(admin).resyncFromStripe({})).toMatchObject(incomplete);
+    // Nothing has changed. The default (pending) scope must still select the
+    // row, or the deployment job would see exit 0 with the row unreconciled.
+    const second = await as(admin).resyncFromStripe({});
+    expect(second.outcomes.applied ?? second.outcomes.stale).toBe(1);
+    expect(second).toMatchObject({ processed: 1, unresolved: [{ id: row.id, outcome: "standing_incomplete" }] });
+
+    // Once the history can be read whole, the row is settled and leaves the scope.
+    for (let i = 5; i < 12; i += 1) stub.charges.delete(`ch_${i}`);
+    expect(await as(admin).resyncFromStripe({})).toMatchObject({ processed: 1, unresolved: [] });
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+  });
+
+  it("a sync cut off between the subscription write and the standing leaves the row to be picked up again, by the re-sync and by the lazy sync", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const { row, user } = await legacyActive();
+    // An open dispute on the subscription's payment: what the standing would record.
+    stub.invoices.set("in_0", buildInvoice({ customer: "cus_a", id: "in_0", status: "paid", subscriptionId: "sub_a" }));
+    stub.invoicePayments.set("inpay_0", buildInvoicePayment({ id: "inpay_0", invoice: "in_0", paymentIntent: "pi_0" }));
+    stub.charges.set("ch_0", buildCharge({ created: Math.floor(Date.now() / 1000) - DAY, customer: "cus_a", id: "ch_0", paymentIntent: "pi_0" }));
+    stub.disputes.set("dp_0", buildDispute({ charge: "ch_0", id: "dp_0", paymentIntent: "pi_0", status: "needs_response" }));
+    // The work stops right after the subscription row is written: the first
+    // request of the standing derivation never completes.
+    stub.failWhen((request) => request.path === "/v1/charges", 503);
+
+    const cut = await as(admin).resyncFromStripe({});
+    expect(cut).toMatchObject({ outcomes: { failed: 1 }, unresolved: [{ id: row.id, outcome: "failed" }] });
+    // The subscription itself was stored (read from Stripe), without any standing.
+    const half = await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } });
+    expect(half.stripeSyncedAt).not.toBeNull();
+    expect(half.disputeStatus).toBeNull();
+
+    // The lazy sync still sees a row to settle: with Stripe back, the next access check settles it.
+    stub.failWhen(null);
+    expect(await as(user).getStatus()).toMatchObject({ hasProAccess: false, isDisputed: true });
+    expect(await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ disputeId: "dp_0", disputeStatus: "open" });
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+  });
+
+  it("and the default re-sync selects such a half-synced row too", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const { row } = await legacyActive();
+    stub.failWhen((request) => request.path === "/v1/charges", 503);
+    await as(admin).resyncFromStripe({});
+    stub.failWhen(null);
+
+    const again = await as(admin).resyncFromStripe({});
+    expect(again).toMatchObject({ processed: 1, unresolved: [] });
+    expect((again.outcomes.applied ?? 0) + (again.outcomes.stale ?? 0)).toBe(1);
+    expect((await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } })).standingSyncedAt).not.toBeNull();
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+  });
+});
+
 describe("the re-sync batch and the subrequest budget", () => {
   it("is sized so that the worst case per row, times the batch, stays inside the budget", () => {
     expect(RESYNC_MAX_BATCH).toBeGreaterThanOrEqual(1);
@@ -980,7 +1064,7 @@ describe("the re-sync batch and the subrequest budget", () => {
 });
 
 describe("what a billing failure tells the user", () => {
-  it("only a failed checkout start says that nothing was charged; a failed refresh or portal makes no such claim", async () => {
+  it("makes no claim about charges on any path: an earlier session may still be payable when a checkout start fails", async () => {
     const user = await createTestUser(testDb.db);
     await testDb.db.user.update({ data: { stripeId: "cus_a" }, where: { id: user.id } });
     stub.customers.set("cus_a", { id: "cus_a", metadata: {}, object: "customer" });
@@ -994,9 +1078,12 @@ describe("what a billing failure tells the user", () => {
     const checkout = await messageOf(as(user).createCheckoutSession({ billingInterval: "monthly" }));
     const refresh = await messageOf(as(user).syncStatus());
     const portal = await messageOf(as(user).createPortalSession());
+    // A price that is not configured fails before any open session is closed.
+    stub.failWhen(null);
+    envMock.env.STRIPE_STANDARD_MONTHLY_PRICE_ID = "";
+    const unconfigured = await messageOf(as(user).createCheckoutSession({ billingInterval: "monthly" }));
 
-    expect(checkout).toContain("You have not been charged");
-    for (const message of [refresh, portal]) {
+    for (const message of [checkout, refresh, portal, unconfigured]) {
       expect(message).toContain("Billing is temporarily unavailable");
       expect(message).not.toMatch(/charged/i);
     }

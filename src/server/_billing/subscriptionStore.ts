@@ -95,6 +95,8 @@ const NO_PAYMENT_MARKERS = {
   disputeInvoiceId: null,
   disputeStatus: null,
   refundedInvoiceId: null,
+  // The standing of the subscription the row now shows has not been derived.
+  standingSyncedAt: null,
 } as const;
 
 type WriteVariant = { data: Prisma.SubscriptionUpdateManyMutationInput; where: Where };
@@ -253,7 +255,14 @@ export async function applySubscriptionState(
  * to still hold the customer's lease: a holder that ran past its lease
  * cannot put an older standing over the one its successor derived.
  *
- * - "recorded": stored.
+ * - "recorded": stored. `standingSyncedAt` is set in the same statement
+ *   when the derivation was complete, and cleared when it was not: it is
+ *   what says the row is settled (rowNeedsFirstSync, the re-sync's default
+ *   scope). It is deliberately NOT written with the subscription state
+ *   (`stripeSyncedAt`, which orders readings): work that is cut off after
+ *   the state write and before this one leaves a row that is visibly not
+ *   settled and is picked up again, and an incomplete derivation keeps the
+ *   row in scope until one completes.
  * - "not_tracked": the user's row shows another subscription (or there is
  *   no row).
  *
@@ -270,7 +279,8 @@ export async function writePaymentStanding(
       "disputeId" = ${standing.disputeId},
       "disputeStatus" = ${standing.disputeStatus},
       "disputeInvoiceId" = ${standing.disputeInvoiceId},
-      "refundedInvoiceId" = ${standing.refundedInvoiceId}
+      "refundedInvoiceId" = ${standing.refundedInvoiceId},
+      "standingSyncedAt" = ${standing.incomplete ? null : new Date()}
     WHERE "subscriptionId" = ${subscriptionId} AND ${lease.heldCondition()}`);
   if (written > 0) return "recorded";
   if ((await db.subscription.count({ where: { subscriptionId } })) === 0) return "not_tracked";
@@ -494,7 +504,7 @@ type OtherCustomer = { customerId: string; outcome: "other_customer" };
 export const KNOWN_DISPUTES_READ = 50;
 
 const isKnownDisputeStatus = (status: string): status is KnownDispute["status"] =>
-  ["open", "inquiry", "lost", "superseded", "cleared"].includes(status);
+  ["open", "inquiry", "lost", "superseded", "cleared", "unexamined"].includes(status);
 
 /**
  * Upserts one dispute into SubscriptionDispute, in ONE statement that also
@@ -545,7 +555,7 @@ async function storePaymentStanding(
           take,
           where: { status: { in: statuses }, subscriptionId: subscription.id },
         });
-  const live = await knownOf(["open", "inquiry"], KNOWN_DISPUTES_READ + 1);
+  const live = await knownOf(["open", "inquiry", "unexamined"], KNOWN_DISPUTES_READ + 1);
   const lost = await knownOf(["lost"], KNOWN_DISPUTES_READ + 1 - live.length);
   const rows = [...live, ...lost];
   const known = rows.slice(0, KNOWN_DISPUTES_READ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
@@ -638,14 +648,18 @@ async function syncSubscriptionLocked(
       });
       return { outcome: "stale", state, userId };
     }
-    const reconciled = await syncUserLocked(db, stripe, lease, userId, state.stripeCustomerId, {
-      ...options,
-      standing: false,
-    });
+    // With the standing of whichever subscription the list makes primary
+    // (the row's markers are cleared when it switches): derived there, for
+    // that subscription, with the event's payment only if it is this one.
+    const reconciled = await syncUserLocked(db, stripe, lease, userId, state.stripeCustomerId, options, subscriptionId);
     const shown =
       (reconciled.outcome === "applied" || reconciled.outcome === "stale") &&
       reconciled.state.subscriptionId === subscriptionId;
-    outcome = shown ? "applied" : "stale";
+    if (!options.standing) return { outcome: shown ? "applied" : "stale", state, userId };
+    // What is returned is THIS subscription's standing: the primary's when
+    // this is the primary, none when the row shows another.
+    const standing = shown && "standing" in reconciled ? (reconciled.standing ?? null) : null;
+    return { outcome: shown ? "applied" : "stale", standing, state, userId };
   }
 
   if (!options.standing || !read.subscription) return { outcome, state, userId };
@@ -795,6 +809,8 @@ async function syncUserLocked(
   userId: string,
   customer: string,
   options: SyncOptions,
+  /** The subscription `options.standingPaymentIntentId` belongs to, when there is one. */
+  eventSubscriptionId?: string,
 ): Promise<UserSyncResult> {
   type Reading = {
     hasLiveSubscription: boolean;
@@ -852,7 +868,11 @@ async function syncUserLocked(
     options,
   );
   if (!isReading(result)) return result;
-  const standing = options.standing ? await storePaymentStanding(db, stripe, lease, result.primary) : undefined;
+  const paymentIntentId =
+    eventSubscriptionId === result.primary.id ? (options.standingPaymentIntentId ?? null) : null;
+  const standing = options.standing
+    ? await storePaymentStanding(db, stripe, lease, result.primary, paymentIntentId)
+    : undefined;
   return {
     hasLiveSubscription: result.hasLiveSubscription,
     ...(options.standing ? { standing } : {}),
