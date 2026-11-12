@@ -2,10 +2,13 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { instagramHandleOptional, logger } from "~/_utils";
+import { env } from "~/env";
+import { isUniqueViolation } from "~/server/_db/errors";
+import { runAfterResponse } from "~/server/_lib/background";
 import { sendTemplateEmail } from "~/server/_lib/email";
 import { captureEvent } from "~/server/_lib/posthog";
 import { hashEmail } from "~/server/_utils/hash";
-import { RateLimits } from "~/server/_utils/rateLimit";
+import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import {
   createTRPCRouter,
@@ -19,6 +22,13 @@ const urlPattern = /^https?:\/\/.+/;
 export const waitlistRouter = createTRPCRouter({
   /**
    * Submit a waitlist application (public).
+   *
+   * The answer is the same, `{ success: true, position: null }`, whether or
+   * not the address was already on the list: the endpoint must not tell a
+   * stranger who has applied. (That is also why no queue position is
+   * returned: any number that moves with new entries gives it away.)
+   * Either way the address gets the confirmation email; for an address
+   * already on the list at most once a day.
    */
   submit: publicProcedure
     .use(rateLimit(RateLimits.WAITLIST_SUBMIT))
@@ -38,54 +48,75 @@ export const waitlistRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const email = input.email.toLowerCase();
 
-      const existing = await ctx.db.waitlist.findUnique({
+      let existing = await ctx.db.waitlist.findUnique({
+        select: { name: true, status: true },
         where: { email },
       });
 
+      if (!existing) {
+        // Use max position + 1 (positions are for the admin's ordering only).
+        const maxEntry = await ctx.db.waitlist.findFirst({
+          orderBy: { position: "desc" },
+          select: { position: true },
+        });
+        const position = (maxEntry?.position ?? 0) + 1;
+
+        try {
+          await ctx.db.waitlist.create({
+            data: {
+              name: input.name,
+              email,
+              instagram: input.instagram,
+              website: input.website,
+              userType: input.userType,
+              referralSource: input.referralSource,
+              position,
+            },
+          });
+        } catch (error) {
+          // Two submissions of the same address at once: the unique email
+          // let one in. This one is a repeat.
+          if (!isUniqueViolation(error)) throw error;
+          existing = { name: input.name, status: "pending" };
+        }
+      }
+
+      let sendConfirmation = true;
+      let name = input.name;
       if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This email is already on the waitlist.",
+        name = existing.name;
+        // A repeat gets the confirmation again (they may have lost it), but
+        // only while still waiting, and at most once a day, so the form
+        // cannot be used to mail someone over and over.
+        sendConfirmation =
+          existing.status === "pending" &&
+          (await checkRateLimit(ctx.db, RateLimits.WAITLIST_RECONFIRM_EMAIL, `email:${email}`)).allowed;
+      } else {
+        // Analytics get a keyed hash of the address, never the address itself.
+        captureEvent(await hashEmail(email), "waitlist_submitted", { role: input.userType ?? "unknown" });
+      }
+
+      if (sendConfirmation) {
+        // After the response: how long the reply takes must not depend on
+        // whether an email is sent, and a failure only gets logged.
+        runAfterResponse("send-waitlist-confirmation", async () => {
+          const emailResult = await sendTemplateEmail({
+            email,
+            props: { name },
+            subject: "You're on the ISO waitlist — we'll be in touch",
+            template: "waitlist-confirmation",
+          });
+          if (!emailResult.isOk) {
+            logger.warn("Failed to send waitlist confirmation email", {
+              error: emailResult.error?.message,
+            });
+          }
         });
       }
 
-      // Use max position + 1 to avoid race condition on concurrent inserts (M2)
-      const maxEntry = await ctx.db.waitlist.findFirst({
-        orderBy: { position: "desc" },
-        select: { position: true },
-      });
-      const position = (maxEntry?.position ?? 0) + 1;
-
-      await ctx.db.waitlist.create({
-        data: {
-          name: input.name,
-          email,
-          instagram: input.instagram,
-          website: input.website,
-          userType: input.userType,
-          referralSource: input.referralSource,
-          position,
-        },
-      });
-
-      // Analytics get a keyed hash of the address, never the address itself.
-      captureEvent(await hashEmail(email), "waitlist_submitted", { role: input.userType ?? "unknown" });
-
-      // Send confirmation email — awaited for logging, but failure does not throw
-      const emailResult = await sendTemplateEmail({
-        email,
-        props: { name: input.name },
-        subject: "You're on the ISO waitlist — we'll be in touch",
-        template: "waitlist-confirmation",
-      });
-
-      if (!emailResult.isOk) {
-        logger.warn("Failed to send waitlist confirmation email", {
-          error: emailResult.error?.message,
-        });
-      }
-
-      return { success: true, position };
+      /** `position` is always null; kept so older clients keep compiling. */
+      const position: number | null = null;
+      return { position, success: true };
     }),
 
   /**
@@ -180,7 +211,11 @@ export const waitlistRouter = createTRPCRouter({
       // Send approval email (I1)
       // Include email so the join page can show "Sign in with the Google account matching {email}"
       const encodedEmail = encodeURIComponent(entry.email);
-      const joinUrl = `${process.env.NEXTAUTH_URL ?? "https://myiso.app"}/join?waitlist=approved&email=${encodedEmail}`;
+      // The app's configured public origin (never a hard-coded host).
+      const joinUrl = new URL(
+        `/join?waitlist=approved&email=${encodedEmail}`,
+        env.NEXT_PUBLIC_BASE_URL,
+      ).toString();
       const emailResult = await sendTemplateEmail({
         email: entry.email,
         subject: "You're in! Your spot on ISO is ready",

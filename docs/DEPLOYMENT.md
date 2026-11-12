@@ -91,8 +91,14 @@ wrangler secret put AUTH_SECRET --env=""        # production
 | `STRIPE_WEBHOOK_SECRET` | Verifies Stripe webhooks. | Stripe > Webhooks > the endpoint's signing secret |
 | `ANTHROPIC_API_KEY` | Optional. Match summaries and icebreakers; without it they are off. | Anthropic Console |
 
-`DATABASE_URL` is not used on Cloudflare (the Worker uses the D1 binding) and
-`ANTHROPIC_BASE_URL` is for local stubs only.
+Never set on a deployment:
+
+- `DATABASE_URL`: the Worker uses the D1 binding.
+- `ANTHROPIC_BASE_URL`: points the Anthropic SDK at a local stub.
+- `STRIPE_API_BASE_URL`: test-only stand-in for the Stripe API. The app
+  refuses any value that is not a loopback address
+  (`src/server/_billing/stripe.ts`), so it cannot redirect real payments,
+  but it has no use outside end-to-end runs.
 
 The app validates all of this when the Worker starts (`src/env.js`). With a
 required value missing, requests fail and `wrangler tail` shows

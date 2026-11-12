@@ -401,7 +401,7 @@ export const discoverRouter = createTRPCRouter({
     }),
 
   getMatchById: protectedProcedure
-    .use(rateLimit(RateLimits.SEARCH))
+    .use(rateLimit(RateLimits.MATCH_DETAIL))
     .input(z.object({ matchId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;

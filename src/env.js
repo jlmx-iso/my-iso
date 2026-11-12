@@ -61,6 +61,7 @@ export const env = createEnv({
     POSTHOG_ASSETS_HOST: process.env.POSTHOG_ASSETS_HOST,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
+    STRIPE_API_BASE_URL: process.env.STRIPE_API_BASE_URL,
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: process.env.STRIPE_FOUNDING_MONTHLY_PRICE_ID,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
@@ -102,6 +103,10 @@ export const env = createEnv({
     POSTHOG_HOST: z.string().url().optional(),
     // Optional: without a key no email is sent.
     RESEND_API_KEY: z.string().optional(),
+    // Local stand-in for the Stripe API (end-to-end runs only). Honoured only
+    // for loopback addresses, see src/server/_billing/stripe.ts. Never set
+    // it on a deployed Worker.
+    STRIPE_API_BASE_URL: z.string().url().optional(),
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: z.string().optional(),
     STRIPE_SECRET_KEY: z.string(),

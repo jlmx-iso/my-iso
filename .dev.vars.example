@@ -37,6 +37,8 @@ STRIPE_STANDARD_MONTHLY_PRICE_ID=
 STRIPE_STANDARD_ANNUAL_PRICE_ID=
 STRIPE_FOUNDING_MONTHLY_PRICE_ID=
 STRIPE_FOUNDING_ANNUAL_PRICE_ID=
+# Test runs only: a local stand-in for the Stripe API (loopback addresses only).
+STRIPE_API_BASE_URL=
 
 # ---- Google Places -----------------------------------------------------------
 GOOGLE_PLACES_API_KEY=

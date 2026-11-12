@@ -97,6 +97,29 @@ mistake with a new migration.
 that `next dev` uses (`DATABASE_URL=file:./dev.db`). It never touches D1 and
 is not a substitute for a migration.
 
+## Triggers
+
+Two things are kept consistent by SQLite triggers, because D1 has no
+multi-statement transactions and each must change together with the row that
+causes it:
+
+| Trigger | Created in | What it does |
+| --- | --- | --- |
+| `InviteRedemption_count` | `0002` | On every new `InviteRedemption`, raises `InviteCode.redeemedCount`. Nothing lowers it, so a used invite stays used when the invited account is deleted; the `reconcile-invites` job reconciles against it. |
+| `Message_touch_thread` | `0003` | On every new `Message`, sets `MessageThread.updatedAt` to the message's `createdAt`, so the conversation list (sorted by it) can never show a thread in its old position after a send. |
+
+Prisma does not know about triggers: they are not in `schema.prisma`,
+`npm run db:migrate:diff` never emits them and `npm run db:check` does not
+compare them. They exist only in the migration files. The tests run with
+them, because test databases are built from `migrations/`. Consequences:
+
+- Do not set `MessageThread.updatedAt` or `InviteCode.redeemedCount` from
+  application code; the trigger owns them.
+- If a migration has to rebuild `Message` or `InviteRedemption` (Prisma's
+  `new_X` / copy / drop / rename block), the trigger is dropped with the old
+  table: re-create it at the end of that migration.
+- `prisma db push` (the `next dev` SQLite file) does not create them.
+
 ## Local D1 from scratch
 
 ```sh

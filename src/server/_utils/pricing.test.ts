@@ -16,7 +16,12 @@ vi.mock("~/_utils", () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { getPriceIdForCheckout, getPricingForRole } from "./pricing";
+import {
+  getPriceIdForCheckout,
+  getPricingForRole,
+  planForPriceId,
+  PriceNotConfiguredError,
+} from "./pricing";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -63,19 +68,45 @@ describe("getPricingForRole", () => {
   });
 });
 
+const PRICES = {
+  STRIPE_FOUNDING_ANNUAL_PRICE_ID: "price_founding_annual",
+  STRIPE_FOUNDING_MONTHLY_PRICE_ID: "price_founding_monthly",
+  STRIPE_STANDARD_ANNUAL_PRICE_ID: "price_standard_annual",
+  STRIPE_STANDARD_MONTHLY_PRICE_ID: "price_standard_monthly",
+};
+
 describe("getPriceIdForCheckout", () => {
-  it("returns null when env var is not set (standard monthly)", () => {
-    const priceId = getPriceIdForCheckout("standard", "monthly");
-    expect(priceId).toBeNull();
+  it("picks the standard price for a standard member", () => {
+    expect(getPriceIdForCheckout("standard", "monthly", PRICES)).toBe("price_standard_monthly");
+    expect(getPriceIdForCheckout("standard", "annual", PRICES)).toBe("price_standard_annual");
   });
 
-  it("returns null when env var is not set (founding annual)", () => {
-    const priceId = getPriceIdForCheckout("founding_member", "annual");
-    expect(priceId).toBeNull();
+  it("picks the founding price for founding roles", () => {
+    expect(getPriceIdForCheckout("founding_member", "annual", PRICES)).toBe("price_founding_annual");
+    expect(getPriceIdForCheckout("founder", "monthly", PRICES)).toBe("price_founding_monthly");
+    expect(getPriceIdForCheckout("ambassador", "monthly", PRICES)).toBe("price_founding_monthly");
   });
 
-  it("returns null for unknown role + any interval", () => {
-    const priceId = getPriceIdForCheckout("unknown", "monthly");
-    expect(priceId).toBeNull();
+  it("treats an unknown role as standard", () => {
+    expect(getPriceIdForCheckout("unknown", "monthly", PRICES)).toBe("price_standard_monthly");
+  });
+
+  it("throws, naming the variable, when the price is not configured (no inline fallback)", () => {
+    expect(() => getPriceIdForCheckout("standard", "monthly")).toThrow(PriceNotConfiguredError);
+    expect(() => getPriceIdForCheckout("founding_member", "annual", {})).toThrow(
+      /STRIPE_FOUNDING_ANNUAL_PRICE_ID/,
+    );
+  });
+});
+
+describe("planForPriceId", () => {
+  it("maps a configured price id back to its plan and interval", () => {
+    expect(planForPriceId("price_founding_annual", PRICES)).toEqual({ billingInterval: "annual", plan: "founding" });
+    expect(planForPriceId("price_standard_monthly", PRICES)).toEqual({ billingInterval: "monthly", plan: "standard" });
+  });
+
+  it("returns null for a price this app does not sell", () => {
+    expect(planForPriceId("price_other", PRICES)).toBeNull();
+    expect(planForPriceId("price_other", {})).toBeNull();
   });
 });

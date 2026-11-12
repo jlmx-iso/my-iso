@@ -4,7 +4,7 @@ import { issueOtp, OTP_MAX_ATTEMPTS } from "~/server/_db/verificationToken";
 import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendOtpVerifyLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
@@ -308,18 +308,15 @@ describe("authRouter against SQLite", () => {
 
     it("answers TOO_MANY_REQUESTS, not UNAUTHORIZED, once the daily cap for the address is reached", async () => {
       await createTestUser(testDb.db, { email: EMAIL });
-      const perWindow = RateLimits.OTP_VERIFY_EMAIL.limit;
       const perDay = RateLimits.OTP_VERIFY_EMAIL_DAILY.limit;
+      // All but one of the day's guesses were made in earlier windows.
+      await spendOtpVerifyLimit(testDb.db, RateLimits.OTP_VERIFY_EMAIL_DAILY, "198.51.100.1", EMAIL, perDay - 1);
 
-      for (let guess = 0; guess < perDay; guess++) {
-        if (guess > 0 && guess % perWindow === 0) {
-          limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
-        }
-        await issueOtp(testDb.db, EMAIL, { code: "123456" });
-        await expect(
-          caller(`198.51.100.${guess}`).verifyMobileOtp({ code: "000000", email: EMAIL }),
-        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-      }
+      // The last one is still looked at: a wrong code is UNAUTHORIZED.
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+      await expect(
+        caller("198.51.100.1").verifyMobileOtp({ code: "000000", email: EMAIL }),
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
 
       await issueOtp(testDb.db, EMAIL, { code: "123456" });

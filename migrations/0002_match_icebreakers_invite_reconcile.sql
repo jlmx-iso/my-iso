@@ -40,5 +40,5 @@ ALTER TABLE "Match" ADD COLUMN "icebreakersRequestedAt" DATETIME;
 -- CreateIndex
 CREATE INDEX "InviteCode_slotsChangedAt_idx" ON "InviteCode"("slotsChangedAt");
 
--- CreateIndex
-CREATE INDEX "Match_status_expiresAt_idx" ON "Match"("status", "expiresAt");
+-- "Match_status_expiresAt_idx" (declared in the Prisma schema, used by the
+-- expiry job) is created by 0003_billing_read_state_indexes.sql.
