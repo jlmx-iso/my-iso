@@ -52,7 +52,8 @@ export async function rankedPhotographerIds(
     SELECT p."id" AS "id"
     FROM "Photographer" p
     LEFT JOIN "Subscription" s ON s."userId" = p."userId"
-    WHERE (${like("name", pattern)} OR ${like("companyName", pattern)} OR ${like("bio", pattern)})
+    WHERE NOT p."isDeleted"
+      AND (${like("name", pattern)} OR ${like("companyName", pattern)} OR ${like("bio", pattern)})
       ${location}
     ORDER BY
       CASE WHEN ${like("name", pattern)} THEN 0 WHEN ${like("companyName", pattern)} THEN 1 ELSE 2 END,

@@ -8,6 +8,7 @@ import { createDbCaller } from "~/test/helpers/dbCaller";
 import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
+import { appRouter } from "../root";
 import { accountRouter, deletionConfirmationMatches } from "./account";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -143,5 +144,29 @@ describe("account.deleteAccount", () => {
     expect(summary.finished).toBeGreaterThanOrEqual(1);
     const row = await testDb.raw.user.findUniqueOrThrow({ where: { id: member.id } });
     expect(row.deletedAt).not.toBeNull();
+  });
+
+  it("hides the public profile, search results and events at once, even when a later step fails", async () => {
+    const { member, ownEvent } = await seedAccount(testDb.db);
+    const handle = member.handle ?? "";
+    const viewer = await createTestUser(testDb.db);
+    const app = (user?: { email: string; id: string }) =>
+      createDbCaller(appRouter, testDb.db, { headers: new Headers({ "cf-connecting-ip": "203.0.113.21" }), user });
+
+    // Visible before.
+    expect(await app().photographer.getByUsername({ username: handle })).not.toBeNull();
+    deps.deleteImages.mockRejectedValueOnce(new Error("Cloudinary is down"));
+
+    await expect(callerFor(member).deleteAccount({ confirmation: handle })).resolves.toEqual({ status: "scheduled" });
+
+    // The profile page and its metadata and preview image (all `user: { handle }` lookups).
+    expect(await app().photographer.getByUsername({ username: handle })).toBeNull();
+    expect(await testDb.db.photographer.findFirst({ where: { user: { handle } } })).toBeNull();
+    // Search, by name and by event.
+    const results = await app(viewer).search.searchAll({ query: "Ann Lee" });
+    expect(results.photographers.map((row) => row.userId)).not.toContain(member.id);
+    const events = await app(viewer).search.searchAll({ query: "Smith wedding" });
+    expect(events.events.map((event) => event.id)).not.toContain(ownEvent.id);
+    expect(await testDb.db.event.findFirst({ where: { id: ownEvent.id } })).toBeNull();
   });
 });

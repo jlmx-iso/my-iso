@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: "Account deleted",
 };
 
-export default function AccountDeletedPage() {
-  return <AccountDeletedNotice confirmationEmail={canSendDeletionEmail()} />;
+type PageProps = { searchParams: Promise<{ pending?: string | string[] }> };
+
+export default async function AccountDeletedPage({ searchParams }: PageProps) {
+  const { pending } = await searchParams;
+  return <AccountDeletedNotice confirmationEmail={canSendDeletionEmail()} pending={pending === "1"} />;
 }

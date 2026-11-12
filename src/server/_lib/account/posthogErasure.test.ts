@@ -47,7 +47,7 @@ describe("erasePostHogPerson", () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 202 }));
     await expect(erasePostHogPerson("user_1", config, fetchImpl)).resolves.toBe("requested");
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://eu.posthog.com/api/projects/12/persons/bulk_delete/");
+    expect(url).toBe("https://eu.posthog.com/api/projects/12/persons/bulk_delete/?delete_events=true&delete_recordings=true");
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer phx_key");
     expect(JSON.parse(init.body as string)).toEqual({

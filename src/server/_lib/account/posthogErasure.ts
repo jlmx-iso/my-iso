@@ -56,7 +56,10 @@ export async function erasePostHogPerson(
 ): Promise<"requested" | "skipped"> {
   if (!config) return "skipped";
   const response = await fetchImpl(
-    `${config.appHost}/api/projects/${encodeURIComponent(config.projectId)}/persons/bulk_delete/`,
+    // PostHog's docs name delete_events and delete_recordings as parameters of
+    // this endpoint; they are sent both in the query and in the body, so
+    // either reading of them deletes the events and recordings.
+    `${config.appHost}/api/projects/${encodeURIComponent(config.projectId)}/persons/bulk_delete/?delete_events=true&delete_recordings=true`,
     {
       body: JSON.stringify({ delete_events: true, delete_recordings: true, distinct_ids: [distinctId] }),
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },

@@ -169,6 +169,18 @@ describe("the delete dialog", () => {
     await waitFor(() => expect(screen.queryByText("Download ready")).toBeNull());
   });
 
+  it("goes to the pending page when a step is still finishing", async () => {
+    const onDeleted = vi.fn();
+    renderWithProviders(<AccountDataSettings confirmationEmail confirmation={USERNAME} onDeleted={onDeleted} />, {
+      trpc: { account: { deleteAccount: () => ({ status: "scheduled" as const }) } },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete your account?" });
+    await userEvent.type(within(dialog).getByRole("textbox"), "ann-lee");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete my account" }));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(true));
+  });
+
   it("cannot be closed while the deletion runs", async () => {
     let finish: (value: { status: "deleted" }) => void = () => undefined;
     const pending = new Promise<{ status: "deleted" }>((resolve) => {
@@ -202,6 +214,13 @@ describe("AccountDeletedNotice", () => {
     renderWithProviders(<AccountDeletedNotice confirmationEmail={false} />);
     expect(screen.queryByText(/We've sent a confirmation/)).toBeNull();
     expect(screen.getByText(/your events are hidden/)).toBeTruthy();
+  });
+
+  it("while a step is still finishing, says only what has happened", () => {
+    renderWithProviders(<AccountDeletedNotice confirmationEmail pending />);
+    expect(screen.getByRole("heading", { name: "We're deleting your account" })).toBeTruthy();
+    expect(screen.getByText(/Your profile is already hidden; the rest\s+completes within the hour/)).toBeTruthy();
+    expect(screen.queryByText(/cancelled|confirmation|gone from ISO/)).toBeNull();
   });
 });
 

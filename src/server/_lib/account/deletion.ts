@@ -6,9 +6,12 @@
 // idempotent, run in an order that is safe to stop anywhere and start again:
 //
 //   1. requestAccountDeletion: one conditional UPDATE sets `isDeleted` and
-//      `deletionRequestedAt`. From that statement on the account is gone
-//      for every read (soft-delete extension), which also ends its sessions
-//      (auth.ts). Nothing else has changed yet.
+//      `deletionRequestedAt` on the User row, then their profile and events
+//      get `isDeleted` too (hideAccount). From then on the account, the
+//      public profile and the events are gone from every read (soft-delete
+//      extension), relation filters such as `user: { handle }` included,
+//      and the sessions end (auth.ts). Nothing else has changed yet; the
+//      run below hides them again first, in case this was interrupted.
 //   2. runAccountDeletion: ends billing in Stripe, deletes the uploaded
 //      images, closes live chat sockets, erases the PostHog person, then
 //      deletes or anonymises the rows (other members' notifications that
@@ -136,8 +139,18 @@ export async function anonymiseNotificationsAbout(
  * Closes the account at once: one conditional UPDATE. True when this call
  * closed it, false when it was already closed (or does not exist).
  */
+/**
+ * Hides the member's public profile and events: they leave every page,
+ * search and the profile's preview image at once, before any step that
+ * talks to another service and can fail. Idempotent.
+ */
+export async function hideAccount(db: Pick<DeletionDb, "event" | "photographer">, userId: string): Promise<void> {
+  await db.photographer.updateMany({ data: { isDeleted: true }, where: { userId } });
+  await db.event.updateMany({ data: { isDeleted: true }, where: { photographer: { userId } } });
+}
+
 export async function requestAccountDeletion(
-  db: Pick<DeletionDb, "user">,
+  db: Pick<DeletionDb, "event" | "photographer" | "user">,
   userId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
@@ -145,6 +158,7 @@ export async function requestAccountDeletion(
     data: { deletionRequestedAt: now, isDeleted: true },
     where: { id: userId, isDeleted: false },
   });
+  if (count === 1) await hideAccount(db, userId);
   return count === 1;
 }
 
@@ -173,6 +187,9 @@ export async function runAccountDeletion(
     data: { deletionAttemptedAt: now, deletionAttempts: { increment: 1 } },
     where: { deletedAt: null, id: userId, isDeleted: true },
   });
+  // Hidden again before anything else, in case the request stopped between
+  // its statements.
+  await hideAccount(db, userId);
 
   // 1. Billing. Cancelled now, not at the period's end: nobody is left to
   //    use what would remain, and nothing more is charged. No refund is made
@@ -312,6 +329,7 @@ export async function runAccountDeletion(
       city: null,
       country: null,
       deletedAt: now,
+      deletionSkipped: skipped.length > 0 ? skipped.join(",") : null,
       email: deletedAccountEmail(userId),
       emailVerified: null,
       firstName: DELETED_MEMBER.firstName,
@@ -324,7 +342,6 @@ export async function runAccountDeletion(
       role: "standard",
       seekingTypes: null,
       state: null,
-      deletionSkipped: skipped.length > 0 ? skipped.join(",") : null,
       zip: null,
     },
     where: { deletedAt: null, id: userId, isDeleted: true },

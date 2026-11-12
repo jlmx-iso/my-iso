@@ -36,8 +36,8 @@ type Props = {
   confirmation: { kind: "username" | "email"; value: string };
   /** Whether a confirmation email is sent after a deletion (email is configured). */
   confirmationEmail: boolean;
-  /** Where the browser goes once the account is gone. */
-  onDeleted?: () => void;
+  /** Where the browser goes once the account is gone; `pending` when a step is still to finish. */
+  onDeleted?: (pending: boolean) => void;
   /** Saves the export; replaced in tests. */
   saveFile?: (filename: string, data: unknown) => void;
 };
@@ -50,7 +50,7 @@ export default function AccountDataSettings({
   confirmation,
   confirmationEmail,
   // A full load, not a client navigation: nothing of the old session stays.
-  onDeleted = () => window.location.replace(ACCOUNT_DELETED_PATH),
+  onDeleted = (pending) => window.location.replace(pending ? `${ACCOUNT_DELETED_PATH}?pending=1` : ACCOUNT_DELETED_PATH),
   saveFile = saveJsonFile,
 }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -66,7 +66,7 @@ export default function AccountDataSettings({
   });
 
   const deleteAccount = api.account.deleteAccount.useMutation({
-    onSuccess: () => onDeleted(),
+    onSuccess: (result) => onDeleted(result.status === "scheduled"),
   });
   const deleting = deleteAccount.isPending;
 
@@ -167,8 +167,8 @@ export default function AccountDataSettings({
               <List.Item>You&apos;ll be signed out on every device.</List.Item>
               <List.Item>
                 Any Pro subscription is cancelled now, with no further charges. The rest of the period
-                you&apos;ve paid for is not refunded. To keep Pro until it ends, cancel in Billing and
-                delete your account later.
+                you&apos;ve paid for is not refunded. To keep Pro until it ends, cancel it under Current plan →
+                Manage subscription and delete your account later.
               </List.Item>
               <List.Item>
                 Messages you sent stay with the people who received them, from &ldquo;Deleted member&rdquo;.
