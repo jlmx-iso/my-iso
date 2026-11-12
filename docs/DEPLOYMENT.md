@@ -141,8 +141,8 @@ Stack traces of server-side errors are not source-mapped.
 - **Only through this origin.** The browser sends telemetry to `/lens/*`;
   the Worker forwards it. The proxy forwards only the SDK's own requests
   (event capture, session replay, the SDK's script files and remote config),
-  never cookies or an `Authorization` header, and answers 404 for anything
-  else.
+  never cookies, an `Authorization` header or the `Referer` (the page URL,
+  query string included), and answers 404 for anything else.
 - **Scrubbed.** Before an event leaves, in the browser and on the server,
   every string in it loses URL query strings and fragments, email addresses
   and invite codes; error messages and stack frames also lose standalone
@@ -158,8 +158,18 @@ Stack traces of server-side errors are not source-mapped.
     still reported, anonymously, with no user id, nothing derived from the
     visitor, no IP address and no query string.
   - *unknown* (until a banner asks): anonymous product analytics and error
-    reports. No session replay, no person properties.
-  - *granted*: all of the above plus session replay and person properties.
+    reports. No session replay, no person properties, and nothing stored in
+    the browser: PostHog keeps its state in memory, so the anonymous id
+    lasts one page load.
+  - *granted*: all of the above plus session replay, person properties and
+    PostHog's cookie and localStorage. Granting mid-session moves the
+    running SDK's state into storage; withdrawing it moves it back.
+- **Server errors** name the signed-in user only from the authenticated
+  session (decrypted with `AUTH_SECRET`), never from a cookie the browser
+  controls. Database errors carry no query arguments: Prisma runs with
+  `errorFormat: "minimal"` outside development, and validation errors, which
+  reprint the query whatever the format, are reduced to the call and the
+  problem before they are reported.
 
 ### Session replay
 

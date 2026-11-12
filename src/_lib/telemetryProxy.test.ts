@@ -200,6 +200,16 @@ describe("buildUpstreamHeaders", () => {
     expect(headers.get("origin")).toBe(ORIGIN);
     expect(headers.get("accept-language")).toBe("en-GB");
   });
+
+  it.each([
+    `${ORIGIN}/join?waitlist=approved&email=sarah%40example.com`,
+    `${ORIGIN}/join?code=ABCD-1234`,
+    `${ORIGIN}/app`,
+  ])("never forwards the page URL in Referer (%s)", (referer) => {
+    const headers = buildUpstreamHeaders(request({ Referer: referer }), null);
+    expect(headers.has("referer")).toBe(false);
+    expect(JSON.stringify([...headers])).not.toMatch(/sarah|ABCD-1234|\/join|\/app/);
+  });
 });
 
 describe("handleTelemetryProxy", () => {
@@ -209,7 +219,11 @@ describe("handleTelemetryProxy", () => {
     );
     const response = await proxy(
       post("/lens/e/?compression=gzip-js&ip=0", {
-        headers: { "Content-Type": "text/plain", Cookie: "session=secret" },
+        headers: {
+          "Content-Type": "text/plain",
+          Cookie: "session=secret",
+          Referer: `${ORIGIN}/join?code=ABCD-1234`,
+        },
       }),
       fetch,
     );
@@ -224,6 +238,7 @@ describe("handleTelemetryProxy", () => {
     expect(calls[0]?.init.redirect).toBe("manual");
     expect(await new Response(calls[0]?.init.body).text()).toBe("payload");
     expect(sentHeaders(calls[0]).has("cookie")).toBe(false);
+    expect(sentHeaders(calls[0]).has("referer")).toBe(false);
     expect(sentHeaders(calls[0]).get("x-forwarded-for")).toBe("203.0.113.9");
   });
 

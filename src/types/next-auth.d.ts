@@ -23,11 +23,14 @@ declare module "next-auth" {
   }
 }
 
+// What the session JWT holds (see the jwt callback in src/auth.ts). Every
+// field is optional: a token minted before a field existed lacks it, and
+// readers check (the session callback refuses a token without an id).
 declare module "next-auth/jwt" {
   interface JWT {
-    id: string;
+    id?: string;
     firstName?: string;
     lastName?: string;
-    profilePic?: string;
+    profilePic?: string | null;
   }
 }

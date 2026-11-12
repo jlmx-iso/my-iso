@@ -1,11 +1,15 @@
+import { encode } from "next-auth/jwt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ captureServerException: vi.fn() }));
 vi.mock("~/server/_lib/posthog", () => ({ captureServerException: mocks.captureServerException }));
 
-import { distinctIdFromCookie, onRequestError } from "./instrumentation";
+import { onRequestError, sessionUserIdFromCookie } from "./instrumentation";
 
 const TOKEN = "phc_test";
+const SECRET = "test-secret-at-least-thirty-two-characters-long";
+const SECURE_NAME = "__Secure-authjs.session-token";
+const PLAIN_NAME = "authjs.session-token";
 const routeContext = {
   renderSource: undefined,
   revalidateReason: undefined,
@@ -18,7 +22,25 @@ const routeContext = {
 function posthogCookie(state: Record<string, unknown>): string {
   return `ph_${TOKEN}_posthog=${encodeURIComponent(JSON.stringify(state))}`;
 }
-const IDENTIFIED = posthogCookie({ $user_state: "identified", distinct_id: "user_1" });
+/** A PostHog cookie claiming to be someone: client-controlled, never trusted. */
+const FORGED_POSTHOG = posthogCookie({ $user_state: "identified", distinct_id: "user_victim" });
+
+/** A session cookie as Auth.js issues it (encrypted JWT, salted with its name). */
+async function sessionCookie(
+  claims: Record<string, unknown>,
+  options: { name?: string; secret?: string; maxAge?: number } = {},
+): Promise<string> {
+  const name = options.name ?? SECURE_NAME;
+  const value = await encode({
+    maxAge: options.maxAge ?? 60 * 60,
+    salt: name,
+    secret: options.secret ?? SECRET,
+    token: claims,
+  });
+  return `${name}=${value}`;
+}
+
+let IDENTIFIED: string;
 
 async function report(headers: Record<string, string | string[]>) {
   const error = new Error("render failed");
@@ -37,9 +59,11 @@ async function report(headers: Record<string, string | string[]>) {
   return { context, options };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   vi.stubEnv("NEXT_PUBLIC_POSTHOG_PUBLIC_KEY", TOKEN);
+  vi.stubEnv("AUTH_SECRET", SECRET);
+  IDENTIFIED = await sessionCookie({ id: "user_1", sub: "user_1" });
 });
 
 describe("onRequestError", () => {
@@ -54,7 +78,12 @@ describe("onRequestError", () => {
     expect(options).toEqual({ consent: "unknown" });
   });
 
-  it("never attaches a Global Privacy Control visitor, even with an old identified cookie", async () => {
+  it("never attributes an error from a client-controlled PostHog cookie", async () => {
+    const { context } = await report({ cookie: FORGED_POSTHOG });
+    expect(context.distinctId).toBeUndefined();
+  });
+
+  it("never attaches a Global Privacy Control visitor, even with a valid session", async () => {
     const { context, options } = await report({ cookie: IDENTIFIED, "sec-gpc": "1" });
     expect(context.distinctId).toBeUndefined();
     expect(options).toEqual({ consent: "denied" });
@@ -76,31 +105,36 @@ describe("onRequestError", () => {
     expect(gpc.options).toEqual({ consent: "denied" });
   });
 
-  it("reports anonymously when there is no PostHog cookie", async () => {
+  it("reports anonymously when there is no session", async () => {
     const { context } = await report({});
     expect(context.distinctId).toBeUndefined();
   });
 });
 
-describe("distinctIdFromCookie", () => {
-  it("returns the id of an identified visitor only", () => {
-    expect(distinctIdFromCookie(IDENTIFIED)).toBe("user_1");
-    expect(
-      distinctIdFromCookie(posthogCookie({ $user_state: "anonymous", distinct_id: "anon-uuid" })),
-    ).toBeUndefined();
-    expect(distinctIdFromCookie(posthogCookie({ distinct_id: "anon-uuid" }))).toBeUndefined();
+describe("sessionUserIdFromCookie", () => {
+  it("reads the user id from a valid session, under either cookie name", async () => {
+    expect(await sessionUserIdFromCookie(`a=1; ${IDENTIFIED}`)).toBe("user_1");
+    const plain = await sessionCookie({ id: "user_2" }, { name: PLAIN_NAME });
+    expect(await sessionUserIdFromCookie(plain)).toBe("user_2");
   });
 
-  it("ignores other projects' cookies and malformed values", () => {
-    expect(distinctIdFromCookie(IDENTIFIED.replace(TOKEN, "phc_other"))).toBeUndefined();
-    expect(distinctIdFromCookie(`ph_${TOKEN}_posthog=%7Bnot-json`)).toBeUndefined();
-    expect(distinctIdFromCookie(`ph_${TOKEN}_posthog=%E0%A4%A`)).toBeUndefined();
-    expect(distinctIdFromCookie(`ph_${TOKEN}_posthog=null`)).toBeUndefined();
-    expect(distinctIdFromCookie(undefined)).toBeUndefined();
+  it("is anonymous for anything that is not a session this deployment issued", async () => {
+    // Signed with another secret.
+    expect(await sessionUserIdFromCookie(await sessionCookie({ id: "user_1" }, { secret: `${SECRET}-other` }))).toBeUndefined();
+    // Expired.
+    expect(await sessionUserIdFromCookie(await sessionCookie({ id: "user_1" }, { maxAge: -60 }))).toBeUndefined();
+    // Encrypted for one cookie name, presented under the other.
+    const moved = (await sessionCookie({ id: "user_1" }, { name: PLAIN_NAME })).replace(PLAIN_NAME, SECURE_NAME);
+    expect(await sessionUserIdFromCookie(moved)).toBeUndefined();
+    // No id claim, garbage, nothing.
+    expect(await sessionUserIdFromCookie(await sessionCookie({ sub: "x" }))).toBeUndefined();
+    expect(await sessionUserIdFromCookie(`${SECURE_NAME}=not-a-jwt`)).toBeUndefined();
+    expect(await sessionUserIdFromCookie(FORGED_POSTHOG)).toBeUndefined();
+    expect(await sessionUserIdFromCookie(undefined)).toBeUndefined();
   });
 
-  it("returns nothing when PostHog is not configured", () => {
-    vi.stubEnv("NEXT_PUBLIC_POSTHOG_PUBLIC_KEY", "");
-    expect(distinctIdFromCookie(IDENTIFIED)).toBeUndefined();
+  it("is anonymous without AUTH_SECRET", async () => {
+    vi.stubEnv("AUTH_SECRET", "");
+    expect(await sessionUserIdFromCookie(IDENTIFIED)).toBeUndefined();
   });
 });

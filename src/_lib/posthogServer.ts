@@ -95,6 +95,32 @@ export function pathOnly(pathOrUrl: string): string {
 }
 
 /**
+ * A Prisma validation error (a query of the wrong shape) reprints the whole
+ * query in its message, argument values included, whatever `errorFormat`
+ * says. Only its first line (which call) and its last (what is wrong, in
+ * terms of field names) are kept; the stack keeps its frames. Matched by
+ * name so that this module does not import Prisma. Anything else is
+ * returned as it is.
+ */
+export function withoutQueryArguments(error: unknown): unknown {
+  if (!(error instanceof Error) || error.name !== "PrismaClientValidationError") return error;
+
+  const lines = error.message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const first = lines[0] ?? "";
+  const last = lines.length > 1 ? lines[lines.length - 1] : "";
+  const message = [first, last].filter(Boolean).join(" ");
+
+  const redacted = new Error(message);
+  redacted.name = error.name;
+  const frames = (error.stack ?? "").split("\n").filter((line) => /^\s+at /.test(line));
+  redacted.stack = [`${error.name}: ${message}`, ...frames].join("\n");
+  return redacted;
+}
+
+/**
  * Reports an exception to PostHog error tracking and resolves once sent.
  *
  * Only what is listed in `context` goes with it: never request bodies,
@@ -116,6 +142,6 @@ export async function sendException(
   if (context.path) properties.path = pathOnly(context.path);
 
   await withPostHog(settings, (client) =>
-    client.captureExceptionImmediate(error, context.distinctId, properties),
+    client.captureExceptionImmediate(withoutQueryArguments(error), context.distinctId, properties),
   );
 }

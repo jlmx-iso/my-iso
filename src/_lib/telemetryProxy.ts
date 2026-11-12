@@ -77,12 +77,18 @@ const ROUTES: readonly Route[] = [
 /**
  * Request headers that must not reach PostHog: credentials (PostHog's
  * browser endpoints take the project token in the body, never a header),
- * and hop/edge headers that describe the proxy rather than the visitor.
- * `Host` is not copied either: fetch sets it from the target URL.
+ * `Referer`, and hop/edge headers that describe the proxy rather than the
+ * visitor. `Host` is not copied either: fetch sets it from the target URL.
+ *
+ * `Referer` is the full URL of the page the SDK runs on, query string
+ * included (`/join?code=...`, `/join?...&email=...`): exactly what the
+ * scrubber removes from the events themselves. PostHog reads the page and
+ * referrer from the (scrubbed) event properties, not from this header.
  */
 const STRIPPED_REQUEST_HEADERS = [
   "authorization",
   "cookie",
+  "referer",
   "host",
   "connection",
   "content-length",

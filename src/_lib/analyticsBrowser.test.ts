@@ -10,6 +10,7 @@ const posthog = vi.hoisted(() => ({
   opt_in_capturing: vi.fn(),
   opt_out_capturing: vi.fn(),
   reset: vi.fn(),
+  set_config: vi.fn(),
   startSessionRecording: vi.fn(),
   stopSessionRecording: vi.fn(),
 }));
@@ -57,6 +58,12 @@ function installBrowser(options: { cookie?: string; gpc?: boolean } = {}) {
 }
 
 beforeEach(() => {
+  // The module remembers the identified user in memory between calls;
+  // a refusal is the public way to make it forget.
+  installBrowser();
+  setAnalyticsConsent("denied");
+  vi.unstubAllGlobals();
+
   vi.clearAllMocks();
   posthog.__loaded = false;
   posthog.init.mockImplementation(() => {
@@ -80,6 +87,15 @@ describe("startAnalytics", () => {
     const [token, config] = posthog.init.mock.calls[0] as [string, ReturnType<typeof buildPostHogConfig>];
     expect(token).toBe("phc_test");
     expect(config.disable_session_recording).toBe(true);
+    // Nothing is stored in the browser until consent is explicit.
+    expect(config.persistence).toBe("memory");
+  });
+
+  it("lets PostHog use the browser's storage only with explicit consent", () => {
+    installBrowser({ cookie: "iso_consent=granted" });
+    startAnalytics();
+    const [, config] = posthog.init.mock.calls[0] as [string, ReturnType<typeof buildPostHogConfig>];
+    expect(config.persistence).toBe("localStorage+cookie");
   });
 
   it("allows replay only with explicit consent", () => {
@@ -116,14 +132,19 @@ describe("startAnalytics", () => {
 });
 
 describe("buildPostHogConfig", () => {
-  const config = buildPostHogConfig({ environment: "staging", sessionReplay: true });
+  const config = buildPostHogConfig({ environment: "staging", sessionReplay: true, storage: true });
 
   it("sends everything to the app's own origin", () => {
     expect(config.api_host).toBe("/lens");
     expect(config.ui_host).toBe("https://us.posthog.com");
-    expect(buildPostHogConfig({ environment: "x", sessionReplay: false, uiHost: "https://eu.posthog.com" }).ui_host).toBe(
+    expect(buildPostHogConfig({ environment: "x", sessionReplay: false, storage: false, uiHost: "https://eu.posthog.com" }).ui_host).toBe(
       "https://eu.posthog.com",
     );
+  });
+
+  it("keeps PostHog's state in memory without storage consent", () => {
+    expect(config.persistence).toBe("localStorage+cookie");
+    expect(buildPostHogConfig({ environment: "x", sessionReplay: false, storage: false }).persistence).toBe("memory");
   });
 
   it("captures App Router pageviews and exceptions, with identified-only profiles", () => {
@@ -255,14 +276,53 @@ describe("setAnalyticsConsent", () => {
     expect(jar.cookie).not.toContain("iso_consent");
     expect(posthog.stopSessionRecording).toHaveBeenCalledOnce();
   });
+
+  it("granted mid-session: moves PostHog and the identified user into the browser's storage", () => {
+    const { storage } = installBrowser();
+    startAnalytics();
+    syncAnalyticsUser({ id: "user_1" });
+    expect(storage.size).toBe(0);
+
+    setAnalyticsConsent("granted");
+
+    expect(posthog.set_config).toHaveBeenCalledExactlyOnceWith({ persistence: "localStorage+cookie" });
+    expect(storage.get("iso_analytics_user")).toBe("user_1");
+    // Not re-initialised: the running SDK switches over.
+    expect(posthog.init).toHaveBeenCalledOnce();
+  });
+
+  it("granted before anything started: starts with storage, no switch needed", () => {
+    installBrowser({ cookie: "iso_consent=denied" });
+    setAnalyticsConsent("granted");
+    const [, config] = posthog.init.mock.calls[0] as [string, ReturnType<typeof buildPostHogConfig>];
+    expect(config.persistence).toBe("localStorage+cookie");
+    expect(posthog.set_config).not.toHaveBeenCalled();
+  });
+
+  it("unknown after granted: back to memory, nothing left in storage", () => {
+    const { storage } = installBrowser({ cookie: "iso_consent=granted" });
+    startAnalytics();
+    syncAnalyticsUser({ id: "user_1" });
+    expect(storage.get("iso_analytics_user")).toBe("user_1");
+
+    setAnalyticsConsent("unknown");
+
+    expect(posthog.set_config).toHaveBeenCalledExactlyOnceWith({ persistence: "memory" });
+    expect(storage.size).toBe(0);
+    // The identity is still known for this page: sign-out still resets it.
+    syncAnalyticsUser(null);
+    expect(posthog.reset).toHaveBeenCalledOnce();
+  });
 });
 
 describe("syncAnalyticsUser", () => {
   it("identifies by user id only, without person properties, until consent is explicit", () => {
-    installBrowser();
+    const { storage } = installBrowser();
     startAnalytics();
     syncAnalyticsUser({ email: "sarah@example.com", id: "user_1", name: "Sarah" });
     expect(posthog.identify).toHaveBeenCalledExactlyOnceWith("user_1");
+    // Remembered for this page only, not in the browser's storage.
+    expect(storage.size).toBe(0);
   });
 
   it("adds email and name with explicit consent", () => {

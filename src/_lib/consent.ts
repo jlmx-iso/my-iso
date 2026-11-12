@@ -21,6 +21,12 @@ export type ConsentCapabilities = {
   personProperties: boolean;
   /** Session replay. */
   sessionReplay: boolean;
+  /**
+   * Analytics state kept in the browser across page loads (PostHog's
+   * cookie and localStorage). Without it the SDK keeps its state in memory
+   * only, so an anonymous visitor gets a new id on every page load.
+   */
+  storage: boolean;
 };
 
 /**
@@ -68,8 +74,8 @@ export function resolveConsent(input: {
  *   user id, nothing derived from the visitor, no IP address, no query
  *   string). See `captureServerException` in ~/server/_lib/posthog.
  * - unknown (no banner has asked yet): anonymous product analytics and
- *   error reports only. Session replay and person properties need an
- *   explicit yes.
+ *   error reports only, with nothing stored in the browser. Session
+ *   replay, person properties and browser storage need an explicit yes.
  * - granted: everything.
  */
 export function consentCapabilities(state: ConsentState): ConsentCapabilities {
@@ -77,6 +83,7 @@ export function consentCapabilities(state: ConsentState): ConsentCapabilities {
     capture: state !== "denied",
     personProperties: state === "granted",
     sessionReplay: state === "granted",
+    storage: state === "granted",
   };
 }
 

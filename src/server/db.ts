@@ -5,6 +5,7 @@ import type { SqlDriverAdapterFactory } from "@prisma/client/runtime/client";
 
 import { logger } from "~/_utils";
 import { env } from "~/env";
+import { prismaErrorFormat } from "~/server/_db/errorFormat";
 import { extendWithSoftDelete, type ExtendedPrismaClient } from "~/server/_db/softDelete";
 
 const globalForPrisma = globalThis as unknown as {
@@ -14,6 +15,7 @@ const globalForPrisma = globalThis as unknown as {
 function createExtendedClient(adapter: SqlDriverAdapterFactory) {
   const client = new PrismaClient({
     adapter,
+    errorFormat: prismaErrorFormat(env.NODE_ENV),
     log:
       env.NODE_ENV === "development"
         ? ["query", "info", "error", "warn"]

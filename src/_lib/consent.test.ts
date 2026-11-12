@@ -45,11 +45,12 @@ describe("resolveConsent", () => {
 });
 
 describe("consentCapabilities", () => {
-  it("unknown allows analytics but not replay or person properties", () => {
+  it("unknown allows analytics but not replay, person properties or browser storage", () => {
     expect(consentCapabilities("unknown")).toEqual({
       capture: true,
       personProperties: false,
       sessionReplay: false,
+      storage: false,
     });
   });
 
@@ -58,6 +59,7 @@ describe("consentCapabilities", () => {
       capture: true,
       personProperties: true,
       sessionReplay: true,
+      storage: true,
     });
   });
 
@@ -66,6 +68,7 @@ describe("consentCapabilities", () => {
       capture: false,
       personProperties: false,
       sessionReplay: false,
+      storage: false,
     });
   });
 });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaClient } from "@prisma/client";
+import { type Prisma, PrismaClient } from "@prisma/client";
 import Database from "better-sqlite3";
 
 import {
@@ -44,7 +44,9 @@ export type TestDb = {
  * Creates a real, empty SQLite database with the app's schema in a temporary
  * directory. Call `close()` when done.
  */
-export async function createTestDb(): Promise<TestDb> {
+export async function createTestDb(
+  options: Pick<Prisma.PrismaClientOptions, "errorFormat"> = {},
+): Promise<TestDb> {
   const dir = mkdtempSync(path.join(tmpdir(), "my-iso-test-"));
   const file = path.join(dir, "test.sqlite");
 
@@ -54,6 +56,7 @@ export async function createTestDb(): Promise<TestDb> {
 
   const raw = new PrismaClient({
     adapter: new PrismaBetterSqlite3({ url: `file:${file}` }),
+    ...options,
   });
 
   return {

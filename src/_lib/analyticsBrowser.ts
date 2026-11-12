@@ -73,16 +73,27 @@ export function beforeSend(event: CaptureResult | null): CaptureResult | null {
   };
 }
 
+/**
+ * Where PostHog keeps its state (anonymous id, session, super properties).
+ * Only explicit consent lets it use the browser's cookie and localStorage;
+ * until then it lives in memory and is gone with the page.
+ */
+export function persistenceFor(storage: boolean): PostHogConfig["persistence"] {
+  return storage ? "localStorage+cookie" : "memory";
+}
+
 /** The configuration PostHog is started with. Exported for tests. */
 export function buildPostHogConfig(options: {
   environment: string;
   sessionReplay: boolean;
+  storage: boolean;
   uiHost?: string;
 }): Partial<PostHogConfig> {
   return {
     api_host: TELEMETRY_PROXY_PATH,
     ui_host: options.uiHost ?? DEFAULT_POSTHOG_UI_HOST,
     defaults: "2026-08-30",
+    persistence: persistenceFor(options.storage),
 
     // App Router: a $pageview on load and on every client-side navigation.
     capture_pageview: "history_change",
@@ -137,6 +148,7 @@ export function startAnalytics(): boolean {
     buildPostHogConfig({
       environment: process.env.NEXT_PUBLIC_APP_ENV ?? "development",
       sessionReplay: capabilities.sessionReplay,
+      storage: capabilities.storage,
       uiHost: process.env.NEXT_PUBLIC_POSTHOG_UI_HOST,
     }),
   );
@@ -149,9 +161,12 @@ export function startAnalytics(): boolean {
  * - "denied": capture stops now. The SDK is opted out, replay stops, and
  *   the stored identity is dropped. From the next page load the SDK is not
  *   initialised at all.
- * - "granted": analytics start (if they were not running) and replay may
- *   record.
- * - "unknown": the choice is forgotten; anonymous analytics only.
+ * - "granted": analytics start (if they were not running), replay may
+ *   record, and PostHog moves its state from memory to the browser's
+ *   storage.
+ * - "unknown": the choice is forgotten; anonymous analytics only, with
+ *   PostHog's state back in memory and nothing left in the browser's
+ *   storage.
  *
  * A Global Privacy Control signal still overrides a "granted" choice.
  */
@@ -172,30 +187,76 @@ export function setAnalyticsConsent(state: ConsentState): void {
     return;
   }
 
+  const wasRunning = posthog.__loaded;
   if (!startAnalytics()) return;
+  // A fresh start was configured from the new choice already.
+  if (wasRunning) posthog.set_config({ persistence: persistenceFor(capabilities.storage) });
+  moveIdentifiedUser(capabilities.storage);
   if (posthog.has_opted_out_capturing()) posthog.opt_in_capturing();
   if (capabilities.sessionReplay) posthog.startSessionRecording();
   else posthog.stopSessionRecording();
 }
 
-/** Where this browser remembers which user it identified to PostHog. */
+/**
+ * Which user this browser identified to PostHog: in localStorage with
+ * explicit consent, otherwise only in memory for the life of the page (like
+ * PostHog's own state then).
+ */
 const IDENTIFIED_USER_KEY = "iso_analytics_user";
+let identifiedInMemory: string | null = null;
+
+function storageAllowed(): boolean {
+  return consentCapabilities(readBrowserConsent()).storage;
+}
 
 function readIdentifiedUser(): string | null {
   try {
-    return window.localStorage.getItem(IDENTIFIED_USER_KEY);
+    return window.localStorage.getItem(IDENTIFIED_USER_KEY) ?? identifiedInMemory;
   } catch {
-    return null;
+    return identifiedInMemory;
+  }
+}
+
+function rememberIdentifiedUser(userId: string): void {
+  identifiedInMemory = userId;
+  if (!storageAllowed()) return;
+  try {
+    window.localStorage.setItem(IDENTIFIED_USER_KEY, userId);
+  } catch {
+    // Without storage the reset on sign-out relies on the memory copy and,
+    // after a reload, on PostHog's own check of a different id.
+  }
+}
+
+function removeStoredIdentifiedUser(): void {
+  try {
+    window.localStorage.removeItem(IDENTIFIED_USER_KEY);
+  } catch {
+    // Storage is unavailable; nothing was stored.
   }
 }
 
 function forgetIdentifiedUser(): void {
+  identifiedInMemory = null;
+  removeStoredIdentifiedUser();
+}
+
+/** Puts the remembered user where the current consent allows it. */
+function moveIdentifiedUser(storage: boolean): void {
+  const userId = readIdentifiedUser();
+  if (userId === null) return;
+  identifiedInMemory = userId;
+  if (!storage) {
+    removeStoredIdentifiedUser();
+    return;
+  }
   try {
-    window.localStorage.removeItem(IDENTIFIED_USER_KEY);
+    window.localStorage.setItem(IDENTIFIED_USER_KEY, userId);
   } catch {
-    // Storage is unavailable; nothing was remembered.
+    // Kept in memory only.
   }
 }
+
 
 export type AnalyticsUser = {
   email?: string | null;
@@ -240,12 +301,7 @@ export function syncAnalyticsUser(user: AnalyticsUser | null): void {
     posthog.identify(user.id);
   }
 
-  try {
-    window.localStorage.setItem(IDENTIFIED_USER_KEY, user.id);
-  } catch {
-    // Without storage the reset on sign-out is skipped; the next identify
-    // with a different id still resets through PostHog's own check.
-  }
+  rememberIdentifiedUser(user.id);
 }
 
 /** Reports an error caught by a React error boundary. No-op when stopped. */
