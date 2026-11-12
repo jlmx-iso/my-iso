@@ -6,6 +6,9 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 
 const mockDb = vi.hoisted(() => {
   const db = {
+    pendingInviteValidation: {
+      findFirst: vi.fn(),
+    },
     user: {
       findUnique: vi.fn(),
     },
@@ -250,35 +253,61 @@ describe("authRouter.verifyAccount", () => {
 // ---------------------------------------------------------------------------
 
 describe("authRouter.requestMobileOtp", () => {
-  it("silently returns { sent: true } when email not found (no enumeration)", async () => {
-    mockDb.user.findUnique.mockResolvedValueOnce(null);
+  const email = "test@example.com";
 
-    const caller = makeCaller();
-    const result = await caller.requestMobileOtp({ email: "ghost@example.com" });
-
-    expect(result.sent).toBe(true);
-    expect(result.devCode).toBeUndefined();
-  });
-
-  it("creates token, sends email, and returns { sent: true } in non-dev (test) mode", async () => {
-    // NODE_ENV='test' → isDev=false → takes the email path
-    mockDb.user.findUnique.mockResolvedValueOnce({ id: "user-1" });
+  // NODE_ENV='test' → isDev=false → a code that is issued is also emailed.
+  function expectCodeIssued() {
     mockDb.verificationToken.deleteMany.mockResolvedValueOnce({});
     mockDb.verificationToken.create.mockResolvedValueOnce({
       token: "123456",
-      identifier: "otp:test@example.com",
+      identifier: `otp:${email}`,
       expires: new Date(),
     });
-    // sendEmail must succeed so the handler doesn't throw
     mockSendEmail.mockResolvedValueOnce({ isOk: true, isErr: false, value: { success: true } });
+  }
 
-    const caller = makeCaller();
-    const result = await caller.requestMobileOtp({ email: "test@example.com" });
+  it("sends a code to an existing user", async () => {
+    mockDb.user.findUnique.mockResolvedValueOnce({ id: "user-1" });
+    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce(null);
+    expectCodeIssued();
 
-    expect(result.sent).toBe(true);
-    // Non-dev mode: devCode is undefined (not exposed to client)
-    expect(result.devCode).toBeUndefined();
+    const result = await makeCaller().requestMobileOtp({ email });
+
+    expect(result).toEqual({ sent: true, devCode: undefined });
+    expect(mockDb.verificationToken.create).toHaveBeenCalledOnce();
     expect(mockSendEmail).toHaveBeenCalledOnce();
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ email }));
+  });
+
+  it("sends a code to an invitee who has no account yet", async () => {
+    mockDb.user.findUnique.mockResolvedValueOnce(null);
+    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce({ id: "pending-1" });
+    expectCodeIssued();
+
+    const result = await makeCaller().requestMobileOtp({ email: "Test@Example.com" });
+
+    expect(result).toEqual({ sent: true, devCode: undefined });
+    // Looked up by the normalised email, ignoring expired invites.
+    expect(mockDb.pendingInviteValidation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { email, expiresAt: { gt: expect.any(Date) as Date } },
+      }),
+    );
+    expect(mockDb.verificationToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ identifier: `otp:${email}` }) as object,
+    });
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("sends nothing, with an identical response, when there is neither a user nor a pending invite", async () => {
+    mockDb.user.findUnique.mockResolvedValueOnce(null);
+    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce(null);
+
+    const result = await makeCaller().requestMobileOtp({ email: "ghost@example.com" });
+
+    expect(result).toEqual({ sent: true, devCode: undefined });
+    expect(mockDb.verificationToken.create).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
   it("throws TOO_MANY_REQUESTS when rate limited", async () => {
