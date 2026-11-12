@@ -189,7 +189,11 @@ describe("readIcebreakers", () => {
 
   it("says pending while there is nothing stored yet", () => {
     expect(readIcebreakers(null)).toEqual({ icebreakers: [], icebreakersStatus: "pending" });
-    expect(readIcebreakers("corrupt")).toEqual({ icebreakers: [], icebreakersStatus: "pending" });
+  });
+
+  it("says unavailable, not pending for ever, for a stored value that does not parse", () => {
+    expect(readIcebreakers("corrupt")).toEqual({ icebreakers: [], icebreakersStatus: "unavailable" });
+    expect(readIcebreakers("[]")).toEqual({ icebreakers: [], icebreakersStatus: "unavailable" });
   });
 
   it("says unavailable when AI is switched off", () => {

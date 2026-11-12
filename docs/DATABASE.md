@@ -69,7 +69,7 @@ shows what is pending without applying anything.
    ```
 
 3. Save it as the next numbered file, for example
-   `migrations/0002_add_event_capacity.sql`. Names are `NNNN_description.sql`
+   `migrations/0005_add_event_capacity.sql`. Names are `NNNN_description.sql`
    (lower case, digits and underscores); files are applied in name order.
 4. Read the SQL before you commit it. Prisma writes it for plain SQLite:
    - When a change cannot be done with `ALTER TABLE` (dropping a column

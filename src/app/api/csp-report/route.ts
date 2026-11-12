@@ -1,4 +1,5 @@
 import {
+  actionableViolations,
   CSP_REPORT_LIMIT,
   MAX_CSP_REPORT_BYTES,
   parseCspReports,
@@ -24,6 +25,14 @@ function empty(status: number): Response {
  *
  * Unauthenticated by nature, so it is size-capped, rate-limited per client
  * address, and keeps only a few fields of each report.
+ *
+ * Nothing personal is recorded. Browsers send reports without cookies, and
+ * each event carries only: the directive, the disposition, the blocked
+ * resource and the script's file (origin and path, or a keyword such as
+ * "eval"), the document's path (no query string or fragment) and a line
+ * number. All reports share one distinct id and create no person profile;
+ * the client address is used for the rate-limit key (hashed) and is not
+ * sent.
  */
 export async function POST(request: Request): Promise<Response> {
   const body = await readBodyCapped(request, MAX_CSP_REPORT_BYTES);
@@ -36,7 +45,10 @@ export async function POST(request: Request): Promise<Response> {
     return empty(400);
   }
 
-  const violations = parseCspReports(payload);
+  // Known probes are dropped before the rate-limit write: they come with
+  // every page view of some pages and need neither a database write nor an
+  // event.
+  const violations = actionableViolations(parseCspReports(payload));
   if (violations.length === 0) return empty(204);
 
   const limit = await checkRateLimit(db, CSP_REPORT_LIMIT, `ip:${getClientIp(request.headers)}`);

@@ -116,6 +116,31 @@ export function parseCspReports(payload: unknown): CspViolation[] {
 }
 
 /**
+ * A library feature probe, not a problem to act on: code in the app's own
+ * bundle (`/_next/static/...`, or no source reported) trying `eval` /
+ * `new Function`. Zod 4 does this once per page to decide whether it may
+ * compile its parsers; the throw is caught, but the browser still reports
+ * it. The app never evaluates code itself (script-src has no
+ * 'unsafe-eval' on purpose), so a first-party eval report is always such a
+ * probe. An eval from a script elsewhere is still reported.
+ */
+export function isFirstPartyEvalProbe(violation: CspViolation): boolean {
+  if (violation.blocked !== "eval") return false;
+  if (!violation.directive?.startsWith("script-src")) return false;
+  if (violation.sourceFile === null) return true;
+  try {
+    return new URL(violation.sourceFile).pathname.startsWith("/_next/static/");
+  } catch {
+    return false;
+  }
+}
+
+/** The violations worth recording: everything but known probes. */
+export function actionableViolations(violations: CspViolation[]): CspViolation[] {
+  return violations.filter((violation) => !isFirstPartyEvalProbe(violation));
+}
+
+/**
  * Reads at most `limit` bytes of a request body as text. Returns null when
  * the body is larger, so an oversized upload is never buffered.
  */

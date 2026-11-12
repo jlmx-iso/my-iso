@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  actionableViolations,
+  type CspViolation,
+  isFirstPartyEvalProbe,
   MAX_CSP_REPORT_BYTES,
   MAX_REPORTS_PER_REQUEST,
   parseCspReports,
@@ -103,6 +106,44 @@ describe("parseCspReports", () => {
     ["wrong types throughout", { "csp-report": { "effective-directive": 5, "line-number": "12" } }],
   ])("yields nothing for %s", (_name, payload) => {
     expect(parseCspReports(payload)).toEqual([]);
+  });
+});
+
+describe("isFirstPartyEvalProbe", () => {
+  const evalReport = (overrides: Partial<CspViolation> = {}): CspViolation => ({
+    blocked: "eval",
+    directive: "script-src",
+    disposition: "report",
+    documentPath: "/app/events",
+    lineNumber: 1,
+    sourceFile: "https://myiso.app/_next/static/chunks/zod.js",
+    ...overrides,
+  });
+
+  it("recognises the eval probe from the app's own bundle, as browsers report it", () => {
+    const [parsed] = parseCspReports({
+      "csp-report": {
+        "blocked-uri": "eval",
+        disposition: "report",
+        "document-uri": "https://myiso.app/app/messages",
+        "effective-directive": "script-src",
+        "source-file": "https://myiso.app/_next/static/chunks/1234-abcd.js",
+      },
+    });
+    expect(parsed && isFirstPartyEvalProbe(parsed)).toBe(true);
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: null }))).toBe(true);
+  });
+
+  it("keeps an eval from anywhere else, and every other violation", () => {
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://cdn.example/x.js" }))).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ sourceFile: "https://myiso.app/app/page.js" }))).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ blocked: "inline" }))).toBe(false);
+    expect(isFirstPartyEvalProbe(evalReport({ directive: "style-src" }))).toBe(false);
+  });
+
+  it("drops only the probes from a batch", () => {
+    const real = evalReport({ blocked: "https://evil.example/x.js", directive: "script-src-elem" });
+    expect(actionableViolations([evalReport(), real, evalReport({ sourceFile: null })])).toEqual([real]);
   });
 });
 

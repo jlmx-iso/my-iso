@@ -9,7 +9,7 @@
 import openNextWorker from "open-next-worker";
 
 import type { CloudflareEnv } from "./cloudflare-env";
-import { JOBS_ROUTE_PREFIX } from "./src/_lib/jobToken";
+import { isJobsRoutePath } from "./src/_lib/jobToken";
 import { type PostHogSettings, sendException } from "./src/_lib/posthogServer";
 import { handleTelemetryProxy, isTelemetryProxyPath } from "./src/_lib/telemetryProxy";
 import { handleRealtimeRequest, REALTIME_PATH, type RealtimeIdentity } from "./src/do/realtimeGateway";
@@ -109,7 +109,7 @@ async function route(
 
   // Scheduled jobs are started by this Worker's own `scheduled` handler,
   // never by a request from outside.
-  if (pathname === JOBS_ROUTE_PREFIX || pathname.startsWith(`${JOBS_ROUTE_PREFIX}/`)) {
+  if (isJobsRoutePath(pathname)) {
     return new Response("Not found", { status: 404 });
   }
 

@@ -107,6 +107,9 @@ export function readIcebreakers(stored: string | null): {
 } {
   const icebreakers = parseStoredIcebreakers(stored);
   if (icebreakers) return { icebreakers, icebreakersStatus: "ready" };
+  // A stored value that does not parse is never regenerated (generation
+  // only claims a match whose icebreakers are null), so it is not pending.
+  if (stored !== null) return { icebreakers: [], icebreakersStatus: "unavailable" };
   return { icebreakers: [], icebreakersStatus: isAiEnabled() ? "pending" : "unavailable" };
 }
 

@@ -472,7 +472,7 @@ model InviteCode {
   maxRedemptions     Int                @default(5)
   currentRedemptions Int                @default(0)
   // How many redemptions were ever recorded for this code. Raised by the
-  // trigger "InviteRedemption_count" (migrations/0002) in the same statement
+  // trigger "InviteRedemption_count" (migrations/0004) in the same statement
   // that inserts the redemption, and never lowered: a used invite stays
   // used, also after the invited member's account (and with it the
   // redemption row) is deleted.
