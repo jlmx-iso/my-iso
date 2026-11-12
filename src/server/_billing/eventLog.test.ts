@@ -70,6 +70,13 @@ describe("Stripe event log", () => {
     await expect(claimStripeEvent(testDb.db, EVENT, { nowMs: laterMs, random: noCleanup })).resolves.toEqual({
       status: "in_progress",
     });
+
+    // The first holder giving up late does not delete the second one's claim.
+    await releaseStripeEvent(testDb.db, EVENT.id, first.claimedAt);
+    expect(await ids()).toEqual([EVENT.id]);
+    await expect(claimStripeEvent(testDb.db, EVENT, { nowMs: laterMs, random: noCleanup })).resolves.toEqual({
+      status: "in_progress",
+    });
   });
 
   it("purges ids past retention, now and then on a claim", async () => {
