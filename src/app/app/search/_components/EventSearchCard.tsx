@@ -34,9 +34,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         <Link href={`/app/events/${event.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
           {/* Hero image — full bleed at top */}
           {event.image && (
-            <Card.Section>
-              <Image src={event.image} alt={event.title} h={160} fit="cover" />
-            </Card.Section>
+            <Image src={event.image} alt={event.title} h={160} fit="cover" />
           )}
 
           <Stack gap="xs" p="md">
