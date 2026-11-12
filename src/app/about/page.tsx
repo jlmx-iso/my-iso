@@ -17,26 +17,22 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 
+
 import {
-  CountUp,
   FadeInOnScroll,
   StaggerContainer,
 } from "~/app/_components/animations";
+import { CountUp } from "~/app/_components/animations/CountUp";
+import { NextLink } from "~/app/_components/NextLink";
+import { pageMetadata } from "~/app/_lib/siteMetadata";
 
-export const metadata = {
+export const metadata = pageMetadata({
+  description:
+    "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
+  path: "/about",
+  socialTitle: "About ISO",
   title: "About",
-  description: "Learn about ISO — the photographer second shooter network.",
-  openGraph: {
-    title: "About ISO",
-    description:
-      "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
-  },
-  twitter: {
-    title: "About ISO",
-    description:
-      "Learn about ISO — the photographer second shooter network built by photographers, for photographers.",
-  },
-};
+});
 
 const values = [
   {
@@ -87,7 +83,6 @@ export default function AboutPage() {
         {/* Mission */}
         <Box py={60}>
           <Stack align="center" gap="lg" maw={640} mx="auto">
-            <FadeInOnScroll>
               <Text
                 size="sm"
                 fw={600}
@@ -98,28 +93,21 @@ export default function AboutPage() {
               >
                 About ISO
               </Text>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.1}>
               <Title order={1} ta="center">
                 Connecting photographers, one shoot at a time
               </Title>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.2}>
               <Text c="dimmed" size="lg" ta="center" style={{ lineHeight: 1.6 }}>
                 ISO is the second shooter network built for photographers who want
                 to do their best work. Whether you&apos;re a lead photographer
                 looking for reliable backup or a second shooter ready to book more
                 gigs, ISO makes the connection simple.
               </Text>
-            </FadeInOnScroll>
-            <FadeInOnScroll delay={0.3}>
               <Text c="dimmed" ta="center" style={{ lineHeight: 1.6 }}>
                 We started ISO because finding a great second shooter shouldn&apos;t
                 mean scrolling through Facebook groups or cold-DMing strangers on
                 Instagram. Photographers deserve a dedicated space to find, vet,
                 and book the right people for every shoot.
               </Text>
-            </FadeInOnScroll>
           </Stack>
         </Box>
 
@@ -233,7 +221,7 @@ export default function AboutPage() {
                   fw={700}
                   style={{ fontSize: "2.5rem" }}
                   variant="gradient"
-                  gradient={{ from: "orange.5", to: "orange.8", deg: 135 }}
+                  gradient={{ from: "orange.6", to: "orange.8", deg: 135 }}
                 >
                   <CountUp
                     target={stat.value}
@@ -288,7 +276,7 @@ export default function AboutPage() {
                   </Avatar>
                   <div>
                     <Text fw={500}>{member.name}</Text>
-                    <Text size="sm" c="orange">
+                    <Text size="sm" c="orange.7">
                       {member.role}
                     </Text>
                   </div>
@@ -323,7 +311,7 @@ export default function AboutPage() {
                 in your area.
               </Text>
               <Button
-                component="a"
+                component={NextLink}
                 href="/join"
                 size="lg"
                 rightSection={<IconArrowRight size={18} />}

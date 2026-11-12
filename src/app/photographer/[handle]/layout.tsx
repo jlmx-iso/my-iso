@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { defaultOpenGraph } from "~/app/_lib/siteMetadata";
 import { db } from "~/server/db";
 
 type Props = {
@@ -14,7 +15,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   });
 
   if (!photographer) {
-    return { title: "Photographer Not Found" };
+    return { robots: { index: false }, title: "Photographer not found" };
   }
 
   const name = photographer.name || "Photographer";
@@ -27,9 +28,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const ogImageUrl = `https://myiso.app/api/og/photographer?handle=${encodeURIComponent(handle)}`;
 
+  const path = `/photographer/${encodeURIComponent(handle)}`;
+
   return {
+    alternates: { canonical: path },
     description,
     openGraph: {
+      ...defaultOpenGraph,
       description,
       images: [
         {
@@ -41,6 +46,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ],
       title,
       type: "profile",
+      url: path,
     },
     title,
     twitter: {

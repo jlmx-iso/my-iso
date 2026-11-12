@@ -14,20 +14,15 @@ import {
 } from "@mantine/core";
 import { IconClock, IconMail } from "@tabler/icons-react";
 
-export const metadata = {
+import { pageMetadata } from "~/app/_lib/siteMetadata";
+
+export const metadata = pageMetadata({
+  description:
+    "Have a question or suggestion? Get in touch with the ISO team.",
+  path: "/contact",
+  socialTitle: "Contact ISO",
   title: "Contact",
-  description: "Get in touch with the ISO team.",
-  openGraph: {
-    title: "Contact ISO",
-    description:
-      "Have a question or suggestion? Get in touch with the ISO team.",
-  },
-  twitter: {
-    title: "Contact ISO",
-    description:
-      "Have a question or suggestion? Get in touch with the ISO team.",
-  },
-};
+});
 
 export default function ContactPage() {
   return (

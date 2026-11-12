@@ -1,17 +1,13 @@
 import { Box, Container, Divider, Stack, Text, Title } from "@mantine/core";
 
-export const metadata = {
+import { pageMetadata } from "~/app/_lib/siteMetadata";
+
+export const metadata = pageMetadata({
+  description:
+    "Read the ISO Privacy Policy.",
+  path: "/privacy",
   title: "Privacy Policy",
-  description: "ISO Privacy Policy.",
-  openGraph: {
-    title: "Privacy Policy",
-    description: "Read the ISO Privacy Policy.",
-  },
-  twitter: {
-    title: "Privacy Policy",
-    description: "Read the ISO Privacy Policy.",
-  },
-};
+});
 
 const sections = [
   {
@@ -82,7 +78,7 @@ export default function PrivacyPage() {
         <Stack gap="xl">
           {sections.map((section) => (
             <div key={section.title}>
-              <Title order={3} mb="xs">
+              <Title order={2} size="h3" mb="xs">
                 {section.title}
               </Title>
               <Text c="dimmed" style={{ lineHeight: 1.7 }}>

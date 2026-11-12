@@ -24,64 +24,72 @@ import {
   IconStar,
   IconUsers,
 } from "@tabler/icons-react";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import {
   FadeInOnScroll,
   StaggerContainer,
-  SmoothScroll,
 } from "~/app/_components/animations";
+import { NextLink } from "~/app/_components/NextLink";
 import { auth } from "~/auth";
 
+import { pageMetadata, SITE_DESCRIPTION } from "./_lib/siteMetadata";
+
+export const metadata: Metadata = {
+  ...pageMetadata({
+    description: SITE_DESCRIPTION,
+    path: "/",
+    socialTitle: "ISO — The Photographer Network",
+    title: "ISO — Find second shooters and photography gigs",
+  }),
+  // The root layout's template would append "| ISO" to a title that already
+  // starts with the brand.
+  title: { absolute: "ISO — Find second shooters and photography gigs" },
+};
+
 function HeroSection() {
+  // Above the fold: rendered visible in the server HTML, never scroll-revealed.
   return (
     <Box py={60}>
       <Stack align="center" gap="lg" maw={720} mx="auto">
-        <FadeInOnScroll>
-          <Badge size="lg" variant="light" radius="sm">
-            The Photographer Network
-          </Badge>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.1}>
-          <Title
-            order={1}
-            ta="center"
-            style={{ fontSize: "clamp(2.25rem, 5vw, 3.5rem)", lineHeight: 1.15 }}
-          >
-            Never shoot alone{" "}
-            <Text
-              span
-              inherit
-              variant="gradient"
-              gradient={{ from: "orange.5", to: "orange.8", deg: 135 }}
-            >
-              again
-            </Text>
-          </Title>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.2}>
+        <Badge size="lg" variant="light" radius="sm">
+          The Photographer Network
+        </Badge>
+        <Title
+          order={1}
+          ta="center"
+          style={{ fontSize: "clamp(2.25rem, 5vw, 3.5rem)", lineHeight: 1.15 }}
+        >
+          Never shoot alone{" "}
           <Text
-            c="dimmed"
-            size="lg"
-            ta="center"
-            maw={540}
-            style={{ lineHeight: 1.6 }}
+            span
+            inherit
+            variant="gradient"
+            gradient={{ from: "orange.6", to: "orange.8", deg: 135 }}
           >
-            ISO connects photographers with skilled second shooters for weddings,
-            events, and sessions. Build your team, grow your network, and deliver
-            more for every client.
+            again
           </Text>
-        </FadeInOnScroll>
-        <FadeInOnScroll delay={0.3}>
-          <Group mt="md">
-            <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
-              Join the Founding Class
-            </Button>
-            <Button component="a" href="/login" size="lg" variant="default">
-              Sign In
-            </Button>
-          </Group>
-        </FadeInOnScroll>
+        </Title>
+        <Text
+          c="dimmed"
+          size="lg"
+          ta="center"
+          maw={540}
+          style={{ lineHeight: 1.6 }}
+        >
+          ISO connects photographers with skilled second shooters for weddings,
+          events, and sessions. Build your team, grow your network, and deliver
+          more for every client.
+        </Text>
+        <Group mt="md" justify="center">
+          <Button component={NextLink} href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+            Join the Founding Class
+          </Button>
+          <Button component={NextLink} href="/login" size="lg" variant="default">
+            Sign In
+          </Button>
+        </Group>
       </Stack>
     </Box>
   );
@@ -133,17 +141,17 @@ function HowItWorksSection() {
           <Stack key={step.title} align="center" ta="center" gap="md">
             <Box pos="relative">
               <ThemeIcon size={56} radius="xl" variant="light">
-                <step.icon size={28} />
+                <step.icon size={28} aria-hidden />
               </ThemeIcon>
               <Text
                 fw={700}
                 size="xs"
-                c="orange"
+                c="orange.8"
                 pos="absolute"
                 top={-6}
                 right={-6}
                 style={{
-                  background: "var(--mantine-color-orange-0)",
+                  background: "var(--mantine-color-orange-1)",
                   borderRadius: "50%",
                   width: 22,
                   height: 22,
@@ -155,7 +163,7 @@ function HowItWorksSection() {
                 {i + 1}
               </Text>
             </Box>
-            <Title order={4} fw={500}>
+            <Title order={3} size="h4">
               {step.title}
             </Title>
             <Text c="dimmed" size="sm" maw={280}>
@@ -235,11 +243,11 @@ function FeaturesSection() {
         {features.map((feature) => (
           <Paper key={feature.title} p="lg" radius="md" withBorder>
             <ThemeIcon size={40} radius="md" variant="light" mb="sm">
-              <feature.icon size={22} />
+              <feature.icon size={22} aria-hidden />
             </ThemeIcon>
-            <Text fw={500} mb={4}>
+            <Title order={3} size="h5" mb={4}>
               {feature.title}
-            </Text>
+            </Title>
             <Text size="sm" c="dimmed" style={{ lineHeight: 1.6 }}>
               {feature.description}
             </Text>
@@ -266,9 +274,9 @@ function PricingPreviewSection() {
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl" maw={640} mx="auto">
         <FadeInOnScroll direction="left" delay={0.1}>
           <Paper p="xl" radius="md" withBorder style={{ height: "100%" }}>
-            <Text fw={600} size="lg">
+            <Title order={3} size="h4">
               Basic
-            </Text>
+            </Title>
             <Group align="baseline" gap={4} my="sm">
               <Text fw={700} style={{ fontSize: "2rem" }}>
                 $0
@@ -284,12 +292,12 @@ function PricingPreviewSection() {
                 "Direct messaging",
               ].map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-5)" />
+                  <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
                   <Text size="sm">{item}</Text>
                 </Group>
               ))}
             </Stack>
-            <Button component="a" href="/join" variant="default" fullWidth>
+            <Button component={NextLink} href="/join" variant="default" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -306,9 +314,9 @@ function PricingPreviewSection() {
             }}
           >
             <Group justify="space-between" align="center">
-              <Text fw={600} size="lg">
+              <Title order={3} size="h4">
                 Pro
-              </Text>
+              </Title>
               <Badge size="sm" variant="light" color="orange">
                 Founding Price
               </Badge>
@@ -318,7 +326,7 @@ function PricingPreviewSection() {
                 $10
               </Text>
               <Text c="dimmed" size="sm" td="line-through">
-                $19
+                <span className="sr-only">Regular price </span>$19
               </Text>
               <Text c="dimmed" size="sm">
                 / month
@@ -332,12 +340,12 @@ function PricingPreviewSection() {
                 "Analytics dashboard",
               ].map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-5)" />
+                  <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
                   <Text size="sm">{item}</Text>
                 </Group>
               ))}
             </Stack>
-            <Button component="a" href="/join" fullWidth>
+            <Button component={NextLink} href="/join" fullWidth>
               Get started
             </Button>
           </Paper>
@@ -367,7 +375,7 @@ function CtaSection() {
             Join the founding class of photographers building their teams
             and booking more work on ISO.
           </Text>
-          <Button component="a" href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
+          <Button component={NextLink} href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
             Join the founding class
           </Button>
         </Stack>
@@ -384,7 +392,6 @@ export default async function Home() {
 
   return (
     <Container size="lg" w="100%">
-      <SmoothScroll />
       <Stack gap={0}>
         <HeroSection />
         <Divider />

@@ -1,31 +1,67 @@
-import { type MantineThemeColors } from "@mantine/core";
+import { type MantineColorsTuple } from "@mantine/core";
 
-const colors: Partial<MantineThemeColors> = {
+/**
+ * Brand palette. Shade 6 of every colour is the "filled" shade and gives at
+ * least 4.5:1 against white, so white-on-filled buttons, anchors, outline
+ * buttons and coloured text all meet WCAG AA. Light variants pair shade 9
+ * text with a shade 1 background (the Mantine 9 defaults). The ratios are
+ * asserted in `colors.test.ts`.
+ */
+const colors = {
+    // Replaces Mantine's blue, whose filled shade is 3.6:1 against white.
+    blue: [
+        "#eef5fd",
+        "#dbe9fa",
+        "#b7d2f3",
+        "#8fb8ea",
+        "#6a9fe0",
+        "#4a87d3",
+        "#1f66b8",
+        "#19579d",
+        "#144780",
+        "#103965",
+    ],
+    // Warm neutral. `dimmed` text is gray.6 and stays readable on white and on
+    // the tinted surfaces (gray.0/1, orange.0/1, teal.0).
     gray: [
-        "#fbf3f5",
-        "#e7e7e7",
-        "#cdcdcd",
-        "#b2b2b2",
-        "#9a9a9a",
-        "#8b8b8b",
-        "#848484",
-        "#717171",
-        "#656565",
-        "#5c5557"
+        "#faf7f6",
+        "#f2edec",
+        "#e5dfde",
+        "#d1cac9",
+        "#b5adac",
+        "#8d8584",
+        "#6b6362",
+        "#57504f",
+        "#423c3b",
+        "#2c2827",
     ],
+    // Replaces Mantine's green, whose filled shade is 2.3:1 against white.
+    green: [
+        "#ebf9ef",
+        "#d5f1dd",
+        "#aee2bc",
+        "#84d199",
+        "#5bbd77",
+        "#3ba55b",
+        "#1f7f3f",
+        "#196b35",
+        "#14572b",
+        "#104422",
+    ],
+    // Primary: warm coral. Shade 3 is the original brand pastel and is only
+    // for decoration (stripes, illustrations), never for text or controls.
     orange: [
-        "#ffede9",
-        "#fcdcd3",
-        "#f2b7a9",
-        "#e98f7b",
-        "#e16e53",
-        "#dd583a",
-        "#dc4d2c",
-        "#c43d1f",
-        "#af351a",
-        "#9a2a13"
+        "#fff1ed",
+        "#ffe1d9",
+        "#fdc3b5",
+        "#f6a08b",
+        "#ee7f65",
+        "#e26345",
+        "#c9401d",
+        "#ad3516",
+        "#8f2c14",
+        "#742512",
     ],
-    // default is 3
     purple: [
         "#f2f1f8",
         "#e0dfeb",
@@ -33,49 +69,56 @@ const colors: Partial<MantineThemeColors> = {
         "#9b98c5",
         "#7d78b4",
         "#6a64ab",
-        "#615aa8",
-        "#514b93",
-        "#474384",
-        "#3c3975"
+        "#5a539f",
+        "#4c468b",
+        "#413c78",
+        "#353163",
     ],
-    // default is 9
+    // Errors and destructive actions: a cooler crimson so it does not read as
+    // the brand coral.
+    red: [
+        "#fff0f1",
+        "#ffdfe1",
+        "#ffc2c7",
+        "#ff9aa2",
+        "#f8707b",
+        "#ec4a58",
+        "#d02b3b",
+        "#b32232",
+        "#941c2a",
+        "#761722",
+    ],
+    // Ratings and tinted notices only (stars, `light` alerts and badges): shade
+    // 6 gives 3:1 against white for non-text UI. Not for filled controls: white
+    // text on it is below 4.5:1.
     tan: [
-        "#fff5e4",
-        "#f1dbb9",
-        "#f2d4a9",
-        "#e9bd7b",
-        "#e2a953",
-        "#de9c3b",
-        "#dc962c",
-        "#c3821e",
-        "#ae7317",
-        "#986209"
+        "#fff6e5",
+        "#fbe8c4",
+        "#f5d596",
+        "#eebf66",
+        "#e5a93d",
+        "#d49220",
+        "#b3740d",
+        "#946009",
+        "#784e08",
+        "#5c3c06",
     ],
-    // default is 3
+    // Accent.
     teal: [
-        "#e6fcf9",
-        "#d9f1ef",
-        "#b9e0dc",
-        "#95cfc9",
-        "#77c0b8",
-        "#62b7ae",
-        "#56b2a9",
-        "#449c93",
-        "#368b83",
-        "#1f7972"
+        "#e7faf7",
+        "#cff1ed",
+        "#a6dfd9",
+        "#7dccc4",
+        "#55b3aa",
+        "#369b92",
+        "#1d7a72",
+        "#17665f",
+        "#12534e",
+        "#0d403c",
     ],
-    white: [
-        "#ffffff",
-        "#f9f9f9",
-        "#f2f2f2",
-        "#ebebeb",
-        "#e4e4e4",
-        "#dcdcdc",
-        "#d5d5d5",
-        "#cecece",
-        "#c7c7c7",
-        "#c0c0c0"
-    ], // default is 3
-}
+} satisfies Record<string, MantineColorsTuple>;
+
+/** Body text: a warm near-black. */
+export const black = "#201c1b";
 
 export default colors;

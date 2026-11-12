@@ -34,6 +34,54 @@ p {
   margin: 0;
 }
 
+:root {
+  /* Height of the fixed bottom tab bar, without the device safe area. */
+  --tab-bar-height: 60px;
+  --header-height: 60px;
+  /* Height of the slim in-app legal footer (desktop only). */
+  --app-footer-height: 0px;
+}
+
+@media (min-width: 48em) {
+  :root {
+    --app-footer-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+html {
+  scroll-padding-top: calc(var(--header-height) + 12px);
+}
+
+/* Input borders one shade darker than Mantine's default: 3:1 against white. */
+.mantine-Input-input[data-variant="default"]:not([data-error]):not(:focus):not(:focus-within) {
+  --input-bd: var(--mantine-color-gray-5);
+}
+
+/* Skip link: first focusable element on every page. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-orange-7);
+  font-weight: 600;
+  box-shadow: var(--mantine-shadow-md);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
 /* Message animation */
 @keyframes messageIn {
   0% {
@@ -46,21 +94,60 @@ p {
   }
 }
 
-/* Events feed masonry layout */
-.events-masonry {
-  columns: 1;
-  column-gap: var(--mantine-spacing-sm);
-}
+/*
+ * Scroll reveals. Content is visible by default; it is only hidden while
+ * waiting to scroll into view once the inline script in the root layout has
+ * confirmed that JavaScript runs (`data-reveal` on <html>), and never when the
+ * visitor prefers reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-reveal] .reveal {
+    transition:
+      opacity var(--reveal-duration, 600ms) cubic-bezier(0.25, 0.1, 0.25, 1) var(--reveal-delay, 0ms),
+      transform var(--reveal-duration, 600ms) cubic-bezier(0.25, 0.1, 0.25, 1) var(--reveal-delay, 0ms);
+  }
 
-@media (min-width: 62em) {
-  .events-masonry {
-    columns: 2;
+  html[data-reveal] .reveal:not([data-revealed]) {
+    opacity: 0;
+    transform: translate(var(--reveal-x, 0), var(--reveal-y, 24px));
   }
 }
 
-.events-masonry-item {
-  break-inside: avoid;
-  margin-bottom: var(--mantine-spacing-sm);
+/* Interactive cards: lift on hover, visible focus ring for keyboard users. */
+.card-interactive {
+  transition:
+    box-shadow 200ms ease,
+    transform 200ms ease;
+}
+
+@media (hover: hover) {
+  .card-interactive:hover {
+    box-shadow: var(--mantine-shadow-md);
+    transform: translateY(-2px);
+  }
+}
+
+.row-interactive {
+  transition: background-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .row-interactive:hover {
+    background-color: var(--mantine-color-gray-0);
+  }
+}
+
+.row-interactive:focus-visible,
+.card-interactive:focus-visible {
+  outline: 2px solid var(--mantine-color-orange-6);
+  outline-offset: 2px;
+}
+
+/* Makes a link inside a positioned card cover the whole card. */
+.stretched-link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
 }
 
 /* Screen reader only utility - hides element visually but keeps it accessible */
@@ -74,4 +161,16 @@ p {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* Honour the reduced-motion preference for every CSS animation/transition. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
