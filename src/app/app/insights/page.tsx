@@ -14,7 +14,7 @@ import InsightsDashboard from "./_components/InsightsDashboard";
 export const metadata: Metadata = { title: "Insights" };
 
 const WHAT_YOU_GET = [
-  { icon: IconEye, text: "How many people opened your profile, day by day, over 7, 30 or 90 days" },
+  { icon: IconEye, text: "How often your profile was opened, day by day, over 7, 30 or 90 days" },
   { icon: IconRoute, text: "Where they came from: search, events, Discover, messages or a shared link" },
   { icon: IconChartBar, text: "Views of each of your events, and the applications they received" },
   { icon: IconMessageCircle, text: "How many photographers started a conversation with you" },

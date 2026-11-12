@@ -67,13 +67,13 @@ function TopEvents({ events }: { events: Insights["topEvents"] }) {
         );
     }
     return (
-        <Table.ScrollContainer minWidth={360}>
+        <Table.ScrollContainer minWidth={280}>
             <Table verticalSpacing="xs" data-testid="top-events">
                 <Table.Thead>
                     <Table.Tr>
                         <Table.Th>Event</Table.Th>
                         <Table.Th ta="right">Views</Table.Th>
-                        <Table.Th ta="right">Applications</Table.Th>
+                        <Table.Th ta="right">Applied</Table.Th>
                     </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -124,6 +124,8 @@ export default function InsightsDashboard() {
                     data={INSIGHT_RANGES.map((range) => ({ label: `${range} days`, value: String(range) }))}
                     aria-label="Period"
                     size="md"
+                    // 44px tall segments: a fingertip's target on phones.
+                    styles={{ label: { alignItems: "center", display: "flex", justifyContent: "center", minHeight: 44 } }}
                     data-testid="insights-range"
                 />
             </Group>
@@ -163,7 +165,7 @@ export default function InsightsDashboard() {
                         </Paper>
                         <Paper withBorder radius="md" p={{ base: "md", sm: "lg" }}>
                             <Title order={2} size="h5">Your events</Title>
-                            <Text size="xs" c="dimmed" mb="sm">Views and applications in this period, most viewed first.</Text>
+                            <Text size="xs" c="dimmed" mb="sm">Views and applications received in this period, most viewed first.</Text>
                             <TopEvents events={data.topEvents} />
                         </Paper>
                     </SimpleGrid>

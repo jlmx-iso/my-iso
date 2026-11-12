@@ -5,6 +5,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { IconLifebuoy, IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
 
+import { SUPPORT_EMAIL } from "~/_lib/site";
 import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN, SUPPORT_SUBJECT_MAX } from "~/_utils/limits";
 import { logger } from "~/_utils/logger";
 import { userFacingError } from "~/_utils/userError";
@@ -19,7 +20,8 @@ type ContactSupportButtonProps = {
     prominent?: boolean;
 };
 
-const FAILED = "Your message couldn't be sent. Please try again.";
+/** Whatever went wrong, the member can still reach a person. */
+const FAILED = `Your message couldn't be sent. Please try again, or email ${SUPPORT_EMAIL}.`;
 
 /**
  * Priority support for Pro members: a short form, sent to the team's inbox

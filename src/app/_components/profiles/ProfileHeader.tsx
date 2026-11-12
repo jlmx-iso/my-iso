@@ -77,10 +77,10 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
               <Title order={1} size="h2" style={{ overflowWrap: "anywhere" }}>
                 {photographer.name}
               </Title>
+              {photographer.isPro && <ProBadge size="sm" />}
               <Badge variant="light" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
                 Photographer
               </Badge>
-              {photographer.isPro && <ProBadge size="sm" />}
             </Group>
             {actions && (
               <Group gap="xs" wrap="nowrap" align="flex-start">
