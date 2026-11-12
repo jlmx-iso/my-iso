@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
 import authConfig from "~/auth.config";
@@ -9,7 +10,18 @@ import authConfig from "~/auth.config";
 // Keep this file as an edge middleware until that support is stable.
 const { auth } = NextAuth(authConfig);
 
-export default auth;
+/**
+ * Everything under /app requires a session. Anonymous visitors are sent to
+ * /login, which brings them back to the page they asked for.
+ */
+export default auth((request) => {
+  if (request.auth) return;
+
+  const { pathname, search } = request.nextUrl;
+  const loginUrl = new URL("/login", request.nextUrl);
+  loginUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
+  return NextResponse.redirect(loginUrl);
+});
 
 export const config = {
   matcher: ["/app/:path*"]
