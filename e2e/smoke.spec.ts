@@ -2,7 +2,7 @@
 // the pages render, and a signed-in member can load the feed and post an
 // event. See docs/TESTING.md, "End-to-end".
 
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext } from "@playwright/test";
 import { encode } from "next-auth/jwt";
 
 import { E2E_AUTH_SECRET, E2E_MEMBER, E2E_PORT } from "./config.mjs";
@@ -33,23 +33,6 @@ async function signIn(context: BrowserContext) {
   await context.addCookies([
     { httpOnly: true, name: SESSION_COOKIE, sameSite: "Lax", url: ORIGIN, value },
   ]);
-}
-
-/**
- * Picks the day `days` from today in the create-event form's date picker,
- * keeping the time it shows. (The field starts at "now", which the form
- * refuses as not in the future.)
- */
-async function pickDateDaysAhead(page: Page, days: number) {
-  const today = new Date();
-  const target = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
-  await page.getByRole("dialog").getByLabel("Date").click();
-  if (target.getMonth() !== today.getMonth()) {
-    await page.locator('[data-direction="next"]').first().click();
-  }
-  const label = target.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  await page.getByRole("button", { exact: true, name: label }).click();
-  await page.locator(".mantine-DateTimePicker-submitButton").click();
 }
 
 /**
@@ -110,15 +93,19 @@ test("a signed-in member loads the feed and creates an event", async ({ context,
   await expect(page.getByText("Spring Wedding at Barton Creek", { exact: false }).first()).toBeVisible();
 
   const title = `E2E shoot ${Date.now()}`;
-  await page.getByRole("button", { name: "Create Event" }).click();
-  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { exact: true, name: "Create event" }).click();
+  const dialog = page.getByRole("dialog", { name: "Create event" });
   await dialog.getByLabel("Title").fill(title);
   await dialog.getByLabel("Description").fill("Created by the end-to-end smoke test.");
-  await pickDateDaysAhead(page, 7);
+  // The date is left at the form's default (tomorrow, 10:00), which the
+  // form and the server must accept as it is.
+  await expect(dialog.getByLabel("Date and time")).not.toHaveText("");
   await dialog.getByLabel("Location").fill("Austin, TX");
-  await dialog.getByRole("button", { name: "Create Event" }).click();
+  await dialog.getByRole("button", { exact: true, name: "Create event" }).click();
 
-  await expect(dialog.getByText("Event created successfully!")).toBeVisible();
-  await page.goto("/app/events");
-  await expect(page.getByText(title)).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(`"${title}" is live`)).toBeVisible();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
 });
