@@ -2,9 +2,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
-import type { ZodType } from "zod";
-
-import { minimalInput } from "~/test/helpers/zodSample";
 
 vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
@@ -56,44 +53,6 @@ const PUBLIC_PROCEDURES = [
   "waitlist.submit",
 ];
 
-/**
- * Every procedure that only a Pro member may call. Each must be built on
- * `proProcedure` (checked below: a signed-in member without Pro gets
- * FORBIDDEN before anything else happens), and every procedure that is
- * Pro-only must be listed here.
- */
-const PRO_PROCEDURES = ["insights.getSummary", "support.contact"];
-
-/** The input schemas of a procedure (tRPC merges them), for minimalInput. */
-function inputSchemas(procedurePath: string): ZodType[] {
-  const procedure = (appRouter._def.procedures as unknown as Record<string, { _def: { inputs?: unknown[] } }>)[procedurePath];
-  return (procedure?._def.inputs ?? []) as ZodType[];
-}
-
-/**
- * Calls `path` as a signed-in member with no subscription, with `input`;
- * returns the error code.
- */
-async function nonProErrorCode(procedurePath: string, input?: unknown): Promise<string | undefined> {
-  const createCaller = appRouter.createCaller as unknown as (
-    context: unknown,
-  ) => Record<string, Record<string, (input: unknown) => Promise<unknown>>>;
-  const caller = createCaller({
-    cloudinaryClient: null,
-    // The Pro check reads the member's subscription row (none) and nothing else.
-    db: { subscription: { findUnique: async () => null } },
-    headers: new Headers(),
-    session: { expires: new Date(Date.now() + 60_000).toISOString(), user: { email: "m@example.com", id: "member" } },
-  });
-  const [router = "", name = ""] = procedurePath.split(".");
-  try {
-    await caller[router]?.[name]?.(input);
-    return undefined;
-  } catch (error) {
-    return (error as { code?: string }).code;
-  }
-}
-
 describe("appRouter surface", () => {
   it("has removed the dead, dangerous endpoints", () => {
     const paths = procedurePaths;
@@ -109,60 +68,6 @@ describe("appRouter surface", () => {
     expect(paths).not.toContain("discover.expireStaleMatches");
     expect(paths).not.toContain("message.getLatestThreadByUserId");
     expect(paths).toContain("message.getMyLatestThread");
-  });
-
-  it("refuses a signed-in member without Pro on every Pro procedure, before reading the input", async () => {
-    for (const procedurePath of PRO_PROCEDURES) {
-      expect(procedurePaths).toContain(procedurePath);
-      expect([procedurePath, await nonProErrorCode(procedurePath)]).toEqual([procedurePath, "FORBIDDEN"]);
-    }
-  });
-
-  it("lists every procedure that refuses members without Pro, called with valid input", async () => {
-    // Each procedure is called with the smallest input its schema accepts,
-    // so a Pro check written inside a resolver (after input validation) is
-    // reached too. The database holds only "no subscription": a Pro check
-    // (proProcedure, hasProAccess, loadSubscriptionForAccess) answers
-    // FORBIDDEN; anything else fails on the stub. Nothing may leave the
-    // process meanwhile.
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network in this test"));
-    try {
-      const refusing: string[] = [];
-      let withInput = 0;
-      for (const procedurePath of procedurePaths) {
-        const schemas = inputSchemas(procedurePath);
-        const input = minimalInput(schemas);
-        if (schemas.length > 0 && input !== undefined) withInput += 1;
-        if ((await nonProErrorCode(procedurePath, input)) === "FORBIDDEN") refusing.push(procedurePath);
-      }
-      expect(refusing.sort()).toEqual([...PRO_PROCEDURES].sort());
-      // Most procedures were reached past their input validation.
-      expect(withInput).toBeGreaterThan(procedurePaths.length / 2);
-    } finally {
-      fetchSpy.mockRestore();
-    }
-  });
-
-  it("finds a hand-rolled Pro check inside a resolver, which undefined input would not reach", async () => {
-    const { createTRPCRouter, protectedProcedure } = await import("./trpc");
-    const { hasProAccess } = await import("~/server/_billing/entitlements");
-    const { TRPCError } = await import("@trpc/server");
-    const { z } = await import("zod");
-    const sneaky = createTRPCRouter({
-      export: protectedProcedure.input(z.object({ days: z.number().int().min(7) })).query(async ({ ctx, input }) => {
-        if (!(await hasProAccess(ctx.db, ctx.session.user.id))) throw new TRPCError({ code: "FORBIDDEN" });
-        return input.days;
-      }),
-    });
-    const caller = (sneaky.createCaller as unknown as (context: unknown) => { export: (input: unknown) => Promise<unknown> })({
-      cloudinaryClient: null,
-      db: { subscription: { findUnique: async () => null } },
-      headers: new Headers(),
-      session: { expires: new Date(Date.now() + 60_000).toISOString(), user: { email: "m@example.com", id: "member" } },
-    });
-    const schemas = (sneaky._def.procedures as unknown as Record<string, { _def: { inputs: ZodType[] } }>).export?._def.inputs ?? [];
-    await expect(caller.export(undefined)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.export(minimalInput(schemas))).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("rejects anonymous callers on every procedure outside the public list", async () => {

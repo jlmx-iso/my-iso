@@ -215,7 +215,7 @@ Each item is backed by the server:
 | --- | --- | --- |
 | Shown first among equally relevant search results | `search.searchAll` (`rankedPhotographerIds`) | `proAccessSql`: the access table above as a SQL condition on `Subscription`, evaluated at read time |
 | Pro badge | `isPro` on profiles, search results, event owners, applicants and message participants | `proUserIds`: `entitlementsFor` over the stored rows, one query per page |
-| Insights | `insights.getSummary` (rate limited), page `/app/insights` and a link on the member's own profile. Complete UTC days through yesterday only, sources under three views folded into Other, so a number cannot be tied to one visit | `proProcedure` |
+| Insights | `insights.getSummary` (rate limited), page `/app/insights`, "View insights" on the Pro card in Settings and a link on the member's own profile. Complete UTC days through yesterday only, for every number on the page; sources under three views folded into Other, so a number cannot be tied to one visit. "Messaged you first" ignores nothing: a soft-deleted first message still decides who started the conversation | `proProcedure` |
 | Priority support | `support.contact` (email to `SUPPORT_INBOX_EMAIL`, subject `[Pro] ...`) | `proProcedure` |
 
 All three forms are the one rule in `entitlements.ts`.
@@ -228,9 +228,15 @@ ranking and loses its badge at that instant, with no job or webhook needed.
 
 The badge and the ranking read the stored row only; unlike `proProcedure`
 they never start a lazy first sync (below), which would be a Stripe call per
-name on a page. The list of `proProcedure`s is `PRO_PROCEDURES` in
-`src/server/api/root.test.ts`, which fails when a procedure refuses members
-without Pro and is not on it, or is on it and does not.
+name on a page.
+
+**A Pro-only procedure must use `proProcedure`**, never a Pro check inside
+its resolver, and its row in the authorization matrix
+(`src/server/api/authz.matrix.test.ts`, the one list of who may call what)
+says `access: "pro"`. The matrix calls every procedure with a valid input
+as a member without Pro and as a Pro member: a `pro` row must be refused by
+the Pro gate, and a `member` row that refuses the one but not the other (a
+hand-rolled Pro check) fails.
 
 ## Events handled
 
