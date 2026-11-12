@@ -42,7 +42,11 @@ const number = (value: number) => value.toLocaleString("en-US");
 export function changeLabel(compared: Compared, days: number): string {
     if (compared.previous === null) return "No earlier period to compare with yet";
     if (compared.changePercent === null) return compared.value > 0 ? `New: none in the previous ${days} days` : `None in the previous ${days} days either`;
-    if (compared.changePercent === 0) return `Same as the previous ${days} days`;
+    if (compared.value === compared.previous) return `Same as the previous ${days} days`;
+    // A real change that rounds to 0%: say which way, not "the same".
+    if (compared.changePercent === 0) {
+        return `Less than 1% ${compared.value > compared.previous ? "up" : "down"} vs previous ${days} days`;
+    }
     const sign = compared.changePercent > 0 ? "+" : "−";
     return `${sign}${Math.abs(compared.changePercent)}% vs previous ${days} days`;
 }
