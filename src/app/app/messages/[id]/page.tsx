@@ -10,5 +10,5 @@ export default async function Page({ params }: { params: Promise<{ id: string; }
   const thread = await (await api()).message.getThreadById({ threadId: id });
   if (!thread) notFound();
 
-  return <MessageFeed key={id} threadId={id} />;
+  return <MessageFeed key={id} threadId={id} initialThread={thread} />;
 }

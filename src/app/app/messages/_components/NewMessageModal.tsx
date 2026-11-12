@@ -8,6 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { fullName } from "~/_utils/names";
 import { NOT_MESSAGEABLE_MESSAGE, userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import { api } from "~/trpc/react";
@@ -27,8 +28,6 @@ export type Recipient = {
 
 /** The search starts at this many characters. */
 const MIN_QUERY_LENGTH = 2;
-
-const fullName = (recipient: Recipient) => `${recipient.firstName} ${recipient.lastName}`.trim();
 
 /**
  * "New message" button and composer. `?new=<userId>` in the URL (the
@@ -197,7 +196,7 @@ export default function NewMessageModal() {
                             }}
                         />
                         {/* Always rendered so screen readers hear the outcome of a search. */}
-                        <div role="status" aria-live="polite">
+                        <div role="status">
                             {hasNoMatches ? (
                                 <Stack align="center" gap={6} py="md" data-testid="recipient-empty">
                                     <ThemeIcon size={44} radius="xl" variant="light" color="gray">

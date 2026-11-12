@@ -31,5 +31,7 @@ export const Avatar = ({ src, name, alt, size = 120, ...props }: AvatarProps) =>
             />
         );
     }
-    return <MantineAvatar key={name} src={src} alt={label} size={size} {...props} />;
+    // A face identifies a person: session replay shows an empty box instead
+    // (see REPLAY_BLOCK_SELECTOR in ~/_lib/analyticsBrowser).
+    return <MantineAvatar key={name} src={src} alt={label} size={size} data-replay-block {...props} />;
 };

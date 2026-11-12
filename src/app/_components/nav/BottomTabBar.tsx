@@ -10,6 +10,9 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { unreadBadgeLabel, unreadConversationsLabel } from "~/_utils/unread";
+import { useUnreadConversations } from "~/app/_hooks/useUnreadMessages";
+
 import classes from "./BottomTabBar.module.css";
 
 const tabs = [
@@ -23,6 +26,7 @@ const tabs = [
 /** Phone navigation. Sits above the home indicator (safe-area inset). */
 export default function BottomTabBar() {
     const pathname = usePathname();
+    const unread = useUnreadConversations();
 
     return (
         <nav aria-label="Main" className={classes.bar}>
@@ -35,8 +39,20 @@ export default function BottomTabBar() {
                         className={classes.tab}
                         aria-current={isActive ? "page" : undefined}
                     >
-                        <tab.icon size={22} stroke={isActive ? 2 : 1.5} aria-hidden />
-                        <span>{tab.label}</span>
+                        <span className={classes.icon}>
+                            <tab.icon size={22} stroke={isActive ? 2 : 1.5} aria-hidden />
+                            {tab.href === "/app/messages" && unread > 0 && (
+                                <span className={classes.badge} aria-hidden data-testid="tab-unread">
+                                    {unreadBadgeLabel(unread)}
+                                </span>
+                            )}
+                        </span>
+                        <span>
+                            {tab.label}
+                            {tab.href === "/app/messages" && unread > 0 && (
+                                <span className="sr-only">, {unreadConversationsLabel(unread)}</span>
+                            )}
+                        </span>
                     </Link>
                 );
             })}

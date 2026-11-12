@@ -27,7 +27,33 @@
 }
 
 .tab:focus-visible {
-  outline: 2px solid var(--mantine-color-orange-6);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
   border-radius: var(--mantine-radius-md);
+}
+
+.icon {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Unread conversations, on the corner of the Messages icon. */
+.badge {
+  position: absolute;
+  top: -5px;
+  left: calc(100% - 9px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid var(--mantine-color-body);
+  border-radius: 10px;
+  box-sizing: content-box;
+  background: var(--mantine-color-orange-7);
+  color: var(--mantine-color-white);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }

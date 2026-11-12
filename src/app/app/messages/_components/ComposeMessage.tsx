@@ -3,13 +3,14 @@
 import { ActionIcon, Group, Text, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { IconSend } from "@tabler/icons-react";
-import { type KeyboardEvent, useId } from "react";
+import { type KeyboardEvent, useId, useRef } from "react";
 
 import { MAX_MESSAGE_LENGTH } from "~/_utils/limits";
 import { type ThreadMessage } from "~/_utils/threadMessages";
 import { userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
+import Icebreakers from "./Icebreakers";
 import { type Recipient } from "./NewMessageModal";
 
 type ComposeMessageProps = {
@@ -23,6 +24,8 @@ type ComposeMessageProps = {
   /** Called with the stored message once the server has accepted it. */
   onSent: (message: ThreadMessage) => void;
   threadId: string;
+  /** Offer conversation starters above the box (a match nobody has written in yet). */
+  suggestStarters?: boolean;
 };
 
 const SEND_FAILED = "Your message wasn't sent. It's still here — please try again.";
@@ -63,6 +66,12 @@ export default function ComposeMessage(props: ComposeMessageProps) {
   const isPending = createMessageMutation.isPending || createMessageThreadMutation.isPending;
 
   const statusId = useId();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const setDraft = (text: string) => {
+    form.setFieldValue("text", text);
+    form.clearFieldError("text");
+    inputRef.current?.focus();
+  };
   const length = form.values.text.trim().length;
   const error = typeof form.errors.text === "string" ? form.errors.text : null;
 
@@ -100,6 +109,9 @@ export default function ComposeMessage(props: ComposeMessageProps) {
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+      {"threadId" in props && props.suggestStarters && (
+        <Icebreakers threadId={props.threadId} onPick={setDraft} />
+      )}
       <Group
         gap="xs"
         align="flex-end"
@@ -111,6 +123,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
       >
         <Textarea
           {...form.getInputProps("text")}
+          ref={inputRef}
           // The message itself is shown below, full width, under the row.
           error={!!error}
           aria-describedby={statusId}

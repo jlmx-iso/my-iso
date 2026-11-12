@@ -6,30 +6,34 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
+import { fullName } from "~/_utils/names";
+import { hasEarlierMessages, mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
 import { Avatar } from "~/app/_components/Avatar";
+import { useMarkThreadRead } from "~/app/_hooks/useMarkThreadRead";
 import { useMessageWebSocket } from "~/app/_hooks/useMessageWebSocket";
-import { api } from "~/trpc/react";
+import { type RouterOutputs, api } from "~/trpc/react";
 
 import ComposeMessage from "./ComposeMessage";
 import MessageTile from "./MessageTile";
 
 /** How often to refetch the thread while the realtime socket is not open. */
 const POLL_INTERVAL_MS = 5_000;
-/** Page size of `message.getThreadById`. */
-const PAGE_SIZE = 50;
+/** The server just rendered the thread: no need to ask again on mount. */
+const FRESH_FOR_MS = 10_000;
 /** Within this distance of the bottom, new messages scroll into view by themselves. */
 const NEAR_BOTTOM_PX = 120;
 
 type MessageFeedProps = {
     threadId: string;
+    /** The thread as the server page loaded it (its newest messages). */
+    initialThread: NonNullable<RouterOutputs["message"]["getThreadById"]>;
 };
 
 /**
  * Renders one thread. Mount it with `key={threadId}` so that the messages
  * collected for one thread never carry over to another.
  */
-export default function MessageFeed({ threadId }: MessageFeedProps) {
+export default function MessageFeed({ threadId, initialThread }: MessageFeedProps) {
     const session = useSession();
     const userId = session.data?.user.id;
     const utils = api.useUtils();
@@ -94,8 +98,10 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
     const shouldPoll = realtimeStatus !== "open" && realtimeStatus !== "denied";
     const { data, isPending, isError, refetch } = api.message.getThreadById.useQuery({ threadId }, {
         enabled: !!userId,
+        initialData: initialThread,
         refetchInterval: shouldPoll ? POLL_INTERVAL_MS : false,
         refetchIntervalInBackground: false,
+        staleTime: FRESH_FOR_MS,
     });
 
     const messages = useMemo(
@@ -131,8 +137,17 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
         return () => cancelAnimationFrame(frame);
     }, [isNearBottom, latestMessage, latestMessageId, scrollToBottom, userId]);
 
-    const totalMessages = data?._count.messages ?? 0;
-    const hasEarlier = !reachedStart && totalMessages > messages.length;
+    // Read while it is on screen: clears the unread badge here and in the
+    // navigation, now and for each message that arrives.
+    useMarkThreadRead({ enabled: !!userId && hasLoaded, latestMessageId, threadId });
+
+    const hasEarlier =
+        !reachedStart &&
+        hasEarlierMessages({
+            shown: messages,
+            snapshot: data?.messages ?? [],
+            snapshotTotal: data?._count.messages ?? 0,
+        });
 
     // Height of the list before older messages were prepended, so the view
     // can stay on the message the reader was looking at.
@@ -153,7 +168,11 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
             // here yields the page before it. Overlap is merged away by id.
             const page = await utils.message.getThreadById.fetch({ startAt: messages.length, threadId });
             const older = page?.messages ?? [];
-            if (older.length < PAGE_SIZE) setReachedStart(true);
+            // Nothing came back although the count promised more (messages
+            // were deleted meanwhile): stop offering.
+            if (older.length === 0) setReachedStart(true);
+            // The button may be gone after this: keep focus in the log.
+            scrollerRef.current?.focus({ preventScroll: true });
             heightBeforePrepend.current = scrollerRef.current?.scrollHeight ?? null;
             setEarlierMessages((current) => mergeThreadMessages(current, older));
         } catch {
@@ -171,7 +190,7 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
 
     const others = data?.participants.filter((participant) => participant.id !== userId) ?? [];
     const title = others
-        .map((participant) => `${participant.firstName || ""} ${participant.lastName || ""}`.trim() || "ISO member")
+        .map((participant) => fullName(participant))
         .join(", ");
     const firstOther = others[0];
 
@@ -294,7 +313,12 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
             </Box>
 
             <Box px="sm" pb="sm" style={{ flexShrink: 0 }}>
-                <ComposeMessage threadId={threadId} onSent={onSent} />
+                <ComposeMessage
+                    threadId={threadId}
+                    onSent={onSent}
+                    // Until the member has written something themselves.
+                    suggestStarters={hasLoaded && !messages.some((message) => message.sender.id === userId)}
+                />
             </Box>
         </Stack>
     );
