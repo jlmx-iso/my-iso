@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderOptions } from "@testing-library/react";
 import { TRPCClientError, type TRPCLink } from "@trpc/client";
@@ -30,9 +31,14 @@ export type TrpcHandlers = {
 };
 
 /** An error as the server would send it, with its tRPC code. */
-export function trpcError(code: TRPC_ERROR_CODE_KEY, message: string = code) {
+export function trpcError(
+  code: TRPC_ERROR_CODE_KEY,
+  message: string = code,
+  /** More of the error's `data`, e.g. `{ reason: ErrorReason.PORTFOLIO_FULL }` or a `zodError`. */
+  data: Record<string, unknown> = {},
+) {
   return TRPCClientError.from({
-    error: { code: -32000, data: { code, httpStatus: 0 }, message },
+    error: { code: -32000, data: { code, httpStatus: 0, ...data }, message },
   });
 }
 
@@ -83,8 +89,8 @@ type ProviderOptions = {
 };
 
 /**
- * Renders `ui` inside MantineProvider and a tRPC + React Query provider
- * backed by `options.trpc`. Returns Testing Library's result plus `calls`,
+ * Renders `ui` inside MantineProvider (with the toast container) and a
+ * tRPC + React Query provider backed by `options.trpc`. Returns Testing Library's result plus `calls`,
  * every tRPC call made so far (path, input), and `callsTo(path)`.
  */
 export function renderWithProviders(
@@ -104,7 +110,11 @@ export function renderWithProviders(
 
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <MantineProvider>
+      // env="test": no transitions and no portals (Mantine's test mode), and
+      // popovers are not hidden for want of a layout (happy-dom has none).
+      <MantineProvider env="test">
+        {/* Toasts (~/app/_lib/notify) appear in the document, as in the app. */}
+        <Notifications />
         <QueryClientProvider client={queryClient}>
           <api.Provider client={trpcClient} queryClient={queryClient}>
             {children}
