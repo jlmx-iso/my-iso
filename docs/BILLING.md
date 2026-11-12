@@ -117,8 +117,18 @@ The rules behind the columns the status alone does not explain:
   at once are both seen, and winning one does not hide the other; and
   nothing depends on which event was handled last. `subscription.syncStatus`
   derives it too, so a customer can put a stale standing right from the
-  settings page if an event is late. One derivation is bounded (at most 16
+  settings page if an event is late. One derivation is bounded (at most 19
   Stripe requests), and neither bound keeps the previous standing:
+  - **A stored marker is cleared only on evidence about that very
+    dispute.** The dispute the row names (`disputeId`) is re-read from
+    Stripe by its id in every derivation and merged into the result. So a
+    derivation that cannot see its charge (an invoice event, or a dispute
+    closing on another charge, for a customer past the listing limit) does
+    not clear it. It is cleared when that dispute reads as won, withdrawn
+    or gone, or when it was lost and a later invoice has been paid for.
+    Likewise the refund marker: the charges that paid the latest invoice
+    are read directly when the listing does not hold them, so "not listed"
+    is never taken for "not refunded".
   - **More than 300 charges** on the customer: the standing is derived from
     the newest 300 **plus the charge a dispute or refund event is about**,
     which is read directly by its payment intent whatever its age. So for
@@ -197,7 +207,7 @@ plan's size limit). What the billing code assumes from it:
 
 | Limit | Value | Where it matters |
 | --- | --- | --- |
-| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 51 Stripe requests and 30 statements, so `RESYNC_MAX_BATCH` is 10. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 16 for the payment standing. The Free plan would not carry a batch. |
+| Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 54 Stripe requests and 30 statements, so `RESYNC_MAX_BATCH` is 10. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 19 for the payment standing. The Free plan would not carry a batch. |
 | Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget finishes there; its Stripe calls are limited to 3 seconds each for that reason. |
 
 If `limits.subrequests` is ever set below 1,000, lower `SUBREQUEST_BUDGET`

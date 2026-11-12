@@ -491,7 +491,13 @@ async function storePaymentStanding(
   subscription: Stripe.Subscription,
   paymentIntentId: string | null = null,
 ): Promise<PaymentStanding | null> {
-  const standing = await readPaymentStanding(stripe, subscription, { paymentIntentId });
+  // The marker the row holds now (read under the lease, which is what
+  // serialises it with the write below): that dispute is re-read by id.
+  const stored = await db.subscription.findFirst({
+    select: { disputeId: true, disputeInvoiceId: true },
+    where: { subscriptionId: subscription.id },
+  });
+  const standing = await readPaymentStanding(stripe, subscription, { paymentIntentId, stored });
   if (!standing) return null;
   const written = await writePaymentStanding(db, lease, subscription.id, standing);
   if (written !== "recorded") return null;

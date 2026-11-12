@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 
+import { isStripeResourceMissing } from "./stripe";
 import { disputeStanding, stripeId } from "./subscriptionState";
 
 /**
@@ -64,11 +65,17 @@ const DISPUTE_HORIZON_SECONDS = 2 * 365 * 24 * 60 * 60;
 export const MAX_DISPUTED_CHARGES = 5;
 
 /**
+/** Payments of the latest invoice whose charge is read directly when the listing does not hold it. */
+const MAX_UNLISTED_PAYMENTS_READ = 2;
+
+/**
  * The most Stripe requests one derivation makes: the charge pages, the
- * charge an event is about, two per disputed charge examined, the invoices
- * of the subscription, and the payments of its latest invoice.
+ * charge an event is about, the dispute the row already names, two per
+ * disputed charge examined, the invoices of the subscription, the payments
+ * of its latest invoice, and those payments' charges where unlisted.
  */
-export const MAX_STANDING_STRIPE_CALLS = MAX_CHARGE_PAGES + 1 + 2 * MAX_DISPUTED_CHARGES + 2;
+export const MAX_STANDING_STRIPE_CALLS =
+  MAX_CHARGE_PAGES + 1 + 1 + 2 * MAX_DISPUTED_CHARGES + 2 + MAX_UNLISTED_PAYMENTS_READ;
 
 /**
  * The subscription invoice a payment paid, if it paid one.
@@ -182,17 +189,31 @@ async function standingLoss(
   return lost.find((dispute) => dispute.invoiceId === newestPaidFor.id) ?? null;
 }
 
-/** Whether every successful charge that paid `invoiceId` was refunded in full. */
+/**
+ * Whether every successful charge that paid `invoiceId` was refunded in
+ * full. A payment whose charge is not among `charges` (the listing did not
+ * reach it) has that charge read directly, by payment intent: "not in the
+ * list" must never be taken for "not refunded".
+ */
 async function isRefundedInFull(
   stripe: Stripe,
   invoiceId: string,
   charges: readonly Stripe.Charge[],
 ): Promise<boolean> {
   const payments = await stripe.invoicePayments.list({ invoice: invoiceId, limit: LIST_LIMIT, status: "paid" });
+  const known = [...charges];
+  let directReads = 0;
+  for (const payment of payments.data) {
+    const intent = stripeId(payment.payment.payment_intent);
+    if (!intent || known.some((charge) => stripeId(charge.payment_intent) === intent)) continue;
+    if (directReads >= MAX_UNLISTED_PAYMENTS_READ) break;
+    directReads += 1;
+    known.push(...(await stripe.charges.list({ limit: LIST_LIMIT, payment_intent: intent })).data);
+  }
   const paying = payments.data.flatMap((payment) => {
     const intent = stripeId(payment.payment.payment_intent);
     const direct = stripeId(payment.payment.charge);
-    return charges.filter(
+    return known.filter(
       (charge) =>
         charge.status === "succeeded" &&
         ((intent !== null && stripeId(charge.payment_intent) === intent) || charge.id === direct),
@@ -205,6 +226,30 @@ async function isRefundedInFull(
 }
 
 /**
+ * The dispute the row already names, as Stripe has it now, when it still
+ * withholds something ("open" or "lost"). It is read by its id, so it is
+ * part of every derivation whether or not the charge listing reaches its
+ * charge: a derivation that cannot see a dispute must never clear it.
+ */
+async function storedDisputeNow(
+  stripe: Stripe,
+  stored: { disputeId: string | null; disputeInvoiceId: string | null },
+): Promise<SubscriptionDispute | null> {
+  if (!stored.disputeId) return null;
+  let dispute: Stripe.Dispute;
+  try {
+    dispute = await stripe.disputes.retrieve(stored.disputeId);
+  } catch (error) {
+    // Stripe has no such dispute any more: nothing is withheld by it.
+    if (isStripeResourceMissing(error)) return null;
+    throw error;
+  }
+  const standing = disputeStanding(dispute.status);
+  if (standing === "cleared" || !stored.disputeInvoiceId) return null;
+  return { created: dispute.created, id: dispute.id, invoiceId: stored.disputeInvoiceId, standing };
+}
+
+/**
  * Reads the standing of `subscription` (as just read from Stripe, with
  * `latest_invoice` expanded) from Stripe, in at most
  * MAX_STANDING_STRIPE_CALLS requests. Null only when the subscription has
@@ -214,6 +259,14 @@ async function isRefundedInFull(
  * charges are read directly, by payment intent, so the charge the event
  * concerns is always part of the derivation, however long the customer's
  * history is and however old the charge.
+ *
+ * `stored`: the dispute marker the row holds. That dispute is re-read by
+ * its id and merged in, so a marker is cleared only on evidence about that
+ * very dispute (it reads as won, withdrawn or gone; or it was lost and a
+ * later invoice has been paid for), never because a derivation that could
+ * not see its charge found nothing. The refund marker needs no such input:
+ * the charges that paid the latest invoice are read directly when the
+ * listing does not hold them.
  *
  * The work is bounded, and neither bound keeps the previous standing:
  *
@@ -234,7 +287,11 @@ async function isRefundedInFull(
 export async function readPaymentStanding(
   stripe: Stripe,
   subscription: Stripe.Subscription,
-  options: { nowMs?: number; paymentIntentId?: string | null } = {},
+  options: {
+    nowMs?: number;
+    paymentIntentId?: string | null;
+    stored?: { disputeId: string | null; disputeInvoiceId: string | null } | null;
+  } = {},
 ): Promise<PaymentStanding | null> {
   const customerId = stripeId(subscription.customer);
   if (!customerId) return null;
@@ -247,7 +304,13 @@ export async function readPaymentStanding(
   const listedIds = new Set(listed.map((charge) => charge.id));
   const charges = [...listed, ...focus.filter((charge) => !listedIds.has(charge.id))];
 
-  const { disputes, unexamined } = await disputesOfSubscription(stripe, subscription.id, listed, focus, nowSeconds);
+  const examined = await disputesOfSubscription(stripe, subscription.id, listed, focus, nowSeconds);
+  const { unexamined } = examined;
+  const stored = options.stored ? await storedDisputeNow(stripe, options.stored) : null;
+  const disputes =
+    stored && !examined.disputes.some((dispute) => dispute.id === stored.id)
+      ? [...examined.disputes, stored].sort((a, b) => b.created - a.created)
+      : examined.disputes;
   const open = disputes.find((dispute) => dispute.standing === "open");
   const deciding =
     open ??

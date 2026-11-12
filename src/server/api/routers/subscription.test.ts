@@ -880,6 +880,61 @@ describe("syncStatus and the payment standing", () => {
   });
 });
 
+describe("a dispute on a charge the listing does not reach, recorded by its own event", () => {
+  /** An active subscription with 320 recent charges and an open dispute on a 500-day-old one, already on the row. */
+  async function oldOpenDispute() {
+    const user = await createTestUser(testDb.db);
+    await testDb.db.user.update({ data: { stripeId: "cus_a" }, where: { id: user.id } });
+    stub.customers.set("cus_a", { id: "cus_a", metadata: { userId: user.id }, object: "customer" });
+    const now = Math.floor(Date.now() / 1000);
+    stub.subscriptions.set("sub_a", buildSubscription({ customer: "cus_a", id: "sub_a", latestInvoice: "in_1", status: "active" }));
+    stub.invoices.set("in_1", buildInvoice({ customer: "cus_a", id: "in_1", status: "paid", subscriptionId: "sub_a" }));
+    stub.invoicePayments.set("inpay_1", buildInvoicePayment({ id: "inpay_1", invoice: "in_1", paymentIntent: "pi_1" }));
+    stub.charges.set("ch_1", buildCharge({ created: now - 500 * DAY, customer: "cus_a", id: "ch_1", paymentIntent: "pi_1" }));
+    for (let i = 1; i <= 320; i += 1) {
+      stub.charges.set(`ch_bulk_${i}`, buildCharge({ created: now - 400 * DAY + i, customer: "cus_a", id: `ch_bulk_${i}`, paymentIntent: `pi_bulk_${i}` }));
+    }
+    stub.disputes.set("dp_1", buildDispute({ charge: "ch_1", id: "dp_1", paymentIntent: "pi_1", status: "needs_response" }));
+    await as(user).syncStatus();
+    // What `charge.dispute.created` stored (webhook.test.ts covers that step).
+    await testDb.db.subscription.update({
+      data: { disputeId: "dp_1", disputeInvoiceId: "in_1", disputeStatus: "open" },
+      where: { userId: user.id },
+    });
+    return user;
+  }
+
+  const marker = async (user: TestUser) => {
+    const row = await testDb.db.subscription.findUniqueOrThrow({ where: { userId: user.id } });
+    return { disputeId: row.disputeId, disputeStatus: row.disputeStatus };
+  };
+
+  it("is not cleared by a re-sync, which reads without that dispute's payment intent", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const user = await oldOpenDispute();
+
+    const batch = await as(admin).resyncFromStripe({ scope: "all" });
+
+    expect(batch.processed).toBe(1);
+    expect(await marker(user)).toEqual({ disputeId: "dp_1", disputeStatus: "open" });
+    expect(await as(user).getStatus()).toMatchObject({ hasProAccess: false, isDisputed: true });
+  });
+
+  it("nor by the manual refresh; and both clear it once the dispute itself is won", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const user = await oldOpenDispute();
+
+    expect(await as(user).syncStatus()).toMatchObject({ hasProAccess: false, isDisputed: true });
+    expect(await marker(user)).toEqual({ disputeId: "dp_1", disputeStatus: "open" });
+
+    stub.disputes.set("dp_1", buildDispute({ charge: "ch_1", id: "dp_1", paymentIntent: "pi_1", status: "won" }));
+    await as(admin).resyncFromStripe({ scope: "all" });
+
+    expect(await marker(user)).toEqual({ disputeId: null, disputeStatus: null });
+    expect(await as(user).getStatus()).toMatchObject({ hasProAccess: true, isDisputed: false });
+  });
+});
+
 describe("the re-sync batch and the subrequest budget", () => {
   it("is sized so that the worst case per row, times the batch, stays inside the budget", () => {
     expect(RESYNC_MAX_BATCH).toBeGreaterThanOrEqual(1);
