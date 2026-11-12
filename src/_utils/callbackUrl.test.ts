@@ -29,6 +29,10 @@ describe("sanitizeCallbackUrl", () => {
     ["a tab hidden in the slashes", "/\t/evil.example"],
     ["a newline hidden in the slashes", "/\n/evil.example"],
     ["leading whitespace", " /app/events"],
+    ["a dot segment that normalises to a protocol-relative URL", "/.//evil.example"],
+    ["an encoded dot segment that normalises to a protocol-relative URL", "/%2e//evil.example"],
+    ["a parent segment that normalises to a protocol-relative URL", "/app/..//evil.example"],
+    ["an encoded parent segment that normalises to a protocol-relative URL", "/app/%2e%2e//evil.example"],
   ])("falls back for %s", (_label, url) => {
     expect(sanitizeCallbackUrl(url)).toBe(DEFAULT_SIGNED_IN_PATH);
   });
