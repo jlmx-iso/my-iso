@@ -31,3 +31,19 @@ export function reviewGate(state: ReviewState, photographerName: string): Review
       return { kind: "none" };
   }
 }
+
+/** What a signed-in non-owner sees under the reviews, including while the server's answer is loading or failed. */
+export type MemberReviewView = ReviewGate | { kind: "loading" } | { kind: "error" };
+
+/**
+ * Decides from the eligibility query: an answer (even a stale one while a
+ * refetch fails) decides the gate; a failure with no answer is an error the
+ * visitor can retry, never silence.
+ */
+export function memberReviewView(
+  query: { data?: ReviewState; isError: boolean },
+  photographerName: string,
+): MemberReviewView {
+  if (query.data) return reviewGate(query.data, photographerName);
+  return query.isError ? { kind: "error" } : { kind: "loading" };
+}

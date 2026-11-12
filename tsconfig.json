@@ -49,6 +49,8 @@
   "exclude": [
     "node_modules",
     "coverage",
+    ".stryker-tmp",
+    "reports",
     ".claude",
     /* Build output. Type-checking the generated ~20 MB OpenNext bundle under
        checkJs exhausts the heap. */

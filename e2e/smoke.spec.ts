@@ -1,0 +1,111 @@
+// Smoke test of the built Worker in workerd (wrangler dev) with a local D1:
+// the pages render, and a signed-in member can load the feed and post an
+// event. See docs/TESTING.md, "End-to-end".
+
+import { expect, test, type BrowserContext } from "@playwright/test";
+import { encode } from "next-auth/jwt";
+
+import { E2E_AUTH_SECRET, E2E_MEMBER, E2E_PORT } from "./config.mjs";
+
+const ORIGIN = `http://localhost:${E2E_PORT}`;
+// On plain http Auth.js uses the unprefixed cookie name, which is also the
+// salt of the encrypted token.
+const SESSION_COOKIE = "authjs.session-token";
+
+/**
+ * Signs `context` in as the seeded member: the same encrypted JWT Auth.js
+ * would set after a sign-in (this app uses the JWT session strategy).
+ */
+async function signIn(context: BrowserContext) {
+  const value = await encode({
+    salt: SESSION_COOKIE,
+    secret: E2E_AUTH_SECRET,
+    token: {
+      email: E2E_MEMBER.email,
+      firstName: E2E_MEMBER.firstName,
+      id: E2E_MEMBER.id,
+      lastName: E2E_MEMBER.lastName,
+      name: `${E2E_MEMBER.firstName} ${E2E_MEMBER.lastName}`,
+      profilePic: null,
+      sub: E2E_MEMBER.id,
+    },
+  });
+  await context.addCookies([
+    { httpOnly: true, name: SESSION_COOKIE, sameSite: "Lax", url: ORIGIN, value },
+  ]);
+}
+
+/**
+ * No real outbound calls. The browser may only talk to the Worker under
+ * test: any other host is refused and recorded, and the test fails on it.
+ * The Worker's own outbound calls are kept away the same way: the only one
+ * a test can trigger is Google Places autocomplete (typing a location), so
+ * the browser's request for suggestions is refused before it reaches the
+ * Worker, and the form falls back to the typed text, as it does when Places
+ * is down. Everything else the Worker could call is off by configuration
+ * (e2e/serve.mjs): no Resend, Anthropic or Stripe calls are made by these
+ * pages, and PostHog points at a closed local port.
+ */
+const externalRequests: string[] = [];
+
+test.beforeEach(async ({ context }) => {
+  externalRequests.length = 0;
+  await context.route(
+    (url) => url.hostname !== "localhost" && url.hostname !== "127.0.0.1",
+    async (route) => {
+      externalRequests.push(route.request().url());
+      await route.abort("blockedbyclient");
+    },
+  );
+  await context.route(/\/api\/trpc\/[^?]*google\.getAutocompleteLocations/, (route) =>
+    route.abort("blockedbyclient"),
+  );
+});
+
+test.afterEach(() => {
+  expect(externalRequests, "requests to hosts other than the Worker under test").toEqual([]);
+});
+
+test("the landing page renders", async ({ page }) => {
+  const response = await page.goto("/");
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("body")).toContainText(/second shooter/i);
+});
+
+test("the sign-in page renders", async ({ page }) => {
+  const response = await page.goto("/login");
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("textbox", { name: /email/i }).first()).toBeVisible();
+});
+
+test("an anonymous visitor to the app is sent to sign in", async ({ page }) => {
+  await page.goto("/app/events");
+  await expect(page).toHaveURL(/\/login/);
+});
+
+test("a signed-in member loads the feed and creates an event", async ({ context, page }) => {
+  await signIn(context);
+
+  const response = await page.goto("/app/events");
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Events" })).toBeVisible();
+  // The seeded feed.
+  await expect(page.getByText("Spring Wedding at Barton Creek", { exact: false }).first()).toBeVisible();
+
+  const title = `E2E shoot ${Date.now()}`;
+  await page.getByRole("button", { exact: true, name: "Create event" }).click();
+  const dialog = page.getByRole("dialog", { name: "Create event" });
+  await dialog.getByLabel("Title").fill(title);
+  await dialog.getByLabel("Description").fill("Created by the end-to-end smoke test.");
+  // The date is left at the form's default (tomorrow, 10:00), which the
+  // form and the server must accept as it is.
+  await expect(dialog.getByLabel("Date and time")).not.toHaveText("");
+  await dialog.getByLabel("Location").fill("Austin, TX");
+  await dialog.getByRole("button", { exact: true, name: "Create event" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(`"${title}" is live`)).toBeVisible();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+});

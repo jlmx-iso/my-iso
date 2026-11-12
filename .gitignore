@@ -7,6 +7,12 @@
 
 # testing
 /coverage
+# Mutation testing (Stryker): sandbox and reports
+/.stryker-tmp/
+/reports/
+# End-to-end runs (Playwright): local D1, traces, results
+/e2e/.state/
+/test-results/
 
 # database
 /prisma/db.sqlite

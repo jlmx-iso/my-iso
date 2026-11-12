@@ -254,3 +254,69 @@ describe("scrubErrorForLog", () => {
     expect(scrubErrorForLog("bad /join?code=x for a@b.co")).toEqual({ message: "bad /join for [email]", name: "NonError" });
   });
 });
+
+// Cases found by mutation testing (npm run test:mutation): each pins a
+// behaviour no earlier test noticed changing.
+describe("scrubbing edge cases", () => {
+  it("strips query strings from http:// and ws:// URLs, not just https:// and wss://", () => {
+    expect(scrubText("GET http://localhost:3000/join?code=x failed")).toBe("GET http://localhost:3000/join failed");
+    expect(scrubText("socket ws://localhost:8787/realtime?token=secret closed")).toBe(
+      "socket ws://localhost:8787/realtime closed",
+    );
+  });
+
+  it("does not take a six-digit file name for a code", () => {
+    expect(scrubText("at 123456.js:10", { codes: true })).toBe("at 123456.js:10");
+  });
+
+  it("replaces an object or array exactly at the depth limit, and keeps the level above", () => {
+    const REDACTED = "[too deep]";
+    expect(REDACTED_TOO_DEEP).toBe(REDACTED);
+
+    // A property's value is level 0; levels 0-7 are kept, level 8 is not.
+    let objects: unknown = { leaf: "kept?" };
+    for (let i = 0; i < 8; i++) objects = { child: objects };
+    let level = scrubProperties({ prop: objects }).prop as Record<string, unknown>;
+    for (let i = 0; i < 7; i++) level = level.child as Record<string, unknown>;
+    expect(level).toEqual({ child: REDACTED });
+
+    let arrays: unknown = ["kept?"];
+    for (let i = 0; i < 8; i++) arrays = [arrays];
+    let item = scrubProperties({ prop: arrays }).prop as unknown[];
+    for (let i = 0; i < 7; i++) item = item[0] as unknown[];
+    expect(item).toEqual([REDACTED]);
+  });
+
+  it("passes both replay payload properties through untouched", () => {
+    const bytes = { compressed: "H4sI...sarah@example.com" };
+    expect(scrubProperties({ $snapshot_bytes: bytes }).$snapshot_bytes).toBe(bytes);
+  });
+
+  it("keeps email and name only directly under $set and $set_once", () => {
+    expect(
+      scrubProperties({
+        $set_once: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
+        other: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
+      }),
+    ).toEqual({
+      $set_once: { email: "sarah@example.com", name: "Sarah <sarah@example.com>" },
+      other: { email: "[email]", name: "Sarah <[email]>" },
+    });
+  });
+
+  it("scrubs a $set that is not an object like any other value", () => {
+    expect(scrubProperties({ $set: ["sarah@example.com"], $set_once: null })).toEqual({
+      $set: ["[email]"],
+      $set_once: null,
+    });
+    expect(scrubProperties({ $set: "sarah@example.com" })).toEqual({ $set: "[email]" });
+  });
+
+  it("does not treat six-digit numbers in person properties as codes", () => {
+    expect(scrubPersonProperties({ zip_hint: "123456" })).toEqual({ zip_hint: "123456" });
+  });
+
+  it("removes sign-in codes from thrown values that are not Errors", () => {
+    expect(scrubErrorForLog("code 123456 rejected")).toEqual({ message: "code [code] rejected", name: "NonError" });
+  });
+});

@@ -58,7 +58,11 @@ npm run check:bundle        # wrangler dry run; fails over 9.5 MiB gzipped
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every pull request and
-never deploys.
+never deploys. Tests run with coverage (`npm run test:coverage`) and must
+meet the thresholds, cover 90% of the lines a pull request changes, and keep
+the authorization matrix complete. The bar, the other suites (DOM,
+end-to-end, mutation) and the rules for changes are in
+[docs/TESTING.md](docs/TESTING.md).
 
 ## Database changes
 

@@ -22,8 +22,9 @@
 // when the Worker runs (wrangler.toml `[vars]`, `wrangler secret put`), and
 // validated then (src/env.js).
 //
-// Runs from a developer machine or a release job with Cloudflare
-// credentials. CI (.github/workflows/ci.yml) never deploys.
+// Runs from a developer machine, or as the deploy command of Cloudflare
+// Workers Builds (production: `npm run deploy:production`). GitHub Actions
+// CI (.github/workflows/ci.yml) never deploys.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -52,16 +53,24 @@ if (!Object.hasOwn(TARGETS, name)) {
 }
 const target = TARGETS[/** @type {keyof typeof TARGETS} */ (name)];
 
+// Cloudflare Workers Builds (the repository connected to the Worker) sets
+// WORKERS_CI=1 and provides the build-time values as Build variables, so no
+// file is read there. Everywhere else they come from `.env.deploy.<name>`.
+const onWorkersBuilds = process.env.WORKERS_CI === "1";
 const envFile = path.join(repoRoot, `.env.deploy.${name}`);
-if (!existsSync(envFile)) {
+const configSource = onWorkersBuilds ? "the Workers Builds build variables" : path.basename(envFile);
+if (onWorkersBuilds) {
+  console.warn(`Workers Builds: reading the build-time values for ${name} from its build variables.`);
+} else if (!existsSync(envFile)) {
   console.error(
     `Missing ${path.basename(envFile)}: the build-time configuration for ${name}.\n` +
       "See docs/DEPLOYMENT.md, \"Build-time values\".",
   );
   process.exit(1);
+} else {
+  // Does not override variables already set in the shell.
+  process.loadEnvFile(envFile);
 }
-// Does not override variables already set in the shell.
-process.loadEnvFile(envFile);
 // The template leaves the optional PostHog CLI host empty; an empty value
 // is not "unset" to the CLI, which then refuses it as an invalid host.
 if (!process.env.POSTHOG_CLI_HOST) delete process.env.POSTHOG_CLI_HOST;
@@ -75,7 +84,7 @@ const REQUIRED_AT_BUILD = [
 ];
 const missing = REQUIRED_AT_BUILD.filter((key) => !process.env[key]);
 if (missing.length > 0) {
-  console.error(`${path.basename(envFile)} is missing: ${missing.join(", ")}`);
+  console.error(`${configSource} is missing: ${missing.join(", ")}`);
   process.exit(1);
 }
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "";

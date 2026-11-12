@@ -150,6 +150,12 @@ describe("entitlementsFor", () => {
       expect(entitlementsFor({ ...refunded, refundedInvoiceId: "in_0" }, NOW).hasProAccess).toBe(true);
     });
 
+    it("does not read a row with neither a refunded nor a latest invoice as refunded", () => {
+      // null === null must not count as "the latest invoice was refunded".
+      const noInvoices = canceled({ latestInvoiceId: null, refundedInvoiceId: null });
+      expect(entitlementsFor(noInvoices, NOW)).toMatchObject({ hasProAccess: true, reason: "canceled_paid_period" });
+    });
+
     it.each(["payment_failed", "payment_disputed", "canceled_by_retention_policy", null])(
       "gives no access for a subscription cancelled for %s, even with paid period left",
       (cancellationReason) => {
@@ -159,6 +165,21 @@ describe("entitlementsFor", () => {
   });
 
   describe("disputes", () => {
+    it.each([
+      ["past_due", true],
+      ["unpaid", true],
+      ["active", false],
+      ["canceled", false],
+    ])("still flags a payment problem under a dispute for %s: isPastDue %s", (status, isPastDue) => {
+      for (const disputeStatus of ["open", "lost"]) {
+        expect(entitlementsFor(snapshot({ disputeStatus, pastDueSince: NOW, status }), NOW)).toMatchObject({
+          hasProAccess: false,
+          isDisputed: true,
+          isPastDue,
+        });
+      }
+    });
+
     it.each(["active", "trialing", "past_due", "canceled"])(
       "suspends access while a dispute is open, whatever the status (%s)",
       (status) => {
