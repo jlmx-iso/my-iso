@@ -77,7 +77,15 @@ export const waitlistRouter = createTRPCRouter({
           // Two submissions of the same address at once: the unique email
           // let one in. This one is a repeat.
           if (!isUniqueViolation(error)) throw error;
-          existing = { name: input.name, status: "pending" };
+          // What counts is the entry that got in, not this request's copy
+          // of the form: its name (the two may differ) goes in the email,
+          // and its status decides whether one is sent at all.
+          existing = await ctx.db.waitlist.findUnique({
+            select: { name: true, status: true },
+            where: { email },
+          });
+          // No entry after all: this was not the conflict it looked like.
+          if (!existing) throw error;
         }
       }
 
