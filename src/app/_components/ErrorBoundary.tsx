@@ -10,6 +10,9 @@ import {
   Title,
 } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
+import { useEffect } from "react";
+
+import { captureBoundaryError } from "~/_lib/analyticsBrowser";
 
 interface ErrorBoundaryProps {
   error: Error;
@@ -17,6 +20,10 @@ interface ErrorBoundaryProps {
 }
 
 export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
+  useEffect(() => {
+    captureBoundaryError(error, "error");
+  }, [error]);
+
   return (
     <Container size="sm" py={80}>
       <Stack align="center" gap="lg">

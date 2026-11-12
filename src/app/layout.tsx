@@ -8,6 +8,7 @@ import { ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Inter } from "next/font/google";
 
+import { SITE_URL } from "~/_lib/site";
 import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
 
@@ -29,7 +30,7 @@ export const metadata = {
   title: { default: "ISO", template: "%s | ISO" },
   description: "The Photographer Second Shooter Network",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
-  metadataBase: new URL("https://myiso.app"),
+  metadataBase: new URL(SITE_URL),
   alternates: {
     canonical: "/",
   },
@@ -38,7 +39,7 @@ export const metadata = {
       {
         alt: "ISO — The Photographer Network",
         height: 630,
-        url: "https://myiso.app/api/og?title=ISO&subtitle=The+Photographer+Network",
+        url: "/api/og?title=ISO&subtitle=The+Photographer+Network",
         width: 1200,
       },
     ],
@@ -71,7 +72,13 @@ export default async function RootLayout({
         <ColorSchemeScript />
       </head>
       <body>
-        <CSPostHogProvider>
+        <CSPostHogProvider
+          user={
+            session?.user
+              ? { email: session.user.email, id: session.user.id, name: session.user.name }
+              : null
+          }
+        >
           <ThemeProvider>
             <Notifications position="top-center" />
             <TRPCReactProvider>

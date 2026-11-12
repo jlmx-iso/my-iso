@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
 
+import { SITE_HOST } from "~/_lib/site";
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   // Length-capped: these are rendered into an image from a public URL.
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
             marginTop: 40,
           }}
         >
-          myiso.app
+          {SITE_HOST}
         </div>
       </div>
     ),

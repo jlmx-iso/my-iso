@@ -1,12 +1,13 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import NextError from "next/error";
 import { useEffect } from "react";
 
+import { captureBoundaryError } from "~/_lib/analyticsBrowser";
+
 export default function GlobalError({ error }: { error: Error }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    captureBoundaryError(error, "global-error");
   }, [error]);
 
   return (

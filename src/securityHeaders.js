@@ -4,22 +4,21 @@
 /**
  * Header that carries the policy.
  *
- * The policy ships in report-only mode: browsers evaluate it and log
- * violations to the console, but block nothing.
+ * The policy ships in report-only mode: browsers evaluate it and report
+ * violations, but block nothing. Reports go to CSP_REPORT_PATH, which
+ * forwards them to PostHog as `csp_violation` events, so what would break
+ * is visible before anything is enforced.
  *
- * Status of the last headless-Chromium run over every route (signed out and
- * signed in): no violation except one, on pages that validate forms with Zod
- * in the browser (/app/events, /app/messages). Zod 4 probes for `eval`
- * support with `new Function("")` inside a try/catch and falls back when it
- * is refused, so enforcing would not break those pages, but the probe is
- * reported. Calling `z.config({ jitless: true })` before any schema is used
- * on the client removes it.
- *
- * Switch this to "Content-Security-Policy" once that is done and the
- * report-only policy has run in production without violations (PostHog with
- * a real key, Sentry and the Stripe/Google redirects only run there).
+ * Switch this to "Content-Security-Policy" once the policy has run in
+ * production without violations that matter.
  */
 export const CSP_HEADER = "Content-Security-Policy-Report-Only";
+
+/** Same-origin endpoint browsers post violation reports to. */
+export const CSP_REPORT_PATH = "/api/csp-report";
+
+/** Name of the reporting group (Reporting-Endpoints / report-to). */
+export const CSP_REPORT_GROUP = "csp";
 
 /**
  * @param {string | undefined} value
@@ -42,25 +41,20 @@ function originOf(value) {
  *   (the RSC payload) and Mantine sets inline styles; without per-request
  *   nonces, which would force every page to render dynamically, they cannot
  *   be allow-listed more narrowly.
- * - PostHog: analytics script and API on the configured host and its asset
- *   host; session replay runs in a blob: worker.
+ * - Analytics and error tracking need no entry: the browser talks to
+ *   PostHog only through this origin (see src/telemetryConfig.js). Session
+ *   replay runs in a blob: worker.
  * - res.cloudinary.com / lh3.googleusercontent.com: uploaded images and
  *   Google profile pictures (the same hosts next/image may load).
  * - wss: same host: the realtime messaging WebSocket (/api/messages/ws).
  * - form-action Google/Stripe: sign-in and checkout leave the site through
  *   redirects that some browsers treat as form navigations.
  *
- * @param {{ baseUrl?: string; isDevelopment?: boolean; posthogHost?: string }} [options]
+ * @param {{ baseUrl?: string; isDevelopment?: boolean }} [options]
  * @returns {string}
  */
 export function buildContentSecurityPolicy(options = {}) {
-  const { baseUrl, isDevelopment = false, posthogHost } = options;
-
-  const posthogOrigin = originOf(posthogHost);
-  const posthog = [
-    ...(posthogOrigin ? [posthogOrigin] : []),
-    "https://*.posthog.com",
-  ];
+  const { baseUrl, isDevelopment = false } = options;
 
   const appOrigin = originOf(baseUrl);
   const websocket = appOrigin ? [appOrigin.replace(/^http/, "ws")] : [];
@@ -72,9 +66,6 @@ export function buildContentSecurityPolicy(options = {}) {
     "connect-src": [
       "'self'",
       ...websocket,
-      ...posthog,
-      "https://*.ingest.sentry.io",
-      "https://*.ingest.us.sentry.io",
       // Next.js dev server (hot reload).
       ...(isDevelopment ? ["ws:"] : []),
     ],
@@ -100,12 +91,15 @@ export function buildContentSecurityPolicy(options = {}) {
     "script-src": [
       "'self'",
       "'unsafe-inline'",
-      ...posthog,
       // React refresh evaluates code in development only.
       ...(isDevelopment ? ["'unsafe-eval'"] : []),
     ],
     "style-src": ["'self'", "'unsafe-inline'"],
     "worker-src": ["'self'", "blob:"],
+    // report-uri is what every browser understands today; report-to is its
+    // successor and needs the Reporting-Endpoints header below.
+    "report-uri": [CSP_REPORT_PATH],
+    "report-to": [CSP_REPORT_GROUP],
   };
 
   return Object.entries(directives)
@@ -116,12 +110,13 @@ export function buildContentSecurityPolicy(options = {}) {
 /**
  * Headers applied to every response.
  *
- * @param {{ baseUrl?: string; isDevelopment?: boolean; posthogHost?: string }} [options]
+ * @param {{ baseUrl?: string; isDevelopment?: boolean }} [options]
  * @returns {Array<{ key: string; value: string }>}
  */
 export function buildSecurityHeaders(options = {}) {
   return [
     { key: CSP_HEADER, value: buildContentSecurityPolicy(options) },
+    { key: "Reporting-Endpoints", value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` },
     // Two years, sub-domains included. Browsers ignore it over plain http.
     {
       key: "Strict-Transport-Security",

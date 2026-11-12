@@ -406,7 +406,8 @@ export const bookingRouter = createTRPCRouter({
         type: "booking_applied",
       });
 
-      void captureEvent(userId, 'booking_requested', { photographer_id: ownerId, platform: input.platform ?? 'web' });
+      // Sent after the response (runAfterResponse inside captureEvent).
+      captureEvent(userId, 'booking_requested', { photographer_id: ownerId, platform: input.platform ?? 'web' });
 
       return booking;
     }),

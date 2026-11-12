@@ -21,9 +21,14 @@ against exactly what D1 gets.
 
 **Apply migrations before deploying the code that needs them.**
 
+`npm run deploy:staging` and `npm run deploy:production` do this for you:
+they build, apply pending migrations, and only then deploy
+(`scripts/deploy.mjs`, [DEPLOYMENT.md](DEPLOYMENT.md)). To migrate without
+deploying:
+
 ```sh
-npm run db:migrate:staging      # then: npm run deploy:staging
-npm run db:migrate:production   # then: npm run deploy:production
+npm run db:migrate:staging
+npm run db:migrate:production
 ```
 
 D1 has no way to deploy schema and code atomically, so for a moment the old
@@ -82,8 +87,8 @@ shows what is pending without applying anything.
 5. `npm run db:check` must now pass, and `npm test` runs against the new
    schema.
 6. Try it locally: `npm run db:migrate:local`, then `npm run dev:wrangler`.
-7. After review: migrate staging, deploy staging; migrate production, deploy
-   production.
+7. After review: `npm run deploy:staging`, check it, then
+   `npm run deploy:production` (each applies its migrations first).
 
 Never edit or delete a migration that has been applied anywhere. Fix a
 mistake with a new migration.
@@ -92,10 +97,32 @@ mistake with a new migration.
 that `next dev` uses (`DATABASE_URL=file:./dev.db`). It never touches D1 and
 is not a substitute for a migration.
 
-## What Prisma does not see: the `Message_touch_thread` trigger
+## Triggers
 
-`migrations/0003_billing_read_state_indexes.sql` creates one database object
-that is not in `prisma/schema.prisma`, because Prisma has no notion of it:
+Two things are kept consistent by SQLite triggers, because D1 has no
+multi-statement transactions and each must change together with the row that
+causes it:
+
+| Trigger | Created in | What it does |
+| --- | --- | --- |
+| `InviteRedemption_count` | `0002` | On every new `InviteRedemption`, raises `InviteCode.redeemedCount`. Nothing lowers it, so a used invite stays used when the invited account is deleted; the `reconcile-invites` job reconciles against it. |
+| `Message_touch_thread` | `0003` | On every new `Message`, sets `MessageThread.updatedAt` to the message's `createdAt`, so the conversation list (sorted by it) can never show a thread in its old position after a send. |
+
+Prisma does not know about triggers: they are not in `schema.prisma`,
+`npm run db:migrate:diff` never emits them and `npm run db:check` does not
+compare them. They exist only in the migration files. The tests run with
+them, because test databases are built from `migrations/`. Consequences:
+
+- Do not set `MessageThread.updatedAt` or `InviteCode.redeemedCount` from
+  application code; the trigger owns them.
+- If a migration has to rebuild `Message` or `InviteRedemption` (Prisma's
+  `new_X` / copy / drop / rename block), the trigger is dropped with the old
+  table: re-create it at the end of that migration.
+- `prisma db push` (the `next dev` SQLite file) does not create them.
+
+### `Message_touch_thread` in detail
+
+`migrations/0003_billing_read_state_indexes.sql` creates it:
 
 ```sql
 CREATE TRIGGER "Message_touch_thread" AFTER INSERT ON "Message"

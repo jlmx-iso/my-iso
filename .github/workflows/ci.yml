@@ -22,8 +22,6 @@ env:
   DATABASE_URL: file:./ci.db
   NEXT_PUBLIC_BASE_URL: http://localhost:3000
   NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: ci-placeholder
-  NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
-  NEXT_PUBLIC_POSTHOG_PUBLIC_KEY: ci-placeholder
   NEXT_PUBLIC_STRIPE_PUBLIC_KEY: pk_test_ci_placeholder
   AUTH_SECRET: ci-placeholder-auth-secret-0123456789abcdef
   CLOUDINARY_API_KEY: ci-placeholder
@@ -94,8 +92,27 @@ jobs:
         run: npm ci
 
       # OpenNext runs `next build` itself, so this is the only build.
-      - name: Build Next.js and the Cloudflare Worker (OpenNext)
+      #
+      # CI never uploads source maps and holds no PostHog credentials: maps
+      # are uploaded by `npm run deploy:*`, for exactly the files being
+      # deployed (docs/DEPLOYMENT.md, "Source maps").
+      #
+      # SOURCEMAPS=dry-run makes the build generate browser source maps and
+      # the build's last step (`postbuild:cf`, scripts/sourcemaps.mjs) run
+      # the PostHog CLI over them in its dry-run mode (no credentials, no
+      # network), then remove every map from the assets. That exercises the
+      # same path a deploy takes, and the next step checks the removal.
+      - name: Build Next.js and the Cloudflare Worker (OpenNext), source map dry run
         run: npm run build:cf
+        env:
+          SOURCEMAPS: dry-run
+
+      - name: No source maps in the deployable assets
+        run: |
+          if find .open-next/assets -name '*.map' | grep -q .; then
+            echo "Source maps found in .open-next/assets" >&2
+            exit 1
+          fi
 
       # Bundles with `wrangler deploy --dry-run` (no upload, no credentials),
       # then fails if the gzipped Worker exceeds 9.5 MiB (Cloudflare's limit

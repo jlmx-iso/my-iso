@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { SITE_URL } from "~/_lib/site";
 import { Providers } from "~/app/app/providers";
 import { auth } from "~/auth";
 import { db } from "~/server/db";
@@ -27,7 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ? photographer.bio.slice(0, 160)
     : `${name} is a photographer on ISO. View their portfolio, reviews, and availability.`;
 
-  const ogImageUrl = `https://myiso.app/api/og/photographer?handle=${encodeURIComponent(handle)}`;
+  const ogImageUrl = `${SITE_URL}/api/og/photographer?handle=${encodeURIComponent(handle)}`;
 
   return {
     description,
