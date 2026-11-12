@@ -16,6 +16,11 @@ import type { ExtendedPrismaClient } from "./softDelete";
  * is ordered so that a failure part-way through can only leave a slot counted
  * as used that was not (which is then released on a best-effort basis), never
  * a member admitted without a slot.
+ *
+ * If the Worker dies between the claim and that release, the counter stays
+ * one too high. Claims and releases stamp `slotsChangedAt`, and a scheduled
+ * job recomputes the counter of recently stamped codes from the redemption
+ * rows (~/server/_jobs/reconcileInviteSlots).
  */
 
 type InviteDb = Pick<
@@ -40,7 +45,8 @@ export async function claimInviteSlot(
 ): Promise<InviteSlot | null> {
   const rows = await db.$queryRaw<Array<{ creatorId: string; id: string }>>`
     UPDATE "InviteCode"
-    SET "currentRedemptions" = "currentRedemptions" + 1
+    SET "currentRedemptions" = "currentRedemptions" + 1,
+        "slotsChangedAt" = ${new Date()}
     WHERE "code" = ${normalizeInviteCode(code)}
       AND "currentRedemptions" < "maxRedemptions"
     RETURNING "id", "creatorId"`;
@@ -56,7 +62,8 @@ export async function releaseInviteSlot(
 ): Promise<void> {
   await db.$executeRaw`
     UPDATE "InviteCode"
-    SET "currentRedemptions" = "currentRedemptions" - 1
+    SET "currentRedemptions" = "currentRedemptions" - 1,
+        "slotsChangedAt" = ${new Date()}
     WHERE "id" = ${inviteCodeId} AND "currentRedemptions" > 0`;
 }
 
