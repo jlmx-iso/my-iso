@@ -1,6 +1,5 @@
-"use client";
-
-import { Anchor, Group, HoverCard, Title } from "@mantine/core";
+import { Group, Text } from "@mantine/core";
+import Link from "next/link";
 
 import { Avatar } from "./Avatar";
 
@@ -12,21 +11,14 @@ type UserBadgeProps = {
     };
 };
 
+/** Avatar and name linking to the person's in-app profile. */
 export default function UserBadge({ user: { userId, name, avatar } }: UserBadgeProps) {
     return (
-        <Anchor c="dark" href={`/app/photographer/${userId}`} w="fit-content" underline="never">
-            <HoverCard>
-                <HoverCard.Target>
-                    <Group gap="sm" align="center">
-                        <Avatar src={avatar} alt={name} name={name} size="md" />
-                        <Title fw={600} order={5}>{name}</Title>
-                    </Group>
-                </HoverCard.Target>
-                {/* TODO: Add profile card on hover */}
-                {/* <HoverCard.Dropdown>
-                    <p>View profile</p>
-                </HoverCard.Dropdown> */}
-            </HoverCard>
-        </Anchor>
+        <Link href={`/app/photographer/${userId}`} style={{ minWidth: 0 }} className="tap-link">
+            <Group gap="sm" align="center" wrap="nowrap">
+                <Avatar src={avatar} name={name} alt="" size="md" />
+                <Text fw={600} truncate>{name}</Text>
+            </Group>
+        </Link>
     );
 }

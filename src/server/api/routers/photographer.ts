@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, instagramHandleNullable, logger, socialHandleNullable } from "~/_utils";
+import { MAX_PORTFOLIO_IMAGES } from "~/_utils/limits";
 import { isRecordNotFound, isUniqueViolation } from "~/server/_db/errors";
 import {
   base64ImageInput,
@@ -13,8 +14,7 @@ import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, publicProcedure, rateLimit } from "~/server/api/trpc";
 
-/** Portfolio images one photographer may have (deleted ones do not count). */
-export const MAX_PORTFOLIO_IMAGES = 60;
+export { MAX_PORTFOLIO_IMAGES };
 
 const idInput = z.string().min(1).max(64);
 const tagsInput = z.array(z.string().trim().min(1).max(40)).max(20);

@@ -1,117 +1,114 @@
 import {
+  Anchor,
   Box,
   Button,
   Container,
-  Group,
+  Divider,
+  List,
+  ListItem,
   Paper,
-  SimpleGrid,
   Stack,
   Text,
-  TextInput,
-  Textarea,
   ThemeIcon,
   Title,
 } from "@mantine/core";
-import { IconClock, IconMail } from "@tabler/icons-react";
+import { IconMail } from "@tabler/icons-react";
 
-export const metadata = {
+import { SUPPORT_EMAIL } from "~/_lib/site";
+import { NextLink } from "~/app/_components/NextLink";
+import { pageMetadata } from "~/app/_lib/siteMetadata";
+
+export const metadata = pageMetadata({
+  description:
+    "Questions about ISO, your account or an invite? Email the team.",
+  path: "/contact",
+  socialTitle: "Contact ISO",
   title: "Contact",
-  description: "Get in touch with the ISO team.",
-  openGraph: {
-    title: "Contact ISO",
-    description:
-      "Have a question or suggestion? Get in touch with the ISO team.",
-  },
-  twitter: {
-    title: "Contact ISO",
-    description:
-      "Have a question or suggestion? Get in touch with the ISO team.",
-  },
-};
+});
 
+const MAILTO = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("ISO support")}`;
+
+/**
+ * How to reach us. There is deliberately no form here: email is the one
+ * channel that is read, so the page says so and makes writing a useful
+ * message easy.
+ */
 export default function ContactPage() {
   return (
-    <Container size="lg" w="100%">
+    <Container size="sm" w="100%">
       <Box py={60}>
-        <Stack align="center" gap="lg" maw={640} mx="auto" mb={40}>
-          <Text
-            size="sm"
-            fw={600}
-            c="orange"
-            tt="uppercase"
-            style={{ letterSpacing: 1 }}
-          >
+        <Stack align="center" gap="lg" mb={40}>
+          <Text size="sm" fw={600} c="orange.7" tt="uppercase" style={{ letterSpacing: 1 }}>
             Contact
           </Text>
           <Title order={1} ta="center">
             Get in touch
           </Title>
-          <Text c="dimmed" size="lg" ta="center" style={{ lineHeight: 1.6 }}>
-            Have a question, suggestion, or just want to say hello? We&apos;d
-            love to hear from you.
+          <Text c="dimmed" size="lg" ta="center" maw={520} style={{ lineHeight: 1.6 }}>
+            Questions about your account, a booking, billing or an invite?
+            Email us and a person on the team will read it.
           </Text>
         </Stack>
 
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl" maw={800} mx="auto">
-          {/* Contact info */}
-          <Stack gap="xl">
-            <Paper p="lg" radius="md" withBorder>
-              <Group gap="md" wrap="nowrap">
-                <ThemeIcon size={40} radius="md" variant="light">
-                  <IconMail size={22} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={500} mb={2}>
-                    Email us
-                  </Text>
-                  <Text size="sm" c="dimmed">
-                    support@myiso.app
-                  </Text>
-                </div>
-              </Group>
-            </Paper>
-            <Paper p="lg" radius="md" withBorder>
-              <Group gap="md" wrap="nowrap">
-                <ThemeIcon size={40} radius="md" variant="light">
-                  <IconClock size={22} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={500} mb={2}>
-                    Response time
-                  </Text>
-                  <Text size="sm" c="dimmed">
-                    We typically respond within 24 hours
-                  </Text>
-                </div>
-              </Group>
-            </Paper>
-          </Stack>
+        <Paper p={{ base: "lg", sm: "xl" }} radius="md" withBorder data-testid="contact-card">
+          <Stack gap="lg">
+            <Stack gap="sm" align="flex-start">
+              <ThemeIcon size={44} radius="md" variant="light">
+                <IconMail size={24} aria-hidden />
+              </ThemeIcon>
+              <Title order={2} size="h4">
+                Email us
+              </Title>
+              <Anchor
+                href={MAILTO}
+                fw={600}
+                size="lg"
+                underline="always"
+                style={{ overflowWrap: "anywhere" }}
+                data-testid="support-email"
+              >
+                {SUPPORT_EMAIL}
+              </Anchor>
+              <Button component="a" href={MAILTO} leftSection={<IconMail size={18} aria-hidden />} w={{ base: "100%", xs: "auto" }}>
+                Write an email
+              </Button>
+            </Stack>
 
-          {/* Contact form (display only) */}
-          <Paper p="lg" radius="md" withBorder>
-            <form>
-              <Stack gap="md">
-                <TextInput label="Name" placeholder="Your name" />
-                <TextInput
-                  label="Email"
-                  placeholder="you@example.com"
-                  type="email"
-                />
-                <Textarea
-                  label="Message"
-                  placeholder="How can we help?"
-                  minRows={4}
-                />
-                <Button type="button" fullWidth>
-                  Send message
-                </Button>
-                <Text size="xs" c="dimmed" ta="center">
-                  We&apos;ll get back to you within 24 hours.
-                </Text>
-              </Stack>
-            </form>
-          </Paper>
-        </SimpleGrid>
+            <Divider />
+
+            <Stack gap="xs">
+              <Title order={2} size="h5">
+                What to include
+              </Title>
+              <Text size="sm" c="dimmed">
+                The more of this we have, the sooner we can help:
+              </Text>
+              <List size="sm" spacing={6}>
+                <ListItem>The email address you use to sign in to ISO.</ListItem>
+                <ListItem>What you were trying to do, and what happened instead.</ListItem>
+                <ListItem>The page you were on, and a screenshot if you can.</ListItem>
+                <ListItem>The reference code, if an error screen showed one.</ListItem>
+              </List>
+              <Text size="sm" c="dimmed">
+                Please don&apos;t send sign-in codes or card details: we will never ask for them.
+              </Text>
+            </Stack>
+
+            <Divider />
+
+            <Text size="sm">
+              Not a member yet?{" "}
+              <Anchor component={NextLink} href="/waitlist" fw={600} underline="always">
+                Request an invite
+              </Anchor>
+              . Managing a subscription? Use{" "}
+              <Anchor component={NextLink} href="/app/settings" fw={600} underline="always">
+                Settings
+              </Anchor>
+              .
+            </Text>
+          </Stack>
+        </Paper>
       </Box>
     </Container>
   );

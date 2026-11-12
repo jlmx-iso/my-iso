@@ -1,226 +1,111 @@
 "use client";
 
-import { ActionIcon, Badge, Box, Card, Divider, Group, Image, Stack, Text, Title } from "@mantine/core";
-import { useHover } from '@mantine/hooks';
+import { Badge, Box, Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
 import { useState } from "react";
 
-import { formatLocalDate } from '~/_lib/dayjs';
-import { api } from "~/trpc/react";
+import type { Application } from "~/_utils/bookings";
+import type { RouterOutputs } from "~/trpc/react";
 
-import ApplyModal from "../bookings/ApplyModal";
-import UserBadge from "../UserBadge";
-import EventCardSkeleton from "./EventCardSkeleton";
 import AddCommentForm from "../AddCommentForm";
 import Timemarker from "../Timemarker";
+import UserBadge from "../UserBadge";
+import ApplyAction from "./ApplyAction";
+import EventCover from "./EventCover";
+import EventMeta from "./EventMeta";
 
+export type FeedEvent = RouterOutputs["event"]["getFeedPage"]["items"][number];
 
 type EventCardProps = {
-    eventId: string;
-    initialCommentCount?: number;
-    isEventPage?: boolean;
-    hideCompose?: boolean;
-    variant?: "feed" | "hero";
+    /** A row of the feed: everything the card shows is already in it. */
+    event: FeedEvent;
+    /** The viewer's application to this event; undefined while loading. */
+    application: Application | undefined;
+    currentUserId: string;
+    /** The feed's clock (see useNow), so every card agrees on what is past. */
+    now: Date;
 };
 
-export default function EventCard({ eventId, initialCommentCount = 0, isEventPage, hideCompose, variant = "feed" }: EventCardProps) {
-    const [isCommentFormOpen, setIsCommentFormOpen] = useState(isEventPage && !hideCompose);
-    const { hovered, ref } = useHover();
-    const session = useSession();
-    const { data, isPending, isError } = api.event.getById.useQuery({
-        id: eventId
-    });
+/** One event in the feed. Renders from the feed row: no request of its own. */
+export default function EventCard({ event, application, currentUserId, now }: EventCardProps) {
+    const [isCommentFormOpen, setIsCommentFormOpen] = useState(false);
+    // Comments posted from this card since the feed row was loaded.
+    const [postedHere, setPostedHere] = useState(0);
+    const commentCount = event.commentCount + postedHere;
+    const href = `/app/events/${event.id}`;
+    const isPast = new Date(event.date).getTime() < now.getTime();
 
-    const currentUserId = session.data?.user?.id;
-    const isOwnEvent = data?.photographer?.userId === currentUserId;
-    const numComments = data?.commentCount ?? initialCommentCount;
+    return (
+        <Card
+            component="article"
+            className="card-interactive"
+            shadow="xs"
+            p={0}
+            radius="md"
+            withBorder
+            h="100%"
+            style={{ borderLeft: "3px solid var(--mantine-color-orange-3)" }}
+            data-testid="event-card"
+        >
+            {event.image && (
+                // The title below links to the same page; this link is a
+                // bigger pointer target only.
+                <Link href={href} tabIndex={-1} aria-hidden="true">
+                    <EventCover src={event.image} h={180} />
+                </Link>
+            )}
 
-    const { data: applicationStatus } = api.booking.hasApplied.useQuery(
-        { eventId },
-        { enabled: !!data?.id && !isOwnEvent },
-    );
+            <Stack gap="xs" p="md" style={{ flex: 1 }}>
+                <Group justify="space-between" align="center" wrap="nowrap">
+                    <UserBadge user={event.photographer} />
+                    <Timemarker date={event.createdAt} />
+                </Group>
 
-    const handleCommentButtonClick = () => {
-        if (!isEventPage) setIsCommentFormOpen((prev) => !prev);
-    }
-
-    const isHero = variant === "hero";
-
-    if (isPending) {
-        return (
-            <Card p={isHero ? "lg" : "md"} radius="md" withBorder>
-                <EventCardSkeleton variant={variant} />
-            </Card>
-        )
-    }
-
-    if (isError) {
-        return (
-            <Card p="lg" radius="md" withBorder>
-                <Text c="dimmed" size="sm">Error loading event</Text>
-            </Card>
-        )
-    }
-
-    if (data?.id) {
-        // Detail page — flush layout, no card chrome
-        if (isEventPage) {
-            return (
-                <div ref={ref}>
-                    <Card p={0} radius="md" style={{ border: "none", background: "transparent" }}>
-                        <Stack gap="xs">
-                            <Group justify="space-between" align="center">
-                                <UserBadge user={data.photographer} />
-                                <Timemarker date={data.createdAt} />
-                            </Group>
-
-                            <Box>
-                                <Title order={2} mb={6}>{data.title}</Title>
-                                {data.description && (
-                                    <Text c="dimmed" size="sm" maw={680} style={{ lineHeight: 1.6 }}>
-                                        {data.description}
-                                    </Text>
-                                )}
-                            </Box>
-
-                            {data.image && (
-                                <Box style={{ borderRadius: "var(--mantine-radius-md)", overflow: "hidden" }} mt={4}>
-                                    <Image
-                                        src={data.image}
-                                        alt={data.title}
-                                        h={320}
-                                        fit="cover"
-                                    />
-                                </Box>
-                            )}
-
-                            <Group gap="xs" wrap="wrap" justify="space-between" align="center">
-                                <Group gap="xs" wrap="wrap" align="center">
-                                    {data.location && (
-                                        <Badge variant="light" color="teal" size="xs">
-                                            {data.location}
-                                        </Badge>
-                                    )}
-                                    <Badge variant="light" size="xs">
-                                        {formatLocalDate(data.date)}
-                                    </Badge>
-                                    <Badge variant="light" color="purple" size="xs">
-                                        {data.duration} hour{data.duration > 1 ? "s" : ""}
-                                    </Badge>
-                                </Group>
-
-                                {!isOwnEvent && (
-                                    <ApplyModal
-                                        eventId={data.id}
-                                        eventTitle={data.title}
-                                        hasApplied={applicationStatus?.hasApplied ?? false}
-                                        canReapply={applicationStatus?.canReapply ?? false}
-                                        applyBlockedBy={applicationStatus?.applyBlockedBy ?? null}
-                                    />
-                                )}
-                            </Group>
-
-                            <Divider mt="sm" />
-
-                            {isCommentFormOpen && !hideCompose && <AddCommentForm eventId={data.id} />}
-                        </Stack>
-                    </Card>
-                </div>
-            )
-        }
-
-        // Feed / hero card — bordered, hover lift, accent stripe
-        return (
-            <div ref={ref}>
-                <Card
-                    shadow={hovered ? "md" : "xs"}
-                    p={0}
-                    radius="md"
-                    withBorder
-                    style={{
-                        transition: "all 200ms ease",
-                        transform: hovered ? "translateY(-2px)" : "none",
-                        borderLeft: "3px solid var(--mantine-color-orange-3)",
-                    }}
-                >
-                    {/* Image — full bleed at top when available */}
-                    {data.image && (
-                        <Card.Section>
-                            <Link href={`/app/events/${data.id}`}>
-                                <Image
-                                    src={data.image}
-                                    alt={data.title}
-                                    h={isHero ? 280 : 180}
-                                    fit="cover"
-                                />
-                            </Link>
-                        </Card.Section>
+                <Box>
+                    <Title order={3} size="h4" mb={2} style={{ overflowWrap: "anywhere" }}>
+                        <Link href={href}>{event.title}</Link>
+                    </Title>
+                    {event.description && (
+                        <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
                     )}
+                </Box>
 
-                    <Stack gap="xs" p={isHero ? "lg" : "md"}>
-                        <Group justify="space-between" align="center">
-                            <UserBadge user={data.photographer} />
-                            <Timemarker date={data.createdAt} />
-                        </Group>
+                <Group gap="xs">
+                    <EventMeta date={event.date} duration={event.duration} location={event.location} />
+                    {isPast && <Badge variant="light" color="gray">Past event</Badge>}
+                </Group>
 
-                        <Link href={`/app/events/${data.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                            <Title order={isHero ? 3 : 4} mb={2}>{data.title}</Title>
-                            {data.description && (
-                                <Text c="dimmed" size="sm" lineClamp={2}>{data.description}</Text>
-                            )}
-                        </Link>
+                <Group gap="xs" justify="space-between" align="center" mt="auto" pt={4}>
+                    <Button
+                        variant="subtle"
+                        color="gray"
+                        size="compact-sm"
+                        className="touch-target"
+                        leftSection={<IconMessageCircle size={16} aria-hidden />}
+                        aria-expanded={isCommentFormOpen}
+                        aria-label={`Comment on ${event.title}, ${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
+                        onClick={() => setIsCommentFormOpen((open) => !open)}
+                        data-testid="event-card-comments"
+                    >
+                        {/* No "0": an empty count reads like an error. */}
+                        {commentCount === 0 ? "Comment" : `${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
+                    </Button>
+                    <ApplyAction
+                        event={event}
+                        application={application}
+                        isOwnEvent={event.photographer.userId === currentUserId}
+                    />
+                </Group>
 
-                        <Group gap="xs" wrap="wrap" justify="space-between" align="center">
-                            <Group gap="xs" wrap="wrap" align="center">
-                                {data.location && (
-                                    <Badge variant="light" color="teal" size="xs">
-                                        {data.location}
-                                    </Badge>
-                                )}
-                                <Badge variant="light" size="xs">
-                                    {formatLocalDate(data.date)}
-                                </Badge>
-                                <Badge variant="light" color="purple" size="xs">
-                                    {data.duration} hour{data.duration > 1 ? "s" : ""}
-                                </Badge>
-                                <Group gap={4} align="center" ml={4}>
-                                    <ActionIcon
-                                        size="sm"
-                                        variant="subtle"
-                                        color="gray"
-                                        aria-label="Toggle comments"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            handleCommentButtonClick()
-                                        }}
-                                    >
-                                        <IconMessageCircle size={14} />
-                                    </ActionIcon>
-                                    {numComments > 0 && (
-                                        <Text size="xs" c="dimmed">{numComments}</Text>
-                                    )}
-                                </Group>
-                            </Group>
-
-                            {!isOwnEvent && (
-                                <ApplyModal
-                                    eventId={data.id}
-                                    eventTitle={data.title}
-                                    hasApplied={applicationStatus?.hasApplied ?? false}
-                                    canReapply={applicationStatus?.canReapply ?? false}
-                                        applyBlockedBy={applicationStatus?.applyBlockedBy ?? null}
-                                />
-                            )}
-                        </Group>
-
-                        {isCommentFormOpen && !hideCompose && <AddCommentForm eventId={data.id} />}
-                    </Stack>
-                </Card>
-            </div>
-        )
-    }
-
-    return null;
+                {isCommentFormOpen && (
+                    <AddCommentForm
+                        eventId={event.id}
+                        eventTitle={event.title}
+                        onPosted={() => setPostedHere((count) => count + 1)}
+                    />
+                )}
+            </Stack>
+        </Card>
+    );
 }

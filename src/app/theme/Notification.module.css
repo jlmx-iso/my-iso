@@ -1,0 +1,49 @@
+/*
+ * Toasts (see src/app/_lib/notify.tsx). A white card lifted clearly off the
+ * page, with the kind carried by a filled icon and a matching edge. Title
+ * 16.9:1 and body text 7.6:1 against the card.
+ */
+.root {
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--mantine-color-gray-3);
+  border-left: 4px solid var(--notification-color);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-white);
+  box-shadow:
+    0 14px 36px rgba(32, 28, 27, 0.2),
+    0 2px 8px rgba(32, 28, 27, 0.1);
+}
+
+/* The coloured edge replaces Mantine's floating bar. */
+.root::before {
+  display: none;
+}
+
+.icon {
+  width: 28px;
+  height: 28px;
+  margin-inline-end: 12px;
+  margin-top: 1px;
+  /* Shade 7 of each colour is at least 4.5:1 with the white glyph. */
+  background: var(--notification-color);
+  color: var(--mantine-color-white);
+}
+
+.title {
+  margin-bottom: 2px;
+  color: var(--mantine-color-black);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.description {
+  color: var(--mantine-color-gray-7);
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+}
+
+.closeButton {
+  color: var(--mantine-color-gray-7);
+}

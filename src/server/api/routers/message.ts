@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { MAX_MESSAGE_LENGTH } from "~/_utils/limits";
 import {
   classifyRecipients,
   countUnreadByThread,
@@ -62,8 +63,7 @@ const idInput = z.string().min(1).max(64);
 /** Number of most recent messages a thread query returns. */
 const THREAD_PAGE_SIZE = 50;
 
-/** Longest message body, in characters. */
-export const MAX_MESSAGE_LENGTH = 5000;
+export { MAX_MESSAGE_LENGTH };
 
 /** Threads returned by one page of the conversation list. */
 const THREAD_LIST_PAGE_SIZE = 50;

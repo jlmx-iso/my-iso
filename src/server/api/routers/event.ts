@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
@@ -11,8 +12,9 @@ import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
-export const MAX_COMMENT_LENGTH = 2000;
-export const MAX_EVENT_DURATION_HOURS = 72;
+// The limits live in ~/_utils/limits, shared with the forms that enforce
+// them before sending; re-exported for existing importers.
+export { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS };
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
@@ -532,6 +534,11 @@ export const eventRouter = createTRPCRouter({
 
       const rows = await ctx.db.event.findMany({
         include: {
+          // Live comments per event, for the card's comment button: counted
+          // in the same query, so the feed needs no request per event. (The
+          // soft-delete extension does not reach into an include, hence the
+          // explicit filter.)
+          _count: { select: { comments: { where: { isDeleted: false } } } },
           photographer: { select: eventPhotographerSelect },
         },
         // The id breaks ties between events at the same time, so pages
@@ -548,8 +555,9 @@ export const eventRouter = createTRPCRouter({
       });
       const { items, nextCursor } = toPage(rows, input.limit);
       const last = items.at(-1);
+      const withCounts = items.map(({ _count, ...event }) => ({ ...event, commentCount: _count.comments }));
       return {
-        items: await withDerivedFulfilled(ctx.db, items),
+        items: await withDerivedFulfilled(ctx.db, withCounts),
         nextCursor: nextCursor && last ? encodeFeedCursor(last) : null,
       };
     }),

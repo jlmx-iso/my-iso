@@ -1,17 +1,14 @@
 import { Box, Container, Divider, Stack, Text, Title } from "@mantine/core";
 
-export const metadata = {
+import { SUPPORT_EMAIL } from "~/_lib/site";
+import { pageMetadata } from "~/app/_lib/siteMetadata";
+
+export const metadata = pageMetadata({
+  description:
+    "Read the ISO Terms of Service.",
+  path: "/terms",
   title: "Terms of Service",
-  description: "ISO Terms of Service.",
-  openGraph: {
-    title: "Terms of Service",
-    description: "Read the ISO Terms of Service.",
-  },
-  twitter: {
-    title: "Terms of Service",
-    description: "Read the ISO Terms of Service.",
-  },
-};
+});
 
 const sections = [
   {
@@ -57,7 +54,7 @@ const sections = [
   {
     title: "9. Contact",
     content:
-      "If you have questions about these Terms of Service, please contact us at support@myiso.app.",
+      `If you have questions about these Terms of Service, please contact us at ${SUPPORT_EMAIL}.`,
   },
 ];
 
@@ -87,7 +84,7 @@ export default function TermsPage() {
         <Stack gap="xl">
           {sections.map((section) => (
             <div key={section.title}>
-              <Title order={3} mb="xs">
+              <Title order={2} size="h3" mb="xs">
                 {section.title}
               </Title>
               <Text c="dimmed" style={{ lineHeight: 1.7 }}>

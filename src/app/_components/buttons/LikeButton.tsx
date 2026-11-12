@@ -1,24 +1,32 @@
 "use client";
-import { ActionIcon } from "@mantine/core";
+import { Button } from "@mantine/core";
 import { IconHeart, IconHeartFilled } from "@tabler/icons-react";
 
 type LikeButtonProps = {
-    targetType: "event" | "comment";
-    targetId: string;
-    mutate: ({ targetId }: { targetId: string }) => void;
+    /** What is being liked, for the accessible name: "comment by Sarah". */
+    targetLabel: string;
+    onToggle: () => void;
     isPending: boolean;
     numberOfLikes: number;
     isLiked: boolean;
 };
 
-export default function LikeButton({ targetId, mutate, isPending, numberOfLikes, isLiked }: LikeButtonProps) {
-    const handleLike = () => {
-        mutate({ targetId });
-    };
-
+/** Heart toggle with its like count. */
+export default function LikeButton({ targetLabel, onToggle, isPending, numberOfLikes, isLiked }: LikeButtonProps) {
     return (
-        <ActionIcon onClick={handleLike} loading={isPending} variant="subtle" disabled={isPending}>
-            {isLiked ? <IconHeartFilled /> : <IconHeart />} {numberOfLikes > 0 && numberOfLikes}
-        </ActionIcon>
+        <Button
+            onClick={onToggle}
+            loading={isPending}
+            variant="subtle"
+            color={isLiked ? "red" : "gray"}
+            size="compact-sm"
+            className="touch-target"
+            w="fit-content"
+            aria-pressed={isLiked}
+            aria-label={`Like ${targetLabel}, ${numberOfLikes} ${numberOfLikes === 1 ? "like" : "likes"}`}
+            leftSection={isLiked ? <IconHeartFilled size={16} aria-hidden /> : <IconHeart size={16} aria-hidden />}
+        >
+            {numberOfLikes}
+        </Button>
     );
 }

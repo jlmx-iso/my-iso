@@ -92,6 +92,17 @@ Guesses against one account are bounded by the last row whatever else
 happens: 100 a day from all clients together (a code also dies after 5
 wrong guesses), which is a 1 in 10,000 chance per day against a 6-digit code.
 
+## Username availability
+
+`user.isHandleAvailable` answers "is this handle free?" while a member types
+one (onboarding, profile editor). It has its own policy, `HANDLE_CHECK`:
+40 checks per member per minute, `onError: "allow"`. The client debounces
+the check (400 ms), so typing a handle or two uses a few dozen. It is kept
+apart from `MEMBER_SEARCH` so that neither can starve the other, and so the
+check cannot be turned into an unmetered way to test which handles exist
+(handles are public on profile URLs, so the exposure is small; the limit
+keeps it from being a bulk lookup).
+
 ## Related controls
 
 - Sign-in codes carry their own attempt counter (`VerificationToken.attempts`):

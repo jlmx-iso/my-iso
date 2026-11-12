@@ -1,193 +1,172 @@
 "use client";
 
-import {
-  Button,
-  Checkbox,
-  Group,
-  Image,
-  SimpleGrid,
-  Stack,
-  TagsInput,
-  Text,
-  TextInput,
-  Textarea,
-} from "@mantine/core";
-import { type FileWithPath } from "@mantine/dropzone";
+import { Button, type ButtonProps, Checkbox, Group, Modal, Stack, TagsInput, TextInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
+import { useDisclosure } from "@mantine/hooks";
 import { IconUpload } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { dataUrlToBase64, ErrorReason, getErrorReason, logger } from "~/_utils";
-import { Dropzone } from "~/app/_components/input/Dropzone";
-import { Modal } from "~/app/_components/Modal";
+import { uploadErrorMessage } from "~/_utils/imageFile";
+import { logger } from "~/_utils/logger";
+import { ImagePicker } from "~/app/_components/input/ImagePicker";
+import { notify } from "~/app/_lib/notify";
+import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
 
+export const PORTFOLIO_TAG_SUGGESTIONS = [
+  "Wedding",
+  "Portrait",
+  "Landscape",
+  "Street",
+  "Fashion",
+  "Event",
+  "Product",
+  "Architecture",
+  "Nature",
+  "Sports",
+];
+
 type PortfolioUploadProps = {
-  onSuccess?: () => void;
+  /** Called after the image is saved, to refresh whatever shows the portfolio. */
+  onUploaded: () => void;
+  buttonProps?: ButtonProps;
 };
 
-export default function PortfolioUpload({ onSuccess }: PortfolioUploadProps) {
-  const [files, setFiles] = useState<FileWithPath[] | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const uploadMutation = api.photographer.addPortfolioImage.useMutation();
+type FormValues = {
+  description: string;
+  isFeatured: boolean;
+  tags: string[];
+  title: string;
+};
 
-  const form = useForm({
-    initialValues: {
-      title: "",
-      description: "",
-      tags: [] as string[],
-      isFeatured: false,
+/** "Upload image" button and the modal form behind it. */
+export default function PortfolioUpload({ onUploaded, buttonProps }: PortfolioUploadProps) {
+  const [opened, { close, open }] = useDisclosure(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [isReading, setIsReading] = useState(false);
+  const upload = api.photographer.addPortfolioImage.useMutation();
+  const isSaving = isReading || upload.isPending;
+
+  const form = useForm<FormValues>({
+    initialValues: { description: "", isFeatured: false, tags: [], title: "" },
+    validate: {
+      description: (value) => (value.length > 1000 ? "Keep the description under 1000 characters" : null),
+      title: (value) => {
+        if (!value.trim()) return "Give the image a title";
+        return value.length > 200 ? "Keep the title under 200 characters" : null;
+      },
     },
   });
 
-  const handleFileChange = (newFiles: FileWithPath[]) => {
-    setFiles(newFiles);
+  const reset = () => {
+    form.reset();
+    setFile(null);
+    setFileError(null);
   };
 
-  const handleUpload = async () => {
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    if (!file) return;
-
-    setUploading(true);
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64File = dataUrlToBase64(reader.result);
-
-      if (!base64File) {
-        setUploading(false);
-        return;
-      }
-
-      try {
-        await uploadMutation.mutateAsync({
-          image: base64File,
-          title: form.values.title,
-          description: form.values.description || undefined,
-          tags: form.values.tags,
-          isFeatured: form.values.isFeatured,
-        });
-
-        notifications.show({
-          title: "Image Uploaded",
-          message: "Your portfolio image has been added successfully.",
-          color: "green",
-        });
-
-        // Reset form
-        form.reset();
-        setFiles(null);
-        setUploading(false);
-        onSuccess?.();
-      } catch (error) {
-        logger.error("Error uploading portfolio image", { error });
-        // The portfolio-cap message is written for the user; anything else is not.
-        const isPortfolioFull = getErrorReason(error) === ErrorReason.PORTFOLIO_FULL;
-        notifications.show({
-          title: "Upload Failed",
-          message: isPortfolioFull && error instanceof Error
-            ? error.message
-            : "Failed to upload image. Please try again.",
-          color: "red",
-        });
-        setUploading(false);
-      }
-    };
-
-    reader.readAsDataURL(file);
+  const handleClose = () => {
+    if (isSaving) return;
+    close();
+    reset();
   };
 
-  const previews = files?.map((file, index) => {
-    const imageUrl = URL.createObjectURL(file);
-    return (
-      <Image
-        key={index}
-        src={imageUrl}
-        alt={`Preview of ${file.name}`}
-        onLoad={() => URL.revokeObjectURL(imageUrl)}
-        radius="md"
-      />
-    );
+  const handleSubmit = form.onSubmit(async (values) => {
+    if (!file) {
+      setFileError("Choose an image to upload");
+      return;
+    }
+    setFileError(null);
+    setIsReading(true);
+    try {
+      const image = await readFileAsBase64(file);
+      await upload.mutateAsync({
+        description: values.description.trim() || undefined,
+        image,
+        isFeatured: values.isFeatured,
+        tags: values.tags,
+        title: values.title.trim(),
+      });
+      notify.success({
+        message: `"${values.title.trim()}" is now in your portfolio.`,
+        title: "Image uploaded",
+      });
+      close();
+      reset();
+      onUploaded();
+    } catch (error) {
+      logger.error("Error uploading portfolio image", { error });
+      // Shown in the form, next to the image it is about: wrong type, too
+      // large, portfolio full, too many uploads, or a plain failure.
+      setFileError(uploadErrorMessage(error));
+    } finally {
+      setIsReading(false);
+    }
   });
 
   return (
-    <Modal
-      title="Upload Portfolio Image"
-      isIconModal={false}
-      buttonLabel={<><IconUpload size={16} /> Upload Image</>}
-      buttonProps={{
-        variant: "light",
-      }}
-    >
-      <Stack gap="md">
-        <Dropzone
-          multiple={false}
-          loading={uploading}
-          handleFileChange={handleFileChange}
-        />
-
-        {previews && previews.length > 0 && (
-          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
-            {previews}
-          </SimpleGrid>
-        )}
-
-        <TextInput
-          label="Title"
-          placeholder="Give your image a title"
-          required
-          {...form.getInputProps("title")}
-        />
-
-        <Textarea
-          label="Description"
-          placeholder="Describe this image (optional)"
-          autosize
-          minRows={2}
-          maxRows={4}
-          {...form.getInputProps("description")}
-        />
-
-        <TagsInput
-          label="Tags"
-          placeholder="Type a tag and press Enter"
-          data={[
-            "Wedding",
-            "Portrait",
-            "Landscape",
-            "Street",
-            "Fashion",
-            "Event",
-            "Product",
-            "Architecture",
-            "Nature",
-            "Sports",
-          ]}
-          {...form.getInputProps("tags")}
-        />
-
-        <Checkbox
-          label="Feature this image"
-          description="Featured images appear at the top of your portfolio"
-          {...form.getInputProps("isFeatured", { type: "checkbox" })}
-        />
-
-        <Group mt="xs">
-          <Button
-            onClick={handleUpload}
-            disabled={!files?.length || !form.values.title}
-            loading={uploading}
-          >
-            Upload
-          </Button>
-          <Text size="xs" c="dimmed">
-            Max file size: 5MB
-          </Text>
-        </Group>
-      </Stack>
-    </Modal>
+    <>
+      <Button variant="light" leftSection={<IconUpload size={16} />} onClick={open} {...buttonProps}>
+        Upload image
+      </Button>
+      <Modal
+        opened={opened}
+        onClose={handleClose}
+        title="Upload portfolio image"
+        closeOnClickOutside={!isSaving}
+        closeOnEscape={!isSaving}
+      >
+        <form onSubmit={handleSubmit} noValidate>
+          <Stack gap="md">
+            <ImagePicker
+              file={file}
+              onChange={(next) => {
+                setFile(next);
+                setFileError(null);
+              }}
+              label="Portfolio image"
+              disabled={isSaving}
+              error={fileError}
+            />
+            <TextInput
+              label="Title"
+              placeholder="Give your image a title"
+              required
+              maxLength={200}
+              {...form.getInputProps("title")}
+            />
+            <Textarea
+              label="Description"
+              description="Optional"
+              placeholder="Describe this image"
+              autosize
+              minRows={2}
+              maxRows={4}
+              {...form.getInputProps("description")}
+            />
+            <TagsInput
+              label="Tags"
+              description="Optional. Pick from the list or type your own and press Enter."
+              placeholder="Add a tag"
+              data={PORTFOLIO_TAG_SUGGESTIONS}
+              {...form.getInputProps("tags")}
+            />
+            <Checkbox
+              label="Feature this image"
+              description="Featured images appear at the top of your portfolio"
+              {...form.getInputProps("isFeatured", { type: "checkbox" })}
+            />
+            <Group justify="flex-end" mt="xs">
+              <Button variant="default" onClick={handleClose} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={isSaving}>
+                Upload
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </>
   );
 }

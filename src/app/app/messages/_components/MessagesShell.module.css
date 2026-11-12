@@ -1,0 +1,119 @@
+/*
+ * The messages screen fills the space between the app header and the tab bar
+ * (phones) or the slim footer (desktop), so the composer is always in view.
+ *
+ * --messages-viewport: visual viewport height while the on-screen keyboard is
+ *   open (set by MessagesShell), else the dynamic viewport height.
+ * --messages-bottom: space reserved below the screen; 0 while the keyboard
+ *   covers the tab bar.
+ */
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+  height: calc(
+    var(--messages-viewport, 100dvh) - var(--app-shell-header-offset, 60px) -
+      var(--messages-bottom, var(--app-shell-footer-offset, 0px)) - var(--app-shell-padding, 16px) * 2 -
+      var(--app-footer-height, 0px)
+  );
+  min-height: 320px;
+}
+
+.panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-gray-3);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+}
+
+.sidebar {
+  flex: 0 0 34%;
+  min-width: 0;
+  max-width: 380px;
+  overflow-y: auto;
+  border-right: 1px solid var(--mantine-color-gray-3);
+}
+
+.thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Below `md` only the pane the URL selects is shown. */
+@media (max-width: 61.99em) {
+  .sidebar {
+    flex: 1;
+    max-width: none;
+    border-right: 0;
+  }
+
+  .shell[data-pane="thread"] .sidebar,
+  .shell[data-pane="list"] .thread {
+    display: none;
+  }
+
+  /* The thread gets the whole screen: its own header carries the title and
+     the back button. The page title stays available to screen readers. */
+  .shell[data-pane="thread"] {
+    gap: 0;
+  }
+
+  .shell[data-pane="thread"] .header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .shell[data-pane="thread"] .headerAction {
+    display: none;
+  }
+
+  .shell[data-pane="thread"] .panes {
+    border: 0;
+    border-radius: 0;
+    /* Bleed to the screen edges: undo the page padding. */
+    margin: calc(var(--app-shell-padding, 16px) * -1);
+  }
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  border-left: 3px solid transparent;
+  transition: background-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .row:hover {
+    background-color: var(--mantine-color-gray-0);
+  }
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.row[aria-current="page"] {
+  border-left-color: var(--mantine-color-orange-6);
+  background-color: var(--mantine-color-orange-0);
+}

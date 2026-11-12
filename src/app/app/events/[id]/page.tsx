@@ -1,55 +1,38 @@
-"use client";
-import { Anchor, Group, Loader, Stack, Text } from "@mantine/core";
-import { IconArrowLeft } from "@tabler/icons-react";
-import Link from "next/link";
-import { use } from 'react';
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { cache } from "react";
 
-import { logger } from "~/_utils";
-import AddCommentForm from "~/app/_components/AddCommentForm";
-import EventCard from "~/app/_components/events/EventCard";
-import EventComment from "~/app/_components/events/EventComment";
-import CommentsRefetchContext from "~/context/CommentsRefetchContext";
-import { api } from "~/trpc/react";
+import { ErrorReason } from "~/_utils/errorReason";
+import { auth } from "~/auth";
+import { reasonOf } from "~/server/api/reasonedError";
+import { api } from "~/trpc/server";
 
-export default function Page({ params }: { params: Promise<{ id: string }>; }) {
-    const { id } = use(params);
-    const { data: comments, refetch: refetchComments, isPending } = api.event.getCommentsByEventId.useQuery({
-        eventId: id
-    });
+import EventDetail from "./_components/EventDetail";
 
-    const { data: commentCount, refetch: refetchCommentCount } = api.event.getCommentCountByEventId.useQuery({
-        eventId: id
-    });
+type PageProps = { params: Promise<{ id: string }> };
 
-    const handleRefetchComments = () => {
-        refetchComments().catch((err: unknown) => logger.error('Failed to refetch comments', { error: err }));
-    };
-
-    const handleRefetchCommentCount = () => {
-        refetchCommentCount().catch((err: unknown) => logger.error('Failed to refetch comment count', { error: err }));
-    };
-
-    if (isPending) {
-        return <Loader />;
+/** The event, or null when it does not exist (or was deleted). */
+const findEvent = cache(async (id: string) => {
+    try {
+        return await (await api()).event.getById({ id });
+    } catch (error) {
+        // `event.getById` throws for a missing (or deleted) event, with a
+        // reason; anything else is a real failure for the error boundary.
+        if (reasonOf(error) === ErrorReason.EVENT_NOT_FOUND) return null;
+        throw error;
     }
+});
 
-    return (
-        <CommentsRefetchContext.Provider value={{ refetchCommentCount: handleRefetchCommentCount, refetchComments: handleRefetchComments }}>
-            <Stack gap="md">
-                <Anchor component={Link} href="/app/events" c="dimmed" size="sm">
-                    <Group gap={4}><IconArrowLeft size={14} /> Back to Events</Group>
-                </Anchor>
-                <EventCard eventId={id} isEventPage={true} hideCompose={true} initialCommentCount={commentCount} />
-                <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 1 }}>
-                    Comments{commentCount ? ` (${commentCount})` : ""}
-                </Text>
-                <Stack gap={0}>
-                    {comments?.map((comment) => (
-                        <EventComment key={comment.id} comment={comment} />
-                    ))}
-                </Stack>
-                <AddCommentForm eventId={id} />
-            </Stack>
-        </CommentsRefetchContext.Provider>
-    );
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+    const { id } = await params;
+    const event = await findEvent(id);
+    return { title: event?.title ?? "Event not found" };
+}
+
+export default async function Page({ params }: PageProps) {
+    const { id } = await params;
+    const [session, event] = await Promise.all([auth(), findEvent(id)]);
+    if (!event) notFound();
+
+    return <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />;
 }

@@ -3,19 +3,24 @@ import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 import '@mantine/notifications/styles.css';
+// Last: overrides of the Mantine styles above.
+import "~/styles/overrides.css";
 
 import { ColorSchemeScript } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 
 import { SITE_URL } from "~/_lib/site";
 import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
 
+import { REVEAL_SCRIPT } from "./_components/animations/revealScript";
 import AppShell from "./_components/AppShell";
-import { Footer } from "./_components/Footer";
+import { AppFooter, Footer } from "./_components/Footer";
 import BottomTabBar from "./_components/nav/BottomTabBar";
 import { Navbar } from "./_components/NavBar";
+import Toasts from "./_components/Toasts";
+import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -26,29 +31,18 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-export const metadata = {
-  title: { default: "ISO", template: "%s | ISO" },
-  description: "The Photographer Second Shooter Network",
+export const metadata: Metadata = {
+  title: {
+    default: "ISO — Find second shooters and photography gigs",
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
   icons: [{ rel: "icon", url: "/favicon.ico" }],
   metadataBase: new URL(SITE_URL),
-  alternates: {
-    canonical: "/",
-  },
   openGraph: {
-    images: [
-      {
-        alt: "ISO — The Photographer Network",
-        height: 630,
-        url: "/api/og?title=ISO&subtitle=The+Photographer+Network",
-        width: 1200,
-      },
-    ],
-    type: "website",
-    locale: "en_US",
-    siteName: "ISO",
+    ...defaultOpenGraph,
     title: "ISO — The Photographer Network",
-    description:
-      "Find skilled second shooters for weddings, events, and sessions. Build your team, grow your network.",
+    description: SITE_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
@@ -56,6 +50,18 @@ export const metadata = {
     description:
       "Find skilled second shooters for weddings, events, and sessions.",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Let the page draw under the notch/home indicator; the tab bar and sheets
+  // pad themselves with env(safe-area-inset-*).
+  viewportFit: "cover",
+  // Shrink the layout (not just the visual viewport) when the on-screen
+  // keyboard opens, so the message composer stays in view.
+  interactiveWidget: "resizes-content",
+  themeColor: "#ffffff",
 };
 
 export default async function RootLayout({
@@ -67,9 +73,20 @@ export default async function RootLayout({
   const isAuthed = !!session?.user;
 
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    // The app is light-only. The colour scheme attribute is in the server HTML
+    // (not just set by ColorSchemeScript) because Mantine's colour variables
+    // hang off it: without it, a page viewed with JavaScript off has no
+    // button or badge colours.
+    <html
+      lang="en"
+      className={inter.variable}
+      data-mantine-color-scheme="light"
+      data-scroll-behavior="smooth"
+      suppressHydrationWarning
+    >
       <head>
-        <ColorSchemeScript />
+        <ColorSchemeScript forceColorScheme="light" />
+        <script dangerouslySetInnerHTML={{ __html: REVEAL_SCRIPT }} />
       </head>
       <body>
         <CSPostHogProvider
@@ -80,12 +97,13 @@ export default async function RootLayout({
           }
         >
           <ThemeProvider>
-            <Notifications position="top-center" />
+            <Toasts />
             <TRPCReactProvider>
               <AppShell
                 header={<Navbar />}
                 bottomNav={isAuthed ? <BottomTabBar /> : undefined}
-                footer={<Footer />}
+                marketingFooter={<Footer />}
+                appFooter={<AppFooter />}
               >
                 {children}
               </AppShell>

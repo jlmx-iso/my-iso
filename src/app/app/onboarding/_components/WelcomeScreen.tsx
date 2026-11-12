@@ -23,7 +23,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
     <Box maw={500} w="100%" mx="auto" py={60}>
       <Stack align="center" gap="xl">
         <ThemeIcon size={80} radius="xl" variant="light" color="orange">
-          <IconCamera size={40} />
+          <IconCamera size={40} aria-hidden />
         </ThemeIcon>
 
         <Stack align="center" gap="xs">
@@ -32,7 +32,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={400}>
             {photographerCount >= SOCIAL_PROOF_THRESHOLD
-              ? `Joining ${photographerCount.toLocaleString()} photographers on ISO.`
+              ? `Joining ${photographerCount.toLocaleString("en-US")} photographers on ISO.`
               : "You\u2019re one of the first photographers to join the network."}
           </Text>
         </Stack>
@@ -46,15 +46,15 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           }}
         >
           <Stack align="center" gap="xs">
-            <IconStar size={20} color="var(--mantine-color-orange-6)" />
+            <IconStar size={20} color="var(--mantine-color-orange-7)" aria-hidden />
             <Text size="sm" ta="center" fw={500}>
-              As a founding member, you&apos;ll get perks that won&apos;t be
-              available later — including a locked-in price that never goes up.
+              As a founding member you can get Pro at the founding price, which
+              stays the same for as long as you stay subscribed.
             </Text>
           </Stack>
         </Box>
 
-        <Button size="lg" color="orange" onClick={onContinue} fullWidth>
+        <Button size="lg" onClick={onContinue} fullWidth>
           Let&apos;s set up your profile
         </Button>
       </Stack>
