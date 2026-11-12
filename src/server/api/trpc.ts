@@ -8,13 +8,14 @@
  */
 
 import { TRPCError, initTRPC } from "@trpc/server";
-import { jwtVerify } from "jose";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
-import { env } from "~/env";
+import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
+import { getClientIp } from "~/server/_utils/clientIp";
+import { enforceRateLimit, type RateLimitPolicy } from "~/server/_utils/rateLimit";
 import { ADMIN_ROLES } from "~/server/_utils/roles";
 import type { UserRole } from "~/server/_utils/roles";
 import { db } from "~/server/db";
@@ -39,30 +40,25 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
   if (!session) {
     const authHeader = opts.headers.get("authorization");
     const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (bearer) {
-      try {
-        const secret = new TextEncoder().encode(env.AUTH_SECRET);
-        const { payload } = await jwtVerify(bearer, secret);
-        if (typeof payload.sub === "string") {
-          const user = await db.user.findUnique({
-            where: { id: payload.sub },
-            select: { id: true, email: true, firstName: true, lastName: true },
-          });
-          if (user) {
-            session = {
-              user: {
-                id: user.id,
-                email: user.email ?? "",
-                firstName: user.firstName,
-                lastName: user.lastName,
-                name: `${user.firstName} ${user.lastName}`,
-              },
-              expires: new Date((payload.exp ?? 0) * 1000).toISOString(),
-            };
-          }
-        }
-      } catch {
-        // Invalid or expired token — leave session as null
+    // Null for anything but a valid, unexpired token issued by this app for
+    // the mobile audience (see mobileToken.ts).
+    const mobile = bearer ? await verifyMobileToken(bearer) : null;
+    if (mobile) {
+      const user = await db.user.findUnique({
+        where: { id: mobile.userId },
+        select: { id: true, email: true, firstName: true, lastName: true },
+      });
+      if (user) {
+        session = {
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            name: `${user.firstName} ${user.lastName}`,
+          },
+          expires: mobile.expiresAt.toISOString(),
+        };
       }
     }
   }
@@ -131,6 +127,23 @@ const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
     },
   });
 });
+
+/**
+ * Rate-limits a procedure: `.use(rateLimit(RateLimits.MESSAGE_SEND))`.
+ *
+ * Signed-in callers are counted per user, anonymous callers per IP address.
+ * On protectedProcedure the auth check has already run, so unauthenticated
+ * requests are rejected before they are counted.
+ */
+export const rateLimit = (policy: RateLimitPolicy) =>
+  t.middleware(async ({ ctx, next }) => {
+    const userId = ctx.session?.user?.id;
+    const identifier = userId
+      ? `user:${userId}`
+      : `ip:${getClientIp(ctx.headers)}`;
+    await enforceRateLimit(ctx.db, policy, identifier);
+    return next();
+  });
 
 /**
  * Protected (authenticated) procedure

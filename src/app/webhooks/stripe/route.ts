@@ -420,5 +420,6 @@ const handler = async (req: NextRequest) => {
   return new Response('ok', { status: 200 });
 }
 
-export { handler as GET, handler as POST };
+// Stripe only ever POSTs to a webhook endpoint.
+export { handler as POST };
 

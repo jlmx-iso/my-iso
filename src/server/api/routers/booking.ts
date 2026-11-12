@@ -2,14 +2,37 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { isUniqueViolation } from "~/server/_db/errors";
 import { captureEvent } from "~/server/_lib/posthog";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+
+const idInput = z.string().min(1).max(64);
+
+const BOOKINGS_PAGE_SIZE = 100;
+
+/** `limit` + `cursor` (id of the last booking of the previous page). */
+const pageInput = z
+  .object({
+    cursor: idInput.optional(),
+    limit: z.number().int().min(1).max(BOOKINGS_PAGE_SIZE).default(BOOKINGS_PAGE_SIZE),
+  })
+  .optional();
+
+function page(input: z.infer<typeof pageInput>) {
+  return {
+    ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+    take: input?.limit ?? BOOKINGS_PAGE_SIZE,
+  };
+}
+
+const ALREADY_APPLIED = "You have already applied to this event";
 
 export const bookingRouter = createTRPCRouter({
   applyToEvent: protectedProcedure
     .input(
       z.object({
-        eventId: z.string().min(1),
+        eventId: idInput,
         notes: z.string().max(500).optional(),
         platform: z.enum(['ios', 'web']).optional().default('web'),
         rate: z.string().max(100).optional(),
@@ -18,7 +41,9 @@ export const bookingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Look up the event to get the photographer's userId as ownerId
+      // Look up the event to get the photographer's userId as ownerId.
+      // findUnique goes through the soft-delete extension, so a deleted
+      // event is "not found" and cannot be applied to.
       const event = await ctx.db.event.findUnique({
         include: {
           photographer: {
@@ -59,7 +84,7 @@ export const bookingRouter = createTRPCRouter({
       if (existingBooking) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "You have already applied to this event",
+          message: ALREADY_APPLIED,
         });
       }
 
@@ -74,7 +99,12 @@ export const bookingRouter = createTRPCRouter({
           },
         })
         .catch((error: unknown) => {
-          logger.error("Error creating booking", { error: error as Error });
+          // Two submits at once: the unique (eventId, applicantId) rejects
+          // the second, which is a conflict rather than a server fault.
+          if (isUniqueViolation(error)) {
+            throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
+          }
+          logger.error("Error creating booking", { error });
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to create booking",
@@ -87,7 +117,11 @@ export const bookingRouter = createTRPCRouter({
     }),
 
   getByEventId: protectedProcedure
-    .input(z.object({ eventId: z.string().min(1) }))
+    .input(z.object({
+      cursor: idInput.optional(),
+      eventId: idInput,
+      limit: z.number().int().min(1).max(BOOKINGS_PAGE_SIZE).default(BOOKINGS_PAGE_SIZE),
+    }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -134,15 +168,14 @@ export const bookingRouter = createTRPCRouter({
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        ...page(input),
         where: {
           eventId: input.eventId,
-          isDeleted: false,
         },
       });
     }),
 
-  getMyApplications: protectedProcedure.query(async ({ ctx }) => {
+  getMyApplications: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
     const userId = ctx.session.user.id;
 
     return ctx.db.booking.findMany({
@@ -164,15 +197,14 @@ export const bookingRouter = createTRPCRouter({
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      ...page(input),
       where: {
         applicantId: userId,
-        isDeleted: false,
       },
     });
   }),
 
-  getReceivedApplications: protectedProcedure.query(async ({ ctx }) => {
+  getReceivedApplications: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
     const userId = ctx.session.user.id;
 
     return ctx.db.booking.findMany({
@@ -194,16 +226,15 @@ export const bookingRouter = createTRPCRouter({
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      ...page(input),
       where: {
-        isDeleted: false,
         ownerId: userId,
       },
     });
   }),
 
   hasApplied: protectedProcedure
-    .input(z.object({ eventId: z.string().min(1) }))
+    .input(z.object({ eventId: idInput }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -222,7 +253,7 @@ export const bookingRouter = createTRPCRouter({
   updateStatus: protectedProcedure
     .input(
       z.object({
-        bookingId: z.string().min(1),
+        bookingId: idInput,
         ownerNotes: z.string().max(500).optional(),
         status: z.enum([
           "accepted",
@@ -286,9 +317,7 @@ export const bookingRouter = createTRPCRouter({
           where: { id: input.bookingId },
         })
         .catch((error: unknown) => {
-          logger.error("Error updating booking status", {
-            error: error as Error,
-          });
+          logger.error("Error updating booking status", { error });
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to update booking status",

@@ -12,12 +12,18 @@ type GooglePlacesResponse = {
  * Edge-compatible Google Places API autocomplete using fetch
  * Migrated from @googlemaps/google-maps-services-js for Cloudflare Workers compatibility
  */
-export async function placeAutocomplete(input: string): Promise<Result<string[], Error>> {
+export async function placeAutocomplete(
+  input: string,
+  sessionToken?: string,
+): Promise<Result<string[], Error>> {
   try {
     const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
     url.searchParams.set('input', input);
     url.searchParams.set('types', '(cities)');
     url.searchParams.set('key', env.GOOGLE_PLACES_API_KEY);
+    if (sessionToken) {
+      url.searchParams.set('sessiontoken', sessionToken);
+    }
 
     const response = await fetch(url.toString());
 
@@ -43,17 +49,3 @@ export async function placeAutocomplete(input: string): Promise<Result<string[],
     return Result.err(error as Error);
   }
 }
-
-/**
- * Deprecated: googleMapsClient export for backwards compatibility
- * Use placeAutocomplete() instead for edge-compatible geocoding
- */
-export const googleMapsClient = {
-  placeAutocomplete: async (options: { params: { input: string; key: string; types: string } }) => {
-    const result = await placeAutocomplete(options.params.input);
-    if (result.isErr) {
-      return { data: { predictions: [] } };
-    }
-    return { data: { predictions: result.value.map(description => ({ description })) } };
-  },
-};

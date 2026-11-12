@@ -1,142 +1,40 @@
 import { TRPCError } from "@trpc/server";
-import { SignJWT } from "jose";
 import { z } from "zod";
 
-import { UserVerificationErrors } from "~/_types/errors";
-import { instagramHandleOptional, logger, phoneSchema, socialHandleOptional } from "~/_utils";
+import { logger } from "~/_utils";
 import { env } from "~/env";
-import { createUser, createVerificationToken, verifyUserEmail } from "~/server/_db";
-import { captureEvent, getPostHogClient } from "~/server/_lib/posthog";
-import { generateVerificationCode } from "~/server/_utils";
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { issueOtp, verifyOtp } from "~/server/_db/verificationToken";
+import { runAfterResponse } from "~/server/_lib/background";
+import { captureEvent } from "~/server/_lib/posthog";
+import { signMobileToken } from "~/server/_utils/auth/mobileToken";
+import { getClientIp, isCloudflareRuntime } from "~/server/_utils/clientIp";
+import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { createTRPCRouter, publicProcedure, rateLimit } from "~/server/api/trpc";
 
+/** Local `next dev` only: a fixed code, returned to the client, no email. */
+const DEV_OTP_CODE = "000000";
+
+function isLocalDevelopment(): boolean {
+  return env.NODE_ENV === "development" && !isCloudflareRuntime();
+}
+
+const emailInput = z.string().trim().toLowerCase().email().max(254);
 
 export const authRouter = createTRPCRouter({
-  register: publicProcedure
-    .input(z.object({
-      companyName: z.string().min(1),
-      email: z.string().email(),
-      facebook: socialHandleOptional,
-      firstName: z.string().min(1),
-      instagram: instagramHandleOptional,
-      lastName: z.string().min(1),
-      location: z.string().min(1),
-      phone: phoneSchema,
-      provider: z.enum(["email", "google", "facebook"]),
-      tiktok: socialHandleOptional,
-      twitter: socialHandleOptional,
-      vimeo: socialHandleOptional,
-      website: z.string().trim().url().optional().or(z.literal("")),
-      youtube: socialHandleOptional,
-    }))
-    .mutation(async ({ input }) => {
-      const result = await createUser(input);
-      if (result.isErr) {
-        logger.error("Error registering user, throwing error", { error: result.error });
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: result.error.message,
-        });
-      }
-      captureEvent(result.value.id, "user_signed_up", { role: result.value.role });
-      const ph = getPostHogClient();
-      if (ph) {
-        ph.identify({
-          distinctId: result.value.id,
-          properties: {
-            email: result.value.email,
-            name: `${result.value.firstName} ${result.value.lastName}`,
-            role: result.value.role,
-            created_at: result.value.createdAt,
-          },
-        });
-      }
-      const verificationTokenResult = await createVerificationToken({ identifier: result.value.id })
-      if (verificationTokenResult.isErr) {
-        logger.error("Error creating verification token", { error: verificationTokenResult.error });
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: verificationTokenResult.error.message,
-        });
-      }
-
-      const verificationUrl = new URL(`/verify/${verificationTokenResult.value}`, env.NEXT_PUBLIC_BASE_URL).toString();
-      const { sendEmail } = await import("../../_lib/email");
-      const emailResponse = await sendEmail({
-        email: input.email,
-        html: `
-          <p>Thanks for registering!</p>
-          <p>Please <a href="${verificationUrl}">verify your email address</a> to get started!</p>
-          `,
-        subject: "Almost done setting up your ISO account!",
-
-      })
-      if (emailResponse.isErr) {
-        logger.error("Error sending email", { error: emailResponse.error });
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: emailResponse.error.message,
-        });
-      }
-      logger.info("User registered successfully", { user: input });
-      return "User registered successfully!";
-    }),
-
-  verifyAccount: publicProcedure
-    .input(z.object({
-      token: z.string().min(1),
-    }))
-    .mutation(async ({ input }) => {
-      const verificationResponse = await verifyUserEmail(input.token);
-      if (verificationResponse.isErr) {
-        switch (verificationResponse.error.message) {
-          case UserVerificationErrors.TOKEN_NOT_FOUND:
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: "Invalid token",
-            });
-          case UserVerificationErrors.TOKEN_EXPIRED:
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: "Token expired",
-            });
-          case UserVerificationErrors.USER_NOT_FOUND:
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: "User not found",
-            });
-          case UserVerificationErrors.USER_ALREADY_VERIFIED:
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: "User already verified",
-            });
-          default:
-            logger.error("Error verifying email", { error: verificationResponse.error });
-            throw new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
-              message: verificationResponse.error.message,
-            });
-        }
-      }
-      return "Email verified successfully!";
-    }),
-
   exchangeMobileToken: publicProcedure
+    .use(rateLimit(RateLimits.MOBILE_TOKEN_EXCHANGE))
     .input(z.object({
-      idToken: z.string().min(1),
+      idToken: z.string().min(1).max(8192),
     }))
     .mutation(async ({ ctx, input }) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       let tokenInfoRes: Response;
       try {
-        tokenInfoRes = await fetch(
-          `https://oauth2.googleapis.com/tokeninfo?id_token=${input.idToken}`,
-          { signal: controller.signal },
-        );
+        const tokenInfoUrl = new URL("https://oauth2.googleapis.com/tokeninfo");
+        tokenInfoUrl.searchParams.set("id_token", input.idToken);
+        tokenInfoRes = await fetch(tokenInfoUrl, { signal: controller.signal });
       } catch (error) {
-        clearTimeout(timeoutId);
         logger.error("Google tokeninfo request failed", { error });
         throw new TRPCError({
           code: "BAD_GATEWAY",
@@ -187,50 +85,45 @@ export const authRouter = createTRPCRouter({
 
       const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
-        select: { email: true, id: true },
+        select: { id: true },
       });
 
+      // The caller has just proven ownership of this address to Google, so
+      // telling them it has no account here discloses nothing about others.
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'No account found. Please sign up on the web first.' });
       }
 
-      const secret = new TextEncoder().encode(env.AUTH_SECRET);
-      const token = await new SignJWT({ email: user.email, sub: user.id })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setIssuedAt()
-        .setExpirationTime('24h')
-        .sign(secret);
+      const token = await signMobileToken(user.id);
 
-      void captureEvent(user.id, 'user_signed_in', { provider: 'google', platform: 'ios' });
+      captureEvent(user.id, 'user_signed_in', { provider: 'google', platform: 'ios' });
 
       return { token, userId: user.id };
     }),
 
+  /**
+   * Emails a sign-in code. Used by the web login/join forms and the mobile
+   * app. The response is the same whether or not the address can sign in,
+   * and whether or not the email could be sent.
+   */
   requestMobileOtp: publicProcedure
-    .input(z.object({ email: z.string().email() }))
+    .input(z.object({ email: emailInput }))
     .mutation(async ({ ctx, input }) => {
-      const normalizedEmail = input.email.toLowerCase();
-      const ip = ctx.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ctx.headers.get('x-real-ip') ?? 'unknown';
+      const email = input.email;
 
-      const rateLimitResult = await checkRateLimit(`otp:request:${normalizedEmail}`, RateLimits.AUTH);
-      if (!rateLimitResult.allowed) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
-      }
-      const ipRateLimit = await checkRateLimit(`otp:request:ip:${ip}`, RateLimits.AUTH);
-      if (!ipRateLimit.allowed) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
-      }
+      await enforceRateLimit(ctx.db, RateLimits.OTP_REQUEST_IP, `ip:${getClientIp(ctx.headers)}`);
+      await enforceRateLimit(ctx.db, RateLimits.OTP_REQUEST_EMAIL, `email:${email}`);
 
       // The `otp` sign-in (src/auth.ts) accepts a code for an existing user,
       // or for an invitee whose invite /join has just validated: it creates
       // that user at verification time.
       const [user, pendingInvite] = await Promise.all([
         ctx.db.user.findUnique({
-          where: { email: normalizedEmail },
+          where: { email },
           select: { id: true },
         }),
         ctx.db.pendingInviteValidation.findFirst({
-          where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
+          where: { email, expiresAt: { gt: new Date() } },
           select: { id: true },
         }),
       ]);
@@ -241,86 +134,55 @@ export const authRouter = createTRPCRouter({
         return { sent: true, devCode: undefined };
       }
 
-      // Delete any existing OTP tokens for this email to avoid stale codes
-      await ctx.db.verificationToken.deleteMany({
-        where: { identifier: `otp:${normalizedEmail}` },
-      });
+      if (isLocalDevelopment()) {
+        await issueOtp(ctx.db, email, { code: DEV_OTP_CODE });
+        return { sent: true, devCode: DEV_OTP_CODE };
+      }
 
-      const isDev = env.NODE_ENV === 'development';
-      const redactedEmail = normalizedEmail.replace(/(^.).*(@.*$)/, "$1***$2");
-      logger.info("requestMobileOtp", { email: redactedEmail, isDev, NODE_ENV: env.NODE_ENV });
-      const code = isDev ? '000000' : generateVerificationCode();
-      const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
+      const code = await issueOtp(ctx.db, email);
 
-      await ctx.db.verificationToken.create({
-        data: { expires, identifier: `otp:${normalizedEmail}`, token: code },
-      });
-
-      if (!isDev) {
+      // Sent after the response, and a failure is only logged: a slower or
+      // failing reply for addresses that exist would reveal which ones do.
+      runAfterResponse("send-otp-email", async () => {
         const { sendEmail } = await import("../../_lib/email");
         const { renderMobileOtpEmail } = await import("../../_lib/emails");
-        logger.info("Sending OTP email", { email: redactedEmail });
         const html = await renderMobileOtpEmail({ code });
-        const emailResult = await sendEmail({ email: normalizedEmail, html, subject: `${code} is your ISO sign-in code` });
-
+        const emailResult = await sendEmail({ email, html, subject: `${code} is your ISO sign-in code` });
         if (emailResult.isErr) {
           logger.error("Error sending OTP email", { error: emailResult.error });
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to send code. Please try again.' });
         }
-        logger.info("OTP email sent successfully", { email: redactedEmail });
-      }
+      });
 
-      return { sent: true, devCode: isDev ? code : undefined };
+      return { sent: true, devCode: undefined };
     }),
 
+  /**
+   * Exchanges an emailed code for a mobile bearer token. Every failure is
+   * the same UNAUTHORIZED error: wrong code, expired code, too many attempts
+   * and "no such account" are indistinguishable to the caller.
+   */
   verifyMobileOtp: publicProcedure
-    .input(z.object({ email: z.string().email(), code: z.string().length(6) }))
+    .input(z.object({ email: emailInput, code: z.string().regex(/^\d{6}$/) }))
     .mutation(async ({ ctx, input }) => {
-      const normalizedEmail = input.email.toLowerCase();
-      const identifier = `otp:${normalizedEmail}`;
-      const ip = ctx.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ctx.headers.get('x-real-ip') ?? 'unknown';
+      const email = input.email;
 
-      const rateLimitResult = await checkRateLimit(`otp:verify:${normalizedEmail}`, RateLimits.STRICT);
-      if (!rateLimitResult.allowed) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${rateLimitResult.retryAfter}s.` });
-      }
-      const ipRateLimit = await checkRateLimit(`otp:verify:ip:${ip}`, RateLimits.STRICT);
-      if (!ipRateLimit.allowed) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Try again in ${ipRateLimit.retryAfter}s.` });
-      }
+      await enforceRateLimit(ctx.db, RateLimits.OTP_VERIFY_IP, `ip:${getClientIp(ctx.headers)}`);
+      await enforceRateLimit(ctx.db, RateLimits.OTP_VERIFY_EMAIL, `email:${email}`);
 
-      const record = await ctx.db.verificationToken.findUnique({
-        where: { identifier_token: { identifier, token: input.code } },
-      });
-
-      if (!record) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid code.' });
-      }
-
-      if (record.expires < new Date()) {
-        await ctx.db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Code has expired. Please request a new one.' });
-      }
-
-      await ctx.db.verificationToken.delete({ where: { identifier_token: { identifier, token: input.code } } });
+      const isValid = await verifyOtp(ctx.db, email, input.code);
 
       const user = await ctx.db.user.findUnique({
-        where: { email: normalizedEmail },
-        select: { email: true, id: true },
+        where: { email },
+        select: { id: true },
       });
 
-      if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found.' });
+      if (!isValid || !user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid or expired code.' });
       }
 
-      const secret = new TextEncoder().encode(env.AUTH_SECRET);
-      const token = await new SignJWT({ email: user.email, sub: user.id })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setIssuedAt()
-        .setExpirationTime('24h')
-        .sign(secret);
+      const token = await signMobileToken(user.id);
 
-      void captureEvent(user.id, 'user_signed_in', { provider: 'email_otp', platform: 'ios' });
+      captureEvent(user.id, 'user_signed_in', { provider: 'email_otp', platform: 'ios' });
 
       return { token, userId: user.id };
     }),

@@ -5,9 +5,13 @@
 await import("./src/env.js");
 import { withSentryConfig } from "@sentry/nextjs/config";
 
+import { buildSecurityHeaders } from "./src/securityHeaders.js";
+
 /** @type {import("next").NextConfig} */
 const config = {
   serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  // Do not advertise the framework in an `X-Powered-By` response header.
+  poweredByHeader: false,
   images: {
     remotePatterns: [
       {
@@ -29,6 +33,16 @@ const config = {
   ],
   headers: async () => (
     [
+      {
+        // Every route. Listed first: for a header set twice, the later
+        // (more specific) entry below wins.
+        source: "/:path*",
+        headers: buildSecurityHeaders({
+          baseUrl: process.env.NEXT_PUBLIC_BASE_URL ?? process.env.BASE_URL,
+          isDevelopment: process.env.NODE_ENV === "development",
+          posthogHost: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+        }),
+      },
       {
         source: "/login",
         headers: [

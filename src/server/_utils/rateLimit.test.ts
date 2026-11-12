@@ -1,119 +1,199 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock logger to suppress output
-vi.mock("~/_utils", () => ({
-  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
-}));
+import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
-import { checkRateLimit } from "./rateLimit";
+import {
+  checkRateLimit,
+  consumeRateLimit,
+  enforceRateLimit,
+  purgeExpiredRateLimits,
+  RateLimits,
+  type RateLimitDb,
+  type RateLimitPolicy,
+} from "./rateLimit";
 
-// checkRateLimit reads the KV binding from globalThis.RATE_LIMITER.
-const testGlobal = globalThis as { RATE_LIMITER?: unknown };
+const policy: RateLimitPolicy = {
+  limit: 3,
+  name: "test",
+  onError: "deny",
+  windowSeconds: 60,
+};
 
-const CONFIG = { limit: 5, window: 60 };
-const ID = "test-identifier";
+// A fixed instant at the start of a 60-second window.
+const T0 = 1_800_000_040_000 - (1_800_000_040_000 % 60_000);
 
-// Helper to create a mock KV namespace
-function makeMockKv(initial: { count: number; resetAt: number } | null = null) {
-  let stored: { count: number; resetAt: number } | null = initial;
-  return {
-    get: vi.fn().mockImplementation(async (_key: string, _type: string) => stored),
-    put: vi.fn().mockImplementation(async (_key: string, value: string) => {
-      stored = JSON.parse(value) as { count: number; resetAt: number };
-    }),
-    delete: vi.fn(),
-    list: vi.fn(),
-    getWithMetadata: vi.fn(),
-  };
-}
+const brokenDb: RateLimitDb = {
+  $executeRaw: () => {
+    throw new Error("database unavailable");
+  },
+  $queryRaw: () => {
+    throw new Error("database unavailable");
+  },
+};
 
-beforeEach(() => {
-  // Ensure RATE_LIMITER is not on globalThis
-  if ("RATE_LIMITER" in globalThis) {
-    delete testGlobal.RATE_LIMITER;
-  }
-});
+describe("rate limiter against SQLite", () => {
+  let testDb: TestDb;
 
-afterEach(() => {
-  vi.clearAllMocks();
-  if ("RATE_LIMITER" in globalThis) {
-    delete testGlobal.RATE_LIMITER;
-  }
-});
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
 
-describe("checkRateLimit — no KV namespace", () => {
-  it("allows all requests when RATE_LIMITER is not in globalThis", async () => {
-    const result = await checkRateLimit(ID, CONFIG);
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(CONFIG.limit);
-    expect(result.retryAfter).toBe(0);
+  afterAll(async () => {
+    await testDb.close();
+  });
+
+  beforeEach(async () => {
+    await testDb.raw.rateLimit.deleteMany();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("allows requests up to the limit and reports what is left", async () => {
+    const results = [];
+    for (let i = 0; i < 3; i++) {
+      results.push(await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 }));
+    }
+    expect(results.map((r) => r.allowed)).toEqual([true, true, true]);
+    expect(results.map((r) => r.remaining)).toEqual([2, 1, 0]);
+    expect(results.every((r) => r.retryAfter === 0)).toBe(true);
+  });
+
+  it("denies the request after the limit, with the time until the window ends", async () => {
+    for (let i = 0; i < 3; i++) {
+      await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 });
+    }
+    const denied = await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 + 15_000 });
+    expect(denied).toEqual({ allowed: false, remaining: 0, retryAfter: 45 });
+  });
+
+  it("starts a fresh count in the next window", async () => {
+    for (let i = 0; i < 4; i++) {
+      await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 });
+    }
+    const next = await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 + 60_000 });
+    expect(next).toMatchObject({ allowed: true, remaining: 2 });
+  });
+
+  it("counts identifiers and policies separately", async () => {
+    for (let i = 0; i < 4; i++) {
+      await consumeRateLimit(testDb.db, policy, "user:1", { nowMs: T0 });
+    }
+    const otherUser = await consumeRateLimit(testDb.db, policy, "user:2", { nowMs: T0 });
+    const otherPolicy = await consumeRateLimit(
+      testDb.db,
+      { ...policy, name: "other" },
+      "user:1",
+      { nowMs: T0 },
+    );
+    expect(otherUser.allowed).toBe(true);
+    expect(otherPolicy.allowed).toBe(true);
+  });
+
+  it("admits exactly `limit` of many concurrent requests", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 25 }, () =>
+        consumeRateLimit(testDb.db, policy, "user:burst", { nowMs: T0 }),
+      ),
+    );
+    expect(results.filter((r) => r.allowed)).toHaveLength(policy.limit);
+
+    const rows = await testDb.raw.rateLimit.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.count).toBe(25);
+  });
+
+  it("stores a keyed hash, never the identifier itself", async () => {
+    await consumeRateLimit(testDb.db, policy, "email:someone@example.com", { nowMs: T0 });
+    await consumeRateLimit(testDb.db, policy, "ip:203.0.113.9", { nowMs: T0 });
+
+    const keys = (await testDb.raw.rateLimit.findMany()).map((row) => row.key);
+    expect(keys).toHaveLength(2);
+    for (const key of keys) {
+      expect(key).toMatch(/^test:[0-9a-f]{32}$/);
+      expect(key).not.toContain("someone");
+      expect(key).not.toContain("203.0.113.9");
+    }
+  });
+
+  it("purges only counters whose window has ended", async () => {
+    await consumeRateLimit(testDb.db, policy, "user:old", { nowMs: T0 });
+    await consumeRateLimit(testDb.db, policy, "user:new", { nowMs: T0 + 120_000 });
+
+    const removed = await purgeExpiredRateLimits(testDb.db, T0 + 120_000);
+
+    expect(removed).toBe(1);
+    await expect(testDb.raw.rateLimit.count()).resolves.toBe(1);
+  });
+
+  it("sweeps expired counters opportunistically when a window opens", async () => {
+    await consumeRateLimit(testDb.db, policy, "user:old", { nowMs: T0, random: () => 1 });
+    await expect(testDb.raw.rateLimit.count()).resolves.toBe(1);
+
+    // random() below the cleanup probability triggers the sweep.
+    await consumeRateLimit(testDb.db, policy, "user:new", { nowMs: T0 + 600_000, random: () => 0 });
+
+    const rows = await testDb.raw.rateLimit.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.windowStart).toBe((T0 + 600_000) / 1000);
+  });
+
+  it("enforceRateLimit throws TOO_MANY_REQUESTS once over the limit", async () => {
+    for (let i = 0; i < policy.limit; i++) {
+      await enforceRateLimit(testDb.db, policy, "user:1");
+    }
+    const error = await enforceRateLimit(testDb.db, policy, "user:1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TRPCError);
+    expect(error).toMatchObject({ code: "TOO_MANY_REQUESTS" });
   });
 });
 
-describe("checkRateLimit — with KV namespace", () => {
-  it("allows first request and sets remaining to limit - 1", async () => {
-    const kv = makeMockKv(null);
-    testGlobal.RATE_LIMITER = kv;
-
-    const result = await checkRateLimit(ID, CONFIG);
-
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(CONFIG.limit - 1);
-    expect(result.retryAfter).toBe(0);
-    expect(kv.put).toHaveBeenCalledOnce();
+describe("limiter failure", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  it("increments counter on subsequent requests", async () => {
-    const now = Date.now();
-    const resetAt = now + 60_000;
-    const kv = makeMockKv({ count: 2, resetAt });
-    testGlobal.RATE_LIMITER = kv;
+  it("fails closed for a deny policy", async () => {
+    const result = await checkRateLimit(brokenDb, policy, "user:1");
+    expect(result).toMatchObject({ allowed: false, limiterFailed: true });
 
-    const result = await checkRateLimit(ID, CONFIG);
-
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(CONFIG.limit - 3); // was 2, now 3
+    await expect(enforceRateLimit(brokenDb, policy, "user:1")).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
   });
 
-  it("blocks requests when limit is exceeded", async () => {
-    const now = Date.now();
-    const resetAt = now + 30_000; // 30s until reset
-    const kv = makeMockKv({ count: CONFIG.limit, resetAt });
-    testGlobal.RATE_LIMITER = kv;
+  it("fails open for an allow policy", async () => {
+    const lenient: RateLimitPolicy = { ...policy, onError: "allow" };
+    const result = await checkRateLimit(brokenDb, lenient, "user:1");
+    expect(result).toMatchObject({ allowed: true, limiterFailed: true });
 
-    const result = await checkRateLimit(ID, CONFIG);
-
-    expect(result.allowed).toBe(false);
-    expect(result.remaining).toBe(0);
-    expect(result.retryAfter).toBeGreaterThan(0);
-    expect(result.retryAfter).toBeLessThanOrEqual(30);
+    await expect(enforceRateLimit(brokenDb, lenient, "user:1")).resolves.toBeUndefined();
   });
 
-  it("resets window when resetAt has expired", async () => {
-    const expiredResetAt = Date.now() - 1000; // already in the past
-    const kv = makeMockKv({ count: CONFIG.limit, resetAt: expiredResetAt });
-    testGlobal.RATE_LIMITER = kv;
+  it("does not put the identifier in the error log", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await checkRateLimit(brokenDb, policy, "email:someone@example.com");
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("someone@example.com");
+  });
+});
 
-    const result = await checkRateLimit(ID, CONFIG);
-
-    // Should start fresh — first request is allowed
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(CONFIG.limit - 1);
+describe("RateLimits", () => {
+  it("fails closed for every sign-in, invite and waitlist policy", () => {
+    const authSensitive = [
+      RateLimits.OTP_REQUEST_EMAIL,
+      RateLimits.OTP_REQUEST_IP,
+      RateLimits.OTP_VERIFY_EMAIL,
+      RateLimits.OTP_VERIFY_IP,
+      RateLimits.MOBILE_TOKEN_EXCHANGE,
+      RateLimits.INVITE_VALIDATE,
+      RateLimits.INVITE_PREPARE,
+      RateLimits.WAITLIST_SUBMIT,
+    ];
+    expect(authSensitive.every((p) => p.onError === "deny")).toBe(true);
   });
 
-  it("fails open (allows request) when KV throws", async () => {
-    const kv = {
-      get: vi.fn().mockRejectedValue(new Error("KV error")),
-      put: vi.fn(),
-      delete: vi.fn(),
-      list: vi.fn(),
-      getWithMetadata: vi.fn(),
-    };
-    testGlobal.RATE_LIMITER = kv;
-
-    const result = await checkRateLimit(ID, CONFIG);
-
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(CONFIG.limit);
+  it("gives every policy a distinct bucket name", () => {
+    const names = Object.values(RateLimits).map((p) => p.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

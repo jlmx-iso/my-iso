@@ -5,7 +5,6 @@ import { authRouter } from "./routers/auth";
 import { bookingRouter } from "./routers/booking";
 import { discoverRouter } from "./routers/discover";
 import { eventRouter } from "./routers/event";
-import { favoriteRouter } from "./routers/favorite";
 import { googleRouter } from "./routers/google";
 import { inviteRouter } from "./routers/invite";
 import { messageRouter } from "./routers/message";
@@ -28,7 +27,6 @@ export const appRouter = createTRPCRouter({
   booking: bookingRouter,
   discover: discoverRouter,
   event: eventRouter,
-  favorite: favoriteRouter,
   google: googleRouter,
   invite: inviteRouter,
   message: messageRouter,

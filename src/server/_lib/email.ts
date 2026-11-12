@@ -157,16 +157,12 @@ export const sendTemplateEmail = async ({
             return Result.err(error);
         }
 
-        logger.debug("Rendering email template", { template, email });
+        logger.debug("Rendering email template", { template });
         const html = await renderer(props);
 
         return sendEmail({ email, subject, html });
     } catch (error: unknown) {
-        logger.error("Failed to render email template", {
-            template,
-            email,
-            error: error instanceof Error ? error.message : String(error),
-        });
+        logger.error("Failed to render email template", { error, template });
         return Result.err(error as Error);
     }
 };

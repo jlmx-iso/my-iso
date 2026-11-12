@@ -34,7 +34,8 @@ function upgradeRequest(
   });
 }
 
-const signedIn = vi.fn(async () => USER_ID);
+const SESSION_EXPIRES_AT = Date.now() + 60 * 60 * 1000;
+const signedIn = vi.fn(async () => ({ expiresAt: SESSION_EXPIRES_AT, userId: USER_ID }));
 const anonymous = vi.fn(async () => null);
 
 describe("handleRealtimeRequest", () => {
@@ -59,7 +60,23 @@ describe("handleRealtimeRequest", () => {
 
     const [url, init] = roomFetch.mock.calls[0] ?? [];
     expect(url).toBe(`${ORIGIN}/api/messages/ws?threadId=${THREAD_ID}`);
-    expect(init?.headers).toEqual({ Upgrade: "websocket" });
+    // Exactly these headers: the upgrade, plus who is connecting and until when.
+    expect(init?.headers).toEqual({
+      Upgrade: "websocket",
+      "X-Realtime-Session-Expires": String(SESSION_EXPIRES_AT),
+      "X-Realtime-User": USER_ID,
+    });
+  });
+
+  it("returns 401 when the session has already expired", async () => {
+    const { env, get, prepare } = makeEnv();
+    const expired = vi.fn(async () => ({ expiresAt: Date.now() - 1000, userId: USER_ID }));
+
+    const response = await handleRealtimeRequest(upgradeRequest(), env, expired);
+
+    expect(response.status).toBe(401);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("returns 401 without a session, before touching D1 or the room", async () => {
@@ -88,7 +105,7 @@ describe("handleRealtimeRequest", () => {
     "null",
   ])("returns 403 for the foreign origin %s without authenticating", async (origin) => {
     const { env, get } = makeEnv();
-    const authenticate = vi.fn(async () => USER_ID);
+    const authenticate = vi.fn(async () => ({ expiresAt: SESSION_EXPIRES_AT, userId: USER_ID }));
 
     const response = await handleRealtimeRequest(
       upgradeRequest({ headers: { Origin: origin } }),
@@ -120,7 +137,7 @@ describe("handleRealtimeRequest", () => {
     ["a path", `?threadId=${encodeURIComponent("../../etc")}`],
   ])("returns 400 for a %s threadId without authenticating", async (_label, query) => {
     const { env, prepare } = makeEnv();
-    const authenticate = vi.fn(async () => USER_ID);
+    const authenticate = vi.fn(async () => ({ expiresAt: SESSION_EXPIRES_AT, userId: USER_ID }));
 
     const response = await handleRealtimeRequest(upgradeRequest({ query }), env, authenticate);
 
