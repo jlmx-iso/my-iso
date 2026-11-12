@@ -138,7 +138,10 @@ The rules behind the columns the status alone does not explain:
   and `disputeInvoiceId` on `Subscription` are the summary of that set,
   written with each derivation, so an access check needs no join.
   The refund marker needs no memory: the charges that paid the latest
-  invoice are read directly when the listing does not hold them.
+  invoice are read directly when the listing does not hold them (for up to
+  two of its payments). "Refunded in full" is concluded only from **all**
+  of the invoice's paid payments: if one is left whose charge could not be
+  read, the marker is left as stored and the standing is incomplete.
 - **One derivation is bounded** (at most 28 Stripe requests), and a bound
   that is hit withholds access or reports the row; it never restores
   access that a complete reading would withhold:
@@ -163,13 +166,15 @@ The rules behind the columns the status alone does not explain:
     above for a person to review. Those disputes have no ids on record, so
     the hold itself is remembered: a marker row in `SubscriptionDispute`
     (`unexamined:<subscription id>`, status `unexamined`). It is lifted
-    only by a derivation that examined every disputed charge on a charge
-    history read whole. A later derivation that merely no longer sees those
-    charges (newer ones have pushed them out of the newest 300) is
-    incomplete and keeps it. In practice it lifts when the disputed charges
-    are older than two years (they are then history and ignored) and the
-    history fits the listing; until then the override is a comped account
-    (`isLifetime`).
+    only by a derivation in which both of these hold: no disputed charge
+    within the two-year horizon that the listing shows is left unexamined,
+    and every charge the listing did **not** read is older than that
+    horizon. A truncated listing therefore counts as complete for this
+    purpose exactly when its unread part is too old to carry a live
+    dispute; the whole history need not fit. A later derivation that merely
+    no longer sees those charges while charges within the horizon are
+    unread (newer ones have pushed them out of the newest 300) keeps the
+    hold. Until it lifts, the override is a comped account (`isLifetime`).
 - **Disputes.** A chargeback suspends access at once, whatever the
   subscription's status and whichever of its invoices the charge paid, until
   it is closed. Won (or withdrawn, or prevented): access returns. Lost, on
@@ -231,7 +236,7 @@ plan's size limit). What the billing code assumes from it:
 | Limit | Value | Where it matters |
 | --- | --- | --- |
 | Subrequests per invocation (every `fetch`, so every Stripe request, and every D1 statement) | 10,000 by default on Paid (`limits.subrequests` in `wrangler.toml` can change it); 50 external on Free | A re-sync batch is held to **1,000** (`SUBREQUEST_BUDGET` in `resync.ts`): at the very worst a row costs 63 Stripe requests and 50 statements, so `RESYNC_MAX_BATCH` is 8. A row normally costs four or five requests. One webhook delivery is a few reads plus at most 28 for the payment standing. The Free plan would not carry a batch. |
-| Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget finishes there; its Stripe calls are limited to 3 seconds each for that reason. |
+| Work after the response (`waitUntil`) | 30 seconds | A lazy first sync that outlives its budget continues there. Its Stripe calls are limited to 3 seconds each, so it usually finishes, but that is per call and not guaranteed: if it is cut off, the row is still not settled and is tried again (see "Lazy first sync"). |
 
 If `limits.subrequests` is ever set below 1,000, lower `SUBREQUEST_BUDGET`
 with it; the batch size follows (a test holds the arithmetic).
@@ -404,7 +409,14 @@ The rule:
   allow after a response and be cut off. Nothing is lost when that
   happens, because a row counts as settled only once its payment standing
   has been derived completely and recorded (`standingSyncedAt`, written
-  with the standing, not with the subscription):
+  with the standing, not with the subscription). A subscription write
+  withdraws it again in two cases: always, when the same sync is about to
+  derive the standing (the lazy sync, the re-sync, the manual refresh, and
+  invoice, dispute and refund events), so that a cut-off in between never
+  leaves an earlier derivation vouching for the row; and, for a write that
+  no derivation follows (subscription and checkout events), when it changes
+  `status`, `latestInvoiceId` or `paidThroughAt`, which are what a standing
+  is derived against. A no-op subscription event leaves it alone. So:
   - cut **before** the subscription write: the row is as it was, and is
     tried again when the claim expires (10 minutes);
   - cut **after** the subscription write but before the standing is
