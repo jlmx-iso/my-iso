@@ -18,6 +18,7 @@ import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { hasProAccess } from "~/_utils/subscriptionView";
 import PageHeader from "~/app/_components/PageHeader";
 import ProFeatures from "~/app/_components/plans/ProFeatures";
+import SupportCard from "~/app/_components/support/SupportCard";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
@@ -144,6 +145,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           </SimpleGrid>
         </Stack>
 
+        <SupportCard isPro={isProUser} />
       </Stack>
     </Container>
   );

@@ -19,3 +19,4 @@ export { InviteFriendsEmail, renderInviteFriendsEmail } from "./invite-friends";
 export { WaitlistApprovedEmail, renderWaitlistApprovedEmail } from "./waitlist-approved";
 export { WaitlistConfirmationEmail, renderWaitlistConfirmationEmail } from "./waitlist-confirmation";
 export { MobileOtpEmail, renderMobileOtpEmail } from "./mobile-otp";
+export { SupportRequestEmail, renderSupportRequestEmail } from "./support-request";

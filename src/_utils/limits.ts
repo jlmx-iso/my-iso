@@ -32,3 +32,9 @@ export const OTP_TTL_MINUTES = 10;
 /** Bounds of `search.searchAll` paging: rows per request and how deep it goes. */
 export const SEARCH_MAX_LIMIT = 50;
 export const SEARCH_MAX_OFFSET = 1000;
+
+/** Longest Pro support request subject and message, in characters. */
+export const SUPPORT_SUBJECT_MAX = 120;
+export const SUPPORT_MESSAGE_MAX = 5000;
+/** Shortest support message: enough to say what is wrong. */
+export const SUPPORT_MESSAGE_MIN = 10;

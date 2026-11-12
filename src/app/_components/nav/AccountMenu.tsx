@@ -18,7 +18,9 @@ import { useDisclosure } from "@mantine/hooks";
 import {
     IconBell,
     IconCalendarStats,
+    IconChartBar,
     IconHeartHandshake,
+    IconLifebuoy,
     IconLogout,
     IconSettings,
     IconShieldCheck,
@@ -39,6 +41,8 @@ export type AccountMenuUser = {
     profilePic?: string | null;
     /** Founders and ambassadors: show the waitlist admin entry. */
     canManageWaitlist?: boolean;
+    /** Pro members: help goes to priority support (the page explains Pro to others). */
+    isPro?: boolean;
 };
 
 type AccountMenuProps = {
@@ -51,15 +55,24 @@ const links = [
     { href: "/app/bookings", icon: IconCalendarStats, label: "Bookings" },
     { href: "/app/discover/matches", icon: IconHeartHandshake, label: "Matches" },
     { href: "/app/notifications", icon: IconBell, label: "Notifications" },
+    { href: "/app/insights", icon: IconChartBar, label: "Insights" },
     { href: "/app/invites", icon: IconUserPlus, label: "Invites" },
     { href: "/app/settings", icon: IconSettings, label: "Settings" },
 ] as const;
+
+/** Help: priority support for Pro members, the public contact page for everyone else. */
+function helpLinkFor(user: AccountMenuUser) {
+    return user.isPro
+        ? ({ href: "/app/support", icon: IconLifebuoy, label: "Priority support" } as const)
+        : ({ href: "/contact", icon: IconLifebuoy, label: "Help & support" } as const);
+}
 
 const ADMIN_LINK = { href: "/app/admin/waitlist", icon: IconShieldCheck, label: "Waitlist admin" } as const;
 
 /** The account links for this member: the admin entry only for those it works for. */
 function linksFor(user: AccountMenuUser) {
-    return user.canManageWaitlist ? [...links, ADMIN_LINK] : links;
+    const help = helpLinkFor(user);
+    return user.canManageWaitlist ? [...links, help, ADMIN_LINK] : [...links, help];
 }
 
 function unreadLabel(count: number) {

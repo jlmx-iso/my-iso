@@ -53,7 +53,7 @@ script does. Create `.env.deploy.staging` and `.env.deploy.production` from
 | `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` | Location autocomplete in the browser. | Google Cloud > Credentials; restrict it to the origin |
 | `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` | PostHog project token. Empty = PostHog off. | PostHog > Project settings (starts with `phc_`) |
 | `NEXT_PUBLIC_POSTHOG_UI_HOST` | Optional. PostHog app host for EU projects. | `https://eu.posthog.com` |
-| `NEXT_PUBLIC_SUPPORT_EMAIL` | Optional. Address shown to people who need help. | Your choice; defaults to `support@myiso.app` |
+| `NEXT_PUBLIC_SUPPORT_EMAIL` | Optional. Address shown to people who need help (the contact page, the legal pages, the support page for members without Pro). | Your choice; defaults to `support@myiso.app` |
 | `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID`, `POSTHOG_CLI_HOST` | Optional. Source map upload, see below. Not part of the app. | PostHog > Personal API keys; Project settings |
 
 OpenNext copies the contents of `.env`, `.env.local` and `.env.production`
@@ -78,6 +78,7 @@ secret, but they are yours to choose):
 | --- | --- | --- |
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
 | `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
+| `SUPPORT_INBOX_EMAIL` | Optional. Where Pro members' in-app support requests are sent (Settings > Support, or Help & support in the account menu), through Resend, with `[Pro]` at the start of the subject so the inbox can filter and prioritise them. The email carries the member's id, not their address: look them up by id to reply. Defaults to `NEXT_PUBLIC_SUPPORT_EMAIL`, then `support@myiso.app`. Needs `RESEND_API_KEY`. | An inbox the team reads |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
 | `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
 
