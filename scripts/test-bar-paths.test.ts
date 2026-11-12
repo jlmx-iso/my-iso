@@ -20,6 +20,9 @@ describe("isProtectedPath", () => {
     "scripts/test-bar-paths.mjs",
     "src/test/dom/strict.ts",
     "src/test/dom/setup.ts",
+    "src/test/dom/render.tsx",
+    "src/test/setup.ts",
+    "src/test/helpers/dbCaller.ts",
     "src/server/api/authz.matrix.test.ts",
     "src/server/api/trpc.ts",
     ".github/workflows/ci.yml",
@@ -32,7 +35,7 @@ describe("isProtectedPath", () => {
   it.each([
     "src/server/api/routers/user.ts",
     "src/app/page.tsx",
-    "src/test/dom/render.tsx",
+    "src/test/dom/session.ts",
     "scripts/deploy.mjs",
     "docs/TESTING.md",
     "apps/x/package.json",

@@ -47,7 +47,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
+          # The pull request files API lists at most 3,000 files; beyond that a
+          # protected path could go unseen, so such a PR is refused outright.
+          if [ "$CHANGED_FILES" -ge 3000 ]; then
+            echo "::error::This pull request changes $CHANGED_FILES files; the guard can only see 3,000. Split it."
+            exit 1
+          fi
           gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
             --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
           echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"

@@ -14,6 +14,9 @@
 /stryker.config.mjs                     @jlamoreaux
 /src/test/dom/strict.ts                 @jlamoreaux
 /src/test/dom/setup.ts                  @jlamoreaux
+/src/test/dom/render.tsx                @jlamoreaux
+/src/test/setup.ts                      @jlamoreaux
+/src/test/helpers/dbCaller.ts           @jlamoreaux
 /src/server/api/authz.matrix.test.ts    @jlamoreaux
 /src/server/api/trpc.ts                 @jlamoreaux
 /.github/workflows/                     @jlamoreaux
