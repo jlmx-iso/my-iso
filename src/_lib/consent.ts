@@ -60,7 +60,13 @@ export function resolveConsent(input: {
 /**
  * What each state allows.
  *
- * - denied: nothing is captured.
+ * - denied: nothing is captured about the visitor. In the browser PostHog
+ *   is not initialised at all, the telemetry proxy answers 204 without
+ *   contacting PostHog, and no server-side product event is sent.
+ *   One thing is still sent, and it is not about the visitor: an exception
+ *   on the server is reported for operational monitoring, anonymously (no
+ *   user id, nothing derived from the visitor, no IP address, no query
+ *   string). See `captureServerException` in ~/server/_lib/posthog.
  * - unknown (no banner has asked yet): anonymous product analytics and
  *   error reports only. Session replay and person properties need an
  *   explicit yes.
@@ -97,16 +103,4 @@ export function serializeConsentCookie(
   return [`${CONSENT_COOKIE}=${state}`, `Max-Age=${CONSENT_MAX_AGE_SECONDS}`, ...attributes].join(
     "; ",
   );
-}
-
-/** Consent in the browser. "unknown" when there is no document (SSR). */
-export function readBrowserConsent(): ConsentState {
-  if (typeof document === "undefined") return "unknown";
-  const gpc =
-    typeof navigator !== "undefined" &&
-    (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
-  return resolveConsent({
-    cookie: parseConsentCookie(document.cookie),
-    globalPrivacyControl: gpc,
-  });
 }

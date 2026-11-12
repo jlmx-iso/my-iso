@@ -78,6 +78,14 @@ for (const leftover of [".env", ".env.local", ".env.production", ".env.productio
     );
   }
 }
+// Source maps are uploaded here and only here: for exactly the files this
+// run deploys (scripts/sourcemaps.mjs).
+if (process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID) {
+  process.env.SOURCEMAPS = "upload";
+} else {
+  delete process.env.SOURCEMAPS;
+  console.warn("No POSTHOG_CLI_API_KEY / POSTHOG_CLI_PROJECT_ID: source maps are not uploaded.");
+}
 // Server-side variables are validated when the Worker starts, with the real
 // secrets, not at build time where they are deliberately absent.
 process.env.SKIP_ENV_VALIDATION = "1";

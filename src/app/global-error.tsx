@@ -1,13 +1,13 @@
 "use client";
 
 import NextError from "next/error";
-import posthog from "posthog-js";
 import { useEffect } from "react";
+
+import { captureBoundaryError } from "~/_lib/analyticsBrowser";
 
 export default function GlobalError({ error }: { error: Error }) {
   useEffect(() => {
-    // No-op until PostHog is initialised (src/instrumentation-client.ts).
-    posthog.captureException(error, { boundary: "global-error" });
+    captureBoundaryError(error, "global-error");
   }, [error]);
 
   return (

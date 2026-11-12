@@ -4,50 +4,16 @@ import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
 import { useEffect } from 'react'
 
-import { consentCapabilities, readBrowserConsent } from '~/_lib/consent'
+import { type AnalyticsUser, syncAnalyticsUser } from '~/_lib/analyticsBrowser'
 
-export type AnalyticsUser = {
-    email?: string | null
-    id: string
-    name?: string | null
-}
+export type { AnalyticsUser } from '~/_lib/analyticsBrowser'
 
 /**
- * Ties PostHog's visitor to the signed-in user.
- *
- * The distinct id is the user id, never the email address. Email and name
- * are attached as person properties only with explicit analytics consent.
- * When nobody is signed in any more, the identity is reset so the next
- * person on this browser does not inherit it.
- *
- * PostHog itself is initialised in src/instrumentation-client.ts; without a
- * project token it is not loaded and this does nothing.
+ * Provides PostHog to the tree and keeps its identity in step with the
+ * signed-in user (id only; see `syncAnalyticsUser`). PostHog itself is
+ * started in src/instrumentation-client.ts; when it is not running (no
+ * project token, or the visitor refused analytics) this does nothing.
  */
-function useAnalyticsIdentity(user: AnalyticsUser | null) {
-    const id = user?.id ?? null
-    const email = user?.email ?? null
-    const name = user?.name ?? null
-
-    useEffect(() => {
-        if (!posthog.__loaded) return
-
-        const capabilities = consentCapabilities(readBrowserConsent())
-        if (!capabilities.capture) return
-
-        if (id === null) {
-            if (posthog._isIdentified()) posthog.reset()
-            return
-        }
-
-        if (capabilities.personProperties) {
-            posthog.identify(id, { ...(email ? { email } : {}), ...(name ? { name } : {}) })
-        } else {
-            // A repeat call with the same id sends nothing.
-            posthog.identify(id)
-        }
-    }, [id, email, name])
-}
-
 export function CSPostHogProvider({
     children,
     user = null,
@@ -55,6 +21,13 @@ export function CSPostHogProvider({
     children: React.ReactNode
     user?: AnalyticsUser | null
 }) {
-    useAnalyticsIdentity(user)
+    const id = user?.id ?? null
+    const email = user?.email ?? null
+    const name = user?.name ?? null
+
+    useEffect(() => {
+        syncAnalyticsUser(id === null ? null : { email, id, name })
+    }, [id, email, name])
+
     return <PostHogProvider client={posthog}>{children}</PostHogProvider>
 }

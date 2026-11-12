@@ -17,12 +17,13 @@ export type FeatureFlags = typeof FeatureFlags[keyof typeof FeatureFlags];
 
 /**
  * The value of a feature flag for `distinctUserId`, evaluated by PostHog on
- * the server.
+ * the server: `true` or a variant name when on, `false` when the flag is
+ * active and off for this id, `undefined` when there is no value (the flag
+ * is missing or disabled, or PostHog was unreachable). Throws when PostHog
+ * is not configured.
  *
- * `undefined` means "no value": the flag is missing or off, or PostHog was
- * unreachable. Throws when PostHog is not configured. Either way the caller
- * decides what is safe; sign-up, for one, stays invite-only unless the
- * invite-only flag is explicitly `false` (see ~/auth).
+ * The caller decides what is safe. Sign-up, for one, stays invite-only
+ * unless the invite-only flag is explicitly `false` (see ~/auth).
  */
 export async function getFeatureFlagVariant(
     distinctUserId: string,

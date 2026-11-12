@@ -43,12 +43,12 @@ const config = {
     APP_COMMIT: resolveCommit(),
     APP_VERSION: resolveVersion(),
   },
-  // Browser source maps are generated only for builds that can upload them
-  // to PostHog (scripts/sourcemaps.mjs), which then removes them from the
-  // deployed assets. They are never served.
-  productionBrowserSourceMaps: Boolean(
-    process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID,
-  ),
+  // Browser source maps are generated only when scripts/sourcemaps.mjs is
+  // going to consume them (SOURCEMAPS=upload in a deploy, SOURCEMAPS=dry-run
+  // in CI). That script removes them from the deployed assets either way;
+  // they are never served.
+  productionBrowserSourceMaps:
+    process.env.SOURCEMAPS === "upload" || process.env.SOURCEMAPS === "dry-run",
   // PostHog's endpoints end in a slash (/e/, /flags/). In development, keep
   // Next.js from answering the proxied path with a redirect first. In a
   // production build the setting stays off, so pages keep redirecting

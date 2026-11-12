@@ -9,7 +9,7 @@ import { JOBS_ROUTE_PREFIX, jobToken } from "../_lib/jobToken";
 
 /**
  * Which jobs each Cron Trigger runs. The expressions must match `crons` in
- * wrangler.toml exactly (both environments); src/worker/scheduled.test.ts
+ * wrangler.toml exactly (both environments); src/server/_jobs/jobs.test.ts
  * fails when they drift.
  */
 export const CRON_JOBS: Readonly<Record<string, readonly string[]>> = {

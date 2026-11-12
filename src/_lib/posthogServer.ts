@@ -11,6 +11,8 @@
 
 import { PostHog } from "posthog-node";
 
+import { scrubProperties } from "./telemetryScrub";
+
 export type PostHogSettings = {
   /** Project token (phc_...). */
   apiKey: string;
@@ -42,9 +44,16 @@ const REQUEST_TIMEOUT_MS = 5_000;
 
 function createClient(settings: PostHogSettings): PostHog {
   return new PostHog(settings.apiKey, {
+    // Query strings, email addresses, invite and sign-in codes are removed
+    // from every event, error messages and stack frames included.
+    before_send: (event) =>
+      event ? { ...event, properties: scrubProperties(event.properties ?? {}) } : null,
     // No uncaught-exception hooks: errors are reported where they are caught.
     enableExceptionAutocapture: false,
     fetchRetryCount: 1,
+    // A request is waiting on this (sign-in checks a flag): retry quickly
+    // or not at all, rather than after the SDK's default three seconds.
+    fetchRetryDelay: 250,
     flushAt: 1,
     flushInterval: 0,
     host: settings.host,
@@ -89,7 +98,10 @@ export function pathOnly(pathOrUrl: string): string {
  * Reports an exception to PostHog error tracking and resolves once sent.
  *
  * Only what is listed in `context` goes with it: never request bodies,
- * cookies or authorization headers.
+ * cookies or authorization headers. The visitor's IP address is never part
+ * of a server event (the request to PostHog comes from the Worker, and the
+ * SDK disables GeoIP lookup for server events). Without `distinctId` the
+ * SDK uses a random id per event and creates no person profile.
  */
 export async function sendException(
   settings: PostHogSettings,

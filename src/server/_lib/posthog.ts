@@ -12,7 +12,6 @@ import {
   sendException,
   withPostHog,
 } from "~/_lib/posthogServer";
-import { logger } from "~/_utils";
 
 import { runAfterResponse } from "./background";
 import { getPostHogSettings } from "./posthogSettings";
@@ -59,16 +58,30 @@ export function captureEvent(
  * Reports a server-side exception to PostHog error tracking. Returns
  * immediately; the report is sent after the response.
  *
- * `context.distinctId` is the signed-in user's id when one is known. It is
- * dropped when that visitor has refused analytics, so the error is still
- * counted but not tied to a person. Only what `context` lists is sent:
- * never request bodies, cookies or authorization headers.
+ * The rule for consent (also stated in ~/_lib/consent): server errors are
+ * operational data and are always reported, but for a visitor who has
+ * refused analytics the report is anonymous. It then carries no user id and
+ * nothing derived from the visitor: a random id per event, no person
+ * profile, no IP address, and a path without its query string. With consent
+ * unknown or granted, `context.distinctId` (the user id) is attached.
+ *
+ * Consent is read from the request being handled. Callers that hold the
+ * request's headers themselves, because Next.js cannot provide them where
+ * they run (`onRequestError`), pass `options.consent`.
+ *
+ * Only what `context` lists is sent: never request bodies, cookies or
+ * authorization headers. Query strings, email addresses and codes are
+ * scrubbed from the error text and stack (~/_lib/telemetryScrub).
  */
-export function captureServerException(error: unknown, context: ExceptionContext): void {
+export function captureServerException(
+  error: unknown,
+  context: ExceptionContext,
+  options: { consent?: ConsentState } = {},
+): void {
   const settings = getPostHogSettings();
   if (!settings) return;
 
-  const consent = currentRequestConsent();
+  const consent = options.consent ?? currentRequestConsent();
   runAfterResponse(`posthog:exception:${context.source}`, async () => {
     const identified = consentCapabilities(await consent).capture;
     await sendException(settings, error, {
@@ -84,10 +97,14 @@ export type FeatureFlagValue = boolean | string | undefined;
  * Evaluates one feature flag for `distinctId` through PostHog's `/flags`
  * API (posthog-node `evaluateFlags`).
  *
- * Resolves to `undefined` when the flag does not exist, is switched off, or
- * PostHog could not be reached: the SDK reports all three as "no value".
- * Callers must therefore treat `undefined` as their safe default. Throws
- * when analytics are not configured at all.
+ * - `true` or a variant name: the flag is on for this id.
+ * - `false`: the flag is active and evaluates to off for this id.
+ * - `undefined`: no value. The flag does not exist or is disabled in
+ *   PostHog, or PostHog could not be reached (the SDK does not tell these
+ *   apart). Callers must treat it as their safe default.
+ *
+ * Throws when analytics are not configured at all.
+ * (src/server/_lib/featureFlags.test.ts pins this against the real SDK.)
  *
  * Flag payloads are neither requested nor logged, and no
  * `$feature_flag_called` event is sent.
@@ -101,28 +118,4 @@ export async function getFeatureFlag(key: string, distinctId: string): Promise<F
     const flags = await client.evaluateFlags(distinctId, { flagKeys: [key] });
     return flags.getFlag(key, { sendFeatureFlagEvents: false });
   });
-}
-
-/** `getFeatureFlag` that answers `fallback` instead of throwing. */
-async function isFlagEnabled(key: string, distinctId: string, fallback: boolean): Promise<boolean> {
-  try {
-    const value = await getFeatureFlag(key, distinctId);
-    return value === undefined ? false : value !== false;
-  } catch (error) {
-    logger.warn("Feature flag evaluation failed", { error, flag: key });
-    return fallback;
-  }
-}
-
-export function isFoundingMember(userId: string): Promise<boolean> {
-  return isFlagEnabled("founding_member", userId, false);
-}
-
-export function hasProAccess(userId: string): Promise<boolean> {
-  return isFlagEnabled("pro_access", userId, false);
-}
-
-/** Open by default: founding pricing stays on if PostHog is unavailable. */
-export function isFoundingMemberPricingActive(): Promise<boolean> {
-  return isFlagEnabled("founding_member_pricing_active", "anonymous", true);
 }

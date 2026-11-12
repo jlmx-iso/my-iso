@@ -86,23 +86,19 @@ jobs:
 
       # OpenNext runs `next build` itself, so this is the only build.
       #
-      # The build's last step (`postbuild:cf`, scripts/sourcemaps.mjs) uploads
-      # browser source maps to PostHog error tracking, but only when both
-      # POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID are present: without
-      # them (pull requests, forks, a repository that has not set them) it
-      # skips the upload cleanly. Either way it removes source maps from the
-      # assets that would be deployed.
+      # CI never uploads source maps and holds no PostHog credentials: maps
+      # are uploaded by `npm run deploy:*`, for exactly the files being
+      # deployed (docs/DEPLOYMENT.md, "Source maps").
       #
-      # The secrets are only handed to pushes on main, never to pull
-      # requests. CI does not deploy: the maps that belong to a deployed
-      # Worker are the ones uploaded by `npm run deploy:*`
-      # (docs/DEPLOYMENT.md, "Source maps").
-      - name: Build Next.js and the Cloudflare Worker (OpenNext), upload source maps
+      # SOURCEMAPS=dry-run makes the build generate browser source maps and
+      # the build's last step (`postbuild:cf`, scripts/sourcemaps.mjs) run
+      # the PostHog CLI over them in its dry-run mode (no credentials, no
+      # network), then remove every map from the assets. That exercises the
+      # same path a deploy takes, and the next step checks the removal.
+      - name: Build Next.js and the Cloudflare Worker (OpenNext), source map dry run
         run: npm run build:cf
         env:
-          POSTHOG_CLI_API_KEY: ${{ github.event_name == 'push' && secrets.POSTHOG_CLI_API_KEY || '' }}
-          POSTHOG_CLI_PROJECT_ID: ${{ github.event_name == 'push' && secrets.POSTHOG_CLI_PROJECT_ID || '' }}
-          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+          SOURCEMAPS: dry-run
 
       - name: No source maps in the deployable assets
         run: |

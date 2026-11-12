@@ -1,39 +1,42 @@
 #!/usr/bin/env node
-// Runs after every Worker build (`postbuild:cf`). Two jobs:
+// Runs after every Worker build (`postbuild:cf`). What it does depends on
+// the SOURCEMAPS environment variable, which next.config.js also reads to
+// decide whether browser source maps are generated at all:
 //
-//   1. When PostHog CLI credentials are present, give each browser chunk a
-//      chunk id ("inject") and upload its source map to PostHog, so error
-//      tracking shows original file names and lines. The CLI then deletes
-//      the maps and the `sourceMappingURL` comments.
-//   2. Always: make sure no source map is left in the deployed assets.
-//      Source maps contain the original source and must not be public.
+//   SOURCEMAPS=upload    (set by scripts/deploy.mjs, never by CI)
+//       Give each browser chunk a chunk id and upload its source map to
+//       PostHog error tracking, then delete the maps. The injected files
+//       are the ones deployed, so this only makes sense on the build that
+//       `wrangler deploy` is about to upload. Needs POSTHOG_CLI_API_KEY and
+//       POSTHOG_CLI_PROJECT_ID (POSTHOG_CLI_HOST optional).
+//   SOURCEMAPS=dry-run   (CI)
+//       Check that the build produced source maps and that the CLI can be
+//       run on them, without credentials and without contacting PostHog.
+//   unset
+//       Nothing to do: no maps were generated.
 //
-// The injected files are what gets deployed, so this has to run on the same
-// build output that `wrangler deploy` uploads: `npm run deploy:*` does both.
+// In every mode it then makes sure no source map is left in the assets that
+// would be deployed. Source maps contain the original source and must not
+// be public.
 //
-// Credentials (docs/DEPLOYMENT.md):
-//   POSTHOG_CLI_API_KEY     personal API key with error-tracking write access
-//   POSTHOG_CLI_PROJECT_ID  numeric project id
-//   POSTHOG_CLI_HOST        optional; default https://us.posthog.com
-//
-// next.config.js only generates browser source maps when the first two are
-// set, so without them there is nothing to upload and nothing to strip.
-//
-// Usage: node scripts/sourcemaps.mjs [--dry-run]
-//   --dry-run  go through the CLI's selection without contacting PostHog
+// Usage: node scripts/sourcemaps.mjs
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = path.join(repoRoot, ".open-next", "assets");
 const chunksDir = path.join(assetsDir, "_next", "static");
 const RELEASE_NAME = "my-iso";
 
-const { values } = parseArgs({ options: { "dry-run": { type: "boolean" } } });
+const mode = process.env.SOURCEMAPS ?? "";
+if (mode !== "" && mode !== "upload" && mode !== "dry-run") {
+  console.error(`sourcemaps: SOURCEMAPS must be "upload" or "dry-run", got "${mode}".`);
+  process.exit(1);
+}
+const dryRun = mode === "dry-run";
 
 /**
  * @param {string} dir
@@ -70,21 +73,21 @@ if (!existsSync(assetsDir)) {
   fail(`${assetsDir} does not exist. Run \`npm run build:cf\` first.`);
 }
 
-const hasCredentials = Boolean(
-  process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID,
-);
 const maps = findMaps(chunksDir);
 
-if (values["dry-run"] || hasCredentials) {
+if (mode !== "") {
+  if (mode === "upload" && !(process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID)) {
+    fail("SOURCEMAPS=upload needs POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID.");
+  }
   if (maps.length === 0) {
     fail(
-      "PostHog CLI credentials are set but the build produced no browser source maps. " +
-        "They must be set when `next build` runs, not only now.",
+      `SOURCEMAPS=${mode} but the build produced no browser source maps. ` +
+        "The variable must be set when `next build` runs, not only now.",
     );
   }
 
   const args = [
-    ...(values["dry-run"] ? ["--dry-run"] : []),
+    ...(dryRun ? ["--dry-run"] : []),
     "sourcemap",
     "process",
     "--directory",
@@ -96,7 +99,7 @@ if (values["dry-run"] || hasCredentials) {
     "--delete-after",
   ];
   console.warn(
-    `sourcemaps: ${values["dry-run"] ? "dry run for" : "uploading"} ${maps.length} source maps (release ${RELEASE_NAME}@${releaseVersion()})`,
+    `sourcemaps: ${dryRun ? "dry run for" : "uploading"} ${maps.length} source maps (release ${RELEASE_NAME}@${releaseVersion()})`,
   );
   const cli = spawnSync(path.join(repoRoot, "node_modules", ".bin", "posthog-cli"), args, {
     cwd: repoRoot,
@@ -108,9 +111,7 @@ if (values["dry-run"] || hasCredentials) {
     fail(`posthog-cli exited with status ${cli.status}; source maps were removed, not uploaded.`);
   }
 } else {
-  console.warn(
-    "sourcemaps: POSTHOG_CLI_API_KEY / POSTHOG_CLI_PROJECT_ID not set; skipping the upload.",
-  );
+  console.warn("sourcemaps: SOURCEMAPS is not set; no upload.");
 }
 
 // Whatever happened above, nothing ending in .map may be deployed.

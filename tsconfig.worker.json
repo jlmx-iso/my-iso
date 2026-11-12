@@ -28,9 +28,11 @@
     "src/do/**/*.ts",
     "src/worker/**/*.ts",
     /* Shared with the Next.js app; written against standard Web APIs. */
+    "src/_lib/consent.ts",
     "src/_lib/jobToken.ts",
     "src/_lib/posthogServer.ts",
     "src/_lib/telemetryProxy.ts",
+    "src/_lib/telemetryScrub.ts",
     "src/telemetryConfig.js",
     "src/types/chatRoom.ts",
     "cloudflare-env.d.ts",

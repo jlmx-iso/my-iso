@@ -71,7 +71,7 @@ secret, but they are yours to choose):
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
 | `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
-| `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). | Anthropic model ids |
+| `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`); must look like a Claude model id. | Anthropic model ids |
 
 ### 3. Secrets: `wrangler secret put`
 
@@ -101,24 +101,80 @@ check.
 
 ## Source maps
 
-With `POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID` set, the build
-generates browser source maps, `scripts/sourcemaps.mjs` uploads them to
-PostHog error tracking, and they are deleted from the assets before deploy.
-Without the two variables no source maps are generated at all. In both cases
-the script fails the build if a `.map` file would be deployed.
+Source maps are uploaded by the deploy scripts and only by them, for exactly
+the files being deployed. When `.env.deploy.<environment>` has
+`POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID`, `scripts/deploy.mjs`
+sets `SOURCEMAPS=upload`: the build generates browser source maps,
+`scripts/sourcemaps.mjs` writes a chunk id into each JavaScript file, uploads
+the maps to PostHog error tracking and deletes them from the assets. Without
+the two variables no source maps are generated.
 
 The personal API key needs the scopes *error tracking: write* and
 *organization: read*. `POSTHOG_CLI_HOST` defaults to `https://us.posthog.com`.
 
-The upload has to happen on the build that is deployed, because the upload
-step also writes a chunk id into each JavaScript file. That is why it is part
-of `npm run deploy:*`. CI has the same step, fed by the repository secrets
-`POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID` (and the optional variable
-`POSTHOG_CLI_HOST`) on pushes to `main`; it skips cleanly when they are not
-set. CI builds with placeholder configuration and does not deploy, so its
-upload only exercises the pipeline.
+CI never uploads and holds no PostHog credentials. It builds with
+`SOURCEMAPS=dry-run`, which generates the maps, runs the PostHog CLI over
+them in its dry-run mode (no network), and checks that none is left in the
+assets. In every mode the build fails if a `.map` file would be deployed.
 
 Stack traces of server-side errors are not source-mapped.
+
+## What is sent to PostHog, and what never is
+
+- **Only through this origin.** The browser sends telemetry to `/lens/*`;
+  the Worker forwards it. The proxy forwards only the SDK's own requests
+  (event capture, session replay, the SDK's script files and remote config),
+  never cookies or an `Authorization` header, and answers 404 for anything
+  else.
+- **Scrubbed.** Before an event leaves, in the browser and on the server,
+  every string in it loses URL query strings and fragments, email addresses
+  and invite codes; error messages and stack frames also lose standalone
+  six-figure sign-in codes (`src/_lib/telemetryScrub.ts`). The waitlist link
+  (`/join?...&email=`) and invite links (`/join?code=`) are the reason.
+- **Identity.** A signed-in member is identified by user id, never by email.
+  Email and name are attached only with explicit consent.
+- **Consent** (`src/_lib/consent.ts`): one cookie, `iso_consent`, plus the
+  browser's Global Privacy Control signal, which always counts as a refusal.
+  - *denied*: PostHog is not initialised in the browser, the proxy answers
+    204 without contacting PostHog, and no server-side product event is
+    sent. The one exception is operational: an exception on the server is
+    still reported, anonymously, with no user id, nothing derived from the
+    visitor, no IP address and no query string.
+  - *unknown* (until a banner asks): anonymous product analytics and error
+    reports. No session replay, no person properties.
+  - *granted*: all of the above plus session replay and person properties.
+
+### Session replay
+
+Whether replay records is a PostHog project setting; the app additionally
+requires *granted* consent. When it records (`src/_lib/analyticsBrowser.ts`):
+
+- everything typed into any input is masked;
+- **all text on every page is masked** (`maskTextSelector: "*"`), so
+  messages, names, email addresses and phone numbers cannot appear;
+- any element with the attribute `data-replay-block` is replaced by an empty
+  box. Text masking does not hide pictures, so these must carry it before
+  replay is switched on: avatars, portfolio and profile photos, image
+  attachments in messages, and uploaded-image previews.
+
+To make recordings readable later, add `data-private` to every element that
+shows personal content (message bubbles, thread list previews and titles,
+member names, email addresses, phone numbers, bios, locations, review text,
+booking notes) and change `maskTextSelector` from `"*"` to
+`REPLAY_PRIVATE_TEXT_SELECTOR`. Until every one of them is marked, keep `"*"`.
+
+### Rate limiting the proxy
+
+`/lens/*` is unauthenticated by nature. The app's own limiter costs a
+database write per check, which telemetry must not, so limit it at the edge:
+Cloudflare dashboard > Security > WAF > Rate limiting rules, one rule per
+zone:
+
+- *If* URI Path starts with `/lens/`
+- *Characteristics*: IP address
+- *Rate*: 300 requests per minute (posthog-js batches; a real browser sends a
+  handful per minute)
+- *Action*: Block for 1 minute
 
 ## First deploy checklist
 
@@ -142,14 +198,18 @@ Do staging completely, then production.
 6. **Stripe.** Create the products and prices. Add a webhook endpoint
    `https://<domain>/webhooks/stripe` and copy its signing secret. Use test
    mode keys for staging.
-7. **PostHog.** Create a project (one per environment, or one project and
+7. **Edge rate limit.** Add the WAF rate limiting rule for `/lens/`
+   described under "Rate limiting the proxy".
+8. **PostHog.** Create a project (one per environment, or one project and
    filter on the `environment` property). Session replay and its sampling
    are project settings; the app only records for visitors who have
-   explicitly consented and always masks inputs.
-8. **Variables and secrets.** Fill the two `[vars]` blocks, run
+   explicitly consented and masks all text and inputs ("Session replay").
+   Leave replay off in the project until the elements listed there carry
+   `data-replay-block`.
+9. **Variables and secrets.** Fill the two `[vars]` blocks, run
    `wrangler secret put` for every secret, create `.env.deploy.<environment>`.
-9. **Deploy.** `npm run deploy:staging`.
-10. **Check.**
+10. **Deploy.** `npm run deploy:staging`.
+11. **Check.**
     - `curl https://<domain>/api/health` returns `"status":"ok"`, the right
       `environment`, and the same value under `build.environment`.
     - Telemetry proxy: `curl -i https://<domain>/lens/array/<phc_token>/config.js`
@@ -159,7 +219,7 @@ Do staging completely, then production.
     - Stripe: send a test event from the webhook page; it must return 200.
     - Cron: `wrangler tail --env staging` shows `Scheduled job finished`
       lines within 15 minutes.
-11. Repeat for production.
+12. Repeat for production.
 
 ## Scheduled jobs
 

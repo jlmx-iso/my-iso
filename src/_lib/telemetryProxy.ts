@@ -4,27 +4,91 @@
 // Runs in the Worker entry (worker.ts) before the request reaches Next.js,
 // and in a Next.js route when there is no Worker (`next dev`, `next start`).
 // Only standard Fetch API types are used so both can share it.
+//
+// It is not a general gateway to PostHog. It forwards exactly the requests
+// posthog-js makes with this app's configuration, strips every credential,
+// and forwards nothing at all for a visitor who has refused analytics.
 
 import { TELEMETRY_PROXY_PATH } from "../telemetryConfig.js";
-
-/** Largest request body forwarded (session replay batches are the biggest). */
-export const MAX_TELEMETRY_BODY_BYTES = 8 * 1024 * 1024;
-
-/** posthog-js sends events with POST and reads config/scripts with GET. */
-const ALLOWED_METHODS = new Set(["GET", "HEAD", "POST"]);
+import { consentCapabilities, consentFromHeaders } from "./consent";
 
 /**
- * Request headers that must not reach PostHog: credentials for this app,
+ * Largest event batch forwarded. posthog-js flushes its queue every few
+ * seconds and compresses it; real batches are a few KiB. 1 MiB is also what
+ * PostHog accepts for a single event.
+ */
+export const MAX_EVENT_BODY_BYTES = 1024 * 1024;
+
+/**
+ * Largest session-replay batch forwarded. The recorder flushes its buffer
+ * at about 0.9 MiB before compression (posthog-js `lazy-recorder`), but one
+ * full snapshot of a large page is sent whole and can be several times
+ * that, so replay gets headroom that events do not need.
+ */
+export const MAX_REPLAY_BODY_BYTES = 4 * 1024 * 1024;
+
+type Route = {
+  /** Which PostHog host serves it. */
+  host: "api" | "assets";
+  /** Request body limit; 0 = the request has no body. */
+  maxBodyBytes: number;
+  methods: readonly string[];
+  /** Matched against the path after the proxy prefix. */
+  pattern: RegExp;
+};
+
+/**
+ * Every path the browser SDK requests (posthog-js 1.447: `dist/module.js`
+ * and `lazy-recorder.js`), and nothing else:
+ *
+ * - `/e/`, `/i/v0/e/`, `/batch/`: event capture (the endpoint name comes
+ *   from remote config; all three are capture endpoints).
+ * - `/s/`: session replay.
+ * - `/static/<file>.js` and `/static/<version>/<file>.js`: lazily loaded
+ *   parts of the SDK (exception autocapture, the recorder, ...).
+ * - `/array/<token>/config.js` and `/config`: remote config.
+ *
+ * Deliberately absent: `/flags` and `/decide` (the browser uses no feature
+ * flags; `advanced_disable_flags`), `/api/...` (PostHog's private API,
+ * surveys included), logs and metrics, and anything else PostHog serves.
+ */
+const ROUTES: readonly Route[] = [
+  {
+    host: "api",
+    maxBodyBytes: MAX_EVENT_BODY_BYTES,
+    methods: ["POST"],
+    pattern: /^\/(?:e|i\/v0\/e|batch)\/?$/,
+  },
+  { host: "api", maxBodyBytes: MAX_REPLAY_BODY_BYTES, methods: ["POST"], pattern: /^\/s\/?$/ },
+  {
+    host: "assets",
+    maxBodyBytes: 0,
+    methods: ["GET", "HEAD"],
+    pattern: /^\/static\/(?:[\w.-]+\/)?[\w.-]+\.js$/,
+  },
+  {
+    host: "assets",
+    maxBodyBytes: 0,
+    methods: ["GET", "HEAD"],
+    pattern: /^\/array\/[\w-]+\/config(?:\.js)?$/,
+  },
+];
+
+/**
+ * Request headers that must not reach PostHog: credentials (PostHog's
+ * browser endpoints take the project token in the body, never a header),
  * and hop/edge headers that describe the proxy rather than the visitor.
  * `Host` is not copied either: fetch sets it from the target URL.
  */
 const STRIPPED_REQUEST_HEADERS = [
+  "authorization",
   "cookie",
   "host",
   "connection",
   "content-length",
   "forwarded",
   "proxy-authorization",
+  "sec-gpc",
   "x-forwarded-for",
   "x-forwarded-host",
   "x-forwarded-proto",
@@ -32,8 +96,18 @@ const STRIPPED_REQUEST_HEADERS = [
   "x-csrf-token",
 ];
 
-/** PostHog project, personal and secret tokens; nothing else is forwarded. */
-const POSTHOG_BEARER = /^Bearer ph[csx]_[A-Za-z0-9_-]+$/;
+/** Response headers that must not reach the browser from PostHog. */
+const STRIPPED_RESPONSE_HEADERS = [
+  "set-cookie",
+  "location",
+  // fetch has already decoded the body; the edge compresses again for the
+  // client, so the upstream's encoding and length no longer describe it.
+  "content-encoding",
+  "content-length",
+];
+
+/** 304 Not Modified is not one of them: cached SDK files rely on it. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export type TelemetryProxyOptions = {
   apiHost: string;
@@ -53,24 +127,22 @@ export function isTelemetryProxyPath(
 }
 
 /**
- * Maps a proxied URL to the PostHog URL it stands for: the SDK bundles and
- * remote config (`/static/`, `/array/`) live on the assets host, everything
- * else (capture, flags, replay) on the ingestion host. The query string is
- * kept. Returns null for a path outside the proxy.
+ * Maps a proxied URL to the PostHog URL it stands for, if it is one of the
+ * allowed routes. The query string is kept. Returns null for anything else.
  */
 export function mapTelemetryUrl(
   url: URL,
   hosts: { apiHost: string; assetsHost: string },
   prefix: string = TELEMETRY_PROXY_PATH,
-): { isAsset: boolean; target: URL } | null {
+): { route: Route; target: URL } | null {
   if (!isTelemetryProxyPath(url.pathname, prefix)) return null;
-  // Dot segments were resolved by the URL parser before we see the path, so
-  // what follows the prefix cannot climb out of it. Collapsing leading
-  // slashes keeps "//host" from being read as a different origin below.
-  const rest = `/${url.pathname.slice(prefix.length).replace(/^\/+/, "")}`;
-  const isAsset = rest.startsWith("/static/") || rest.startsWith("/array/");
-  const target = new URL(rest + url.search, isAsset ? hosts.assetsHost : hosts.apiHost);
-  return { isAsset, target };
+  // Dot segments were resolved by the URL parser before we see the path.
+  const rest = url.pathname.slice(prefix.length);
+  const route = ROUTES.find((candidate) => candidate.pattern.test(rest));
+  if (!route) return null;
+
+  const base = route.host === "assets" ? hosts.assetsHost : hosts.apiHost;
+  return { route, target: new URL(rest + url.search, base) };
 }
 
 /** The headers forwarded to PostHog for `request`. */
@@ -82,11 +154,6 @@ export function buildUpstreamHeaders(request: Request, clientIp: string | null):
   for (const name of names) {
     // Cloudflare's own request headers (cf-connecting-ip, cf-ray, ...).
     if (name.toLowerCase().startsWith("cf-")) headers.delete(name);
-  }
-
-  const authorization = headers.get("authorization");
-  if (authorization !== null && !POSTHOG_BEARER.test(authorization)) {
-    headers.delete("authorization");
   }
 
   // PostHog reads the visitor's address (for GeoIP) from X-Forwarded-For.
@@ -127,34 +194,48 @@ function capBodySize(
 /**
  * Forwards one proxied request to PostHog and returns its response.
  *
- * The body is streamed, not buffered. Cookies and this app's credentials
- * never leave: see buildUpstreamHeaders. Responses come back without
- * `Set-Cookie`, so PostHog cannot set cookies on the app's origin.
+ * - A visitor who refused analytics (`Sec-GPC: 1`, or the consent cookie
+ *   says "denied") gets an empty 204 and PostHog is not contacted: not for
+ *   events, not for config, and their address is not forwarded.
+ * - Only the routes in ROUTES exist; everything else is 404.
+ * - The body is streamed, not buffered, up to the route's limit.
+ * - Cookies and credentials never leave (buildUpstreamHeaders). Responses
+ *   come back without `Set-Cookie`, and an upstream redirect is not passed
+ *   on: PostHog cannot set cookies on, or redirect within, this origin.
+ *
+ * Not rate limited here: the app's limiter costs a database write per
+ * check, which telemetry must not. docs/DEPLOYMENT.md has the Cloudflare
+ * rate-limiting rule for this path.
  */
 export async function handleTelemetryProxy(
   request: Request,
   options: TelemetryProxyOptions,
 ): Promise<Response> {
-  if (!ALLOWED_METHODS.has(request.method)) {
-    return reject(405, "Method not allowed", { Allow: "GET, HEAD, POST" });
-  }
-
   const mapped = mapTelemetryUrl(new URL(request.url), options, options.prefix);
   if (!mapped) return reject(404, "Not found");
+  const { route, target } = mapped;
 
-  const requestBody = request.method === "POST" ? request.body : null;
+  if (!route.methods.includes(request.method)) {
+    return reject(405, "Method not allowed", { Allow: route.methods.join(", ") });
+  }
+
+  if (!consentCapabilities(consentFromHeaders(request.headers)).capture) {
+    return new Response(null, { headers: { "Cache-Control": "no-store" }, status: 204 });
+  }
+
+  const requestBody = route.maxBodyBytes > 0 ? request.body : null;
   const declaredLength = request.headers.get("content-length");
   if (requestBody && declaredLength !== null) {
     const length = Number(declaredLength);
     if (!Number.isFinite(length) || length < 0) return reject(400, "Bad request");
-    if (length > MAX_TELEMETRY_BODY_BYTES) return reject(413, "Payload too large");
+    if (length > route.maxBodyBytes) return reject(413, "Payload too large");
   }
 
   // A declared length was checked above and the runtime enforces it; an
   // undeclared (chunked) one is counted as it streams.
   const body =
     requestBody && declaredLength === null
-      ? capBodySize(requestBody, MAX_TELEMETRY_BODY_BYTES)
+      ? capBodySize(requestBody, route.maxBodyBytes)
       : requestBody;
 
   const init: RequestInit & { duplex?: "half" } = {
@@ -168,17 +249,17 @@ export async function handleTelemetryProxy(
 
   let upstream: Response;
   try {
-    upstream = await (options.fetch ?? fetch)(mapped.target.toString(), init);
+    upstream = await (options.fetch ?? fetch)(target.toString(), init);
   } catch {
     return reject(502, "Bad gateway");
   }
 
+  // PostHog's endpoints do not redirect. If one ever does, the browser is
+  // not sent wherever it points.
+  if (REDIRECT_STATUSES.has(upstream.status)) return reject(502, "Bad gateway");
+
   const headers = new Headers(upstream.headers);
-  headers.delete("set-cookie");
-  // fetch has already decoded the body; the edge compresses again for the
-  // client, so the upstream's encoding and length no longer describe it.
-  headers.delete("content-encoding");
-  headers.delete("content-length");
+  for (const name of STRIPPED_RESPONSE_HEADERS) headers.delete(name);
   return new Response(upstream.body, {
     headers,
     status: upstream.status,

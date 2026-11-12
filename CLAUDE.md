@@ -63,7 +63,11 @@ allows none. PostHog is initialised once, in `src/instrumentation-client.ts`.
   `~/server/_lib/posthog`. Never pass an email address as an id, and never
   send request bodies, cookies or authorization headers.
 - Consent: `~/_lib/consent`. "denied" (cookie or Global Privacy Control)
-  stops all capture; replay and person properties need "granted".
+  means PostHog is never initialised and the proxy forwards nothing; replay
+  and person properties need "granted".
+- Every event is scrubbed of URL query strings, emails and codes before it
+  is sent (`~/_lib/telemetryScrub`). Do not put personal data in event
+  properties or in a URL path.
 
 **Model output is untrusted.** `src/server/_lib/ai.ts` validates everything
 Claude returns and the UI renders it as plain text. Keep it that way; never

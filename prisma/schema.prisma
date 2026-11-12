@@ -327,6 +327,12 @@ model InviteCode {
   creator            User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   maxRedemptions     Int                @default(5)
   currentRedemptions Int                @default(0)
+  // How many redemptions were ever recorded for this code. Raised by the
+  // trigger "InviteRedemption_count" (migrations/0002) in the same statement
+  // that inserts the redemption, and never lowered: a used invite stays
+  // used, also after the invited member's account (and with it the
+  // redemption row) is deleted.
+  redeemedCount      Int                @default(0)
   // Last time a slot was claimed or released. The reconcile job recomputes
   // `currentRedemptions` only for codes touched recently
   // (src/server/_jobs/reconcileInviteSlots.ts).

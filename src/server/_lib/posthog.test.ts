@@ -50,7 +50,6 @@ import {
   captureEvent,
   captureServerException,
   getFeatureFlag,
-  isFoundingMemberPricingActive,
 } from "./posthog";
 
 /** Everything handed to waitUntil so far, settled. */
@@ -180,7 +179,47 @@ describe("captureServerException", () => {
     expect(mocks.client.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("drops the user id, but still reports, when the visitor refused analytics", async () => {
+  it("scrubs what it sends: the client is built with a before_send that removes PII", async () => {
+    captureServerException(new Error("boom"), { source: "trpc" });
+    await afterResponse();
+
+    const beforeSend = mocks.constructed[0]?.options.before_send as (event: {
+      event: string;
+      properties?: Record<string, unknown>;
+    }) => { properties?: Record<string, unknown> } | null;
+    const sent = beforeSend({
+      event: "$exception",
+      properties: {
+        $exception_list: [{ value: "Code 123456 rejected for a@b.co at /join?code=ISO-TEST-ABCDEFGH" }],
+        path: "/api/trpc/auth.verify",
+      },
+    });
+    expect(sent?.properties).toEqual({
+      $exception_list: [{ value: "Code [code] rejected for [email] at /join" }],
+      path: "/api/trpc/auth.verify",
+    });
+  });
+
+  it("uses the consent it is handed instead of looking for a request", async () => {
+    // Where onRequestError runs there is no request scope to read.
+    mocks.requestHeaders = null;
+    const error = new Error("boom");
+
+    captureServerException(error, { distinctId: "user-1", source: "next" }, { consent: "denied" });
+    captureServerException(error, { distinctId: "user-1", source: "next" }, { consent: "unknown" });
+    await afterResponse();
+
+    expect(mocks.client.captureExceptionImmediate).toHaveBeenNthCalledWith(1, error, undefined, {
+      environment: "staging",
+      source: "next",
+    });
+    expect(mocks.client.captureExceptionImmediate).toHaveBeenNthCalledWith(2, error, "user-1", {
+      environment: "staging",
+      source: "next",
+    });
+  });
+
+  it("for a visitor who refused analytics: still reported, with nothing of the visitor", async () => {
     mocks.requestHeaders = new Headers({ "sec-gpc": "1" });
     const error = new Error("boom");
     captureServerException(error, { distinctId: "user-1", source: "trpc" });
@@ -190,6 +229,9 @@ describe("captureServerException", () => {
       environment: "staging",
       source: "trpc",
     });
+    // No id, no IP, no query string, no headers: only the error and where.
+    const sent = JSON.stringify(mocks.client.captureExceptionImmediate.mock.calls[0]?.slice(1));
+    expect(sent).not.toMatch(/user-1|\$ip|sec-gpc|cookie|\?/i);
   });
 });
 
@@ -256,10 +298,5 @@ describe("feature flags", () => {
       vi.mocked(logger.warn).mock.calls,
     ]);
     expect(logged).not.toContain("variant-secret");
-  });
-
-  it("helpers fall back when evaluation fails", async () => {
-    mocks.client.evaluateFlags.mockRejectedValue(new Error("timeout"));
-    await expect(isFoundingMemberPricingActive()).resolves.toBe(true);
   });
 });

@@ -217,6 +217,44 @@ describe("reconcileInviteSlots", () => {
     expect(await count(inFlight.id)).toBe(0);
   });
 
+  it("a used invite stays used when the invited member's account is deleted", async () => {
+    const invite = await createCode({
+      code: "DELETED",
+      currentRedemptions: 2,
+      redemptions: 2,
+      slotsChangedAt: ago(HOUR),
+    });
+    const stored = await testDb.raw.inviteCode.findUniqueOrThrow({ where: { id: invite.id } });
+    expect(stored.redeemedCount).toBe(2);
+
+    // The account goes, and with it (cascade) the redemption row.
+    const [redemption] = await testDb.raw.inviteRedemption.findMany({
+      where: { inviteCodeId: invite.id },
+    });
+    await testDb.raw.user.delete({ where: { id: redemption!.redeemedById } });
+    expect(await testDb.raw.inviteRedemption.count({ where: { inviteCodeId: invite.id } })).toBe(1);
+
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1, corrected: 0 });
+    expect(await count(invite.id)).toBe(2);
+  });
+
+  it("still frees a leaked slot on a code that also lost a redeemer", async () => {
+    const invite = await createCode({
+      code: "BOTH",
+      currentRedemptions: 3,
+      redemptions: 2,
+      slotsChangedAt: ago(HOUR),
+    });
+    const [redemption] = await testDb.raw.inviteRedemption.findMany({
+      where: { inviteCodeId: invite.id },
+    });
+    await testDb.raw.user.delete({ where: { id: redemption!.redeemedById } });
+
+    // Two were really used (one account since deleted), one claim leaked.
+    await expect(reconcileInviteSlots(testDb.db, NOW)).resolves.toEqual({ checked: 1, corrected: 1 });
+    expect(await count(invite.id)).toBe(2);
+  });
+
   it("only looks at codes touched recently", async () => {
     const never = await createCode({ code: "NEVER", currentRedemptions: 1, slotsChangedAt: null });
     const longAgo = await createCode({
