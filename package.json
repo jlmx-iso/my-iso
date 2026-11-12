@@ -26,6 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "coverage:ratchet": "node scripts/coverage-ratchet.mjs",
+    "coverage:diff": "node scripts/diff-coverage.mjs",
     "postinstall": "prisma generate",
     "db:push": "prisma generate && prisma db push",
     "db:studio": "prisma studio",

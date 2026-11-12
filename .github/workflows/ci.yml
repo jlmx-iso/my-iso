@@ -49,6 +49,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Diff coverage compares against the pull request's base branch,
+          # so it needs history back to the merge base.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -71,8 +75,27 @@ jobs:
       - name: Migrations match the Prisma schema
         run: npm run db:check
 
-      - name: Test
+      # Vitest with coverage. Fails if any threshold in
+      # coverage-thresholds.json is missed (global and per directory); see
+      # docs/TESTING.md for the bar and how it ratchets up.
+      - name: Test with coverage
         run: npm run test:coverage
+
+      # Of the lines this pull request adds or edits under src/ (tests
+      # excluded), at least 90% must be run by the suite. The report lists
+      # each uncovered line and is also written to the job summary.
+      - name: Diff coverage (90% of changed lines)
+        if: github.event_name == 'pull_request'
+        run: npm run coverage:diff -- --base "origin/${{ github.base_ref }}" --threshold 90
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: ignore
 
   build:
     name: Build (Next.js + Cloudflare Worker)
