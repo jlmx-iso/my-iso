@@ -175,4 +175,31 @@ describe("discoverRouter.swipe against SQLite", () => {
       as(alice).swipe({ direction: "pass", targetId: bob.id }),
     ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
   });
+  it("leaves out everyone already swiped on, however many that is", async () => {
+    // More swipes than D1's bound-parameter limit (about 100 per statement).
+    // SQLite would accept an `id NOT IN (...)` list this long and D1 would
+    // not, so this checks the relation filter gives the same exclusion.
+    const swiped = [];
+    for (let i = 0; i < 120; i++) {
+      swiped.push(await createDiscoverableUser(`Seen${i}`));
+    }
+    await testDb.raw.swipe.createMany({
+      data: swiped.map((target) => ({
+        direction: "pass",
+        swiperId: alice.id,
+        targetId: target.id,
+      })),
+    });
+    const fresh = await createDiscoverableUser("Fresh");
+
+    const deck = await as(alice).getCardDeck({ limit: 50 });
+    const ids = deck.map((card) => card.id);
+
+    expect(ids).toContain(fresh.id);
+    expect(ids).toContain(bob.id);
+    expect(ids).not.toContain(alice.id);
+    for (const target of swiped) {
+      expect(ids).not.toContain(target.id);
+    }
+  });
 });
