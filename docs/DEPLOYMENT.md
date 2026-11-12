@@ -15,11 +15,13 @@ npm run deploy:production
 Each command (`scripts/deploy.mjs`) does, in this order, and stops at the
 first failure:
 
-1. builds the Worker for that environment (and uploads source maps, if
+1. checks that the database is not one created before the migration
+   baseline (it stops and names the one-time upgrade command if it is);
+2. builds the Worker for that environment (and uploads source maps, if
    configured);
-2. checks the bundle (`npm run check:bundle`);
-3. applies pending D1 migrations;
-4. deploys the Worker.
+3. checks the bundle (`npm run check:bundle`);
+4. applies pending D1 migrations;
+5. deploys the Worker.
 
 Migrations go first because they are written to be safe for the code that is
 already deployed, while new code may not work without them
@@ -213,8 +215,12 @@ Do staging completely, then production.
    (`wrangler d1 create my-iso-db-staging`, `wrangler d1 create my-iso-db`)
    and put the ids in `wrangler.toml`.
 2. **Database.** A new database is created by the first deploy's migration
-   step. A database that existed before `migrations/0001_init.sql` needs the
-   one-time upgrade in [DATABASE.md](DATABASE.md) first.
+   step. The existing staging and production databases predate
+   `migrations/0001_init.sql`: run `npm run db:upgrade-legacy -- --env staging`
+   (then `--yes`) once before the first deploy to staging, and the same for
+   production after staging has been checked
+   ([DATABASE.md](DATABASE.md), "Upgrading a database created before the
+   baseline"). The deploy stops with this command if it is forgotten.
 3. **Custom domain.** Uncomment `routes` in `wrangler.toml` (both
    environments) once the zone is on the account. Do this before launch: on
    a `workers.dev` address content blockers defeat the telemetry proxy.

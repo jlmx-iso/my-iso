@@ -73,3 +73,6 @@ src/generated/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Database backups (scripts/db-upgrade-legacy.mjs): real data, never committed.
+/backups/

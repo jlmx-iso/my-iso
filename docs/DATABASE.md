@@ -300,173 +300,144 @@ npm run dev:wrangler
 
 ## Upgrading a database created before the baseline
 
-`migrations/0001_init.sql` is a baseline: it creates the whole schema in an
-empty database. A D1 database that already existed before this baseline
-(created with `prisma db push` or the old `migrations/schema.sql`) **must not
-have `0001_init.sql` applied to it**: its tables already exist and the file
-would fail on the first `CREATE TABLE`.
+The two existing databases were created before the baseline. Run
+`npm run db:upgrade-legacy -- --env staging`, check the app on staging, then
+production.
 
-Such a database has to be brought to the baseline schema by hand, once, and
-then told that the baseline is applied. Compared with the schema before the
-baseline, the baseline adds unique indexes that existing data may violate, so
-the data **must be de-duplicated** on:
-
-- `EventLike (eventId, userId)`
-- `CommentLike (commentId, userId)`
-- `Review (photographerId, userId)`
-- `InviteRedemption (redeemedById)`
-
-and the unique index **`VerificationToken_token_key` must be dropped** (a
-6-digit sign-in code is unique per address, not across all addresses; with
-the index in place two people cannot hold the same code at the same time).
-
-None of this is applied automatically. Do it deliberately, per database,
-staging first.
-
-### 1. Back up
+In more detail. `migrations/0001_init.sql` is a baseline: it creates the
+whole schema in an empty database. The staging (`my-iso-db-staging`) and
+production (`my-iso-db`) databases were created earlier, from `main` at
+`2d1d630` (staging also seeded with that commit's `prisma/seed-staging.sql`),
+and have no record of `0001_init.sql`. Applying migrations to them would fail
+on the first `CREATE TABLE`, so `npm run deploy:<env>` checks first and stops
+with the command to run.
 
 ```sh
-wrangler d1 export DB --remote --env staging --output backup-staging.sql
-# production: wrangler d1 export DB --remote --env="" --output backup-production.sql
+npm run db:upgrade-legacy -- --env staging          # checks, backs up, shows what is removed; changes nothing
+npm run db:upgrade-legacy -- --env staging --yes    # the same, then upgrades and verifies
+npm run deploy:staging                              # applies 0003 onwards, deploys
+# check the app on staging, then the same three commands with --env production / deploy:production
 ```
 
-### 2. Look at what would be removed
+`scripts/db-upgrade-legacy.mjs`, in order, stopping at the first problem:
 
-```sql
-SELECT 'EventLike' AS "table", COUNT(*) AS "extraRows" FROM (
-  SELECT 1 FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
-)
-UNION ALL SELECT 'CommentLike', COUNT(*) FROM (
-  SELECT 1 FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
-)
-UNION ALL SELECT 'Review', COUNT(*) FROM (
-  SELECT 1 FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
-)
-UNION ALL SELECT 'InviteRedemption', COUNT(*) FROM (
-  SELECT 1 FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
-);
-```
+1. refuses a database that already has `0001_init.sql` recorded, or has no
+   app tables;
+2. exports the schema (`wrangler d1 export --no-data`) and refuses unless it
+   is exactly `migrations/legacy/pre-baseline-schema.sql` (the schema of
+   `prisma/schema.prisma` at `2d1d630`), so the upgrade never half-applies to
+   a database it was not written for;
+3. exports a full backup to `backups/<env>-<timestamp>.sql` (gitignored:
+   real data; keep it somewhere safe and delete it when no longer needed);
+4. prints how many duplicated rows the new unique indexes force out, and
+   without `--yes` stops there;
+5. runs `migrations/legacy/upgrade-pre-baseline.sql`
+   (`wrangler d1 execute --remote --file`);
+6. exports the schema again and checks it is exactly the baseline, and that
+   `0001_init.sql` is recorded.
 
-(The counts are the number of duplicated *groups*.) If `Review` or
-`InviteRedemption` report any, look at the rows before deleting: the SQL
-below keeps the most recently edited review and the first redemption, and
-does not adjust `InviteCode.currentRedemptions`.
+D1 is briefly unavailable while it exports. Run it when a short pause in
+service is acceptable.
 
-### 3. De-duplicate, drop the index, apply the rest of the change
+What `upgrade-pre-baseline.sql` does (`src/server/_db/legacyUpgrade.test.ts`
+runs it on the pre-baseline schema with the old staging seed and checks the
+result against `0001_init.sql` on an empty database, then against the full
+migration chain):
 
-Save as a file and run it with
-`wrangler d1 execute DB --remote --env staging --file upgrade.sql`. This is
-the change from the schema on `main` before the baseline to the baseline. It
-has been checked against a database with that schema; step 4 checks it
-against yours.
+- **Timestamps to one spelling** (see "Timestamps are text"): every
+  `DATETIME` column, text values not already in Prisma's `+00:00` form. The
+  old staging seed wrote `...Z`; production rows written by the app are
+  already right and are not touched.
+- **De-duplicates** for the unique indexes the baseline adds: one
+  `EventLike` per (event, user), keeping a live one, else the oldest; one
+  `CommentLike` per (comment, user), the same rule; one `Review` per
+  (photographer, reviewer), keeping the most recently edited; one
+  `InviteRedemption` per member, keeping the first
+  (`InviteCode.currentRedemptions` is left to the reconcile job).
+- **Sign-in codes**: drops the unique index `VerificationToken_token_key` (a
+  code is unique per address, not globally) and discards pending codes.
+- Adds what the baseline has and the old schema lacks
+  (`VerificationToken.attempts`, `MessageThread.participantKey`, the
+  `RateLimit` table, the new indexes), with `ALTER TABLE`: no table is
+  rebuilt, because dropping `User` would cascade-delete every row that
+  references it.
+- Records `0001_init.sql` in `d1_migrations`, created exactly as wrangler
+  creates it.
 
-```sql
--- 1. De-duplicate, so the new unique indexes can be created.
+`wrangler d1 migrations apply` reads only `migrations/*.sql`, not
+subdirectories, so nothing under `migrations/legacy/` is ever applied as a
+migration.
 
--- One like per (event, user): keep a live one if there is one, else the oldest.
-DELETE FROM "EventLike" WHERE "id" NOT IN (
-  SELECT "id" FROM (
-    SELECT "id", ROW_NUMBER() OVER (
-      PARTITION BY "eventId", "userId" ORDER BY "isDeleted" ASC, "createdAt" ASC, "id" ASC
-    ) AS "position" FROM "EventLike"
-  ) WHERE "position" = 1
-);
+Note: `migrations/schema.sql` at `2d1d630` is not the schema of those
+databases. It was stale (no `InviteCode`, `InviteRedemption`, `Waitlist`,
+`PendingInviteValidation` or `User.role`, a `Referral` table), and its first
+line is Prisma CLI output, so it cannot be executed as it is. The databases
+match that commit's `prisma/schema.prisma`, which the staging seed needs.
 
--- One like per (comment, user): same rule.
-DELETE FROM "CommentLike" WHERE "id" NOT IN (
-  SELECT "id" FROM (
-    SELECT "id", ROW_NUMBER() OVER (
-      PARTITION BY "commentId", "userId" ORDER BY "isDeleted" ASC, "createdAt" ASC, "id" ASC
-    ) AS "position" FROM "CommentLike"
-  ) WHERE "position" = 1
-);
+### Appendix: any other database created before the baseline
 
--- One review per (photographer, reviewer): keep the most recently edited.
-DELETE FROM "Review" WHERE "id" NOT IN (
-  SELECT "id" FROM (
-    SELECT "id", ROW_NUMBER() OVER (
-      PARTITION BY "photographerId", "userId" ORDER BY "updatedAt" DESC, "id" DESC
-    ) AS "position" FROM "Review"
-  ) WHERE "position" = 1
-);
+For a database that is neither of the two above (`db:upgrade-legacy` refuses
+anything whose schema differs from the expected one), the same steps by
+hand. Staging first.
 
--- One invite redemption per user: keep the first.
-DELETE FROM "InviteRedemption" WHERE "id" NOT IN (
-  SELECT "id" FROM (
-    SELECT "id", ROW_NUMBER() OVER (
-      PARTITION BY "redeemedById" ORDER BY "redeemedAt" ASC, "id" ASC
-    ) AS "position" FROM "InviteRedemption"
-  ) WHERE "position" = 1
-);
+1. **Back up.**
 
--- 2. Sign-in codes: a 6-digit code is unique per address, not globally.
---    Pending codes are short-lived; they are discarded.
-DROP INDEX IF EXISTS "VerificationToken_token_key";
-DELETE FROM "VerificationToken";
-ALTER TABLE "VerificationToken" ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0;
-CREATE INDEX "VerificationToken_expires_idx" ON "VerificationToken"("expires");
+   ```sh
+   wrangler d1 export DB --remote --env staging --output backups/staging-manual.sql
+   ```
 
--- 3. The rest of the schema change.
-DROP INDEX "InviteRedemption_redeemedById_idx";
-DROP INDEX "InviteRedemption_inviteCodeId_redeemedById_key";
-CREATE UNIQUE INDEX "InviteRedemption_redeemedById_key" ON "InviteRedemption"("redeemedById");
-CREATE INDEX "InviteRedemption_inviteCodeId_idx" ON "InviteRedemption"("inviteCodeId");
+2. **Look at what would be removed.** Duplicated groups per new unique
+   index:
 
-CREATE UNIQUE INDEX "EventLike_eventId_userId_key" ON "EventLike"("eventId", "userId");
-CREATE UNIQUE INDEX "CommentLike_commentId_userId_key" ON "CommentLike"("commentId", "userId");
-CREATE UNIQUE INDEX "Review_photographerId_userId_key" ON "Review"("photographerId", "userId");
+   ```sql
+   SELECT 'EventLike' AS "table", COUNT(*) AS "duplicatedGroups" FROM (
+     SELECT 1 FROM "EventLike" GROUP BY "eventId", "userId" HAVING COUNT(*) > 1
+   )
+   UNION ALL SELECT 'CommentLike', COUNT(*) FROM (
+     SELECT 1 FROM "CommentLike" GROUP BY "commentId", "userId" HAVING COUNT(*) > 1
+   )
+   UNION ALL SELECT 'Review', COUNT(*) FROM (
+     SELECT 1 FROM "Review" GROUP BY "photographerId", "userId" HAVING COUNT(*) > 1
+   )
+   UNION ALL SELECT 'InviteRedemption', COUNT(*) FROM (
+     SELECT 1 FROM "InviteRedemption" GROUP BY "redeemedById" HAVING COUNT(*) > 1
+   );
+   ```
 
-ALTER TABLE "MessageThread" ADD COLUMN "participantKey" TEXT;
-CREATE UNIQUE INDEX "MessageThread_participantKey_key" ON "MessageThread"("participantKey");
+   If `Review` or `InviteRedemption` report any, look at the rows first.
 
-CREATE TABLE "RateLimit" (
-    "key" TEXT NOT NULL,
-    "windowStart" INTEGER NOT NULL,
-    "count" INTEGER NOT NULL,
-    "expiresAt" INTEGER NOT NULL,
+3. **Bring the schema to the baseline.** Start from
+   `migrations/legacy/upgrade-pre-baseline.sql`: it is written for a
+   database whose schema is `migrations/legacy/pre-baseline-schema.sql`.
+   Compare yours with that (export it with `--no-data`), adjust a copy of the
+   file for the differences, and run it with
+   `wrangler d1 execute DB --remote --env staging --file <copy>`.
 
-    PRIMARY KEY ("key", "windowStart")
-);
-CREATE INDEX "RateLimit_expiresAt_idx" ON "RateLimit"("expiresAt");
-```
+4. **Confirm the database now matches the schema.**
 
-If a statement fails because your database differs from what this expects (a
-table or index that is missing or already there), nothing from the file is
-kept. Use step 4 to see the real difference and adjust.
+   ```sh
+   wrangler d1 export DB --remote --env staging --no-data --output staging-schema.sql
+   sqlite3 staging-schema.sqlite < staging-schema.sql
+   DATABASE_URL=file:./staging-schema.sqlite \
+     npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script
+   ```
 
-### 4. Confirm the database now matches the schema
+   Against the baseline alone (before 0003 onwards are applied) the diff
+   lists what those migrations add; once they are applied it must be
+   `-- This is an empty migration.` (`d1_migrations` shows up as a table to
+   drop: ignore it).
 
-Nobody has recorded how each existing database was created, so do not assume
-step 3 was everything. Compare the real schema with the Prisma schema:
+5. **Record the baseline as applied**, if your copy of the file did not:
 
-```sh
-wrangler d1 export DB --remote --env staging --no-data --output staging-schema.sql
-sqlite3 staging-schema.sqlite < staging-schema.sql
-DATABASE_URL=file:./staging-schema.sqlite \
-  npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script
-```
+   ```sql
+   CREATE TABLE IF NOT EXISTS "d1_migrations"(
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     name       TEXT UNIQUE,
+     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+   );
+   INSERT INTO "d1_migrations" (name) VALUES ('0001_init.sql');
+   ```
 
-The output must be `-- This is an empty migration.` (Tables that Prisma does
-not manage, such as `d1_migrations`, show up as tables to drop: ignore
-those.) Anything else is SQL the database still needs: review it, apply it
-with `wrangler d1 execute`, and repeat until the diff is empty.
-
-### 5. Record the baseline as applied
-
-```sql
-CREATE TABLE IF NOT EXISTS d1_migrations (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT UNIQUE,
-  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-INSERT INTO d1_migrations (name) VALUES ('0001_init.sql');
-```
-
-`wrangler d1 migrations list DB --remote --env staging` must now report that
-there is nothing to apply. From here on the database is migrated like any
-other: `npm run db:migrate:staging`.
-
-Only after steps 1 to 5 have succeeded on a database may the code from the
-security-hardening release be deployed against it: that code relies on the
-unique indexes and the `RateLimit` table (sign-in codes, invites and the
-waitlist fail closed without the limiter's table).
+   `wrangler d1 migrations list DB --remote --env staging` must then list
+   only the migrations after `0001`. From here on the database is migrated
+   like any other.
