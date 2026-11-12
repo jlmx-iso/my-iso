@@ -64,6 +64,8 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     POSTHOG_ASSETS_HOST: process.env.POSTHOG_ASSETS_HOST,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
+    POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY,
+    POSTHOG_PROJECT_ID: process.env.POSTHOG_PROJECT_ID,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_API_BASE_URL: process.env.STRIPE_API_BASE_URL,
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
@@ -110,6 +112,12 @@ export const env = createEnv({
     // PostHog ingestion and assets origins. Default to US Cloud.
     POSTHOG_ASSETS_HOST: z.string().url().optional(),
     POSTHOG_HOST: z.string().url().optional(),
+    // Optional: deleting a deleted account's PostHog person and events
+    // (src/server/_lib/account/posthogErasure.ts). A personal API key
+    // scoped to person:write on this project only, and the project id.
+    // Without them that deletion step is skipped and reported.
+    POSTHOG_PERSONAL_API_KEY: z.string().optional(),
+    POSTHOG_PROJECT_ID: z.string().regex(/^\d+$/).optional(),
     // Optional: without a key no email is sent.
     RESEND_API_KEY: z.string().optional(),
     // Local stand-in for the Stripe API (end-to-end runs only). Honoured only

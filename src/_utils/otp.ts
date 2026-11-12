@@ -18,7 +18,13 @@ export type OtpOutcome =
   | { kind: "locked" }
   /** Too many attempts from this browser or for this address; the code was not checked. */
   | { kind: "rate_limited" }
+  /** The address belongs to an account whose deletion has not finished. */
+  | { kind: "deletion_pending" }
   | { kind: "failed" };
+
+/** Shown when someone signs in or up with the address of an account still being deleted. */
+export const DELETION_PENDING_MESSAGE =
+  "This account is still being deleted. Try again in a few minutes or contact support.";
 
 /**
  * Reads the result of an email-code sign-in.
@@ -35,6 +41,7 @@ export function interpretOtpSignIn(
   if (result?.ok && !result.error) return { kind: "signed_in" };
   if (result?.error !== "CredentialsSignin") return { kind: "failed" };
   if (result.code === "rate_limited") return { kind: "rate_limited" };
+  if (result.code === "deletion_pending") return { kind: "deletion_pending" };
 
   const attemptsLeft = OTP_MAX_ATTEMPTS - (wrongAttemptsBefore + 1);
   return attemptsLeft <= 0 ? { kind: "locked" } : { attemptsLeft, kind: "wrong_code" };
@@ -53,6 +60,8 @@ export function otpOutcomeMessage(outcome: OtpOutcome): string | null {
       return `That code no longer works: it was entered incorrectly ${OTP_MAX_ATTEMPTS} times. Send a new code to continue.`;
     case "rate_limited":
       return "Too many sign-in attempts. Wait 15 minutes, then send a new code. Entering codes before then won't work.";
+    case "deletion_pending":
+      return DELETION_PENDING_MESSAGE;
     case "failed":
       return "We couldn't sign you in. Please try again.";
   }

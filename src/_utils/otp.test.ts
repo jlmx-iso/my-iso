@@ -57,4 +57,13 @@ describe("otpOutcomeMessage", () => {
     expect(message).toMatch(/Too many sign-in attempts/);
     expect(message).toMatch(/Wait 15 minutes/);
   });
+
+  it("says an account still being deleted cannot be used yet", () => {
+    expect(interpretOtpSignIn({ code: "deletion_pending", error: "CredentialsSignin" }, 0)).toEqual({
+      kind: "deletion_pending",
+    });
+    expect(otpOutcomeMessage({ kind: "deletion_pending" })).toBe(
+      "This account is still being deleted. Try again in a few minutes or contact support.",
+    );
+  });
 });

@@ -1,6 +1,7 @@
 
 import { createTRPCRouter } from "~/server/api/trpc";
 
+import { accountRouter } from "./routers/account";
 import { authRouter } from "./routers/auth";
 import { bookingRouter } from "./routers/booking";
 import { discoverRouter } from "./routers/discover";
@@ -25,6 +26,7 @@ import { waitlistRouter } from "./routers/waitlist";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  account: accountRouter,
   auth: authRouter,
   booking: bookingRouter,
   discover: discoverRouter,

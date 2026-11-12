@@ -28,6 +28,7 @@ const PHOTOGRAPHER: Photographer = {
   companyName: "Ann Lee Photo",
   createdAt: AT,
   facebook: "https://facebook.com/annlee",
+  isDeleted: false,
   id: "ph-1",
   instagram: "https://instagram.com/annlee.photo",
   location: "Austin, TX",

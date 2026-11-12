@@ -19,6 +19,13 @@ type ReadHook = (params: {
   query: (args: ReadArgs) => Promise<unknown>;
 }) => Promise<unknown>;
 
+/**
+ * Spread into a `where` to read live and soft-deleted rows alike
+ * (`{ ...INCLUDING_DELETED, userId }`): naming `isDeleted` opts out of the
+ * filter, and Prisma ignores a condition that is undefined.
+ */
+export const INCLUDING_DELETED = { isDeleted: undefined } as const;
+
 export function withSoftDeleteFilter<T extends ReadArgs>(args: T): T {
   const where = args.where ?? {};
   if (Object.prototype.hasOwnProperty.call(where, "isDeleted")) return args;
@@ -48,7 +55,12 @@ export function extendWithSoftDelete(client: PrismaClient) {
       event: softDeleteReads,
       eventLike: softDeleteReads,
       message: softDeleteReads,
+      photographer: softDeleteReads,
       portfolioImage: softDeleteReads,
+      // A deleted account (src/server/_lib/account/deletion.ts): hidden
+      // from every lookup, sign-in and session checks included. Relations
+      // still load it, anonymised, as "Deleted member".
+      user: softDeleteReads,
     },
   });
 }

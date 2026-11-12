@@ -20,6 +20,26 @@ export const REALTIME_EXPIRES_HEADER = "X-Realtime-Session-Expires";
 /** Close code sent when the session a socket was opened with has run out. */
 export const CLOSE_SESSION_EXPIRED = 4401;
 
+/** Close code sent when the account a socket belongs to has been deleted. */
+export const CLOSE_ACCOUNT_DELETED = 4403;
+
+/**
+ * Closes every socket in `sockets` with `code`; returns how many. A socket
+ * that is already closed is skipped.
+ */
+export function closeSockets(sockets: Iterable<{ close(code: number, reason: string): void }>, code: number, reason: string): number {
+  let closed = 0;
+  for (const socket of sockets) {
+    try {
+      socket.close(code, reason);
+      closed += 1;
+    } catch {
+      // Already closed.
+    }
+  }
+  return closed;
+}
+
 /** Stored on each socket (survives hibernation). */
 export type SocketAttachment = {
   /** Unix milliseconds at which the user's session expires. */

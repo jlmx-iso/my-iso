@@ -102,6 +102,7 @@ describe("Cron Trigger -> Worker -> route -> job -> database", () => {
 
     expect(runs.map((run: JobRun) => run.job).sort()).toEqual([
       "expire-matches",
+      "finish-deletions",
       "purge-expired",
       "reconcile-invites",
     ]);
@@ -148,6 +149,7 @@ describe("Cron Trigger -> Worker -> route -> job -> database", () => {
     });
     expect(summaries).toEqual([
       expect.objectContaining({ job: "expire-matches", ok: true, summary: { expired: 1 } }),
+      expect.objectContaining({ job: "finish-deletions", ok: true, summary: { finished: 0, stuck: 0 } }),
     ]);
   });
 
@@ -157,7 +159,10 @@ describe("Cron Trigger -> Worker -> route -> job -> database", () => {
       appFetch,
       authSecret: "another-secret-another-secret-another",
     });
-    expect(runs).toEqual([{ job: "expire-matches", ok: false, status: 404 }]);
+    expect(runs).toEqual([
+      { job: "expire-matches", ok: false, status: 404 },
+      { job: "finish-deletions", ok: false, status: 404 },
+    ]);
     expect((await testDb.raw.match.findUniqueOrThrow({ where: { id: stale.id } })).status).toBe("matched");
   });
 

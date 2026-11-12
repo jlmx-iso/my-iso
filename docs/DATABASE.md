@@ -266,9 +266,11 @@ value is the day, up to 40 twelve-character keyed hashes of
 "profile:<id>" / "event:<id>", and a signature, so a client cannot forge a
 list. It holds **no identity**: no user id, no visitor id, no profile id in
 the clear, nothing that lasts past the day or links one day to the next. It
-is set only by a page view, and only to stop that same view counting twice:
-a strictly necessary cookie, not tracking, so it needs no consent and is set
-whatever the analytics consent says.
+is set only by a page view, and only to stop that same view counting twice.
+Even so it is **not set when the visitor's consent resolves to *denied***
+(`consentFromHeaders`: a refusal, Global Privacy Control, or no choice yet
+in an opt-in region): nothing is stored in the browser of someone who said
+no. Their views are still counted once a day, by `ViewSeen` on the server.
 
 **`ViewSeen`.** `key` (HMAC of member id or client address, target and
 day) and `day`; neither the id nor the address is stored. With the server's
@@ -427,6 +429,74 @@ SELECT e."id", EXISTS (
 Doing it in one step (dropping the columns in the same release that stops
 using them) would break the still-running previous release for the length of
 the deploy, and make a rollback impossible.
+
+## Account deletion
+
+Settings → "Delete account" (`account.deleteAccount`, confirmed by typing
+the username, or the email address for a member without one). The
+implementation is `src/server/_lib/account/deletion.ts`; this is the
+policy it carries out.
+
+**How it is safe without transactions.** The first statement is one
+conditional `UPDATE "User" SET isDeleted = true, deletionRequestedAt = now
+WHERE id = ? AND isDeleted = false`. From then on the soft-delete extension
+hides the account from every read, which also ends its sessions (the
+Auth.js `jwt` callback asks `isAccountActive` on every session read and
+clears the cookie; mobile bearer tokens fail the same lookup). Then each
+step below runs in order; each is idempotent, so a run that stops part-way
+is simply run again: in the same request, or by the `finish-deletions` job
+(every 15 minutes). Each run counts itself (`deletionAttempts`,
+`deletionAttemptedAt`) before its first step; the job retries the least
+recently tried first, no sooner than 10 minutes after the last attempt,
+reports every failure, and gives up after 5 attempts, reporting the
+account as stuck (one error-tracking issue, fingerprint
+`account-deletion-stuck`) so a person can look: find them with
+`SELECT id FROM "User" WHERE "isDeleted" AND "deletedAt" IS NULL AND
+"deletionAttempts" >= 5`. The job run fails whenever an account failed.
+The last step sets `deletedAt`; only then is the confirmation email sent, to
+the address read at the start. An optional step that could not be done
+(PostHog erasure without `POSTHOG_PERSONAL_API_KEY`) is recorded in
+`deletionSkipped` and reported (fingerprint
+`account-deletion-skipped:<step>`).
+
+Until `deletedAt` is set the address is still on the row: signing in or up
+with it answers "This account is still being deleted" (`deletion_pending`).
+
+| What | What happens |
+| --- | --- |
+| Pro subscription | Cancelled in Stripe **immediately**, without proration or a final invoice, and its open invoices voided so no retry can charge (nothing is left to use; no automatic refund for the rest of the period). Asked of Stripe whatever the stored status says. The `Subscription` row and `User.stripeId` stay as the billing record. Billing code looks a deleted account up too (`INCLUDING_DELETED`): a later webhook still updates the row, and a subscription that turns up for a deleted account (a checkout completed in another tab after deletion) is recorded and then cancelled the same way (`src/server/_billing/accountClosure.ts`). |
+| Live chat | Their open sockets in every thread's room are closed (`ChatRoom.revokeUser`, awaited, chunked). Thread membership stays; new connections are refused because no session is found. |
+| Analytics | The PostHog person (distinct id = user id) with its events and recordings is deleted through PostHog's API (`persons/bulk_delete`). Skipped and reported when not configured. |
+| Uploaded images (profile photo, avatar, portfolio including removed ones, event covers) | Deleted from Cloudinary first, while the rows that hold their URLs exist. An image already gone counts as deleted. |
+| Profile (`Photographer`) | Anonymised ("Deleted member", every other field emptied) and hidden (`isDeleted`). Kept only so that past events still have an owner. |
+| Portfolio, reviews **about** them, favourites of them | Deleted. |
+| Their events | Hidden (`isDeleted`), description and cover cleared; title, date and place stay for applicants' booking history. |
+| Bookings, either side | Open ones (`applied`, `accepted`) are cancelled; their own note (`notes` as applicant, `ownerNotes` as owner) is cleared. The rows stay for the other member's history. |
+| Messages they sent | **Kept** in the conversations of the people who received them, shown from "Deleted member". Their read state is deleted. |
+| Reviews they wrote | **Kept**, shown from "Deleted member": they are about the other member's work. |
+| Comments, likes, favourites, swipes, matches (with their AI summaries), their notifications | Deleted. |
+| Other members' notifications that name them | Rewritten: the name becomes "Deleted member" (found through the bookings they were part of; booking notifications store the booking id). |
+| Their invite code | Kept but disabled (`maxRedemptions = 0`); members they invited keep their accounts. Their own redemption is deleted. |
+| Waitlist entry, pending invite checks and sign-in codes for their address, Google link (`Account`, which holds no OAuth tokens since 0006), `Session` rows | Deleted. |
+| The `User` row | Anonymised last: "Deleted member", `deleted-<id>@deleted.invalid` (unique, undeliverable), every optional field null, `deletedAt` set. Kept so that the rows above that others keep still point somewhere. |
+
+Rows in backups and providers' logs are not touched; they age out on their
+own schedules.
+
+## Data export
+
+Settings → "Download your data" (`account.exportData`) returns everything
+above as one JSON document, built on request
+(`src/server/_lib/account/exportData.ts`). `EXPORT_COVERAGE` there lists
+every model with where it appears in the export or why it does not, and
+`exportData.test.ts` fails when a model is added to `prisma/schema.prisma`
+without an entry: **a new model that stores member data must be added to
+the export (and to the deletion steps above), or excluded with a reason.**
+
+Reads that load relations go `EXPORT_PAGE` (80) rows at a time (D1's
+bound-parameter limit), and the two lists that grow without bound are cut
+to the latest 5,000 sent messages and 2,000 notifications; the file says
+so (`sentTruncated`, `notificationsTruncated`, `limits`).
 
 ## Local D1 from scratch
 
