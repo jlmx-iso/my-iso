@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { ErrorReason } from "~/_utils/errorReason";
+import ViewBeacon from "~/app/_components/ViewBeacon";
+import { viewBeaconProps } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { reasonOf } from "~/server/api/reasonedError";
 import { api } from "~/trpc/server";
@@ -33,6 +35,17 @@ export default async function Page({ params }: PageProps) {
     const { id } = await params;
     const [session, event] = await Promise.all([auth(), findEvent(id)]);
     if (!event) notFound();
+    const isOwner = session?.user?.id === event.photographer.userId;
+    const beacon = await viewBeaconProps(
+        { id: event.id, kind: "event" },
+        { ownerId: event.photographer.userId, viewerId: session?.user?.id ?? null },
+    );
 
-    return <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />;
+    return (
+        <>
+            {/* For the owner's insights; their own visits are not counted. */}
+            {!isOwner && <ViewBeacon {...beacon} />}
+            <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />
+        </>
+    );
 }

@@ -343,6 +343,7 @@ model User {
   seekingTypes      String? // JSON array: ["wedding", "portrait", "event", "commercial"]
   budgetMin         Int?
   budgetMax         Int?
+  profileViews      ProfileView[]
 
   // The Discover deck and recipient search filter on it.
   @@index([isDiscoverable])
@@ -368,6 +369,7 @@ model Event {
   comments       Comment[]
   eventLikes     EventLike[]
   bookings       Booking[]
+  views          EventView[]
   // Note: description field uses LIKE/contains queries which can't be fully optimized with standard indexes
   // For production scale, consider full-text search (FTS5) or external search service
 
@@ -597,4 +599,47 @@ model Match {
   // Expiry sweep and read-time expiry: "matched" rows whose expiresAt has
   // passed. Created by migrations/0003.
   @@index([status, expiresAt])
+}
+
+// Profile views for Pro insights: one row per (profile owner, UTC day,
+// source) holding a count, raised by an atomic upsert
+// (src/server/_lib/viewCounter.ts). Deliberately no viewer column: who looked
+// is never stored. Self-views and obvious bots are not counted. `day` is
+// "YYYY-MM-DD" (UTC); `source` is one of VIEW_SOURCES (search, event, ...),
+// derived from the referring path on this site, never the full URL.
+model ProfileView {
+  userId String
+  day    String
+  source String
+  count  Int    @default(0)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day, source])
+  // "When did counting start" (the earliest day) without a scan.
+  @@index([day])
+}
+
+// Event page views for Pro insights, as ProfileView: one row per (event, UTC
+// day) with a count; no viewer is stored. The owner's own views are not
+// counted.
+model EventView {
+  eventId String
+  day     String
+  count   Int    @default(0)
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, day])
+  @@index([day])
+}
+
+// Which signed-in members were already counted today for a profile or event
+// (src/server/_lib/viewCounter.ts), so a member counts once a day per target
+// on any device. `key` is an HMAC (AUTH_SECRET) of viewer, target and day:
+// opaque, it can confirm a guess with the secret but never list who looked.
+// Rows of past days are deleted by the purge-expired job.
+model ViewSeen {
+  key String @id
+  day String
+
+  @@index([day])
 }

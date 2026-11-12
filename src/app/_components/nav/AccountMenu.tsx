@@ -18,7 +18,9 @@ import { useDisclosure } from "@mantine/hooks";
 import {
     IconBell,
     IconCalendarStats,
+    IconChartBar,
     IconHeartHandshake,
+    IconLifebuoy,
     IconLogout,
     IconSettings,
     IconShieldCheck,
@@ -51,15 +53,19 @@ const links = [
     { href: "/app/bookings", icon: IconCalendarStats, label: "Bookings" },
     { href: "/app/discover/matches", icon: IconHeartHandshake, label: "Matches" },
     { href: "/app/notifications", icon: IconBell, label: "Notifications" },
+    { href: "/app/insights", icon: IconChartBar, label: "Insights" },
     { href: "/app/invites", icon: IconUserPlus, label: "Invites" },
     { href: "/app/settings", icon: IconSettings, label: "Settings" },
 ] as const;
+
+/** Help, for everyone: the page offers priority support to Pro members and the contact route to others. */
+const HELP_LINK = { href: "/app/support", icon: IconLifebuoy, label: "Help & support" } as const;
 
 const ADMIN_LINK = { href: "/app/admin/waitlist", icon: IconShieldCheck, label: "Waitlist admin" } as const;
 
 /** The account links for this member: the admin entry only for those it works for. */
 function linksFor(user: AccountMenuUser) {
-    return user.canManageWaitlist ? [...links, ADMIN_LINK] : links;
+    return user.canManageWaitlist ? [...links, HELP_LINK, ADMIN_LINK] : [...links, HELP_LINK];
 }
 
 function unreadLabel(count: number) {

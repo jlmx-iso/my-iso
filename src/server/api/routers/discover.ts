@@ -593,12 +593,4 @@ export const discoverRouter = createTRPCRouter({
       });
     }
   }),
-
-  /**
-   * Kept so clients that still call it keep working; it changes nothing.
-   * Matches expire at read time (getMatches, getMatchById) and the stored
-   * status is tidied by a scheduled job (~/server/_jobs/expireStaleMatches),
-   * so no member's request triggers a write across everyone's matches.
-   */
-  expireStaleMatches: protectedProcedure.mutation(() => ({ expiredCount: 0 })),
 });

@@ -92,17 +92,21 @@ export function UpgradePitchEmail({
             </Fragment>
           ))}
         </Text>
-        <Text style={{ ...calloutText, fontWeight: "600", margin: "16px 0 8px" }}>
-          Coming soon (not yet available):
-        </Text>
-        <Text style={calloutText} data-section="pro-coming-soon">
-          {PRO_PLAN.comingSoon.map((feature, index) => (
-            <Fragment key={feature}>
-              {index > 0 && <br />}
-              {feature}
-            </Fragment>
-          ))}
-        </Text>
+        {PRO_PLAN.comingSoon.length > 0 && (
+          <>
+            <Text style={{ ...calloutText, fontWeight: "600", margin: "16px 0 8px" }}>
+              Coming soon (not yet available):
+            </Text>
+            <Text style={calloutText} data-section="pro-coming-soon">
+              {PRO_PLAN.comingSoon.map((feature, index) => (
+                <Fragment key={feature}>
+                  {index > 0 && <br />}
+                  {feature}
+                </Fragment>
+              ))}
+            </Text>
+          </>
+        )}
       </Section>
 
       <Text style={paragraph}>

@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { withProOn } from "~/server/_billing/proStatus";
 import {
   actionFor,
   applyTransition,
@@ -67,16 +68,18 @@ const bookingPartySelect = {
   profilePic: true,
 } as const;
 
-type BookingDb = Pick<ExtendedPrismaClient, "booking">;
+type BookingDb = Pick<ExtendedPrismaClient, "booking" | "subscription">;
 
-/** Applications `userId` has sent, newest first. */
-function findMyApplications(
+const partyId = (party: { id: string }) => party.id;
+
+/** Applications `userId` has sent, newest first; the owners carry `isPro`. */
+async function findMyApplications(
   db: BookingDb,
   userId: string,
   input: z.infer<typeof pageInput>,
   extra: 0 | 1,
 ) {
-  return db.booking.findMany({
+  const rows = await db.booking.findMany({
     include: {
       event: { select: bookingEventSelect },
       owner: { select: bookingPartySelect },
@@ -84,16 +87,17 @@ function findMyApplications(
     ...page(input, extra),
     where: { applicantId: userId, ...onLiveEvent },
   });
+  return withProOn(db, rows, "owner", partyId);
 }
 
-/** Applications to `userId`'s events, newest first. */
-function findReceivedApplications(
+/** Applications to `userId`'s events, newest first; the applicants carry `isPro`. */
+async function findReceivedApplications(
   db: BookingDb,
   userId: string,
   input: z.infer<typeof pageInput>,
   extra: 0 | 1,
 ) {
-  return db.booking.findMany({
+  const rows = await db.booking.findMany({
     include: {
       applicant: { select: bookingPartySelect },
       event: { select: bookingEventSelect },
@@ -101,6 +105,7 @@ function findReceivedApplications(
     ...page(input, extra),
     where: { ownerId: userId, ...onLiveEvent },
   });
+  return withProOn(db, rows, "applicant", partyId);
 }
 
 /** An event stops accepting applications at its start time. */
@@ -446,7 +451,7 @@ export const bookingRouter = createTRPCRouter({
       }
 
       // The event was just loaded through the soft-delete filter, so it is live.
-      return ctx.db.booking.findMany({
+      const rows = await ctx.db.booking.findMany({
         include: {
           applicant: { select: bookingPartySelect },
           event: { select: bookingEventSelect },
@@ -456,6 +461,7 @@ export const bookingRouter = createTRPCRouter({
           eventId: input.eventId,
         },
       });
+      return withProOn(ctx.db, rows, "applicant", partyId);
     }),
 
   /**

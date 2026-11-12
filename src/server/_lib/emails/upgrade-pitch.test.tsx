@@ -19,19 +19,22 @@ function section(html: string, name: string): string {
   return match[1].replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'");
 }
 
-/** What Pro does not do yet (nothing is gated on Pro): it may only appear under "Coming soon". */
-const PLANNED = /priority|badge|featured|analytics|dashboard|unlimited|early access/i;
+/** What Pro does not do: it may never appear as a current benefit. */
+const NOT_BUILT = /featured|unlimited|early access/i;
 
 describe("upgrade pitch email", () => {
-  it("lists only what Pro gives today as current benefits", async () => {
+  it("lists what Pro gives today, from the same list as the site", async () => {
     const now = section(await renderUpgradePitchEmail(props), "pro-now");
-    expect(now).not.toMatch(PLANNED);
+    expect(now).not.toMatch(NOT_BUILT);
     for (const feature of PRO_PLAN.features) expect(now).toContain(feature);
   });
 
-  it("puts every planned feature under 'Coming soon', from the same list as the site", async () => {
+  it("shows a 'Coming soon' section only when something is planned", async () => {
     const html = await renderUpgradePitchEmail(props);
-    expect(html).toContain("Coming soon (not yet available)");
+    if (PRO_PLAN.comingSoon.length === 0) {
+      expect(html).not.toContain("Coming soon");
+      return;
+    }
     const soon = section(html, "pro-coming-soon");
     for (const feature of PRO_PLAN.comingSoon) expect(soon).toContain(feature);
   });

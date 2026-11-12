@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ErrorReason, logger } from "~/_utils";
 import { EVENT_MAX_AHEAD_MS } from "~/_utils/eventDates";
 import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
+import { withProOn } from "~/server/_billing/proStatus";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
@@ -88,6 +89,9 @@ const eventPhotographerSelect = {
   name: true,
   userId: true,
 } as const;
+
+/** The user id of an event's photographer, for the Pro badge lookup. */
+const ownerUserId = (photographer: { userId: string }) => photographer.userId;
 
 const commentAuthorSelect = {
   firstName: true,
@@ -390,8 +394,9 @@ export const eventRouter = createTRPCRouter({
       // `isFulfilled` is derived from the bookings; the stored column is
       // legacy and is neither read nor written.
       const [derived] = await withDerivedFulfilled(ctx.db, [event]);
+      const [withBadge] = await withProOn(ctx.db, [derived ?? event], "photographer", ownerUserId);
 
-      return { ...(derived ?? event), commentCount };
+      return { ...(withBadge ?? { ...event, photographer: { ...event.photographer, isPro: false } }), commentCount };
     }),
 
   getByPhotographerId: protectedProcedure
@@ -559,7 +564,8 @@ export const eventRouter = createTRPCRouter({
       const last = items.at(-1);
       const withCounts = items.map(({ _count, ...event }) => ({ ...event, commentCount: _count.comments }));
       return {
-        items: await withDerivedFulfilled(ctx.db, withCounts),
+        // The owners' Pro badges: one lookup for the whole page.
+        items: await withProOn(ctx.db, await withDerivedFulfilled(ctx.db, withCounts), "photographer", ownerUserId),
         nextCursor: nextCursor && last ? encodeFeedCursor(last) : null,
       };
     }),
@@ -589,7 +595,7 @@ export const eventRouter = createTRPCRouter({
           ...(filters.length > 0 ? { OR: filters } : {}),
         },
       });
-      return withDerivedFulfilled(ctx.db, events);
+      return withProOn(ctx.db, await withDerivedFulfilled(ctx.db, events), "photographer", ownerUserId);
     }),
 
   search: protectedProcedure

@@ -17,9 +17,13 @@
  * founderProcedure (roles in ADMIN_ROLES), all in src/server/api/trpc.ts.
  * Roles do not grant Pro: proProcedure looks only at the subscription, so a
  * founder or ambassador without one is refused like any member (the
- * fixtures give them none). No procedure uses proProcedure yet; the "pro
- * gate" test below runs the same check on a probe procedure, so adding a
- * `pro` row needs nothing else.
+ * fixtures give them none).
+ *
+ * A Pro-only procedure must be built on proProcedure and have a `pro` row.
+ * A Pro check written inside a resolver instead is caught: a `member` row
+ * must answer a member without Pro exactly as it answers a Pro member, so
+ * the resolver's FORBIDDEN for the member (and not for the Pro member)
+ * fails the row, whatever `resolverDenies` says.
  *
  * "Reaches" means the call got past the procedure's gate: it may still fail
  * on its own terms (NOT_FOUND for the made-up ids used here, a business
@@ -124,7 +128,6 @@ const POLICY: Record<string, Row> = {
   "booking.hasApplied": { access: "member", input: { eventId: MISSING } },
   "booking.updateStatus": { access: "member", input: { bookingId: MISSING, status: "accepted" } },
 
-  "discover.expireStaleMatches": { access: "member" },
   "discover.getCardDeck": { access: "member", input: {} },
   "discover.getMatchById": { access: "member", input: { matchId: MISSING } },
   "discover.getMatches": { access: "member", input: {} },
@@ -158,6 +161,9 @@ const POLICY: Record<string, Row> = {
 
   "google.getAutocompleteLocations": { access: "member", input: { query: "Austin" } },
 
+  // insights: a Pro member's own numbers (rate limited).
+  "insights.getSummary": { access: "pro", input: { days: 7 } },
+
   // invite: checking a code and preparing sign-up come before an account.
   "invite.getMyCode": { access: "member" },
   "invite.prepareRegistration": { access: "public", input: { code: "ISO-NOPE-AAAAAAAA", email: "new@example.com" } },
@@ -176,7 +182,7 @@ const POLICY: Record<string, Row> = {
     resolverDenies: "FORBIDDEN `recipient_not_messageable` without a match or booking with the recipient",
   },
   "message.delete": { access: "member", input: { id: MISSING } },
-  "message.getLatestThreadByUserId": { access: "member" },
+  "message.getMyLatestThread": { access: "member" },
   "message.getLatestThreadMessage": { access: "member", input: { threadId: MISSING } },
   "message.getPotentialRecipients": { access: "member", input: { query: "Ann" } },
   "message.getRecipientById": {
@@ -232,6 +238,10 @@ const POLICY: Record<string, Row> = {
   "review.getPageByPhotographerId": { access: "public", input: { photographerId: MISSING } },
 
   "search.searchAll": { access: "member", input: { query: "wedding" } },
+
+  // support: priority support is a Pro benefit; everyone else emails the
+  // support address. Reaching it here fails on sending (no email in tests).
+  "support.contact": { access: "pro", input: { message: "A question about my invoice.", subject: "Invoice" } },
 
   // subscription: buying Pro must not need Pro. Re-sync is an admin tool.
   "subscription.createCheckoutSession": { access: "member", input: { billingInterval: "monthly" } },
@@ -338,10 +348,13 @@ function callersFor(router: AnyTRPCRouter): Record<CallerKind, unknown> {
 /** Calls `procedurePath` as every kind of caller and checks the row. */
 async function checkRow(callersByKind: Record<CallerKind, unknown>, procedurePath: string, row: Row) {
   let resolverDenied = false;
+  const outcomes: Partial<Record<CallerKind, Outcome>> = {};
+  let undocumented: Error | undefined;
   for (const kind of CALLERS) {
     const expected = EXPECTED[row.access][kind];
     const observed = await call(callersByKind[kind], procedurePath, row.input);
     const label = `${procedurePath} as ${kind}`;
+    outcomes[kind] = observed.outcome;
 
     expect(observed.outcome, `${label}: input failed validation (${observed.message})`).not.toBe("INVALID_INPUT");
 
@@ -357,10 +370,11 @@ async function checkRow(callersByKind: Record<CallerKind, unknown>, procedurePat
     expect(isGateError(observed), `${label}: stopped by the ${observed.gate} gate: ${observed.message}`).toBe(false);
     if (observed.outcome === "reaches") continue;
     if (!row.resolverDenies) {
-      throw new Error(
+      undocumented ??= new Error(
         `${label}: the resolver answered ${observed.outcome} (${observed.message}). ` +
           "Pick an input that avoids it or document it in `resolverDenies`.",
       );
+      continue;
     }
     resolverDenied = true;
   }
@@ -368,6 +382,17 @@ async function checkRow(callersByKind: Record<CallerKind, unknown>, procedurePat
   if (row.resolverDenies) {
     expect(resolverDenied, `${procedurePath}: \`resolverDenies\` is stale, nothing was denied`).toBe(true);
   }
+
+  // A member without Pro and a Pro member reach a `member` procedure alike.
+  // A difference is a Pro check inside the resolver: Pro-only procedures use
+  // proProcedure and a `pro` row.
+  if (row.access === "member" && outcomes.member !== outcomes.pro) {
+    throw new Error(
+      `${procedurePath}: a member without Pro got ${outcomes.member}, a Pro member ${outcomes.pro}. ` +
+        "A Pro-only procedure must use proProcedure and have access \"pro\".",
+    );
+  }
+  if (undocumented) throw undocumented;
 }
 
 beforeAll(async () => {
@@ -440,10 +465,9 @@ describe("authorization matrix", () => {
     await checkRow(callers, procedurePath, row);
   });
 
-  // No app procedure uses proProcedure or a resolver that answers
-  // UNAUTHORIZED itself yet: these probes run the same checks on them, so
-  // the "pro" column and the gate detection are proven before they are
-  // needed.
+  // No app procedure has a resolver that answers UNAUTHORIZED itself yet,
+  // nor (rightly) a Pro check of its own: these probes prove the gate
+  // detection and the Pro rule on them.
   describe("probes", () => {
     const probeRouter = createTRPCRouter({
       probe: createTRPCRouter({
@@ -458,6 +482,11 @@ describe("authorization matrix", () => {
           // The same code and default message as the sign-in gate.
           throw new TRPCError({ code: "UNAUTHORIZED" });
         }),
+        // A Pro check written in a resolver instead of proProcedure.
+        resolverChecksPro: protectedProcedure.query(async ({ ctx }) => {
+          if (!(await hasProAccess(ctx.db, ctx.session.user.id))) throw new TRPCError({ code: "FORBIDDEN" });
+          return "ok";
+        }),
       }),
     });
 
@@ -470,6 +499,15 @@ describe("authorization matrix", () => {
       ["standalonePro", "pro"],
     ] as const)("%s, without the sign-in gate before it, still refuses as EXPECTED says", async (path, access) => {
       await checkRow(callersFor(probeRouter), `probe.${path}`, { access });
+    });
+
+    it("fails a member procedure whose resolver checks Pro itself, even with `resolverDenies`", async () => {
+      const probeCallers = callersFor(probeRouter);
+      for (const row of [{ access: "member" }, { access: "member", resolverDenies: "Pro only" }] as const) {
+        await expect(checkRow(probeCallers, "probe.resolverChecksPro", row)).rejects.toThrow(
+          /a member without Pro got FORBIDDEN, a Pro member reaches\. A Pro-only procedure must use proProcedure/,
+        );
+      }
     });
 
     it("tells a resolver's own UNAUTHORIZED from the sign-in gate's", async () => {

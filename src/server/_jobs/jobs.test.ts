@@ -104,7 +104,7 @@ describe("expireStaleMatches", () => {
 });
 
 describe("purgeExpired", () => {
-  it("deletes expired sign-in codes, pending invites and rate-limit rows only", async () => {
+  it("deletes expired sign-in codes, pending invites, rate-limit rows and past days' view keys only", async () => {
     await testDb.raw.verificationToken.createMany({
       data: [
         { expires: ago(HOUR), identifier: "otp:old@example.com", token: "111111" },
@@ -126,12 +126,18 @@ describe("purgeExpired", () => {
       nowMs: NOW.getTime(),
       random: () => 1,
     });
+    // "Already counted" keys: yesterday's decide nothing, today's still do.
+    const today = NOW.toISOString().slice(0, 10);
+    const yesterday = ago(24 * HOUR).toISOString().slice(0, 10);
+    await testDb.raw.viewSeen.createMany({ data: [{ day: yesterday, key: "old" }, { day: today, key: "new" }] });
 
     await expect(purgeExpired(testDb.db, NOW)).resolves.toEqual({
       pendingInvites: 1,
       rateLimits: 1,
       verificationTokens: 1,
+      viewSeen: 1,
     });
+    expect((await testDb.raw.viewSeen.findMany()).map((row) => row.key)).toEqual(["new"]);
 
     expect((await testDb.raw.verificationToken.findMany()).map((t) => t.token)).toEqual(["222222"]);
     expect((await testDb.raw.pendingInviteValidation.findMany()).map((p) => p.code)).toEqual(["NEW"]);
@@ -148,6 +154,7 @@ describe("purgeExpired", () => {
       pendingInvites: 0,
       rateLimits: 0,
       verificationTokens: 0,
+      viewSeen: 0,
     });
   });
 });

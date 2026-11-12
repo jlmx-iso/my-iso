@@ -1,12 +1,15 @@
 import { Badge, Box, Group, Stack, Text, Title } from "@mantine/core";
 import { IconCamera, IconMapPin } from "@tabler/icons-react";
 
+import { ProBadge } from "../ProBadge";
 import ProfileAvatar from "./ProfileAvatar";
 import { SocialLinks } from "./SocialLinks";
 import { PortfolioThumbnail } from "../portfolio/PortfolioThumbnail";
 
 type ProfileHeaderProps = {
   photographer: {
+    /** From the server (the member's subscription): shows the Pro badge. */
+    isPro?: boolean;
     name: string;
     companyName: string;
     location: string;
@@ -26,10 +29,12 @@ type ProfileHeaderProps = {
   canChangePhoto?: boolean;
   /** Buttons for the viewer: message, save, edit, sign in. */
   actions?: React.ReactNode;
+  /** A line under the social links (the owner's insights link). */
+  footer?: React.ReactNode;
 };
 
 /** Cover banner, avatar, name, meta, bio and social links of a photographer. */
-export default function ProfileHeader({ photographer, coverImage, canChangePhoto = false, actions }: ProfileHeaderProps) {
+export default function ProfileHeader({ photographer, coverImage, canChangePhoto = false, actions, footer }: ProfileHeaderProps) {
   return (
     <Box>
       <Box
@@ -74,7 +79,9 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
               <Title order={1} size="h2" style={{ overflowWrap: "anywhere" }}>
                 {photographer.name}
               </Title>
-              <Badge variant="light" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
+              {photographer.isPro && <ProBadge size="sm" />}
+              {/* Neutral: the role is a label, the Pro badge (orange, crown) a status. */}
+              <Badge variant="light" color="gray" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
                 Photographer
               </Badge>
             </Group>
@@ -109,6 +116,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
           )}
 
           <SocialLinks photographer={photographer} name={photographer.name} />
+          {footer}
         </Stack>
       </Box>
     </Box>

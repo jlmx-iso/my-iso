@@ -63,6 +63,11 @@ describe("appRouter surface", () => {
     expect(paths.filter((p) => p.startsWith("favorite."))).toEqual([]);
     // Favorites live on the user router, scoped to the session.
     expect(paths).toEqual(expect.arrayContaining(["user.addFavorite", "user.removeFavorite"]));
+    // A mutation that changed nothing (matches expire at read time and by a
+    // scheduled job), and a name that said "by user id" for "the caller's own".
+    expect(paths).not.toContain("discover.expireStaleMatches");
+    expect(paths).not.toContain("message.getLatestThreadByUserId");
+    expect(paths).toContain("message.getMyLatestThread");
   });
 
   it("rejects anonymous callers on every procedure outside the public list", async () => {

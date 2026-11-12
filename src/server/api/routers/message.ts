@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
 import { MAX_MESSAGE_LENGTH } from "~/_utils/limits";
+import { withPro } from "~/server/_billing/proStatus";
 import {
   classifyRecipients,
   countUnreadByThread,
@@ -366,7 +367,8 @@ export const messageRouter = createTRPCRouter({
       return { id: input.id };
     }),
 
-  getLatestThreadByUserId: protectedProcedure
+  /** The caller's own most recently active thread (`{ id }`), or null. */
+  getMyLatestThread: protectedProcedure
     .query(async ({ ctx }) => {
       try {
         return await ctx.db.messageThread.findFirst({
@@ -387,7 +389,7 @@ export const messageRouter = createTRPCRouter({
           },
         });
       } catch (error) {
-        logger.error("Unable to get latest thread by userId", { error, userId: ctx.session.user.id });
+        logger.error("Unable to get the caller's latest thread", { error, userId: ctx.session.user.id });
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Failed to retrieve latest thread. Please try again.',
@@ -566,7 +568,9 @@ export const messageRouter = createTRPCRouter({
         });
         if (!thread) return null;
 
-        return { ...thread, messages: thread.messages.reverse() };
+        // The header's Pro badge: one lookup for everyone in the thread.
+        const participants = await withPro(ctx.db, thread.participants, (participant) => participant.id);
+        return { ...thread, messages: thread.messages.reverse(), participants };
       } catch (error) {
         logger.error("Failed to retrieve message thread", { error, threadId: input.threadId, userId: ctx.session.user.id });
         throw new TRPCError({
