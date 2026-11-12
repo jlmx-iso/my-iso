@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ErrorReason } from "~/_utils/errorReason";
 import { REASON_MESSAGES } from "~/_utils/userError";
-import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 
 import ApplyModal from "./ApplyModal";
 
@@ -59,6 +59,8 @@ describe("ApplyModal", () => {
   });
 
   it("explains a refusal inside the dialog, and starts clean when reopened", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error applying to event/);
     const view = renderModal(() => {
       throw trpcError("CONFLICT", "Event filled", { reason: ErrorReason.BOOKING_EVENT_FILLED });
     });

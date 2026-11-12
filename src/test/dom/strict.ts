@@ -1,3 +1,5 @@
+import { format } from "node:util";
+
 import { afterEach, beforeEach, vi } from "vitest";
 
 /**
@@ -31,11 +33,9 @@ export function allowConsoleError(pattern?: RegExp) {
   allowed.push(pattern ?? null);
 }
 
+/** The log line as the console would print it (React passes "%s" formats). */
 function describe(args: unknown[]): string {
-  return args
-    .map((arg) => (arg instanceof Error ? `${arg.name}: ${arg.message}` : typeof arg === "string" ? arg : JSON.stringify(arg)))
-    .join(" ")
-    .slice(0, 2000);
+  return format(...args.map((arg) => (arg instanceof Error ? `${arg.name}: ${arg.message}` : arg))).slice(0, 2000);
 }
 
 /** Forgets what this test recorded and allowed. */

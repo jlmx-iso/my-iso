@@ -12,7 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRouter } from "~/test/dom/navigation";
-import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 import { testSession } from "~/test/dom/session";
 
 vi.mock("next/navigation", () => import("~/test/dom/navigation"));
@@ -150,6 +150,8 @@ describe("EditProfile", () => {
   });
 
   it("stops at a taken username: says so on the field and above the form, saving nothing", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Username update failed/);
     const view = renderForm({
       user: {
         updateProfile: () => {
@@ -171,6 +173,8 @@ describe("EditProfile", () => {
   });
 
   it("says why when the username change fails for another reason", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Username update failed/);
     const view = renderForm({
       user: {
         updateProfile: () => {
@@ -226,6 +230,8 @@ describe("EditProfile", () => {
   });
 
   it("puts the server's field messages on the fields", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Profile update failed/);
     renderForm({
       photographer: {
         update: () => {
@@ -246,6 +252,8 @@ describe("EditProfile", () => {
   });
 
   it("keeps what was typed and says so when saving fails", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Profile update failed/);
     renderForm({
       photographer: {
         update: () => {

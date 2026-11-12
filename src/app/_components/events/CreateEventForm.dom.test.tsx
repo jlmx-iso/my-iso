@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 import { defaultEventStart } from "~/_utils/eventDates";
 import { IMAGE_TOO_LARGE_MESSAGE, IMAGE_WRONG_TYPE_MESSAGE } from "~/_utils/imageFile";
 import { testRouter } from "~/test/dom/navigation";
-import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 
 vi.mock("next/navigation", () => import("~/test/dom/navigation"));
 
@@ -149,6 +149,8 @@ describe("creating an event", () => {
 
 describe("failures, inside the dialog", () => {
   it("keeps the draft and says the event was not posted", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error creating event/);
     renderButton({
       create: () => {
         throw trpcError("INTERNAL_SERVER_ERROR", "db down");
@@ -167,6 +169,8 @@ describe("failures, inside the dialog", () => {
   });
 
   it("shows the server's own words for a refusal written for the member", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error creating event/);
     renderButton({
       create: () => {
         throw trpcError("TOO_MANY_REQUESTS", "You're posting too fast. Try again in a minute.");
@@ -181,6 +185,8 @@ describe("failures, inside the dialog", () => {
   });
 
   it("offers to post without the cover when the image host refused it, and does", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error creating event/);
     let attempt = 0;
     const view = renderButton({
       create: () => {
@@ -208,6 +214,8 @@ describe("failures, inside the dialog", () => {
   });
 
   it("marks a cover the server found too large on the field as well", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error creating event/);
     renderButton({
       create: () => {
         throw trpcError("PAYLOAD_TOO_LARGE", "Request entity too large");
@@ -302,6 +310,8 @@ describe("a save that ends after the form is gone", () => {
   }
 
   it("reports the failure as a toast instead of dropping it", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error creating event/);
     const save = deferred<Created>();
     const onCreated = vi.fn();
     renderWithProviders(<Harness onCreated={onCreated} />, {

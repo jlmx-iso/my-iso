@@ -6,7 +6,7 @@
 // for that person, or say why they cannot be messaged; failures are said in
 // the dialog.
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -63,7 +63,10 @@ describe("NewMessageModal", () => {
 
     expect(within(dialog).getByText(/You can message photographers who are visible in Discover/)).toBeTruthy();
     await userEvent.type(recipientField(dialog), "b");
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // Past the debounce, inside act: the dropdown's transition settles too.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
     expect(view.callsTo("message.getPotentialRecipients")).toEqual([]);
 
     await userEvent.type(recipientField(dialog), "e");

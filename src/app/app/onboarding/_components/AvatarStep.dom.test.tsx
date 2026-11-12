@@ -14,7 +14,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithProviders } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders } from "~/test/dom/render";
 
 vi.mock("react-easy-crop", async () => {
   const { useEffect, useRef } = await import("react");
@@ -127,7 +127,7 @@ describe("AvatarStep", () => {
     await pick();
 
     const slider = screen.getByRole("slider");
-    slider.focus();
+    act(() => slider.focus());
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
 
     expect(slider.getAttribute("aria-valuenow")).toBe("1.1");
@@ -147,6 +147,8 @@ describe("AvatarStep", () => {
   });
 
   it("says so when the image cannot be cropped, and keeps the crop view", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Failed to crop image/);
     stubImageLoading();
     // No 2D canvas, as in a browser that has it disabled.
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -162,6 +164,8 @@ describe("AvatarStep", () => {
   });
 
   it("says so when the picked file cannot be read", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Failed to read avatar file/);
     vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
       queueMicrotask(() => {
         this.dispatchEvent(new ProgressEvent("error"));
@@ -169,9 +173,7 @@ describe("AvatarStep", () => {
     });
     renderStep();
 
-    await act(async () => {
-      await userEvent.upload(screen.getByLabelText("Profile photo"), png());
-    });
+    await userEvent.upload(screen.getByLabelText("Profile photo"), png());
 
     expect(await screen.findByText("Photo not loaded")).toBeTruthy();
     expect(screen.getByText("We couldn't read that file. Try a different image.")).toBeTruthy();

@@ -13,7 +13,7 @@ import { ErrorReason } from "~/_utils/errorReason";
 import { IMAGE_TOO_LARGE_MESSAGE, IMAGE_WRONG_TYPE_MESSAGE } from "~/_utils/imageFile";
 import { MAX_IMAGE_BYTES } from "~/_utils/limits";
 import { PORTFOLIO_FULL_MESSAGE } from "~/_utils/userError";
-import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 
 import PortfolioUpload from "./PortfolioUpload";
 
@@ -123,6 +123,8 @@ describe("PortfolioUpload", () => {
   });
 
   it("holds the dialog open while uploading, then explains a refused image next to it", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error uploading portfolio image/);
     const upload = deferred<never>();
     const view = renderUpload({ addPortfolioImage: () => upload.promise });
     const dialog = await openDialog();
@@ -152,6 +154,8 @@ describe("PortfolioUpload", () => {
   });
 
   it("says when the portfolio is full", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Error uploading portfolio image/);
     renderUpload({
       addPortfolioImage: () => {
         throw trpcError("BAD_REQUEST", "{}", { reason: ErrorReason.PORTFOLIO_FULL });

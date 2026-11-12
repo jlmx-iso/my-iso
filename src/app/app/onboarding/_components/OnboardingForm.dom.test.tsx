@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { testRouter } from "~/test/dom/navigation";
-import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
+import { allowConsoleError, renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 import { testSession } from "~/test/dom/session";
 
 vi.mock("next/navigation", () => import("~/test/dom/navigation"));
@@ -292,6 +292,8 @@ describe("OnboardingForm", () => {
   });
 
   it("sends the member back to the username when the server refuses it", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Profile update failed during onboarding/);
     const view = renderForm({
       user: {
         updateProfile: () => {
@@ -313,6 +315,8 @@ describe("OnboardingForm", () => {
   });
 
   it("says why when the details cannot be saved, staying on the last step", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Profile update failed during onboarding/);
     const view = renderForm({
       user: {
         updateProfile: () => {
@@ -332,6 +336,8 @@ describe("OnboardingForm", () => {
   });
 
   it("says why when the profile cannot be created", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Photographer creation failed during onboarding/);
     renderForm({
       photographer: {
         create: () => {
@@ -350,6 +356,8 @@ describe("OnboardingForm", () => {
   });
 
   it("still finishes when the Discover setting is not saved, with a warning", async () => {
+    // The failure path logs with logger.error; that log is expected here.
+    allowConsoleError(/Saving discoverability failed during onboarding/);
     renderForm({
       discover: {
         updatePreferences: () => {
@@ -402,6 +410,8 @@ describe("OnboardingForm", () => {
     });
 
     it("still finishes when the photo is refused, saying why", async () => {
+      // The failure path logs with logger.error; that log is expected here.
+      allowConsoleError(/Avatar upload failed during onboarding/);
       stubCanvas();
       renderForm({
         photographer: {

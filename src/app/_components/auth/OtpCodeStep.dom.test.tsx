@@ -7,7 +7,7 @@
 
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 import { NETWORK_ERROR_MESSAGE } from "~/_utils/userError";
 import { renderWithProviders } from "~/test/dom/render";
@@ -29,10 +29,10 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-let assign: ReturnType<typeof vi.fn>;
+let assign: Mock<(url: string | URL) => void>;
 
 beforeEach(() => {
-  assign = vi.fn();
+  assign = vi.fn<(url: string | URL) => void>();
   vi.spyOn(window.location, "assign").mockImplementation(assign);
 });
 

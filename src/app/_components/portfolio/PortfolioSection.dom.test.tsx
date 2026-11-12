@@ -5,7 +5,7 @@
 // toasts they show, and failures reported inside the dialog that caused
 // them. Dialogs cannot be dismissed while their request is in flight.
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -114,7 +114,7 @@ describe("visitors", () => {
     renderSection({ images: [image("a", { title: "Golden hour" })], isOwner: false });
 
     const picture = within(screen.getByRole("button", { name: "View Golden hour" })).getByRole("img");
-    picture.dispatchEvent(new Event("error"));
+    fireEvent.error(picture);
 
     expect(await screen.findByText("Golden hour (image unavailable)")).toBeTruthy();
   });
