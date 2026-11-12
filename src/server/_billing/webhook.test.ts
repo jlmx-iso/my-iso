@@ -1603,4 +1603,25 @@ describe("a deleted account", () => {
     expect(cancellations()).toHaveLength(0);
     expect((await subscriptionRow(user.id))?.status).toBe("canceled");
   });
+
+  it("voids an open invoice on a redelivery after voiding failed, without cancelling twice", async () => {
+    const user = await createCustomerUser("cus_alice");
+    await closeAccount(user.id);
+    stripeHas({ customer: "cus_alice", endedAt: T0, id: "sub_1", status: "canceled" });
+    stub.invoices.set("in_due", buildInvoice({ customer: "cus_alice", id: "in_due", status: "open", subscriptionId: "sub_1" }));
+    const event = buildEvent(
+      "customer.subscription.deleted",
+      buildSubscription({ customer: "cus_alice", id: "sub_1", status: "canceled" }),
+    );
+
+    stub.failWhen((request) => request.path === "/v1/invoices/in_due/void", 503);
+    expect((await deliver(event)).status).toBe(500);
+    expect(stub.invoices.get("in_due")?.status).toBe("open");
+
+    // Stripe delivers the event again.
+    stub.failWhen(null);
+    expect((await deliver(event)).status).toBe(200);
+    expect(stub.invoices.get("in_due")?.status).toBe("void");
+    expect(cancellations()).toHaveLength(0);
+  });
 });

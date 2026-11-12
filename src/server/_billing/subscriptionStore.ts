@@ -705,8 +705,10 @@ async function syncSubscriptionLocked(
   if (!isReading(result)) return result;
 
   // A deleted account: its state is stored above (the row is the billing
-  // record), and nothing may be charged any more.
-  if (read.subscription && !isTerminalStatus(read.subscription.status) && (await isClosedAccount(db, result.userId))) {
+  // record), and nothing may be charged any more. Whatever the status: a
+  // canceled subscription can still have an open invoice whose voiding
+  // failed before, and this redelivery is the chance to finish it.
+  if (read.subscription && (await isClosedAccount(db, result.userId))) {
     await endBillingForClosedAccount(stripe, subscriptionId);
   }
 
