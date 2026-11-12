@@ -13,9 +13,8 @@ export const sessionConfig = {
 };
 
 /**
- * Edge-compatible providers (no adapter required).
- * Resend/email provider is excluded here — it needs a DB adapter
- * and is added only in auth.ts where PrismaAdapter is configured.
+ * Edge-compatible providers (no adapter required). auth.ts adds the `otp`
+ * credentials provider, which needs the database.
  */
 export const providers = [
   GoogleProvider({

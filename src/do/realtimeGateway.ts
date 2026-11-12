@@ -1,6 +1,7 @@
 // Access control in front of the ChatRoom Durable Object. Runs in the Worker
 // entry (worker.ts) and is type-checked via tsconfig.worker.json.
 
+import { REALTIME_EXPIRES_HEADER, REALTIME_USER_HEADER } from "./chatRoomPolicy";
 import type { CloudflareEnv } from "../../cloudflare-env";
 
 export const REALTIME_PATH = "/api/messages/ws";
@@ -8,8 +9,15 @@ export const REALTIME_PATH = "/api/messages/ws";
 /** Thread ids are Prisma cuids; anything else never reaches D1 or the DO. */
 const THREAD_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** Resolves the signed-in user's id from the request, or null. */
-export type Authenticate = (request: Request) => Promise<string | null>;
+/** A signed-in caller: who they are and when their session ends. */
+export type RealtimeIdentity = {
+  /** Unix milliseconds at which the session expires. */
+  expiresAt: number;
+  userId: string;
+};
+
+/** Resolves the signed-in user from the request, or null. */
+export type Authenticate = (request: Request) => Promise<RealtimeIdentity | null>;
 
 function reject(status: number, message: string): Response {
   return new Response(message, {
@@ -69,10 +77,11 @@ export async function handleRealtimeRequest(
     return reject(400, "Invalid threadId parameter");
   }
 
-  const userId = await authenticate(request);
-  if (!userId) {
+  const identity = await authenticate(request);
+  if (!identity || identity.expiresAt <= Date.now()) {
     return reject(401, "Unauthorized");
   }
+  const { expiresAt, userId } = identity;
 
   let allowed: boolean;
   try {
@@ -90,7 +99,14 @@ export async function handleRealtimeRequest(
   }
 
   // Hand over a bare upgrade request: the room has no use for the caller's
-  // cookies or any other header.
+  // cookies or any other header. It does get who is connecting and until
+  // when, to cap sockets per user and to close them when the session ends.
   const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(threadId));
-  return stub.fetch(url.toString(), { headers: { Upgrade: "websocket" } });
+  return stub.fetch(url.toString(), {
+    headers: {
+      [REALTIME_EXPIRES_HEADER]: String(expiresAt),
+      [REALTIME_USER_HEADER]: userId,
+      Upgrade: "websocket",
+    },
+  });
 }

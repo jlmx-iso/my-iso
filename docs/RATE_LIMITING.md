@@ -1,258 +1,75 @@
-# Rate Limiting Setup Guide
+# Rate limiting
 
-This guide explains how to set up and use rate limiting in your Cloudflare Workers/Pages application.
+Rate limits are enforced in the application database (Cloudflare D1 in
+production, SQLite locally and in tests). There is no KV namespace or other
+binding to set up.
 
-## Overview
+## How it works
 
-Rate limiting prevents API abuse by restricting the number of requests a user can make within a time window. This implementation uses Cloudflare KV for distributed rate limiting across edge locations.
+`src/server/_utils/rateLimit.ts` keeps fixed-window counters in the `RateLimit`
+table, one row per `(key, windowStart)`. Each check is a single statement:
 
-## Setup
-
-### 1. Create KV Namespace
-
-```bash
-# Create production KV namespace
-wrangler kv:namespace create RATE_LIMITER
-
-# Create preview KV namespace for local development
-wrangler kv:namespace create RATE_LIMITER --preview
+```sql
+INSERT INTO "RateLimit" ("key", "windowStart", "count", "expiresAt")
+VALUES (?, ?, 1, ?)
+ON CONFLICT ("key", "windowStart") DO UPDATE SET "count" = "count" + 1
+RETURNING "count"
 ```
 
-This will output namespace IDs that look like:
-```
-{ binding = "RATE_LIMITER", id = "abc123..." }
-{ binding = "RATE_LIMITER", preview_id = "xyz789..." }
-```
+Because the increment and the read are one statement, concurrent requests can
+never observe the same count: exactly `limit` requests per window are allowed.
 
-### 2. Update wrangler.toml
+- `key` is `<policy name>:<keyed hash of the identifier>`. Identifiers (user
+  ids, IP addresses, email addresses) are never stored or logged in the clear.
+- Expired rows are swept opportunistically when a new window opens
+  (`purgeExpiredRateLimits`), so no cron job is needed.
+- Clients are identified by `CF-Connecting-IP` (`src/server/_utils/clientIp.ts`).
+  `X-Forwarded-For` is never trusted on Cloudflare. IPv6 addresses are counted
+  per /64.
 
-Replace the placeholder IDs in `wrangler.toml`:
+## Failure mode
 
-```toml
-[[kv_namespaces]]
-binding = "RATE_LIMITER"
-id = "abc123..."  # Replace with your production ID
-preview_id = "xyz789..."  # Replace with your preview ID
-```
+Each policy states what happens if the limiter itself fails (`onError`):
 
-### 3. Deploy or Test Locally
+- `"deny"` (sign-in codes, invite codes, waitlist, mobile token exchange): the
+  request is refused with `SERVICE_UNAVAILABLE`. Limits on these endpoints are
+  a security control and must not silently disappear.
+- `"allow"` (messaging, search, uploads and other signed-in activity): the
+  request goes through and the failure is logged.
 
-```bash
-# Local development (uses preview_id)
-npm run dev
+## Using it
 
-# Deploy to Cloudflare
-wrangler pages deploy
-```
+All policies live in `RateLimits` in `src/server/_utils/rateLimit.ts`.
 
-## Usage
+Per user (or per IP for anonymous callers), in one line on the procedure:
 
-### Basic Example
-
-```typescript
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
-import { TRPCError } from "@trpc/server";
-
-export const exampleRouter = createTRPCRouter({
-  sensitiveOperation: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      // Check rate limit using user ID
-      const rateLimit = await checkRateLimit(
-        ctx.session.user.id,
-        RateLimits.STRICT
-      );
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded. Try again in ${rateLimit.retryAfter} seconds.`
-        });
-      }
-
-      // Proceed with operation
-      // ...
-    }),
-});
+```ts
+create: protectedProcedure
+  .use(rateLimit(RateLimits.MESSAGE_SEND))
+  .input(...)
 ```
 
-### Rate Limit by IP Address
+When the identifier comes from the input (for example an email address):
 
-For public endpoints, rate limit by IP address:
-
-```typescript
-import { headers } from "next/headers";
-
-export const publicRouter = createTRPCRouter({
-  publicEndpoint: publicProcedure
-    .mutation(async ({ ctx }) => {
-      // Get IP address from headers
-      const headersList = await headers();
-      const ip = headersList.get('cf-connecting-ip')
-        ?? headersList.get('x-forwarded-for')
-        ?? 'unknown';
-
-      const rateLimit = await checkRateLimit(ip, RateLimits.GENEROUS);
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Too many requests. Please try again later.'
-        });
-      }
-
-      // Proceed with operation
-      // ...
-    }),
-});
+```ts
+await enforceRateLimit(ctx.db, RateLimits.OTP_REQUEST_EMAIL, `email:${email}`);
 ```
 
-### Custom Rate Limits
+Over the limit, both throw `TOO_MANY_REQUESTS` (HTTP 429).
 
-Define custom rate limits for specific use cases:
+The email-code sign-in at `/api/auth/callback/otp` is not a tRPC procedure; it
+applies the same policies through `signInWithOtp` in `src/server/_lib/signup.ts`.
 
-```typescript
-import { checkRateLimit } from "~/server/_utils/rateLimit";
+## Related controls
 
-// Custom: 50 requests per 5 minutes
-const customLimit = { limit: 50, window: 300 };
+- Sign-in codes carry their own attempt counter (`VerificationToken.attempts`):
+  a code is invalidated after 5 verification attempts, independently of the
+  rate limits above.
+- tRPC mutations cannot be batched and query batches are capped at 10 calls
+  (`src/server/api/requestGuards.ts`), so one HTTP request cannot multiply
+  per-request limits.
 
-const rateLimit = await checkRateLimit(identifier, customLimit);
-```
+## Tests
 
-## Predefined Rate Limits
-
-The utility provides these predefined configurations:
-
-| Name | Limit | Window | Use Case |
-|------|-------|--------|----------|
-| `STRICT` | 5 requests | 5 minutes | Password reset, email verification |
-| `STANDARD` | 100 requests | 1 minute | Authenticated API requests |
-| `GENEROUS` | 1000 requests | 1 minute | Public endpoints, read operations |
-| `AUTH` | 10 requests | 15 minutes | Login/signup attempts |
-
-## Integration Recommendations
-
-### 1. Authentication Endpoints
-
-Apply `RateLimits.AUTH` to:
-- `/api/auth/signin`
-- `/api/auth/signup`
-- Email verification requests
-- Password reset requests
-
-### 2. Write Operations
-
-Apply `RateLimits.STANDARD` to:
-- Creating/updating/deleting resources
-- File uploads
-- Payment operations
-
-### 3. Read Operations
-
-Apply `RateLimits.GENEROUS` to:
-- Search queries
-- List endpoints
-- Public data access
-
-### 4. Sensitive Operations
-
-Apply `RateLimits.STRICT` to:
-- Email sending
-- SMS sending
-- Expensive computations
-- External API calls
-
-## Example: Auth Router Rate Limiting
-
-```typescript
-// src/server/api/routers/auth.ts
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
-import { TRPCError } from "@trpc/server";
-import { headers } from "next/headers";
-
-export const authRouter = createTRPCRouter({
-  sendVerificationEmail: publicProcedure
-    .input(z.object({ email: z.string().email() }))
-    .mutation(async ({ input }) => {
-      // Rate limit by email to prevent abuse
-      const rateLimit = await checkRateLimit(
-        `email:${input.email}`,
-        RateLimits.STRICT
-      );
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Too many verification emails sent. Please try again in ${rateLimit.retryAfter} seconds.`
-        });
-      }
-
-      // Also rate limit by IP
-      const headersList = await headers();
-      const ip = headersList.get('cf-connecting-ip') ?? 'unknown';
-      const ipRateLimit = await checkRateLimit(
-        `ip:${ip}`,
-        RateLimits.AUTH
-      );
-
-      if (!ipRateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Too many requests from your IP. Please try again later.'
-        });
-      }
-
-      // Send verification email
-      // ...
-    }),
-});
-```
-
-## Monitoring
-
-The rate limiting utility logs warnings when limits are exceeded:
-
-```json
-{
-  "level": "warn",
-  "message": "Rate limit exceeded",
-  "metadata": {
-    "identifier": "user_123",
-    "count": 101,
-    "limit": 100,
-    "retryAfter": 45
-  }
-}
-```
-
-Monitor these logs to:
-- Detect abuse patterns
-- Adjust rate limits
-- Identify legitimate users hitting limits
-
-## Local Development
-
-If KV namespace is not configured locally, the rate limiter will:
-1. Log a warning
-2. Allow all requests (fail-open)
-
-This ensures development can continue without KV setup, but you should configure it for production-like testing.
-
-## Troubleshooting
-
-### Rate limiting not working
-
-1. Verify KV namespace is created: `wrangler kv:namespace list`
-2. Check wrangler.toml has correct IDs
-3. Ensure binding name is "RATE_LIMITER"
-4. Check logs for KV-related errors
-
-### All requests allowed in production
-
-- KV binding might not be configured
-- Check Cloudflare dashboard → Workers & Pages → KV
-- Verify deployment includes KV bindings
-
-### Rate limits too strict/loose
-
-Adjust the predefined limits in `src/server/_utils/rateLimit.ts` or use custom configurations for specific endpoints.
+`src/server/_utils/rateLimit.test.ts` runs the limiter against a real SQLite
+database, including a concurrency test.

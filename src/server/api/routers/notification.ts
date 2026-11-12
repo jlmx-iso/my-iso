@@ -2,14 +2,15 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { MAX_LIST_OFFSET } from "~/server/_db/pagination";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 export const notificationRouter = createTRPCRouter({
   getAll: protectedProcedure
     .input(
       z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(20),
+        offset: z.number().int().min(0).max(MAX_LIST_OFFSET).default(0),
         unreadOnly: z.boolean().default(false),
       }),
     )
@@ -23,7 +24,7 @@ export const notificationRouter = createTRPCRouter({
       const [notifications, totalCount, unreadCount] = await Promise.all([
         ctx.db.notification.findMany({
           where,
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: input.limit,
           skip: input.offset,
         }),

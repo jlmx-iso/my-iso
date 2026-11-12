@@ -1,103 +1,101 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import type { PendingInviteValidation } from "@prisma/client";
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import type { NextAuthConfig } from "next-auth";
+import type { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
-import ResendProvider from "next-auth/providers/resend";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
 import { providers, sessionConfig } from "~/auth.config";
 import { env } from "~/env";
-import { generateUniqueInviteCode } from "~/server/_utils/invite";
-import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
+import { isInviteRedeemable } from "~/server/_db/invite";
+import { createInvitedUser, findPendingInvite, signInWithOtp } from "~/server/_lib/signup";
+import { getClientIp } from "~/server/_utils/clientIp";
+import { hashEmail } from "~/server/_utils/hash";
 import { db } from "~/server/db";
 
 /**
- * Shared invite redemption logic used by both the OTP credential provider
- * and the createUser event (Google OAuth).
+ * Client contract for the `otp` sign-in (`signIn("otp", { redirect: false })`
+ * or POST /api/auth/callback/otp):
+ *
+ * - `error: "CredentialsSignin", code: "rate_limited"`: too many attempts
+ *   from this client or for this address (15-minute or daily cap), or the
+ *   limiter is unavailable. The code entered was NOT looked at. Show "too
+ *   many attempts, try again later"; entering another code will not help
+ *   until the window passes.
+ * - `error: "CredentialsSignin", code: "credentials"` (the Auth.js default):
+ *   wrong, expired, used or attempt-exhausted code, or a sign-up without a
+ *   valid invite. Offer to send a new code.
+ *
+ * Neither answer depends on whether the address has an account: the limits
+ * are counted per address before any lookup.
  */
-async function redeemInviteAndSetupUser(
-  database: typeof db,
-  userId: string,
-  pending: PendingInviteValidation,
-  firstName: string,
-): Promise<void> {
-  const newCode = await generateUniqueInviteCode(
-    firstName || "USER",
-    async (c) => {
-      const exists = await database.inviteCode.findUnique({ where: { code: c } });
-      return exists !== null;
-    },
-  );
-
-  if (pending.code === WAITLIST_APPROVED_CODE) {
-    await database.$transaction([
-      database.user.update({
-        where: { id: userId },
-        data: { role: USER_ROLES.FOUNDING_MEMBER },
-      }),
-      database.inviteCode.create({
-        data: { code: newCode, creator: { connect: { id: userId } } },
-      }),
-      database.pendingInviteValidation.delete({ where: { id: pending.id } }),
-    ]);
-    return;
-  }
-
-  await database.$transaction(async (tx) => {
-    const inviteCode = await tx.inviteCode.findUnique({
-      where: { code: pending.code },
-    });
-
-    if (!inviteCode || inviteCode.currentRedemptions >= inviteCode.maxRedemptions) {
-      if (!inviteCode) {
-        logger.warn("Invite code no longer exists during redemption", { code: pending.code, userId });
-      } else {
-        logger.warn("Invite code at capacity during redemption", { code: pending.code, userId });
-      }
-      await tx.user.update({ where: { id: userId }, data: { role: USER_ROLES.FOUNDING_MEMBER } });
-      await tx.inviteCode.create({ data: { code: newCode, creator: { connect: { id: userId } } } });
-      await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
-      return;
-    }
-
-    await tx.inviteCode.update({
-      where: { id: inviteCode.id },
-      data: { currentRedemptions: { increment: 1 } },
-    });
-    await tx.inviteRedemption.create({
-      data: {
-        inviteCode: { connect: { id: inviteCode.id } },
-        redeemedBy: { connect: { id: userId } },
-      },
-    });
-    await tx.user.update({
-      where: { id: userId },
-      data: { role: USER_ROLES.FOUNDING_MEMBER, invitedByUserId: inviteCode.creatorId },
-    });
-    await tx.inviteCode.create({
-      data: { code: newCode, creator: { connect: { id: userId } } },
-    });
-    await tx.pendingInviteValidation.delete({ where: { id: pending.id } });
-  });
+class OtpRateLimited extends CredentialsSignin {
+  code = "rate_limited";
 }
+
+/**
+ * Whether new accounts currently need an invite (PostHog feature flag).
+ * Fail-closed: if the flag cannot be fetched, invites stay required.
+ */
+async function isInviteOnly(email: string): Promise<boolean> {
+  try {
+    // PostHog gets a keyed hash, never the address itself.
+    const distinctId = await hashEmail(email);
+    return (await getFeatureFlagVariant(distinctId, FeatureFlags.INVITE_ONLY)) !== false;
+  } catch (error) {
+    logger.warn("Failed to fetch invite-only feature flag, defaulting to invite-only", { error });
+    return true;
+  }
+}
+
+const prismaAdapter = PrismaAdapter(db);
+
+/**
+ * PrismaAdapter with sign-up routed through `createInvitedUser`. Auth.js
+ * swallows errors thrown from `events.createUser`, so the invite cannot be
+ * enforced there; an error thrown from the adapter does abort the sign-in.
+ *
+ * The verification-token methods are removed: they exist for Auth.js email
+ * ("magic link") providers, which this app does not offer. Sign-in codes are
+ * issued and checked by ~/server/_db/verificationToken, never through the
+ * adapter, and without these methods Auth.js refuses to start if an email
+ * provider is ever added back by mistake.
+ */
+const adapter: Adapter = {
+  ...prismaAdapter,
+  createVerificationToken: undefined,
+  useVerificationToken: undefined,
+  createUser: async (data) => {
+    const firstName = data.firstName || data.name?.split(" ")[0] || "";
+    const user = await createInvitedUser(
+      db,
+      {
+        email: data.email.toLowerCase(),
+        emailVerified: data.emailVerified,
+        firstName,
+        lastName: data.lastName ?? "",
+      },
+      isInviteOnly,
+    );
+    if (!user) throw new Error("Sign-up requires a valid invite");
+    return user;
+  },
+};
 
 /**
  * Auth.js v5 configuration
  * Uses PrismaAdapter which works with both LibSQL (local) and D1 (Cloudflare)
  *
- * Note: EmailProvider removed as it's not edge-compatible (uses nodemailer)
- * Email-based authentication is handled via the custom auth router
- * See: src/server/api/routers/auth.ts for magic link implementation
+ * Providers are exactly Google and `otp` (see auth.test.ts). There is no
+ * email "magic link" provider: its /api/auth/signin/<id> endpoint mails any
+ * member on request, unthrottled, and answers differently for members and
+ * non-members.
  */
 export const authConfig = {
-  adapter: PrismaAdapter(db),
+  adapter,
   providers: [
     ...providers,
-    ...(env.RESEND_API_KEY
-      ? [ResendProvider({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })]
-      : []),
     CredentialsProvider({
       id: "otp",
       name: "Email OTP",
@@ -105,51 +103,20 @@ export const authConfig = {
         email: { label: "Email", type: "email" },
         code: { label: "Code", type: "text" },
       },
-      async authorize(credentials) {
-        if (!credentials) return null;
-        const email = typeof credentials.email === "string" ? credentials.email.toLowerCase() : "";
-        const code = typeof credentials.code === "string" ? credentials.code : "";
-        if (!email || !code) return null;
-
-        const identifier = `otp:${email}`;
-        const record = await db.verificationToken.findUnique({
-          where: { identifier_token: { identifier, token: code } },
-        });
-
-        if (!record || record.expires < new Date()) {
-          if (record) {
-            await db.verificationToken.delete({
-              where: { identifier_token: { identifier, token: code } },
-            });
-          }
-          return null;
-        }
-
-        await db.verificationToken.delete({
-          where: { identifier_token: { identifier, token: code } },
-        });
-
-        let user = await db.user.findUnique({ where: { email } });
-
-        // For new sign-ups via invite code: create user and redeem invite
-        if (!user) {
-          const pending = await db.pendingInviteValidation.findFirst({
-            where: { email, expiresAt: { gt: new Date() } },
-          });
-          if (!pending) return null;
-
-          user = await db.user.create({
-            data: {
-              email,
-              emailVerified: new Date(),
-              firstName: "",
-              lastName: "",
-              role: USER_ROLES.FOUNDING_MEMBER,
-            },
-          });
-
-          await redeemInviteAndSetupUser(db, user.id, pending, "USER");
-        }
+      /**
+       * Email-code sign-in (POST /api/auth/callback/otp): rate limited,
+       * attempt-capped and invite-enforcing, see signInWithOtp.
+       */
+      async authorize(credentials, request) {
+        const result = await signInWithOtp(
+          db,
+          credentials,
+          getClientIp(request.headers),
+          isInviteOnly,
+        );
+        if (result.status === "rate_limited") throw new OtpRateLimited();
+        if (result.status !== "ok") return null;
+        const { user } = result;
 
         return {
           id: user.id,
@@ -162,10 +129,10 @@ export const authConfig = {
     }),
   ],
   callbacks: {
-    jwt: async ({ account, user, token, trigger }) => {
-      if (account) {
-        token.accessToken = account.access_token;
-      }
+    jwt: async ({ user, token, trigger }) => {
+      // The provider's OAuth tokens are never copied into the session JWT.
+      // Drop the one that sessions minted before this change still carry.
+      delete token.accessToken;
       if (user) {
         token.id = user.id;
         token.firstName = user.firstName;
@@ -196,15 +163,6 @@ export const authConfig = {
       return token;
     },
     session: async ({ session, token }) => {
-      // Safely assign accessToken with validation
-      if (typeof token.accessToken === 'string') {
-        session.accessToken = token.accessToken;
-      } else if (token.accessToken !== undefined) {
-        logger.warn("Invalid accessToken type in JWT", {
-          type: typeof token.accessToken,
-        });
-      }
-
       // Safely assign user ID with validation
       if (typeof token.id === 'string') {
         session.user.id = token.id;
@@ -236,60 +194,20 @@ export const authConfig = {
       const existing = await db.user.findUnique({ where: { email: normalizedEmail } });
       if (existing) return true;
 
-      // Check if invite-only mode is disabled via PostHog feature flag
-      let inviteOnly: boolean | string | undefined;
-      try {
-        inviteOnly = await getFeatureFlagVariant(normalizedEmail, FeatureFlags.INVITE_ONLY);
-      } catch (error) {
-        // Fail-closed: if PostHog is unavailable, keep invite-only enforced
-        logger.warn("Failed to fetch invite-only feature flag, defaulting to invite-only", {
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-        inviteOnly = true;
-      }
+      // Open registration (invite-only switched off): anyone may sign up.
+      if (!(await isInviteOnly(normalizedEmail))) return true;
 
-      // If invite-only is explicitly false, allow new users through (open registration)
-      if (inviteOnly === false) {
-        return true;
-      }
-
-      // New users: require a PendingInviteValidation regardless of provider
-      const pending = await db.pendingInviteValidation.findFirst({
-        where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
-      });
-
-      if (!pending) {
-        // Google: redirect with a user-visible error; Resend: silently block
+      // Invite-only: /join must have validated a code for this address (or
+      // the waitlist approved it), and that code must still have a slot.
+      // This turns people away before an account is attempted; the binding,
+      // race-free check is the atomic claim in createInvitedUser.
+      const pending = await findPendingInvite(db, normalizedEmail);
+      if (!pending || !(await isInviteRedeemable(db, pending.code))) {
+        // Google: redirect with a user-visible error; otherwise just refuse.
         return account?.provider === "google" ? "/join?error=invite_required" : false;
       }
 
       return true;
-    },
-  },
-  events: {
-    /**
-     * Fires when PrismaAdapter creates a new user (first OAuth login).
-     * Auto-redeems the invite code and generates an InviteCode for the new user.
-     */
-    createUser: async ({ user }) => {
-      if (!user.email || !user.id) return;
-
-      const normalizedEmail = user.email.toLowerCase();
-
-      const pending = await db.pendingInviteValidation.findFirst({
-        where: { email: normalizedEmail, expiresAt: { gt: new Date() } },
-      });
-
-      if (!pending) return;
-
-      // PrismaAdapter maps Google's `given_name` → firstName, but fall back to
-      // parsing the full `name` (which Google always provides) if firstName is empty.
-      let firstName = (user as { firstName?: string }).firstName;
-      if (!firstName && user.name) {
-        firstName = user.name.split(" ")[0];
-      }
-
-      await redeemInviteAndSetupUser(db, user.id, pending, firstName ?? "USER");
     },
   },
   session: sessionConfig,

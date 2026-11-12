@@ -18,7 +18,7 @@ import { notifications } from "@mantine/notifications";
 import { IconUpload } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { dataUrlToBase64, logger } from "~/_utils";
+import { dataUrlToBase64, ErrorReason, getErrorReason, logger } from "~/_utils";
 import { Dropzone } from "~/app/_components/input/Dropzone";
 import { Modal } from "~/app/_components/Modal";
 import { api } from "~/trpc/react";
@@ -84,9 +84,13 @@ export default function PortfolioUpload({ onSuccess }: PortfolioUploadProps) {
         onSuccess?.();
       } catch (error) {
         logger.error("Error uploading portfolio image", { error });
+        // The portfolio-cap message is written for the user; anything else is not.
+        const isPortfolioFull = getErrorReason(error) === ErrorReason.PORTFOLIO_FULL;
         notifications.show({
           title: "Upload Failed",
-          message: "Failed to upload image. Please try again.",
+          message: isPortfolioFull && error instanceof Error
+            ? error.message
+            : "Failed to upload image. Please try again.",
           color: "red",
         });
         setUploading(false);

@@ -1,117 +1,147 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
-import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
+import { isUniqueViolation } from "~/server/_db/errors";
+import { toPage } from "~/server/_db/pagination";
+import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { createTRPCRouter, protectedProcedure, publicProcedure, rateLimit } from "~/server/api/trpc";
+
+const idInput = z.string().min(1).max(64);
+
+const REVIEWS_PAGE_SIZE = 50;
+
+const reviewsInput = z.object({
+  cursor: idInput.optional(),
+  limit: z.number().int().min(1).max(REVIEWS_PAGE_SIZE).default(REVIEWS_PAGE_SIZE),
+  photographerId: idInput,
+});
+
+/**
+ * A photographer's reviews, newest first (`extra` rows are for toPage), with
+ * the reviewer's display name and picture but not their user id.
+ */
+function findReviews(
+  db: Pick<ExtendedPrismaClient, "review">,
+  input: z.infer<typeof reviewsInput>,
+  extra: 0 | 1,
+) {
+  return db.review.findMany({
+    ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      createdAt: true,
+      description: true,
+      id: true,
+      photographerId: true,
+      rating: true,
+      title: true,
+      updatedAt: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true,
+          profilePic: true,
+        },
+      },
+    },
+    take: input.limit + extra,
+    where: { photographerId: input.photographerId },
+  });
+}
+
+const ALREADY_REVIEWED = "You have already reviewed this photographer";
 
 export const reviewRouter = createTRPCRouter({
   create: protectedProcedure
+    .use(rateLimit(RateLimits.REVIEW_CREATE))
     .input(z.object({
-      photographerId: z.string().min(1),
+      photographerId: idInput,
       rating: z.number().int().min(1).max(5),
-      title: z.string().min(1).max(200),
-      description: z.string().max(2000).optional(),
+      title: z.string().trim().min(1).max(200),
+      description: z.string().trim().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Verify the photographer exists
       const photographer = await ctx.db.photographer.findFirst({
+        select: { userId: true },
         where: { id: input.photographerId },
       });
 
       if (!photographer) {
-        throw new Error("Photographer not found");
+        throw new TRPCError({ code: "NOT_FOUND", message: "Photographer not found" });
       }
 
       // Prevent reviewing yourself
       if (photographer.userId === ctx.session.user.id) {
-        throw new Error("You cannot review yourself");
+        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot review yourself" });
       }
 
-      // Check for existing review (one review per user per photographer)
-      const existingReview = await ctx.db.review.findFirst({
-        where: {
-          photographerId: input.photographerId,
-          userId: ctx.session.user.id,
-        },
-      });
-
-      if (existingReview) {
-        throw new Error("You have already reviewed this photographer");
-      }
-
-      logger.info("Creating review", {
-        photographerId: input.photographerId,
-        userId: ctx.session.user.id,
-      });
-
-      return ctx.db.review.create({
-        data: {
-          photographerId: input.photographerId,
-          userId: ctx.session.user.id,
-          rating: input.rating,
-          title: input.title,
-          description: input.description ?? null,
-        },
-      });
-    }),
-
-  getByPhotographerId: publicProcedure
-    .input(z.object({ photographerId: z.string().min(1) }))
-    .query(({ ctx, input }) => {
-      return ctx.db.review.findMany({
-        where: { photographerId: input.photographerId },
-        include: {
-          user: {
-            select: {
-              firstName: true,
-              lastName: true,
-              profilePic: true,
-            },
+      // One review per reviewer per photographer is enforced by the unique
+      // constraint Review(photographerId, userId): two simultaneous submits
+      // cannot both insert, whatever a prior read would have shown.
+      try {
+        return await ctx.db.review.create({
+          data: {
+            photographerId: input.photographerId,
+            userId: ctx.session.user.id,
+            rating: input.rating,
+            title: input.title,
+            description: input.description || null,
           },
-        },
-        orderBy: { createdAt: "desc" },
-      });
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new TRPCError({ code: "CONFLICT", message: ALREADY_REVIEWED });
+        }
+        throw error;
+      }
     }),
+
+  /**
+   * Public: shown on the shareable profile page. The newest reviews first,
+   * as a plain array (`cursor` is the id of the last review received).
+   * getPageByPhotographerId returns the same as `{ items, nextCursor }`.
+   */
+  getByPhotographerId: publicProcedure
+    .input(reviewsInput)
+    .query(({ ctx, input }) => findReviews(ctx.db, input, 0)),
+
+  getPageByPhotographerId: publicProcedure
+    .input(reviewsInput)
+    .query(async ({ ctx, input }) => toPage(await findReviews(ctx.db, input, 1), input.limit)),
 
   getAverageRating: publicProcedure
-    .input(z.object({ photographerId: z.string().min(1) }))
+    .input(z.object({ photographerId: idInput }))
     .query(async ({ ctx, input }) => {
-      const reviews = await ctx.db.review.findMany({
+      // Aggregated in the database: no rows are loaded, however many exist.
+      const result = await ctx.db.review.aggregate({
+        _avg: { rating: true },
+        _count: { _all: true },
         where: { photographerId: input.photographerId },
-        select: { rating: true },
       });
 
-      if (reviews.length === 0) {
-        return { average: 0, count: 0 };
-      }
-
-      const total = reviews.reduce((sum, review) => sum + review.rating, 0);
-      const average = total / reviews.length;
+      const count = result._count._all;
+      const average = result._avg.rating ?? 0;
 
       return {
         average: Math.round(average * 10) / 10,
-        count: reviews.length,
+        count,
       };
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(z.object({ id: idInput }))
     .mutation(async ({ ctx, input }) => {
-      const review = await ctx.db.review.findFirst({
-        where: { id: input.id },
+      // Scoped to the caller's own reviews.
+      const result = await ctx.db.review.deleteMany({
+        where: { id: input.id, userId: ctx.session.user.id },
       });
 
-      if (!review) {
-        throw new Error("Review not found");
+      if (result.count === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Review not found" });
       }
 
-      if (review.userId !== ctx.session.user.id) {
-        throw new Error("Not authorized to delete this review");
-      }
-
-      logger.info("Deleting review", { reviewId: input.id, userId: ctx.session.user.id });
-
-      return ctx.db.review.delete({
-        where: { id: input.id },
-      });
+      return { id: input.id };
     }),
 });

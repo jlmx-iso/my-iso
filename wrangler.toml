@@ -24,6 +24,8 @@ new_sqlite_classes = ["ChatRoom"]
 binding = "DB"
 database_name = "my-iso-db"
 database_id = "aad00920-a190-4144-b414-c17ff5388755"
+# SQL files applied in order by `wrangler d1 migrations apply` (docs/DATABASE.md).
+migrations_dir = "migrations"
 
 [vars]
 NODE_ENV = "production"
@@ -50,6 +52,7 @@ new_sqlite_classes = ["ChatRoom"]
 binding = "DB"
 database_name = "my-iso-db-staging"
 database_id = "9074bb91-5827-4b4b-88d1-f7f9eba70146"
+migrations_dir = "migrations"
 
 [env.staging.observability.logs]
 enabled = true

@@ -20,15 +20,12 @@ declare module "next-auth" {
       lastName: string;
       profilePic?: string;
     } & DefaultSession["user"];
-    /** Google OAuth access token; absent for OTP and mobile sessions. */
-    accessToken?: string;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     id: string;
-    accessToken?: string;
     firstName?: string;
     lastName?: string;
     profilePic?: string;

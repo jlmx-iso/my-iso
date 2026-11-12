@@ -7,7 +7,6 @@ import '@mantine/notifications/styles.css';
 import { ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Inter } from "next/font/google";
-import { cookies } from "next/headers";
 
 import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
@@ -63,7 +62,7 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [cookieStore, session] = await Promise.all([cookies(), auth()]);
+  const session = await auth();
   const isAuthed = !!session?.user;
 
   return (
@@ -75,7 +74,7 @@ export default async function RootLayout({
         <CSPostHogProvider>
           <ThemeProvider>
             <Notifications position="top-center" />
-            <TRPCReactProvider cookies={cookieStore.toString()}>
+            <TRPCReactProvider>
               <AppShell
                 header={<Navbar />}
                 bottomNav={isAuthed ? <BottomTabBar /> : undefined}

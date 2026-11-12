@@ -148,9 +148,12 @@ export const cloudinaryClient = {
   /**
    * Upload image to Cloudinary using base64 data
    * Edge-compatible implementation using fetch API
+   *
+   * Callers pass an image that has already been size- and type-checked (see
+   * requireValidImage in ~/server/_utils/image); `mime` is the detected type.
    */
   upload: async (
-    base64Data: string,
+    image: { base64: string; mime: string },
     folder: string
   ): Promise<Result<UploadApiResponse | undefined, UploadApiErrorResponse>> => {
     logger.info("Uploading asset to Cloudinary.", { folder });
@@ -161,7 +164,7 @@ export const cloudinaryClient = {
       const signature = await generateSignature(paramsToSign);
 
       const formData = new FormData();
-      formData.append('file', `data:image/jpeg;base64,${base64Data}`);
+      formData.append('file', `data:${image.mime};base64,${image.base64}`);
       formData.append('folder', folder);
       formData.append('format', 'jpg');
       formData.append('api_key', env.CLOUDINARY_API_KEY);
