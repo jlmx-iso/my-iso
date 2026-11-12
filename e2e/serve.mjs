@@ -4,9 +4,12 @@
 // in migrations/, then prisma/seed-staging.sql. Playwright starts this as
 // its web server (playwright.config.ts); it can also be run by hand.
 //
-// Runtime configuration comes from --var flags only, so a developer's
-// .dev.vars is neither needed nor read. None of the values are real
-// credentials and nothing here talks to Google, Stripe, Resend or PostHog.
+// Runtime configuration comes from --var flags only: `--env-file
+// e2e/empty.env` makes wrangler skip .dev.vars and .env, and the shell's
+// environment is not copied in, so a developer's real keys are never used.
+// None of the values are real credentials. wrangler dev has no switch to
+// block the Worker's own outbound fetches; the tests keep it from making
+// any instead (docs/TESTING.md, "End-to-end").
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
@@ -24,7 +27,9 @@ if (!existsSync(path.join(root, ".open-next", "worker.js"))) {
 }
 
 // Wrangler's own usage metrics are not sent from test runs.
-const spawnEnv = { ...process.env, WRANGLER_SEND_METRICS: "false" };
+// The shell's environment never reaches the Worker either (wrangler only
+// copies it when this is "true").
+const spawnEnv = { ...process.env, CLOUDFLARE_INCLUDE_PROCESS_ENV: "false", WRANGLER_SEND_METRICS: "false" };
 
 /** @param {string[]} args */
 function wrangler(args) {
@@ -66,6 +71,10 @@ const server = spawn(
     "--persist-to",
     state,
     "--show-interactive-dev-session=false",
+    // An explicit env file makes wrangler skip .dev.vars and .env: a
+    // developer's real keys are never loaded (e2e/empty.env).
+    "--env-file",
+    "e2e/empty.env",
     ...Object.entries(vars).flatMap(([key, value]) => ["--var", `${key}:${value}`]),
   ],
   { cwd: root, env: spawnEnv, stdio: "inherit" },
