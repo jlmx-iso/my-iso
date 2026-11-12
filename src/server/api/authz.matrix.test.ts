@@ -226,6 +226,7 @@ const POLICY: Record<string, Row> = {
   "user.getFavorites": { access: "member", input: {} },
   "user.getMe": { access: "member" },
   "user.isFavorite": { access: "member", input: { targetId: MISSING } },
+  "user.isHandleAvailable": { access: "member", input: { handle: "ann-lee" } },
   "user.removeFavorite": { access: "member", input: { photographerId: MISSING } },
   "user.updateProfile": { access: "member", input: {} },
 

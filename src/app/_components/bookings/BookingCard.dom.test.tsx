@@ -67,20 +67,20 @@ describe("BookingCard clock", () => {
     expect(button("Decline")).not.toBeNull();
   });
 
-  it("takes the applicant from Cancel, to nothing while it runs, to Mark Completed when it ends", async () => {
+  it("takes the applicant from Cancel booking, to nothing while it runs, to Mark as completed when it ends", async () => {
     renderCard({ duration: 3, startsIn: HOUR, status: "accepted", variant: "sent" });
-    expect(button("Cancel Application")).not.toBeNull();
-    expect(button("Mark Completed")).toBeNull();
+    expect(button("Cancel booking")).not.toBeNull();
+    expect(button("Mark as completed")).toBeNull();
 
     await advance(HOUR);
-    expect(button("Cancel Application")).toBeNull();
-    expect(button("Mark Completed")).toBeNull();
+    expect(button("Cancel booking")).toBeNull();
+    expect(button("Mark as completed")).toBeNull();
 
     await advance(3 * HOUR - MINUTE);
-    expect(button("Mark Completed")).toBeNull();
+    expect(button("Mark as completed")).toBeNull();
 
     await advance(MINUTE);
-    expect(button("Mark Completed")).not.toBeNull();
+    expect(button("Mark as completed")).not.toBeNull();
   });
 
   it("waits out an event more than 24.8 days away (longer than one timeout) without firing early", async () => {
@@ -97,7 +97,7 @@ describe("BookingCard clock", () => {
   it("keeps no timer once both moments have passed or the card is gone", async () => {
     const view = renderCard({ duration: 1, startsIn: HOUR, status: "accepted", variant: "received" });
     await advance(2 * HOUR);
-    expect(button("Mark Completed")).not.toBeNull();
+    expect(button("Mark as completed")).not.toBeNull();
     expect(vi.getTimerCount()).toBe(0);
 
     view.unmount();

@@ -1,15 +1,17 @@
 // @vitest-environment happy-dom
 //
-// MessageFeed's mark-read effect, rendered: the thread is marked read up to
-// the newest message once it loads, a failed call is retried on the
+// MessageFeed's mark-read wiring (useMarkThreadRead), rendered: the thread
+// is marked read up to the newest message once it has been on screen for
+// MARK_READ_DELAY_MS with the tab visible, a failed call is retried on the
 // markReadRetryDelayMs schedule while the thread stays open, an older
-// request failing late does not disturb the newer one, and nothing is sent
-// for a hidden tab or a message this tab already marked.
+// request failing late does not disturb the newer one's retry, and a
+// message already marked is not sent again.
 
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ThreadMessage } from "~/_utils/threadMessages";
+import { MARK_READ_DELAY_MS } from "~/app/_hooks/useMarkThreadRead";
 import { renderWithProviders, trpcError, type TrpcHandlers } from "~/test/dom/render";
 import { testSession } from "~/test/dom/session";
 
@@ -49,18 +51,19 @@ function thread(messages: ThreadMessage[]) {
       { ...OTHER, photographer: null },
       { firstName: "Me", id: ME, lastName: "Self", photographer: null, profilePic: null },
     ],
-  };
+  } as never;
 }
 
 type MarkRead = NonNullable<NonNullable<TrpcHandlers["message"]>["markThreadRead"]>;
 
 function renderFeed(markThreadRead: MarkRead, messages = [message("m1")]) {
-  return renderWithProviders(<MessageFeed threadId={THREAD} />, {
+  return renderWithProviders(<MessageFeed threadId={THREAD} initialThread={thread(messages)} />, {
     trpc: {
+      discover: {
+        getMatchById: () => null as never,
+        getMatches: () => [] as never,
+      },
       message: {
-        create: () => {
-          throw new Error("not sent in these tests");
-        },
         getThreadById: () => thread(messages),
         markThreadRead,
       },
@@ -86,12 +89,17 @@ async function settle() {
   for (let i = 0; i < 5; i++) await advance(1);
 }
 
+/** Past the on-screen delay, then settled. */
+async function dwell() {
+  await advance(MARK_READ_DELAY_MS);
+  await settle();
+}
+
 let visibility: DocumentVisibilityState = "visible";
 
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ["setTimeout", "clearTimeout", "Date"] });
   testSession.signIn(ME);
-  window.sessionStorage.clear();
   visibility = "visible";
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
 });
@@ -101,35 +109,55 @@ afterEach(() => {
 });
 
 describe("MessageFeed marks the thread read", () => {
-  it("up to the newest message once the thread has loaded, and remembers it", async () => {
+  it("up to the newest message once it has been on screen, not before", async () => {
     const view = renderFeed(ok, [message("m1"), message("m2")]);
     await settle();
+    await advance(MARK_READ_DELAY_MS - 50);
+    expect(view.callsTo("message.markThreadRead")).toEqual([]);
 
+    await dwell();
     expect(view.callsTo("message.markThreadRead")).toEqual([{ threadId: THREAD, upToMessageId: "m2" }]);
-    expect(window.sessionStorage.getItem(`iso:marked-read:${ME}:${THREAD}`)).toBe("m2");
   });
 
-  it("sends nothing for a message this tab already marked read", async () => {
-    window.sessionStorage.setItem(`iso:marked-read:${ME}:${THREAD}`, "m1");
+  it("does not send the same message twice", async () => {
     const view = renderFeed(ok);
-    await settle();
+    await dwell();
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await dwell();
     await advance(60 * SECOND);
 
-    expect(view.callsTo("message.markThreadRead")).toEqual([]);
+    expect(view.callsTo("message.markThreadRead")).toHaveLength(1);
   });
 
-  it("waits while the tab is hidden and marks it read when the tab is shown", async () => {
+  it("waits while the tab is hidden and marks it read once the tab is shown", async () => {
     visibility = "hidden";
     const view = renderFeed(ok);
-    await settle();
+    await dwell();
+    await advance(60 * SECOND);
     expect(view.callsTo("message.markThreadRead")).toEqual([]);
 
     visibility = "visible";
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await settle();
+    await dwell();
     expect(view.callsTo("message.markThreadRead")).toEqual([{ threadId: THREAD, upToMessageId: "m1" }]);
+  });
+
+  it("marks a message that arrives over the socket", async () => {
+    const view = renderFeed(ok);
+    await dwell();
+    await act(async () => {
+      realtime.onMessage?.(message("m2", new Date(NOW.getTime() + SECOND)));
+    });
+    await dwell();
+
+    expect(view.callsTo("message.markThreadRead")).toEqual([
+      { threadId: THREAD, upToMessageId: "m1" },
+      { threadId: THREAD, upToMessageId: "m2" },
+    ]);
   });
 
   it("retries a failed call after 5 s, then stops once it succeeds", async () => {
@@ -139,18 +167,16 @@ describe("MessageFeed marks the thread read", () => {
       if (calls === 1) throw trpcError("INTERNAL_SERVER_ERROR");
       return ok();
     });
-    await settle();
+    await dwell();
     expect(calls).toBe(1);
-    expect(window.sessionStorage.getItem(`iso:marked-read:${ME}:${THREAD}`)).toBeNull();
 
+    // The retry re-arms the on-screen delay.
     await advance(5 * SECOND - 100);
     expect(calls).toBe(1);
-
     await advance(100);
-    await settle();
+    await dwell();
     expect(calls).toBe(2);
     expect(view.callsTo("message.markThreadRead")[1]).toEqual({ threadId: THREAD, upToMessageId: "m1" });
-    expect(window.sessionStorage.getItem(`iso:marked-read:${ME}:${THREAD}`)).toBe("m1");
 
     await advance(10 * 60 * SECOND);
     expect(calls).toBe(2);
@@ -162,14 +188,14 @@ describe("MessageFeed marks the thread read", () => {
       calls += 1;
       throw trpcError("INTERNAL_SERVER_ERROR");
     });
-    await settle();
+    await dwell();
     expect(calls).toBe(1);
 
     for (const [i, delaySeconds] of [5, 10, 20, 40, 60, 60].entries()) {
       await advance(delaySeconds * SECOND - 100);
       expect(calls, `retry ${i + 1} before ${delaySeconds} s`).toBe(1 + i);
       await advance(100);
-      await settle();
+      await dwell();
       expect(calls, `retry ${i + 1} after ${delaySeconds} s`).toBe(2 + i);
     }
 
@@ -191,16 +217,14 @@ describe("MessageFeed marks the thread read", () => {
       if (inputs.filter((id) => id === "m2").length === 1) throw trpcError("INTERNAL_SERVER_ERROR");
       return ok();
     });
-    await settle();
+    await dwell();
     expect(inputs).toEqual(["m1"]);
 
-    // A new message arrives over the socket while the first call is pending.
+    // A new message arrives while the first call is pending; its call fails.
     await act(async () => {
       realtime.onMessage?.(message("m2", new Date(NOW.getTime() + SECOND)));
     });
-    // At most one call per 3 s: the newer one goes out after that, and fails.
-    await advance(3 * SECOND);
-    await settle();
+    await dwell();
     expect(inputs).toEqual(["m1", "m2"]);
 
     // Now the first one fails too. It is not the latest attempt: it must
@@ -210,9 +234,8 @@ describe("MessageFeed marks the thread read", () => {
     });
     await settle();
     await advance(5 * SECOND);
-    await settle();
+    await dwell();
     expect(inputs).toEqual(["m1", "m2", "m2"]);
-    expect(window.sessionStorage.getItem(`iso:marked-read:${ME}:${THREAD}`)).toBe("m2");
 
     await advance(5 * 60 * SECOND);
     expect(inputs).toEqual(["m1", "m2", "m2"]);
