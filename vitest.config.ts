@@ -1,5 +1,6 @@
 import path from "path";
-import { defineConfig } from "vitest/config";
+
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -34,6 +35,8 @@ export default defineConfig({
       SKIP_ENV_VALIDATION: "1",
     },
     environment: "node",
+    // .claude/ can hold agent worktrees with their own copy of the suite.
+    exclude: [...configDefaults.exclude, ".claude/**"],
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
   },
