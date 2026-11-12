@@ -4,7 +4,6 @@ import Link from "next/link";
 
 import { logger } from "~/_utils/logger";
 import { auth } from "~/auth";
-import { hasProAccess } from "~/server/_billing/entitlements";
 import { ADMIN_ROLES } from "~/server/_utils/roles";
 import { db } from "~/server/db";
 
@@ -41,26 +40,11 @@ async function canManageWaitlist(userId: string): Promise<boolean> {
     }
 }
 
-/**
- * Whether the account menu offers Pro's entries (insights, priority
- * support). Only decides what is shown: those procedures check Pro
- * themselves, and the pages explain Pro to anyone else.
- */
-async function isPro(userId: string): Promise<boolean> {
-    try {
-        return await hasProAccess(db, userId);
-    } catch (error) {
-        logger.warn("Could not read the member's plan for the account menu", { error });
-        return false;
-    }
-}
-
 export async function Navbar() {
     const session = await auth();
     const user = session?.user
         ? {
             canManageWaitlist: await canManageWaitlist(session.user.id),
-            isPro: await isPro(session.user.id),
             name: session.user.name ?? "Your account",
             profilePic: session.user.profilePic,
         }

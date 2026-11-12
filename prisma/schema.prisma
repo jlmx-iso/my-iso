@@ -615,6 +615,8 @@ model ProfileView {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, day, source])
+  // "When did counting start" (the earliest day) without a scan.
+  @@index([day])
 }
 
 // Event page views for Pro insights, as ProfileView: one row per (event, UTC
@@ -627,4 +629,5 @@ model EventView {
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@id([eventId, day])
+  @@index([day])
 }

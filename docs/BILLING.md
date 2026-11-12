@@ -213,9 +213,9 @@ Each item is backed by the server:
 
 | Benefit | Where | How "is Pro" is decided |
 | --- | --- | --- |
-| Priority placement in search | `search.searchAll` (`rankedPhotographerIds`) | `proAccessSql`: the access table above as a SQL condition on `Subscription`, evaluated at read time |
+| Shown first among equally relevant search results | `search.searchAll` (`rankedPhotographerIds`) | `proAccessSql`: the access table above as a SQL condition on `Subscription`, evaluated at read time |
 | Pro badge | `isPro` on profiles, search results, event owners, applicants and message participants | `proUserIds`: `entitlementsFor` over the stored rows, one query per page |
-| Profile analytics | `insights.getSummary`, page `/app/insights` | `proProcedure` |
+| Insights | `insights.getSummary` (rate limited), page `/app/insights` and a link on the member's own profile. Complete UTC days through yesterday only, sources under three views folded into Other, so a number cannot be tied to one visit | `proProcedure` |
 | Priority support | `support.contact` (email to `SUPPORT_INBOX_EMAIL`, subject `[Pro] ...`) | `proProcedure` |
 
 All three forms are the one rule in `entitlements.ts`.

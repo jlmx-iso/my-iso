@@ -15,13 +15,14 @@ export default async function SupportPage() {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/app/support");
 
-  const subscription = await (await api()).subscription.getStatus();
+  const caller = await api();
+  const [subscription, me] = await Promise.all([caller.subscription.getStatus(), caller.user.getMe()]);
 
   return (
     <Container size="sm" py="lg" px={0}>
       <Stack gap="xl">
         <PageHeader title="Help & support" description="Reach the team behind ISO" />
-        <SupportCard isPro={hasProAccess(subscription)} />
+        <SupportCard isPro={hasProAccess(subscription)} replyTo={me.email} />
       </Stack>
     </Container>
   );

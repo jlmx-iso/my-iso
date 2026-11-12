@@ -41,8 +41,6 @@ export type AccountMenuUser = {
     profilePic?: string | null;
     /** Founders and ambassadors: show the waitlist admin entry. */
     canManageWaitlist?: boolean;
-    /** Pro members: help goes to priority support (the page explains Pro to others). */
-    isPro?: boolean;
 };
 
 type AccountMenuProps = {
@@ -60,19 +58,14 @@ const links = [
     { href: "/app/settings", icon: IconSettings, label: "Settings" },
 ] as const;
 
-/** Help: priority support for Pro members, the public contact page for everyone else. */
-function helpLinkFor(user: AccountMenuUser) {
-    return user.isPro
-        ? ({ href: "/app/support", icon: IconLifebuoy, label: "Priority support" } as const)
-        : ({ href: "/contact", icon: IconLifebuoy, label: "Help & support" } as const);
-}
+/** Help, for everyone: the page offers priority support to Pro members and the contact route to others. */
+const HELP_LINK = { href: "/app/support", icon: IconLifebuoy, label: "Help & support" } as const;
 
 const ADMIN_LINK = { href: "/app/admin/waitlist", icon: IconShieldCheck, label: "Waitlist admin" } as const;
 
 /** The account links for this member: the admin entry only for those it works for. */
 function linksFor(user: AccountMenuUser) {
-    const help = helpLinkFor(user);
-    return user.canManageWaitlist ? [...links, help, ADMIN_LINK] : [...links, help];
+    return user.canManageWaitlist ? [...links, HELP_LINK, ADMIN_LINK] : [...links, HELP_LINK];
 }
 
 function unreadLabel(count: number) {

@@ -11,7 +11,7 @@
 -- (src/server/_billing/proStatus.ts), so a lapsed subscription stops ranking
 -- the moment its access ends.
 --
--- Additive only (two new tables): safe to apply before the code that uses
+-- Additive only (two new tables and their indexes): safe to apply before the code that uses
 -- them is deployed.
 
 -- CreateTable
@@ -34,3 +34,9 @@ CREATE TABLE "EventView" (
     PRIMARY KEY ("eventId", "day"),
     CONSTRAINT "EventView_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+-- CreateIndex
+CREATE INDEX "ProfileView_day_idx" ON "ProfileView"("day");
+
+-- CreateIndex
+CREATE INDEX "EventView_day_idx" ON "EventView"("day");

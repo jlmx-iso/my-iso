@@ -19,7 +19,7 @@ describe("plan descriptions", () => {
     // first), the badge (`isPro` on every payload that shows a person),
     // analytics (insights.getSummary) and support (support.contact), the
     // last two Pro-only procedures (root.test.ts lists them).
-    const built = [/placement in search/i, /badge/i, /analytics/i, /priority support/i];
+    const built = [/shown first .* search results/i, /badge/i, /insights/i, /priority support/i];
     for (const pattern of built) expect(PRO_PLAN.features.some((feature) => pattern.test(feature)), String(pattern)).toBe(true);
     // Nothing that is not built: no "featured" listings, no dashboards beyond insights.
     for (const feature of PRO_PLAN.features) expect(feature, feature).not.toMatch(/featured|unlimited|early access/i);

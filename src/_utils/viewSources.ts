@@ -15,7 +15,7 @@ export const VIEW_SOURCE_LABELS: Record<ViewSource, string> = {
   event: "Events",
   external: "Other websites",
   messages: "Messages",
-  other: "Elsewhere in ISO",
+  other: "Other",
   profile: "Other profiles",
   search: "Search",
 };

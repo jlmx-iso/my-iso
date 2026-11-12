@@ -1,8 +1,8 @@
 "use client";
 
-import { Button, Modal, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import { Button, Group, Modal, Stack, Text, TextInput, Textarea, ThemeIcon } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconLifebuoy, IconSend } from "@tabler/icons-react";
+import { IconCheck, IconLifebuoy, IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
 
 import { SUPPORT_EMAIL } from "~/_lib/site";
@@ -16,6 +16,8 @@ import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 type ContactSupportButtonProps = {
+    /** The address on the member's account, where the team replies. */
+    replyTo: string;
     /** Full width on phones, for a page's primary action. */
     prominent?: boolean;
 };
@@ -28,8 +30,10 @@ const FAILED = `Your message couldn't be sent. Please try again, or email ${SUPP
  * flagged as Pro (support.contact). Only rendered for Pro members; the
  * server checks again.
  */
-export default function ContactSupportButton({ prominent = false }: ContactSupportButtonProps) {
+export default function ContactSupportButton({ replyTo, prominent = false }: ContactSupportButtonProps) {
     const [opened, { open, close }] = useDisclosure(false);
+    // After a send the dialog stays open and says so, until it is closed.
+    const [sentSubject, setSentSubject] = useState<string | null>(null);
     const [subject, setSubject] = useState("");
     const [message, setMessage] = useState("");
     const isOpen = useLatestRef(opened);
@@ -42,13 +46,9 @@ export default function ContactSupportButton({ prominent = false }: ContactSuppo
             }
         },
         onSuccess: () => {
-            notify.success({
-                message: "The team will reply to the email address on your account.",
-                title: "Message sent",
-            });
+            setSentSubject(subject.trim());
             setSubject("");
             setMessage("");
-            close();
         },
     });
 
@@ -66,16 +66,47 @@ export default function ContactSupportButton({ prominent = false }: ContactSuppo
                     if (isPending) return;
                     close();
                     reset();
+                    setSentSubject(null);
                 }}
                 {...dialogLock(isPending)}
                 title="Contact priority support"
                 size="md"
             >
+                {sentSubject !== null ? (
+                    <Stack gap="md" data-testid="support-sent">
+                        <Group gap="sm" wrap="nowrap" align="flex-start">
+                            <ThemeIcon size={36} radius="xl" variant="light" color="teal">
+                                <IconCheck size={20} aria-hidden />
+                            </ThemeIcon>
+                            <Stack gap={4}>
+                                <Text fw={600} role="status">Message sent</Text>
+                                <Text size="sm" c="dimmed">
+                                    &ldquo;{sentSubject}&rdquo; is with the team, flagged Pro. We&apos;ll reply to{" "}
+                                    <Text span fw={600} c="var(--mantine-color-text)">{replyTo}</Text>.
+                                </Text>
+                            </Stack>
+                        </Group>
+                        <Group justify="flex-end" gap="sm">
+                            <Button variant="default" onClick={() => setSentSubject(null)}>
+                                Write another
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    close();
+                                    reset();
+                                    setSentSubject(null);
+                                }}
+                            >
+                                Done
+                            </Button>
+                        </Group>
+                    </Stack>
+                ) : (
                 <form onSubmit={handleSubmit}>
                     <Stack gap="md">
                         <Text size="sm" c="dimmed">
-                            Your message goes straight to the team, marked as Pro so it is read first. We reply to the
-                            email address on your account.
+                            Your message goes straight to the team, flagged Pro so it is read first. We&apos;ll reply to{" "}
+                            <Text span fw={600} c="var(--mantine-color-text)" data-testid="support-reply-to">{replyTo}</Text>.
                         </Text>
                         <TextInput
                             label="Subject"
@@ -113,6 +144,7 @@ export default function ContactSupportButton({ prominent = false }: ContactSuppo
                         </Button>
                     </Stack>
                 </form>
+                )}
             </Modal>
 
             <Button

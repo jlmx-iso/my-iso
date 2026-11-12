@@ -1,25 +1,47 @@
 import { Prisma } from "@prisma/client";
 
 import type { ViewSource } from "~/_utils/viewSources";
+import { keyedHash } from "~/server/_utils/hash";
 
 /**
  * Daily view counters for Pro insights (tables "ProfileView" and
- * "EventView", migrations/0005).
+ * "EventView", migrations/0005). The rules, also in docs/DATABASE.md:
  *
  * Privacy, by construction:
  * - One row per (profile, UTC day, source) or (event, UTC day) holding a
- *   count. Nothing about the viewer is stored: not an id, an address, a user
- *   agent or the referring URL. The source is a fixed category derived from
- *   the PATH of a referrer on this site; any other site is just "external".
- * - The owner looking at their own profile or event is not counted.
- * - Requests that say they are a bot, crawler or link preview are not
- *   counted, nor are router prefetches (a link coming into view is not a
- *   visit).
+ *   count. Nothing about the viewer is stored in the database: not an id,
+ *   an address, a user agent or the referring URL. The source is a fixed
+ *   category derived from the PATH of a referrer on this site; any other
+ *   site is just "external".
+ * - The dedupe cookie (VIEW_COOKIE) lives only in the viewer's browser and
+ *   holds the UTC day and short keyed hashes of what that browser has
+ *   already been counted for today, signed so it cannot be forged. No
+ *   identity, no profile ids in the clear; it expires at the end of the day.
+ *
+ * Counting, bounded:
+ * - A view is counted by a request the page makes once it is on screen
+ *   (POST /api/views), so crawlers that do not run JavaScript never count.
+ * - At most once per browser, per target, per UTC day (the cookie).
+ * - Never the owner's own (signed in), never a bot user agent.
+ * - Every write is first admitted by a rate limiter that writes nothing to
+ *   the database (Cloudflare's Rate Limiting binding; in-memory off
+ *   Cloudflare), per signed-in member or, signed out, per client address.
+ *   A client that discards or replays the cookie is still held to that
+ *   limit, so anonymous traffic cannot cause unbounded writes.
  *
  * Each count is one atomic statement (INSERT ... ON CONFLICT DO UPDATE SET
  * count = count + 1): concurrent views never lose an increment, and D1 needs
  * no transaction for it.
  */
+
+/** The dedupe cookie's name. Scoped to /api/views; HttpOnly. */
+export const VIEW_COOKIE = "iso_views";
+
+/** How many targets one browser is counted for per day; beyond that, no more counts. */
+export const VIEW_COOKIE_MAX_TARGETS = 40;
+
+/** Counted views admitted per minute per member or client address (per Cloudflare location). */
+export const VIEW_RATE_LIMIT = { limit: 20, periodSeconds: 60 } as const;
 
 /**
  * User agents that announce automation. Deliberately simple: it only has
@@ -41,7 +63,7 @@ export function utcDay(date: Date): string {
 }
 
 /**
- * Where a view came from, from the request's Referer: only its path is
+ * Where a view came from, from the page request's Referer: only its path is
  * looked at, and only when it is this site (`ownOrigin`). Never stored as
  * given.
  */
@@ -66,73 +88,157 @@ export function viewSourceFromReferer(referer: string | null | undefined, ownOri
   return "other";
 }
 
-export type ViewRequest = {
-  /** Who is looking (null: signed out). Used only to skip self-views. */
-  viewerId: string | null;
-  userAgent: string | null;
-  referer: string | null;
-  /** The request is a router prefetch, not a visit. */
-  isPrefetch: boolean;
-};
+// ---------------------------------------------------------------------------
+// The dedupe cookie
+// ---------------------------------------------------------------------------
 
-export type ViewOutcome = "counted" | "self" | "bot" | "prefetch" | "refresh";
+export type ViewTarget = { kind: "profile" | "event"; id: string };
 
-type ViewCounterDb = {
-  $executeRaw: (query: Prisma.Sql) => Promise<number>;
-};
-
-function skipReason(request: ViewRequest, ownerId: string): Exclude<ViewOutcome, "counted" | "refresh"> | null {
-  if (request.isPrefetch) return "prefetch";
-  if (request.viewerId !== null && request.viewerId === ownerId) return "self";
-  if (isLikelyBot(request.userAgent)) return "bot";
-  return null;
+/** A short keyed hash naming a target in the cookie (not reversible without AUTH_SECRET). */
+export async function targetToken(target: ViewTarget): Promise<string> {
+  return (await keyedHash("view-target", `${target.kind}:${target.id}`)).slice(0, 12);
 }
 
-/** The path of a same-origin referrer, else null. */
-function sameOriginPath(referer: string | null, ownOrigin: string): string | null {
-  if (!referer) return null;
-  try {
-    const url = new URL(referer);
-    return url.origin === new URL(ownOrigin).origin ? url.pathname : null;
-  } catch {
-    return null;
-  }
+async function signature(day: string, tokens: readonly string[]): Promise<string> {
+  return (await keyedHash("view-cookie", `${day}|${tokens.join("-")}`)).slice(0, 24);
+}
+
+/** The cookie value for `day` listing `tokens`: "day.tok-tok.sig". */
+export async function encodeViewCookie(day: string, tokens: readonly string[]): Promise<string> {
+  return `${day}.${tokens.join("-")}.${await signature(day, tokens)}`;
 }
 
 /**
- * Counts one view of the profile of `profileUserId`, unless it is the
- * owner's own, automated, a prefetch, or a re-render of the same page (a
- * refresh after an action on it: the referrer is the page itself).
+ * The tokens a cookie lists for `day`. A cookie from another day, a forged
+ * or damaged one, or none at all lists nothing.
  */
-export async function recordProfileView(
-  db: ViewCounterDb,
-  args: { profileUserId: string; pagePaths: readonly string[]; ownOrigin: string; now?: Date } & ViewRequest,
-): Promise<ViewOutcome> {
-  const skip = skipReason(args, args.profileUserId);
-  if (skip) return skip;
-  const from = sameOriginPath(args.referer, args.ownOrigin);
-  if (from !== null && args.pagePaths.includes(from)) return "refresh";
-
-  const source = viewSourceFromReferer(args.referer, args.ownOrigin);
-  const day = utcDay(args.now ?? new Date());
-  await db.$executeRaw(Prisma.sql`
-    INSERT INTO "ProfileView" ("userId", "day", "source", "count") VALUES (${args.profileUserId}, ${day}, ${source}, 1)
-    ON CONFLICT ("userId", "day", "source") DO UPDATE SET "count" = "count" + 1`);
-  return "counted";
+export async function decodeViewCookie(value: string | null | undefined, day: string): Promise<string[]> {
+  if (!value) return [];
+  const [cookieDay, list = "", sig] = value.split(".");
+  if (cookieDay !== day || !sig) return [];
+  const tokens = list ? list.split("-") : [];
+  if (tokens.length > VIEW_COOKIE_MAX_TARGETS || tokens.some((token) => !/^[0-9a-f]{12}$/.test(token))) return [];
+  return sig === (await signature(day, tokens)) ? tokens : [];
 }
 
-/** Counts one view of event `eventId` (owned by `ownerId`), on the same terms. */
-export async function recordEventView(
-  db: ViewCounterDb,
-  args: { eventId: string; ownerId: string; pagePath: string; ownOrigin: string; now?: Date } & ViewRequest,
-): Promise<ViewOutcome> {
-  const skip = skipReason(args, args.ownerId);
-  if (skip) return skip;
-  if (sameOriginPath(args.referer, args.ownOrigin) === args.pagePath) return "refresh";
+/** Seconds from `now` to the end of its UTC day: the cookie's lifetime. */
+export function secondsToEndOfDay(now: Date): number {
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((end - now.getTime()) / 1000));
+}
 
-  const day = utcDay(args.now ?? new Date());
-  await db.$executeRaw(Prisma.sql`
-    INSERT INTO "EventView" ("eventId", "day", "count") VALUES (${args.eventId}, ${day}, 1)
-    ON CONFLICT ("eventId", "day") DO UPDATE SET "count" = "count" + 1`);
-  return "counted";
+// ---------------------------------------------------------------------------
+// The limiter (no database writes)
+// ---------------------------------------------------------------------------
+
+/** Cloudflare's Rate Limiting binding, or a stand-in with the same shape. */
+export type ViewLimiter = { limit: (options: { key: string }) => Promise<{ success: boolean }> };
+
+/**
+ * A fixed-window limiter in this process's memory, for `next dev`, `next
+ * start` and tests, where the Cloudflare binding does not exist. Bounded:
+ * it forgets every key when its window passes.
+ */
+export function memoryViewLimiter(
+  limit: number = VIEW_RATE_LIMIT.limit,
+  periodMs: number = VIEW_RATE_LIMIT.periodSeconds * 1000,
+  now: () => number = Date.now,
+): ViewLimiter {
+  let windowStart = now();
+  let counts = new Map<string, number>();
+  return {
+    limit: async ({ key }) => {
+      if (now() - windowStart >= periodMs) {
+        windowStart = now();
+        counts = new Map();
+      }
+      const count = (counts.get(key) ?? 0) + 1;
+      counts.set(key, count);
+      return { success: count <= limit };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Counting
+// ---------------------------------------------------------------------------
+
+type ViewCounterDb = {
+  $executeRaw: (query: Prisma.Sql) => Promise<number>;
+  event: { findFirst: (args: { select: { photographer: { select: { userId: true } } }; where: { id: string } }) => Promise<{ photographer: { userId: string } } | null> };
+  photographer: { findFirst: (args: { select: { userId: true }; where: { userId: string } }) => Promise<{ userId: string } | null> };
+};
+
+export type ViewRequest = {
+  target: ViewTarget;
+  source: ViewSource;
+  /** Signed-in member, or null. */
+  viewerId: string | null;
+  /** The client address (already trusted per clientIp.ts); keys the limiter when signed out. */
+  clientIp: string;
+  userAgent: string | null;
+  /** The VIEW_COOKIE value the browser sent. */
+  cookie: string | null;
+  now?: Date;
+};
+
+export type ViewOutcome =
+  | "counted"
+  | "bot"
+  | "already_counted"
+  | "cookie_full"
+  | "rate_limited"
+  | "sign_in_required"
+  | "not_found"
+  | "self";
+
+export type ViewResult = {
+  outcome: ViewOutcome;
+  /** The cookie to set, when it changed. */
+  cookie: string | null;
+};
+
+/**
+ * Decides whether this request is a new view and, if so, counts it. Writes
+ * to the database only when it returns "counted", and only after the
+ * limiter admitted it.
+ */
+export async function countView(db: ViewCounterDb, limiter: ViewLimiter, request: ViewRequest): Promise<ViewResult> {
+  const now = request.now ?? new Date();
+  const day = utcDay(now);
+  const unchanged = (outcome: ViewOutcome): ViewResult => ({ cookie: null, outcome });
+
+  if (isLikelyBot(request.userAgent)) return unchanged("bot");
+  // Events are only shown to members.
+  if (request.target.kind === "event" && !request.viewerId) return unchanged("sign_in_required");
+
+  const tokens = await decodeViewCookie(request.cookie, day);
+  const token = await targetToken(request.target);
+  if (tokens.includes(token)) return unchanged("already_counted");
+  if (tokens.length >= VIEW_COOKIE_MAX_TARGETS) return unchanged("cookie_full");
+
+  // Before any database access: a refused request costs nothing.
+  const limiterKey = request.viewerId ? `member:${request.viewerId}` : `ip:${await keyedHash("view-ip", request.clientIp)}`;
+  if (!(await limiter.limit({ key: limiterKey })).success) return unchanged("rate_limited");
+
+  const ownerId =
+    request.target.kind === "profile"
+      ? (await db.photographer.findFirst({ select: { userId: true }, where: { userId: request.target.id } }))?.userId
+      : (await db.event.findFirst({ select: { photographer: { select: { userId: true } } }, where: { id: request.target.id } }))
+          ?.photographer.userId;
+  if (!ownerId) return unchanged("not_found");
+
+  const cookie = await encodeViewCookie(day, [...tokens, token]);
+  if (ownerId === request.viewerId) return { cookie, outcome: "self" };
+
+  if (request.target.kind === "profile") {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO "ProfileView" ("userId", "day", "source", "count") VALUES (${ownerId}, ${day}, ${request.source}, 1)
+      ON CONFLICT ("userId", "day", "source") DO UPDATE SET "count" = "count" + 1`);
+  } else {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO "EventView" ("eventId", "day", "count") VALUES (${request.target.id}, ${day}, 1)
+      ON CONFLICT ("eventId", "day") DO UPDATE SET "count" = "count" + 1`);
+  }
+  return { cookie, outcome: "counted" };
 }

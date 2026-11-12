@@ -41,9 +41,9 @@ export const PRO_PLAN = {
   /** True today. */
   features: [
     "Everything in Free",
-    "Priority placement in search",
+    "Shown first among equally relevant search results",
     "A Pro badge next to your name",
-    "Profile analytics: views, where they came from, applications",
+    "Insights: profile views, where they came from, applications",
     "Priority support from the team",
     "Support ISO while the network is being built",
   ],

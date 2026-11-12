@@ -43,6 +43,16 @@ database_id = "aad00920-a190-4144-b414-c17ff5388755"
 # SQL files applied in order by `wrangler d1 migrations apply` (docs/DATABASE.md).
 migrations_dir = "migrations"
 
+# Admits counted profile and event views (Pro insights) without writing to
+# D1: per signed-in member or per client address, 20 a minute (per
+# Cloudflare location). Must match VIEW_RATE_LIMIT in
+# src/server/_lib/viewCounter.ts. `namespace_id` is any integer unique to
+# this account; staging uses its own.
+[[ratelimits]]
+name = "VIEW_COUNT_LIMIT"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
 # Scheduled jobs. Each expression must have an entry in CRON_JOBS
 # (src/worker/scheduled.ts); a test fails when they drift.
 [triggers]
@@ -98,6 +108,11 @@ binding = "DB"
 database_name = "my-iso-db-staging"
 database_id = "9074bb91-5827-4b4b-88d1-f7f9eba70146"
 migrations_dir = "migrations"
+
+[[env.staging.ratelimits]]
+name = "VIEW_COUNT_LIMIT"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
 
 [env.staging.observability.logs]
 enabled = true

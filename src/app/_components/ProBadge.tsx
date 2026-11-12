@@ -21,8 +21,8 @@ export function ProBadge({ size = "xs" }: ProBadgeProps) {
             variant="light"
             color="orange"
             radius="sm"
+            tt="none"
             leftSection={<IconCrown size={size === "xs" ? 10 : 12} aria-hidden />}
-            title="Pro member"
             style={{ flexShrink: 0 }}
             data-testid="pro-badge"
         >

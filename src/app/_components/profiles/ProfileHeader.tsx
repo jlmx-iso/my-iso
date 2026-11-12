@@ -29,10 +29,12 @@ type ProfileHeaderProps = {
   canChangePhoto?: boolean;
   /** Buttons for the viewer: message, save, edit, sign in. */
   actions?: React.ReactNode;
+  /** A line under the social links (the owner's insights link). */
+  footer?: React.ReactNode;
 };
 
 /** Cover banner, avatar, name, meta, bio and social links of a photographer. */
-export default function ProfileHeader({ photographer, coverImage, canChangePhoto = false, actions }: ProfileHeaderProps) {
+export default function ProfileHeader({ photographer, coverImage, canChangePhoto = false, actions, footer }: ProfileHeaderProps) {
   return (
     <Box>
       <Box
@@ -78,7 +80,8 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
                 {photographer.name}
               </Title>
               {photographer.isPro && <ProBadge size="sm" />}
-              <Badge variant="light" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
+              {/* Neutral: the role is a label, the Pro badge (orange, crown) a status. */}
+              <Badge variant="light" color="gray" size="sm" leftSection={<IconCamera size={12} aria-hidden />}>
                 Photographer
               </Badge>
             </Group>
@@ -113,6 +116,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
           )}
 
           <SocialLinks photographer={photographer} name={photographer.name} />
+          {footer}
         </Stack>
       </Box>
     </Box>

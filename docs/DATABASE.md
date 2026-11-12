@@ -170,6 +170,52 @@ design: these tables cannot say who looked. `source` is a fixed category
 other sites are just `external`. Rows go when the profile's user or the
 event is deleted (`ON DELETE CASCADE`).
 
+### What counts as a view, and why anonymous traffic cannot flood D1
+
+A profile or event page renders `ViewBeacon`, which, once the page is on
+screen, sends `POST /api/views` with the target and the source (the server
+worked the source out from the page request's `Referer`, compared with
+`NEXT_PUBLIC_BASE_URL`'s origin only). `countView` in
+`src/server/_lib/viewCounter.ts` then decides, in this order, and touches
+the database only at the end:
+
+1. A bot user agent, or an event view by someone signed out: not counted.
+2. **Once per browser, per target, per UTC day.** The `iso_views` cookie
+   (HttpOnly, SameSite=Lax, Secure on https, path `/api/views`, expires at
+   the end of the UTC day) lists what this browser has been counted for
+   today: the day, and up to 40 twelve-character keyed hashes
+   (HMAC with `AUTH_SECRET`) of "profile:<id>" / "event:<id>", signed so a
+   client cannot forge a list. It holds **no identity**: no user id, no
+   random visitor id, no profile id in the clear. A target already listed
+   is not counted and nothing is written; a full list stops counting for
+   the day.
+3. **A limiter that writes nothing to D1**: Cloudflare's Rate Limiting
+   binding `VIEW_COUNT_LIMIT` (`wrangler.toml` `[[ratelimits]]`, 20 per 60
+   seconds), keyed by the signed-in member's id or, signed out, a keyed
+   hash of the client address. Off Cloudflare (`next dev`, tests) an
+   in-memory limiter with the same shape stands in.
+4. The target must exist (a read), and is not the signed-in viewer's own.
+5. One upsert.
+
+So a client that ignores or replays the cookie (curl in a loop) is still
+held to 20 counted views a minute per address per Cloudflare location,
+and every refused request costs no database access at all. Reloads,
+back-navigation and a second visit the same day are not counted again in
+the same browser.
+
+Limits, accepted:
+
+- The binding is per Cloudflare location and eventually consistent, and
+  its period is 10 or 60 seconds: a distributed client (many addresses)
+  can still add views, at most 20 a minute per address. These are
+  insight numbers, not money.
+- Dedupe is per browser: one member on two devices, or someone clearing
+  cookies, counts again (within the limiter). Signed-in members are not
+  deduped across devices, because that would need a write per view.
+- The owner viewing their own profile while signed out cannot be told
+  apart from anyone else. Signed in, they are never counted; the cookie
+  then also stops their signed-out visits in the same browser that day.
+
 ## Timestamps are text: one spelling
 
 SQLite has no date type. Prisma stores a `DateTime` as ISO-8601 **text**,
