@@ -66,9 +66,14 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   "www",
 ]);
 
-/** What people tend to type: a leading "@", capitals, stray spaces. */
+/**
+ * What people tend to type: one leading "@", capitals, stray spaces. The
+ * one normalisation, used by the forms and by the server's `handleInput`.
+ * Only ONE "@" is dropped: "@@ann" keeps an "@" and is refused as invalid
+ * characters, rather than quietly becoming "ann".
+ */
 export function normalizeHandle(input: string): string {
-  return input.trim().replace(/^@+/, "").toLowerCase();
+  return input.trim().replace(/^@/, "").toLowerCase();
 }
 
 export type HandleProblem = "too_short" | "too_long" | "invalid_characters" | "reserved";

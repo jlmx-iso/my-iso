@@ -1,11 +1,12 @@
 import { z } from "zod";
 
+import { SEARCH_MAX_LIMIT, SEARCH_MAX_OFFSET } from "~/_utils/limits";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
-export const SEARCH_MAX_LIMIT = 50;
-export const SEARCH_MAX_OFFSET = 1000;
+// Shared with the search page (~/_utils/limits); re-exported for existing importers.
+export { SEARCH_MAX_LIMIT, SEARCH_MAX_OFFSET };
 
 const searcherUserSelect = {
   id: true,

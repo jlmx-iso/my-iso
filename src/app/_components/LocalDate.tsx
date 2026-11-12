@@ -5,11 +5,16 @@ import { useSyncExternalStore } from "react";
 import { type DateFormatName, formatDate } from "~/_lib/dayjs";
 
 type LocalDateProps = {
-  date: string;
+  date: Date | string;
   format?: DateFormatName;
 };
 
-/** Client component that formats a UTC date in the user's local timezone. Use this in server components. */
+/**
+ * A date written in the reader's own time zone. Use it for every date shown
+ * in a page, in server AND client components: client components are
+ * rendered on the server first, where formatting would use the server's
+ * zone (UTC), and suppressHydrationWarning would keep that wrong text.
+ */
 export default function LocalDate({ date, format }: LocalDateProps) {
   // Render nothing on the server and during hydration: the server's timezone
   // is not the user's, so formatting there would cause a hydration mismatch.

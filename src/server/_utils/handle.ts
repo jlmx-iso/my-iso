@@ -5,6 +5,7 @@ import {
   HANDLE_MAX_LENGTH,
   HANDLE_MIN_LENGTH,
   RESERVED_HANDLES,
+  normalizeHandle,
 } from "~/_utils/handle";
 
 // The rule itself lives in ~/_utils/handle, shared with the forms.
@@ -18,7 +19,7 @@ export { HANDLE_MAX_LENGTH, HANDLE_MIN_LENGTH, RESERVED_HANDLES };
 export const handleInput = z
   .string()
   .trim()
-  .transform((value) => value.replace(/^@/, "").toLowerCase())
+  .transform(normalizeHandle)
   .pipe(
     z
       .string()

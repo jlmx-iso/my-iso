@@ -4,8 +4,8 @@ import { AspectRatio, Badge, Card, Group, Image, Stack, Text, Title } from '@man
 import { IconCalendar, IconClock, IconHeart, IconMapPin, IconMessageCircle } from '@tabler/icons-react';
 import Link from 'next/link';
 
-import { formatDate } from '~/_lib/dayjs';
 import { fullName } from '~/_utils/names';
+import LocalDate from "~/app/_components/LocalDate";
 import UserBadge from '~/app/_components/UserBadge';
 import type { RouterOutputs } from '~/trpc/react';
 
@@ -74,7 +74,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
             </Badge>
           )}
           <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
-            <span className="sr-only">Date: </span>{formatDate(event.date)}
+            <span className="sr-only">Date: </span><LocalDate date={event.date} />
           </Badge>
           <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
             <span className="sr-only">Duration: </span>{event.duration} hour{event.duration === 1 ? '' : 's'}

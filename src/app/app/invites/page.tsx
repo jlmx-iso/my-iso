@@ -23,9 +23,9 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 
-import { formatDate } from "~/_lib/dayjs";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
+import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
@@ -218,7 +218,7 @@ export default function Page() {
                   </Text>
                 </Box>
                 <Text size="xs" c="dimmed">
-                  {formatDate(r.redeemedAt)}
+                  <LocalDate date={r.redeemedAt} />
                 </Text>
               </Group>
             ))}

@@ -20,11 +20,11 @@ import { IconAlertCircle, IconCircleCheck, IconStar, IconStarFilled } from "@tab
 import Link from "next/link";
 import { useId } from "react";
 
-import { formatDate } from "~/_lib/dayjs";
 import { fullName } from "~/_utils/names";
 import { REVIEWS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePages, partialCountNote } from "~/_utils/pagination";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import LocalDate from "~/app/_components/LocalDate";
 import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
@@ -260,7 +260,7 @@ export default function ReviewsSection({
                         {reviewer}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {formatDate(review.createdAt, "dateLong")}
+                        <LocalDate date={review.createdAt} format="dateLong" />
                       </Text>
                     </Group>
                     <StarRating rating={review.rating} size={14} />
@@ -310,7 +310,7 @@ export default function ReviewsSection({
             <Group gap="xs">
               <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
               <Text size="sm" fw={600}>
-                You reviewed {photographerName} on {formatDate(gate.review.createdAt, "dateLong")}
+                You reviewed {photographerName} on <LocalDate date={gate.review.createdAt} format="dateLong" />
               </Text>
             </Group>
             <StarRating rating={gate.review.rating} size={14} />

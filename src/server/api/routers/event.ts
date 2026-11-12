@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
@@ -11,8 +12,9 @@ import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
-export const MAX_COMMENT_LENGTH = 2000;
-export const MAX_EVENT_DURATION_HOURS = 72;
+// The limits live in ~/_utils/limits, shared with the forms that enforce
+// them before sending; re-exported for existing importers.
+export { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS };
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;

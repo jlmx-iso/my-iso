@@ -15,7 +15,9 @@ import {
 describe("normalizeHandle", () => {
   it("strips a leading @, spaces and capitals", () => {
     expect(normalizeHandle("  @SarahChen ")).toBe("sarahchen");
-    expect(normalizeHandle("@@marcus_r")).toBe("marcus_r");
+    // One "@" only, like the server: "@@ann" stays invalid instead of becoming "ann".
+    expect(normalizeHandle("@@marcus_r")).toBe("@marcus_r");
+    expect(validateHandle("@@ann")).toBe(HANDLE_MESSAGES.invalid_characters);
     expect(normalizeHandle("")).toBe("");
   });
 });

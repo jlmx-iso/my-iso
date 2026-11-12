@@ -79,7 +79,7 @@ export const userRouter = createTRPCRouter({
    * Advisory only: `updateProfile` (and the unique index) decides.
    */
   isHandleAvailable: protectedProcedure
-    .use(rateLimit(RateLimits.MEMBER_SEARCH))
+    .use(rateLimit(RateLimits.HANDLE_CHECK))
     .input(z.object({ handle: z.string().max(64) }))
     .query(async ({ ctx, input }) => {
       const handle = handleInput.safeParse(input.handle);

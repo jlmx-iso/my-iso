@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { DATE_FORMATS, formatDate, formatRelative } from "./dayjs";
 
@@ -43,5 +43,25 @@ describe("formatRelative", () => {
   it("returns an empty string for a missing or unparseable date", () => {
     expect(formatRelative(null)).toBe("");
     expect(formatRelative("nope")).toBe("");
+  });
+});
+
+describe("formatDate across time zones", () => {
+  // The bug this pins: a date formatted on the server (UTC) shows the wrong
+  // day for anyone west of UTC. formatDate uses the zone it runs in, which
+  // is why pages call it in the browser, through LocalDate.
+  const zone = process.env.TZ;
+  afterEach(() => {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
+  it("writes a renewal at 04:00 UTC as the previous day in Los Angeles", () => {
+    const renewal = "2026-12-01T04:00:00Z";
+    process.env.TZ = "UTC";
+    expect(formatDate(renewal, "dateLong")).toBe("December 1, 2026");
+    process.env.TZ = "America/Los_Angeles";
+    expect(formatDate(renewal, "dateLong")).toBe("November 30, 2026");
+    expect(formatDate(renewal, "dayTime")).toBe("Mon, Nov 30 · 8:00 PM");
   });
 });

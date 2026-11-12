@@ -3,9 +3,9 @@
 import { Alert, Badge, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { IconAlertTriangle, IconCrown } from "@tabler/icons-react";
 
-import { formatDate } from "~/_lib/dayjs";
 import type { PlanPricing } from "~/_utils/plans";
 import { type SubscriptionState, subscriptionSummary } from "~/_utils/subscriptionView";
+import LocalDate from "~/app/_components/LocalDate";
 
 import BillingActions from "./BillingActions";
 import { billingModeFor } from "./billingMode";
@@ -22,9 +22,9 @@ function withDate(text: string, date: Date | null) {
   return (
     <>
       {before}
-      {/* The server renders in its own time zone; the browser's wins. */}
-      <time dateTime={new Date(date).toISOString()} suppressHydrationWarning style={{ whiteSpace: "nowrap" }}>
-        {formatDate(date, "dateLong")}
+      {/* Written in the browser, in the reader's time zone (not the server's). */}
+      <time dateTime={new Date(date).toISOString()} style={{ whiteSpace: "nowrap" }}>
+        <LocalDate date={date} format="dateLong" />
       </time>
       {after}
     </>

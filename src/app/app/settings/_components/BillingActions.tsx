@@ -4,10 +4,10 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { formatDate } from "~/_lib/dayjs";
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { type BillingInterval, type PlanPricing, proPriceView } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import LocalDate from "~/app/_components/LocalDate";
 import { api } from "~/trpc/react";
 
 import type { BillingMode } from "./billingMode";
@@ -150,8 +150,8 @@ export default function BillingActions({ mode: initialMode, paidUntil, portalLab
           {paidUntil ? (
             <>
               You already have Pro until{" "}
-              <time dateTime={new Date(paidUntil).toISOString()} suppressHydrationWarning>
-                {formatDate(paidUntil, "dateLong")}
+              <time dateTime={new Date(paidUntil).toISOString()}>
+                <LocalDate date={paidUntil} format="dateLong" />
               </time>
               ; that time is not added on.
             </>
