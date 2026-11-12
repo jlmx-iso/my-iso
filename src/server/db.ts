@@ -5,6 +5,7 @@ import type { SqlDriverAdapterFactory } from "@prisma/client/runtime/client";
 
 import { logger } from "~/_utils";
 import { env } from "~/env";
+import { extendWithSoftDelete, type ExtendedPrismaClient } from "~/server/_db/softDelete";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createExtendedClient>;
@@ -19,33 +20,11 @@ function createExtendedClient(adapter: SqlDriverAdapterFactory) {
         : ["error"],
   });
 
-  // Auto-filter isDeleted: false on all models that have soft-delete
-  const softDeleteFilter = {
-    async findMany({ args, query }: { args: { where?: Record<string, unknown> }; query: (args: unknown) => unknown }) {
-      return query({
-        ...args,
-        where: {
-          ...(args.where ?? {}),
-          isDeleted: false,
-        },
-      });
-    },
-  };
-
-  return client.$extends({
-    query: {
-      message: softDeleteFilter,
-      event: softDeleteFilter,
-      comment: softDeleteFilter,
-      commentLike: softDeleteFilter,
-      eventLike: softDeleteFilter,
-      portfolioImage: softDeleteFilter,
-      booking: softDeleteFilter,
-    },
-  });
+  // Hide soft-deleted rows from every read (see softDelete.ts).
+  return extendWithSoftDelete(client);
 }
 
-type ExtendedClient = ReturnType<typeof createExtendedClient>;
+type ExtendedClient = ExtendedPrismaClient;
 
 let cachedClient: ExtendedClient | null = globalForPrisma.prisma ?? null;
 
@@ -71,7 +50,7 @@ if (!cachedClient && !isCloudflareWorker && env.DATABASE_URL) {
       new PrismaBetterSqlite3({ url: env.DATABASE_URL }),
     );
   } else {
-    logger.info("Using LibSQL adapter", { url: env.DATABASE_URL });
+    logger.info("Using LibSQL adapter");
     const { PrismaLibSql } = await import(
       /* webpackIgnore: true */ "@prisma/adapter-libsql"
     );
