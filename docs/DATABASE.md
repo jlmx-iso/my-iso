@@ -105,7 +105,7 @@ causes it:
 
 | Trigger | Created in | What it does |
 | --- | --- | --- |
-| `InviteRedemption_count` | `0002` | On every new `InviteRedemption`, raises `InviteCode.redeemedCount`. Nothing lowers it, so a used invite stays used when the invited account is deleted; the `reconcile-invites` job reconciles against it. |
+| `InviteRedemption_count` | `0004` | On every new `InviteRedemption`, raises `InviteCode.redeemedCount`. Nothing lowers it, so a used invite stays used when the invited account is deleted; the `reconcile-invites` job reconciles against it. |
 | `Message_touch_thread` | `0003` | On every new `Message`, sets `MessageThread.updatedAt` to the message's `createdAt`, so the conversation list (sorted by it) can never show a thread in its old position after a send. |
 
 Prisma does not know about triggers: they are not in `schema.prisma`,
