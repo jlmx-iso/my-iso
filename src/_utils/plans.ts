@@ -8,10 +8,13 @@
  * here. Nothing in these lists is a usage limit: the server does not enforce
  * any per-plan limit today, so none is promised.
  *
- * Pro gates nothing yet (no procedure uses `proProcedure`). So Pro's
- * `features` say only what is true today, and everything planned is in
- * `comingSoon`, which every screen shows under a "Coming soon" heading and
- * never as a current benefit.
+ * Pro's `features` say only what is true today, each backed by the server:
+ * the badge and search placement are decided from the member's subscription
+ * (src/server/_billing/proStatus.ts), insights and priority support are
+ * `proProcedure`s. Anything planned goes in `comingSoon`, which every screen
+ * shows under a "Coming soon" heading (and hides while it is empty), never
+ * as a current benefit. When a planned item ships, move it from
+ * `comingSoon` to `features`: the pages and the upgrade email follow.
  */
 export type PlanPricing = {
   annualPrice: number;
@@ -33,10 +36,17 @@ export const FREE_PLAN = {
 } as const;
 
 export const PRO_PLAN = {
-  /** Planned, not built. Shown only under a "Coming soon" heading. */
-  comingSoon: ["Priority placement in search", "A Pro badge on your profile", "Profile analytics", "Priority support"],
+  /** Planned, not built. Shown only under a "Coming soon" heading; nothing is planned right now. */
+  comingSoon: [] as readonly string[],
   /** True today. */
-  features: ["Everything in Free", "Support ISO while the network is being built"],
+  features: [
+    "Everything in Free",
+    "Priority placement in search",
+    "A Pro badge next to your name",
+    "Profile analytics: views, where they came from, applications",
+    "Priority support from the team",
+    "Support ISO while the network is being built",
+  ],
   /** True today for a founding price only: Stripe keeps a subscription on the price it started with. */
   foundingFeature: "Your founding price stays the same for as long as you stay subscribed",
   name: "Pro",

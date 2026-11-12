@@ -14,14 +14,15 @@ describe("plan descriptions", () => {
     }
   });
 
-  it("never sell a planned feature as a current Pro benefit", () => {
-    // Nothing is gated on Pro yet: search order, badges, analytics and
-    // support are the same for everyone. They may only appear as "coming soon".
-    const planned = /priority|badge|featured|analytics|dashboard|support(?! ISO)/i;
-    for (const pricing of [founding, standard]) {
-      for (const feature of proFeaturesFor(pricing)) expect(feature, feature).not.toMatch(planned);
-    }
-    expect(PRO_PLAN.comingSoon.length).toBeGreaterThan(0);
+  it("sell as current only what the server does for Pro", () => {
+    // Each current benefit is built: placement (search.searchAll ranks Pro
+    // first), the badge (`isPro` on every payload that shows a person),
+    // analytics (insights.getSummary) and support (support.contact), the
+    // last two Pro-only procedures (root.test.ts lists them).
+    const built = [/placement in search/i, /badge/i, /analytics/i, /priority support/i];
+    for (const pattern of built) expect(PRO_PLAN.features.some((feature) => pattern.test(feature)), String(pattern)).toBe(true);
+    // Nothing that is not built: no "featured" listings, no dashboards beyond insights.
+    for (const feature of PRO_PLAN.features) expect(feature, feature).not.toMatch(/featured|unlimited|early access/i);
     for (const feature of PRO_PLAN.comingSoon) expect(PRO_PLAN.features as readonly string[]).not.toContain(feature);
   });
 
