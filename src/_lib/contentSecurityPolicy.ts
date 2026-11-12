@@ -10,7 +10,7 @@ import { type CspMode, contentSecurityPolicyHeader } from "~/securityHeaders.js"
 
 /**
  * Request header that carries the nonce to server components (read with
- * `headers()`). Set by the middleware on every page request, overwriting
+ * `requestNonce`, src/_lib/requestNonce.ts). Set by the middleware on every page request, overwriting
  * anything the client sent.
  */
 export const NONCE_HEADER = "x-nonce";
@@ -66,3 +66,4 @@ export function nextWithContentSecurityPolicy(
   response.headers.set(header.key, header.value);
   return response;
 }
+
