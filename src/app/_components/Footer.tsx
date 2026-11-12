@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import Image from "next/image";
 
+import PrivacyChoicesLink from "~/app/_components/consent/PrivacyChoicesLink";
 import { NextLink } from "~/app/_components/NextLink";
 
 import logo from "../../../public/img/logo.webp";
@@ -23,9 +24,18 @@ const companyLinks = [
 const legalLinks = [
   { href: "/terms", label: "Terms of Service" },
   { href: "/privacy", label: "Privacy Policy" },
+  { href: "/subprocessors", label: "Service providers" },
 ];
 
-function FooterLinks({ title, links }: { title: string; links: typeof companyLinks }) {
+function FooterLinks({
+  children,
+  links,
+  title,
+}: {
+  children?: React.ReactNode;
+  links: typeof companyLinks;
+  title: string;
+}) {
   return (
     <Stack component="nav" aria-label={title} gap="xs">
       <Text size="sm" fw={600} tt="uppercase" c="dimmed">
@@ -44,6 +54,7 @@ function FooterLinks({ title, links }: { title: string; links: typeof companyLin
           {link.label}
         </Anchor>
       ))}
+      {children}
     </Stack>
   );
 }
@@ -74,7 +85,9 @@ export function Footer() {
             </Text>
           </Stack>
           <FooterLinks title="Company" links={companyLinks} />
-          <FooterLinks title="Legal" links={legalLinks} />
+          <FooterLinks title="Legal" links={legalLinks}>
+            <PrivacyChoicesLink />
+          </FooterLinks>
         </SimpleGrid>
 
         <Divider mb="md" />
@@ -105,6 +118,7 @@ export function AppFooter() {
             {link.label}
           </Anchor>
         ))}
+        <PrivacyChoicesLink size="xs" />
       </Group>
     </Box>
   );

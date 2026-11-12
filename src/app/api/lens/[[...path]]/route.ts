@@ -30,8 +30,6 @@ function proxy(request: Request): Promise<Response> {
       POSTHOG_ASSETS_HOST: env.POSTHOG_ASSETS_HOST,
       POSTHOG_HOST: env.POSTHOG_HOST,
     }),
-    // Only an edge in front of the app knows the visitor's address.
-    clientIp: request.headers.get("cf-connecting-ip"),
   });
 }
 

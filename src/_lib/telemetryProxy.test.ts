@@ -28,12 +28,8 @@ function upstream(response: () => Response = () => new Response("ok")) {
   return { calls, fetch };
 }
 
-function proxy(
-  request: Request,
-  fetch: ReturnType<typeof upstream>["fetch"],
-  clientIp = "203.0.113.9",
-) {
-  return handleTelemetryProxy(request, { ...hosts, clientIp, fetch });
+function proxy(request: Request, fetch: ReturnType<typeof upstream>["fetch"]) {
+  return handleTelemetryProxy(request, { ...hosts, fetch });
 }
 
 const post = (path: string, init: RequestInit = {}) =>
@@ -153,12 +149,13 @@ describe("buildUpstreamHeaders", () => {
         "X-CSRF-Token": "t",
         "X-Forwarded-For": "10.0.0.1, 10.0.0.2",
         "X-Forwarded-Host": "myiso.app",
+        "X-Iso-Country": "DE",
         "X-Real-IP": "10.0.0.1",
       }),
-      "203.0.113.9",
     );
 
     for (const name of [
+      "x-iso-country",
       "authorization",
       "cf-connecting-ip",
       "cf-ray",
@@ -167,6 +164,7 @@ describe("buildUpstreamHeaders", () => {
       "host",
       "proxy-authorization",
       "x-csrf-token",
+      "x-forwarded-for",
       "x-forwarded-host",
       "x-real-ip",
     ]) {
@@ -177,24 +175,22 @@ describe("buildUpstreamHeaders", () => {
 
   it("never forwards Authorization, PostHog keys included", () => {
     for (const value of ["Bearer phx_personal_key", "Bearer phc_project", "Bearer phs_secret", "Basic x"]) {
-      expect(buildUpstreamHeaders(request({ Authorization: value }), null).has("authorization")).toBe(
+      expect(buildUpstreamHeaders(request({ Authorization: value })).has("authorization")).toBe(
         false,
       );
     }
   });
 
-  it("passes the visitor's address the way PostHog reads it, never a client-sent one", () => {
-    const headers = buildUpstreamHeaders(request({ "X-Forwarded-For": "1.2.3.4" }), "203.0.113.9");
-    expect(headers.get("x-forwarded-for")).toBe("203.0.113.9");
-
-    const unknown = buildUpstreamHeaders(request({ "X-Forwarded-For": "1.2.3.4" }), null);
-    expect(unknown.has("x-forwarded-for")).toBe(false);
+  it("never passes on a visitor's address, client-sent or the edge's", () => {
+    const headers = buildUpstreamHeaders(
+      request({ "CF-Connecting-IP": "203.0.113.9", "X-Forwarded-For": "1.2.3.4", "X-Real-IP": "1.2.3.4" }),
+    );
+    expect(JSON.stringify([...headers])).not.toMatch(/1\.2\.3\.4|203\.0\.113\.9/);
   });
 
   it("keeps what PostHog needs to attribute the event", () => {
     const headers = buildUpstreamHeaders(
       request({ "Accept-Language": "en-GB", Origin: ORIGIN, Referer: `${ORIGIN}/app`, "User-Agent": "UA/1" }),
-      null,
     );
     expect(headers.get("user-agent")).toBe("UA/1");
     expect(headers.get("origin")).toBe(ORIGIN);
@@ -206,7 +202,7 @@ describe("buildUpstreamHeaders", () => {
     `${ORIGIN}/join?code=ABCD-1234`,
     `${ORIGIN}/app`,
   ])("never forwards the page URL in Referer (%s)", (referer) => {
-    const headers = buildUpstreamHeaders(request({ Referer: referer }), null);
+    const headers = buildUpstreamHeaders(request({ Referer: referer }));
     expect(headers.has("referer")).toBe(false);
     expect(JSON.stringify([...headers])).not.toMatch(/sarah|ABCD-1234|\/join|\/app/);
   });
@@ -239,7 +235,7 @@ describe("handleTelemetryProxy", () => {
     expect(await new Response(calls[0]?.init.body).text()).toBe("payload");
     expect(sentHeaders(calls[0]).has("cookie")).toBe(false);
     expect(sentHeaders(calls[0]).has("referer")).toBe(false);
-    expect(sentHeaders(calls[0]).get("x-forwarded-for")).toBe("203.0.113.9");
+    expect(sentHeaders(calls[0]).has("x-forwarded-for")).toBe(false);
   });
 
   it("streams the request body instead of buffering it", async () => {
@@ -292,7 +288,15 @@ describe("handleTelemetryProxy", () => {
       ["Sec-GPC: 1", { "Sec-GPC": "1" }],
       ["the consent cookie", { Cookie: "a=1; iso_consent=denied" }],
       ["GPC over a granted cookie", { Cookie: "iso_consent=granted", "Sec-GPC": "1" }],
+      ["no choice yet, from an opt-in region", { "x-iso-country": "NL" }],
     ];
+
+    it("forwards for a visitor from an opt-in region once they accepted", async () => {
+      const { fetch } = upstream();
+      await proxy(post("/lens/e/", { headers: { Cookie: "iso_consent=analytics", "x-iso-country": "NL" } }), fetch);
+      await proxy(post("/lens/e/", { headers: { "x-iso-country": "US" } }), fetch);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
 
     it.each(refusals)("gets 204 and PostHog is not contacted: %s", async (_name, headers) => {
       const { fetch } = upstream();
@@ -411,7 +415,6 @@ describe("handleTelemetryProxy", () => {
     });
     const response = await handleTelemetryProxy(post("/lens/e/"), {
       ...hosts,
-      clientIp: null,
       fetch: unreachable,
     });
     expect(response.status).toBe(502);

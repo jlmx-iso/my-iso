@@ -10,6 +10,7 @@ import {
   type BookingRole,
   withDerivedFulfilled,
 } from "~/server/_db/bookingTransitions";
+import { captureEvent } from "~/server/_lib/posthog";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
 import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
@@ -147,6 +148,11 @@ describe("booking state machine", () => {
   });
 
   describe("apply", () => {
+    it("reports the application without the other member's id", async () => {
+      await applied();
+      expect(captureEvent).toHaveBeenCalledWith(applicant.id, "booking_requested", { platform: "web" });
+    });
+
     it("creates an application and notifies the owner", async () => {
       const { booking } = await applied();
 

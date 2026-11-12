@@ -15,6 +15,7 @@ import { handleTelemetryProxy, isTelemetryProxyPath } from "./src/_lib/telemetry
 import { scrubErrorForLog } from "./src/_lib/telemetryScrub";
 import { handleRealtimeRequest, REALTIME_PATH, type RealtimeIdentity } from "./src/do/realtimeGateway";
 import { resolvePostHogHosts } from "./src/telemetryConfig.js";
+import { requestCountry, withCountryHeader } from "./src/worker/country";
 import { runScheduledJobs } from "./src/worker/scheduled";
 
 // Re-export the ChatRoom Durable Object so wrangler can bind it
@@ -96,18 +97,19 @@ function reportError(
 }
 
 async function route(
-  request: Request,
+  incoming: Request,
   env: CloudflareEnv,
   ctx: ExecutionContext,
 ): Promise<Response> {
+  // Everything behind this point learns the visitor's country from one
+  // header that only Cloudflare can set: analytics consent depends on it
+  // (src/_lib/consent.ts, consentRequiresOptIn).
+  const request = withCountryHeader(incoming, requestCountry(incoming));
   const { pathname } = new URL(request.url);
 
   // Browser telemetry: forwarded to PostHog without touching Next.js.
   if (isTelemetryProxyPath(pathname)) {
-    return handleTelemetryProxy(request, {
-      ...resolvePostHogHosts(env),
-      clientIp: request.headers.get("CF-Connecting-IP"),
-    });
+    return handleTelemetryProxy(request, resolvePostHogHosts(env));
   }
 
   // Scheduled jobs are started by this Worker's own `scheduled` handler,

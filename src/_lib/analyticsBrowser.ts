@@ -1,7 +1,7 @@
 // PostHog in the browser: the one place it is configured, started and
 // stopped. src/instrumentation-client.ts starts it on page load;
-// ~/app/providers ties it to the signed-in user; a consent banner (later
-// change) calls `setAnalyticsConsent`.
+// ~/app/providers ties it to the signed-in user; the consent banner
+// (~/app/_components/consent) calls `setAnalyticsConsent`.
 //
 // Everything is sent to the app's own origin (TELEMETRY_PROXY_PATH) and
 // forwarded to PostHog from there, so the browser makes no third-party
@@ -13,6 +13,7 @@ import posthog from "posthog-js";
 
 import {
   consentCapabilities,
+  type ConsentChoice,
   type ConsentState,
   parseConsentCookie,
   resolveConsent,
@@ -21,15 +22,45 @@ import {
 import { scrubPersonProperties, scrubProperties, stripUrlQuery } from "~/_lib/telemetryScrub";
 import { DEFAULT_POSTHOG_UI_HOST, TELEMETRY_PROXY_PATH } from "~/telemetryConfig.js";
 
+/**
+ * Attribute on `<html>` saying the visitor is in an opt-in region (value
+ * CONSENT_REGION_OPT_IN). The root layout sets it from the request's
+ * country (~/_lib/consent, consentRequiresOptIn); it is in the server HTML,
+ * so it is there before this module first runs.
+ */
+export const CONSENT_REGION_ATTRIBUTE = "data-consent-region";
+export const CONSENT_REGION_OPT_IN = "opt-in";
+
+/** Whether the browser sends a Global Privacy Control signal. */
+export function hasGlobalPrivacyControl(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true
+  );
+}
+
+/** Whether the page says the visitor is in an opt-in region. */
+export function isOptInRegion(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    // Optional: a document without a root element (some tests) is not one.
+    document.documentElement?.getAttribute(CONSENT_REGION_ATTRIBUTE) === CONSENT_REGION_OPT_IN
+  );
+}
+
+/** The choice stored in the consent cookie, or null if none was made. */
+export function readConsentChoice(): ConsentChoice | null {
+  if (typeof document === "undefined") return null;
+  return parseConsentCookie(document.cookie);
+}
+
 /** Consent in the browser. "unknown" when there is no document (SSR). */
 export function readBrowserConsent(): ConsentState {
   if (typeof document === "undefined") return "unknown";
-  const gpc =
-    typeof navigator !== "undefined" &&
-    (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
   return resolveConsent({
-    cookie: parseConsentCookie(document.cookie),
-    globalPrivacyControl: gpc,
+    cookie: readConsentChoice(),
+    globalPrivacyControl: hasGlobalPrivacyControl(),
+    optInRequired: isOptInRegion(),
   });
 }
 
@@ -135,7 +166,9 @@ export function buildPostHogConfig(options: {
     },
 
     loaded: (instance) => {
-      instance.register({ environment: options.environment });
+      // No location from an IP address: the proxy passes none on, and this
+      // stops PostHog deriving one from the address it does see.
+      instance.register({ $geoip_disable: true, environment: options.environment });
     },
   };
 }
@@ -179,7 +212,9 @@ export function startAnalytics(): boolean {
  * - "unknown": the choice is forgotten; analytics without replay or person
  *   properties (a signed-in member by user id only), with PostHog's state
  *   back in memory and nothing left in the browser's
- *   storage.
+ *   storage. In an opt-in region (EU/EEA, UK, CH) forgetting the choice
+ *   is a refusal, as for "denied".
+ * - "analytics": like "granted", without session replay.
  *
  * A Global Privacy Control signal still overrides a "granted" choice.
  */
@@ -271,18 +306,14 @@ function moveIdentifiedUser(storage: boolean): void {
 }
 
 
-export type AnalyticsUser = {
-  email?: string | null;
-  id: string;
-  name?: string | null;
-};
+export type AnalyticsUser = { id: string };
 
 /**
  * Ties PostHog's visitor to the signed-in user, or cuts the tie when nobody
  * is signed in any more.
  *
- * The distinct id is the user id, never the email address. Email and name
- * are attached as person properties only with explicit consent. On sign-out
+ * The distinct id is the user id, never the email address, and no name or
+ * email is attached as a person property, whatever the consent. On sign-out
  * the identity is reset, so the next person on this browser does not
  * inherit it. Does nothing while PostHog is not running.
  */
@@ -304,15 +335,9 @@ export function syncAnalyticsUser(user: AnalyticsUser | null): void {
   // Someone else was signed in on this browser: start from a clean identity.
   if (identified !== null && identified !== user.id) posthog.reset();
 
-  if (capabilities.personProperties) {
-    posthog.identify(user.id, {
-      ...(user.email ? { email: user.email } : {}),
-      ...(user.name ? { name: user.name } : {}),
-    });
-  } else {
-    // A repeat call with the same id sends nothing.
-    posthog.identify(user.id);
-  }
+  // By id only, in every consent state: no name or email address is ever
+  // sent to PostHog. A repeat call with the same id sends nothing.
+  posthog.identify(user.id);
 
   rememberIdentifiedUser(user.id);
 }

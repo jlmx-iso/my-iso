@@ -121,6 +121,7 @@ wrangler secret put AUTH_SECRET --env=""        # production
 | `STRIPE_SECRET_KEY` | Stripe API. | Stripe > Developers > API keys |
 | `STRIPE_WEBHOOK_SECRET` | Verifies Stripe webhooks. | Stripe > Webhooks > the endpoint's signing secret |
 | `ANTHROPIC_API_KEY` | Optional. Match summaries and icebreakers; without it they are off. | Anthropic Console |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | Optional. When a member deletes their account, their PostHog person, events and recordings are deleted too (`POST /api/projects/<id>/persons/bulk_delete/` on the app host of `POSTHOG_HOST`). Without them that step is skipped, recorded on the account (`deletionSkipped`) and reported to error tracking: delete the person by hand. The project id is not secret but lives here with its key. | PostHog > Personal API keys (scope **person:write**, this project only); Project settings > Project ID |
 
 Never set on a deployment:
 
@@ -173,10 +174,23 @@ Stack traces of server-side errors are not source-mapped.
   and invite codes; error messages and stack frames also lose standalone
   six-figure sign-in codes (`src/_lib/telemetryScrub.ts`). The waitlist link
   (`/join?...&email=`) and invite links (`/join?code=`) are the reason.
-- **Identity.** A signed-in member is identified by user id, never by email.
-  Email and name are attached only with explicit consent.
+- **Identity.** A signed-in member is identified by user id, never by email,
+  and no name or email address is ever sent, in any consent state
+  (`syncAnalyticsUser`; `scrubPersonProperties` also drops `email`, `name`
+  and similar keys from `$set`). No IP address either: the proxy strips
+  `X-Forwarded-For` and every `CF-` header, and the SDK registers
+  `$geoip_disable` so PostHog derives no location; the server SDK has GeoIP
+  off by default.
 - **Consent** (`src/_lib/consent.ts`): one cookie, `iso_consent`, plus the
-  browser's Global Privacy Control signal, which always counts as a refusal.
+  browser's Global Privacy Control signal, which always counts as a refusal,
+  and the visitor's region (below). The banner
+  (`src/app/_components/consent/ConsentBanner.tsx`) asks while no choice is
+  stored: "Accept analytics" (*analytics*), "Decline" (*denied*), or
+  "Choose" (switches for analytics and session replay). "Privacy choices" in
+  the footer and in Settings reopens the switches; a change applies to the
+  running SDK at once. With Global Privacy Control on, the banner is not
+  shown at all (it is a refusal already); the preferences dialog explains it
+  and offers nothing to switch on.
   - *denied*: PostHog is not initialised in the browser, the proxy answers
     204 without contacting PostHog, and no server-side product event is
     sent. The one exception is operational: an exception on the server is
@@ -187,9 +201,12 @@ Stack traces of server-side errors are not source-mapped.
     name), anonymous otherwise. No session replay, no person properties,
     and nothing stored in the browser: PostHog keeps its state in memory,
     so an anonymous id lasts one page load.
-  - *granted*: all of the above plus session replay, person properties and
-    PostHog's cookie and localStorage. Granting mid-session moves the
-    running SDK's state into storage; withdrawing it moves it back.
+  - *analytics*: an explicit yes to analytics: PostHog's cookie and
+    localStorage, but no session replay and no person properties.
+  - *granted*: all of the above plus session replay, and non-identifying
+    person properties (none are set today). Granting mid-session
+    moves the running SDK's state into storage; withdrawing it moves it
+    back.
 - **Server errors** name the signed-in user only from the authenticated
   session (decrypted with `AUTH_SECRET`), never from a cookie the browser
   controls. Database errors carry no query arguments: Prisma runs with
@@ -197,18 +214,50 @@ Stack traces of server-side errors are not source-mapped.
   reprint the query whatever the format, are reduced to the call and the
   problem before they are reported.
 
+### Consent by region
+
+The owner's decision: **pseudonymous by default, opt-in in Europe**,
+extended after review to the other places that expect analytics off by
+default. A visitor from the EU (outermost regions with their own codes
+included: GF, GP, MQ, RE, YT, MF, AX), the rest of the EEA (Iceland,
+Liechtenstein, Norway), the United Kingdom with Gibraltar and the Crown
+Dependencies (GI, JE, GG, IM), Switzerland, Canada (Quebec's Law 25;
+Cloudflare gives no province) or Brazil (LGPD) who has not chosen is
+treated as *denied*: PostHog is not initialised, the proxy forwards nothing and no
+server-side event is sent, until they accept. Everywhere else, no choice
+means *unknown* (pseudonymous analytics, as above).
+
+- The rule is one function, `consentRequiresOptIn(country)` in
+  `src/_lib/consent.ts` (list and tests there). Cloudflare's "unknown"
+  (`XX`) and Tor (`T1`) count as opt-in regions.
+- The country comes from Cloudflare (`request.cf.country`). The Worker
+  entry (`worker.ts`, `src/worker/country.ts`) puts it in the
+  `x-iso-country` request header for everything behind it (the `/lens`
+  proxy, the app, `onRequestError`), always replacing a value the client
+  sent, so it cannot be spoofed. The proxy does not forward it to PostHog.
+- The root layout reads the header and writes `data-consent-region` on
+  `<html>`; the browser SDK reads that attribute before it starts.
+- `next dev` has no Worker and so no country: the default rule applies.
+
 ### Session replay
 
 Whether replay records is a PostHog project setting; the app additionally
-requires *granted* consent. When it records (`src/_lib/analyticsBrowser.ts`):
+requires *granted* consent (the "Session replay" switch). When it records
+(`src/_lib/analyticsBrowser.ts`):
 
 - everything typed into any input is masked;
 - **all text on every page is masked** (`maskTextSelector: "*"`), so
   messages, names, email addresses and phone numbers cannot appear;
 - any element with the attribute `data-replay-block` is replaced by an empty
-  box. Text masking does not hide pictures, so these must carry it before
-  replay is switched on: avatars, portfolio and profile photos, image
-  attachments in messages, and uploaded-image previews.
+  box. Text masking does not hide pictures, so these carry it: avatars
+  (`Avatar`), portfolio and profile photos and the profile cover
+  (`PortfolioThumbnail`, `PortfolioSection`), event covers (`EventCover`,
+  search cards), Discover cards, uploaded-image previews (`ImagePicker`,
+  `AvatarStep`), and, as a second layer under the text mask, message
+  bodies (`MessageTile`), conversation previews, bios (profile header,
+  search, Discover), review text, booking notes and event comments.
+  `src/app/_components/replayBlock.dom.test.tsx` checks the main ones. A
+  new component that shows a member's photo or writing must add it.
 
 To make recordings readable later, add `data-private` to every element that
 shows personal content (message bubbles, thread list previews and titles,
@@ -266,12 +315,17 @@ Do staging completely, then production.
    filter on the `environment` property). Session replay and its sampling
    are project settings; the app only records for visitors who have
    explicitly consented and masks all text and inputs ("Session replay").
-   Leave replay off in the project until the elements listed there carry
-   `data-replay-block`.
-9. **Variables and secrets.** Fill the two `[vars]` blocks, run
+   The elements listed there carry `data-replay-block`, so replay may be
+   switched on; check a few recordings after doing so.
+9. **Legal pages.** Fill in every owner TODO in the privacy policy, terms
+   and service providers list (`src/app/_components/legal/`; outside
+   production each shows as a red `[TODO for the owner: ...]` marker, in
+   production a neutral fallback), and have them reviewed. Then remove the
+   "Draft — pending legal review" notice in `LegalPage.tsx`.
+10. **Variables and secrets.** Fill the two `[vars]` blocks, run
    `wrangler secret put` for every secret, create `.env.deploy.<environment>`.
-10. **Deploy.** `npm run deploy:staging`.
-11. **Check.**
+11. **Deploy.** `npm run deploy:staging`.
+12. **Check.**
     - `curl https://<domain>/api/health` returns `"status":"ok"`, the right
       `environment`, and the same value under `build.environment`.
     - Telemetry proxy: `curl -i https://<domain>/lens/array/<phc_token>/config.js`

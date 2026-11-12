@@ -1,6 +1,12 @@
 import type { Instrumentation } from "next";
 
-import { consentCapabilities, parseConsentCookie, resolveConsent } from "~/_lib/consent";
+import {
+  consentCapabilities,
+  consentRequiresOptIn,
+  COUNTRY_HEADER,
+  parseConsentCookie,
+  resolveConsent,
+} from "~/_lib/consent";
 
 /** Nothing to start: PostHog clients are created per send (see below). */
 export function register() {
@@ -69,6 +75,7 @@ export const onRequestError: Instrumentation.onRequestError = async (error, requ
   const consent = resolveConsent({
     cookie: parseConsentCookie(cookie),
     globalPrivacyControl: headerValue(request.headers["sec-gpc"], ",")?.trim() === "1",
+    optInRequired: consentRequiresOptIn(headerValue(request.headers[COUNTRY_HEADER], ",")),
   });
 
   const identified = consentCapabilities(consent).capture;

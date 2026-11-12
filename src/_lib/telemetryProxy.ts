@@ -100,6 +100,8 @@ const STRIPPED_REQUEST_HEADERS = [
   "x-forwarded-proto",
   "x-real-ip",
   "x-csrf-token",
+  // Set by the Worker entry for this app (./consent, COUNTRY_HEADER).
+  "x-iso-country",
 ];
 
 /** Response headers that must not reach the browser from PostHog. */
@@ -118,8 +120,6 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 export type TelemetryProxyOptions = {
   apiHost: string;
   assetsHost: string;
-  /** The visitor's address as seen by the edge (CF-Connecting-IP). */
-  clientIp: string | null;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
   prefix?: string;
 };
@@ -152,7 +152,7 @@ export function mapTelemetryUrl(
 }
 
 /** The headers forwarded to PostHog for `request`. */
-export function buildUpstreamHeaders(request: Request, clientIp: string | null): Headers {
+export function buildUpstreamHeaders(request: Request): Headers {
   const headers = new Headers(request.headers);
   for (const name of STRIPPED_REQUEST_HEADERS) headers.delete(name);
   const names: string[] = [];
@@ -162,8 +162,10 @@ export function buildUpstreamHeaders(request: Request, clientIp: string | null):
     if (name.toLowerCase().startsWith("cf-")) headers.delete(name);
   }
 
-  // PostHog reads the visitor's address (for GeoIP) from X-Forwarded-For.
-  if (clientIp) headers.set("x-forwarded-for", clientIp);
+  // No visitor address is passed on (X-Forwarded-For is stripped above):
+  // PostHog sees only the Worker's, and the SDK turns GeoIP off
+  // ($geoip_disable, ~/_lib/analyticsBrowser), so analytics hold no IP
+  // address and no location derived from one.
   return headers;
 }
 
@@ -246,7 +248,7 @@ export async function handleTelemetryProxy(
 
   const init: RequestInit & { duplex?: "half" } = {
     body,
-    headers: buildUpstreamHeaders(request, options.clientIp),
+    headers: buildUpstreamHeaders(request),
     method: request.method,
     redirect: "manual",
   };
