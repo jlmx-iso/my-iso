@@ -71,6 +71,23 @@ model Subscription {
   // replaces a newer one.
   stripeCreatedAt    DateTime?
   stripeSyncedAt     DateTime?
+  // The subscription's latest invoice (in_...), and the end of the current
+  // period when that invoice is paid (null when it is not): a cancelled
+  // subscription keeps access only for a period that was paid for.
+  latestInvoiceId    String?
+  paidThroughAt      DateTime?
+  // When the subscription first turned past_due; kept while it stays
+  // past_due (also across new billing periods) and cleared when it leaves
+  // that status. The grace window is counted from here.
+  pastDueSince       DateTime?
+  // A dispute (chargeback) on a payment of this subscription that is open
+  // or was lost: its id (dp_...), "open" | "lost", and the invoice the
+  // disputed charge paid. All null when there is none or it was won.
+  disputeId          String?
+  disputeStatus      String?
+  disputeInvoiceId   String?
+  // The invoice whose payment was refunded in full, if any.
+  refundedInvoiceId  String?
   // A comped account: Pro without a Stripe subscription. Set by hand.
   isLifetime         Boolean
 
@@ -101,6 +118,15 @@ model StripeEvent {
   processedAt  Int?
 
   @@index([claimedAt])
+}
+
+// Short leases that serialise billing work per user (starting Checkout);
+// see src/server/_billing/lease.ts. `expiresAt` is Unix seconds: a lease
+// whose holder died is taken over after that.
+model BillingLease {
+  key       String @id
+  holder    String
+  expiresAt Int
 }
 
 model Session {
@@ -375,6 +401,12 @@ model Booking {
   rate        String? // Proposed rate
   notes       String? // Message from applicant
   ownerNotes  String? // Response from event owner
+  // How a canceled booking ended: "withdrawn" (the applicant took back an
+  // application), "canceled_by_applicant" or "canceled_by_owner" (an
+  // accepted booking was called off). Only a withdrawal can be followed by a
+  // new application. Null on other statuses and on rows canceled before the
+  // column existed.
+  cancelOrigin String?
   isDeleted   Boolean  @default(false)
 
   // Also the index for "bookings of this event" (eventId comes first).
