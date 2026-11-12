@@ -111,6 +111,22 @@ export const reviewRouter = createTRPCRouter({
     .input(reviewsInput)
     .query(async ({ ctx, input }) => toPage(await findReviews(ctx.db, input, 1), input.limit)),
 
+  /**
+   * The caller's own review of a photographer, or null: lets the profile
+   * show "your review" instead of a form that could only answer "already
+   * reviewed". (The public list deliberately carries no reviewer ids.)
+   */
+  getMine: protectedProcedure
+    .input(z.object({ photographerId: idInput }))
+    .query(({ ctx, input }) =>
+      ctx.db.review.findUnique({
+        select: { createdAt: true, description: true, id: true, rating: true, title: true },
+        where: {
+          photographerId_userId: { photographerId: input.photographerId, userId: ctx.session.user.id },
+        },
+      }),
+    ),
+
   getAverageRating: publicProcedure
     .input(z.object({ photographerId: idInput }))
     .query(async ({ ctx, input }) => {

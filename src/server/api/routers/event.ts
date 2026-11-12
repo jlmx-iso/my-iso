@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
@@ -9,8 +10,7 @@ import { base64ImageInput, requireValidImage, type ValidImage } from "~/server/_
 import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
-export const MAX_COMMENT_LENGTH = 2000;
-export const MAX_EVENT_DURATION_HOURS = 72;
+export { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS };
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
