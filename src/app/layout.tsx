@@ -88,7 +88,9 @@ export default async function RootLayout({
       <body>
         <CSPostHogProvider>
           <ThemeProvider>
-            <Notifications position="top-center" />
+            {/* Top of the screen: clear of the phone tab bar and of the buttons
+                at the bottom of dialogs (offsets in globals.css). */}
+            <Notifications position="top-center" limit={3} containerWidth={440} zIndex={1000} />
             <TRPCReactProvider>
               <AppShell
                 header={<Navbar />}

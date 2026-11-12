@@ -21,7 +21,6 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -38,6 +37,7 @@ import { useState } from "react";
 
 import { type MoveDirection, canMoveImage, moveImage, sortPortfolio } from "~/_utils/portfolioOrder";
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 import PortfolioUpload, { PORTFOLIO_TAG_SUGGESTIONS } from "./PortfolioUpload";
@@ -303,7 +303,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
   };
 
   const showError = (title: string, error: unknown, fallback: string) =>
-    notifications.show({ color: "red", message: userFacingError(error, fallback), title });
+    notify.error({ message: userFacingError(error, fallback), title });
 
   const updateImage = api.photographer.updatePortfolioImage.useMutation();
   const deleteImage = api.photographer.deletePortfolioImage.useMutation();
@@ -316,8 +316,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
     try {
       await updateImage.mutateAsync({ id: image.id, isFeatured: !image.isFeatured });
       await refresh();
-      notifications.show({
-        color: "teal",
+      notify.success({
         message: image.isFeatured
           ? `"${image.title}" is no longer featured.`
           : `"${image.title}" now appears at the top of your portfolio.`,
@@ -357,7 +356,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       });
       await refresh();
       setEditing(null);
-      notifications.show({ color: "teal", message: "Your changes are live.", title: "Image updated" });
+      notify.success({ message: "Your changes are live.", title: "Image updated" });
     } catch (error) {
       showError("Couldn't save changes", error, "Please try again.");
     }
@@ -368,8 +367,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
     try {
       await deleteImage.mutateAsync({ id: deleting.id });
       await refresh();
-      notifications.show({
-        color: "teal",
+      notify.success({
         message: `"${deleting.title}" was removed from your portfolio.`,
         title: "Image deleted",
       });

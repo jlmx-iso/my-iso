@@ -13,11 +13,11 @@ import {
   Text,
 } from "@mantine/core";
 import { useId } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
 import { IconAdjustments, IconCheck, IconEyeOff } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 const PHOTOGRAPHY_TYPES = [
@@ -38,8 +38,7 @@ function VisibilitySwitch({ preferences }: { preferences: Preferences }) {
   const utils = api.useUtils();
   const update = api.discover.updatePreferences.useMutation({
     onError: (error) =>
-      notifications.show({
-        color: "red",
+      notify.error({
         message: userFacingError(error, "Your visibility wasn't changed. Please try again."),
         title: "Couldn't update visibility",
       }),
@@ -50,8 +49,7 @@ function VisibilitySwitch({ preferences }: { preferences: Preferences }) {
         current ? { ...current, isDiscoverable: !!variables.isDiscoverable } : current,
       );
       void utils.discover.getPreferences.invalidate();
-      notifications.show({
-        color: "teal",
+      notify.success({
         message: variables.isDiscoverable
           ? "Other photographers can now find and match with you."
           : "You're hidden. You can still browse, but nobody can match with you.",
@@ -89,15 +87,14 @@ function PreferencesForm({ preferences }: { preferences: Preferences }) {
 
   const update = api.discover.updatePreferences.useMutation({
     onError: (error) =>
-      notifications.show({
-        color: "red",
+      notify.error({
         message: userFacingError(error, "Your preferences weren't saved. Please try again."),
         title: "Couldn't save preferences",
       }),
     onSuccess: () => {
       void utils.discover.getPreferences.invalidate();
       void utils.discover.getCardDeck.invalidate();
-      notifications.show({ color: "teal", message: "Discover will use them from now on.", title: "Preferences saved" });
+      notify.success({ message: "Discover will use them from now on.", title: "Preferences saved" });
     },
   });
 

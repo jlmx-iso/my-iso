@@ -1,6 +1,7 @@
-import { Button, DEFAULT_THEME, Drawer, FileInput, Modal, Rating, createTheme } from "@mantine/core";
+import { Button, DEFAULT_THEME, Drawer, FileInput, Modal, Notification, Rating, createTheme } from "@mantine/core";
 
 import colors, { black } from "./colors";
+import notificationClasses from "./Notification.module.css";
 import { headings } from "./typography";
 
 // The theme follows the Mantine 9 colour model: filled controls use shade 6,
@@ -20,6 +21,15 @@ const theme = createTheme({
         Drawer: Drawer.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
         FileInput: FileInput.extend({ defaultProps: { clearButtonProps: { "aria-label": "Remove file" } } }),
         Modal: Modal.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
+        // Toasts: one look for every kind, see Notification.module.css.
+        Notification: Notification.extend({
+            classNames: notificationClasses,
+            defaultProps: { closeButtonProps: { "aria-label": "Dismiss notification" } },
+            // Shade 7: white icons on it are at least 4.5:1 for every colour.
+            vars: (theme, props) => ({
+                root: { "--notification-color": theme.colors[props.color ?? "orange"]?.[7] ?? theme.colors.orange[7] },
+            }),
+        }),
         // Mantine's yellow stars are 1.6:1 against white.
         Rating: Rating.extend({ defaultProps: { color: "tan" } }),
     },

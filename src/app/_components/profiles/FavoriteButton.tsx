@@ -1,10 +1,10 @@
 "use client";
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { IconBookmark, IconBookmarkFilled } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 type FavoriteButtonProps = {
@@ -18,8 +18,7 @@ type FavoriteButtonProps = {
 export const FavoriteButton = ({ isFavorite, photographerId, photographerName }: FavoriteButtonProps) => {
   const [isSaved, setIsSaved] = useState(isFavorite);
   const onError = (error: unknown) =>
-    notifications.show({
-      color: "red",
+    notify.error({
       message: userFacingError(error, "Please try again."),
       title: "Couldn't update your saved photographers",
     });

@@ -13,7 +13,6 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle,
   IconCheck,
@@ -27,6 +26,7 @@ import { formatLocalDate } from "~/_lib/dayjs";
 import { toSafeWebsiteUrl } from "~/_utils/social";
 import { userFacingError } from "~/_utils/userError";
 import PageHeader from "~/app/_components/PageHeader";
+import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type Status = "pending" | "approved" | "rejected" | "all";
@@ -68,8 +68,7 @@ export default function Page() {
     try {
       await (action === "approve" ? approve : reject).mutateAsync({ id: entry.id });
       await utils.waitlist.getAll.invalidate();
-      notifications.show({
-        color: "teal",
+      notify.success({
         message:
           action === "approve"
             ? `${entry.name} can now join ISO with ${entry.email}.`
@@ -78,8 +77,7 @@ export default function Page() {
       });
       setDecision(null);
     } catch (mutationError) {
-      notifications.show({
-        color: "red",
+      notify.error({
         message: userFacingError(mutationError, "Nothing was changed. Please try again."),
         title: action === "approve" ? "Couldn't approve application" : "Couldn't decline application",
       });

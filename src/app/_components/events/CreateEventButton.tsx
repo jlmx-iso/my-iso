@@ -1,11 +1,11 @@
 "use client";
 
 import { Button, Modal } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { IconPlus } from "@tabler/icons-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
 import CreateEventForm from "./CreateEventForm";
@@ -32,8 +32,7 @@ export default function CreateEventButton() {
 
     const handleCreated = (event: { id: string; title: string }) => {
         close();
-        notifications.show({
-            color: "teal",
+        notify.success({
             message: `"${event.title}" is live. Photographers nearby can now apply.`,
             title: "Event created",
         });

@@ -1,9 +1,9 @@
 "use client";
 
 import { Box, Group, Stack, Text } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 
 import { userFacingError } from "~/_utils/userError";
+import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 import LikeButton from "../buttons/LikeButton";
@@ -11,7 +11,7 @@ import Timemarker from "../Timemarker";
 import UserBadge from "../UserBadge";
 
 type EventCommentProps = {
-    comment: RouterOutputs["event"]["getCommentsByEventId"][number];
+    comment: RouterOutputs["event"]["getCommentsPage"]["items"][number];
 };
 
 export default function EventComment({ comment: initialComment }: EventCommentProps) {
@@ -22,8 +22,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
     );
     const { mutate, isPending } = api.event.addOrRemoveEventCommentLike.useMutation({
         onError: (error) =>
-            notifications.show({
-                color: "red",
+            notify.error({
                 message: userFacingError(error, "Please try again."),
                 title: "Couldn't update your like",
             }),

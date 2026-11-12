@@ -1,13 +1,13 @@
 "use client";
 
 import { Avatar, Box, Button, Group, Slider, Stack, Text } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { useEffect, useId, useMemo, useState } from "react";
 import type { Area } from "react-easy-crop";
 import Cropper from "react-easy-crop";
 
 import { logger } from "~/_utils/logger";
 import { ImagePicker } from "~/app/_components/input/ImagePicker";
+import { notify } from "~/app/_lib/notify";
 
 const OUTPUT_SIZE = 512;
 
@@ -75,8 +75,7 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
       setSource({ dataUrl: await readAsDataUrl(file), name: file.name });
     } catch (error) {
       logger.error("Failed to read avatar file", { error });
-      notifications.show({
-        color: "red",
+      notify.error({
         message: "We couldn't read that file. Try a different image.",
         title: "Photo not loaded",
       });
@@ -91,8 +90,7 @@ export function AvatarStep({ photo, onChange, disabled }: AvatarStepProps) {
       resetCrop();
     } catch (error) {
       logger.error("Failed to crop image", { error });
-      notifications.show({
-        color: "red",
+      notify.error({
         message: "We couldn't crop that image. Try a different one.",
         title: "Photo not cropped",
       });

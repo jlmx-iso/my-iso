@@ -174,3 +174,23 @@ html {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Toasts sit at the top. On phones they are centred over the app header, so
+ * they never cover the tab bar or the buttons at the bottom of a dialog. On
+ * wider screens they sit in the top right corner below the header, clear of
+ * centred dialogs.
+ */
+.mantine-Notifications-root[data-position="top-center"] {
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  max-width: min(var(--notifications-container-width), calc(100vw - 24px));
+}
+
+@media (min-width: 48em) {
+  .mantine-Notifications-root[data-position="top-center"] {
+    top: calc(var(--header-height) + 12px);
+    right: var(--mantine-spacing-md);
+    left: auto;
+    transform: none;
+  }
+}
