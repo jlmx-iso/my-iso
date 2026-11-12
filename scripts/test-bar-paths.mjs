@@ -6,10 +6,17 @@
 // it is always the base branch's copy of this file and of the workflow that
 // runs, never the pull request's: a pull request cannot weaken either.
 // It never runs code from the pull request; it only reads the list of
-// changed file names and, for coverage-thresholds.json, the two JSON texts.
+// changed file names and, for coverage-thresholds.json and package.json,
+// the two JSON texts.
+//
+// package.json is protected field by field: a change that only bumps
+// dependency versions (registry version ranges, nothing else) needs no
+// label; any other change to it (its `scripts` above all) does. See
+// packageJsonOnlyDependencies.
 //
 //   node scripts/test-bar-paths.mjs --files changed.txt \
-//     [--thresholds-base base.json --thresholds-head head.json]
+//     [--thresholds-base base.json --thresholds-head head.json] \
+//     [--package-base base.json --package-head head.json]
 //   (HAS_EXCEPTION=true when the pull request has the label)
 //
 // Keep PROTECTED_PATHS in step with .github/CODEOWNERS.
@@ -80,6 +87,88 @@ export function thresholdsOnlyRaised(baseText, headText) {
 }
 
 /**
+ * The package.json fields a pull request may change without the label:
+ * the dependency lists and the Node/npm versions. Every other field (and a
+ * field added or removed) can change what the test commands run: `scripts`
+ * most obviously, but also `imports` (it can redirect a module) or `type`.
+ */
+export const PACKAGE_JSON_DEPENDENCY_FIELDS = Object.freeze([
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+  "overrides",
+  "engines",
+]);
+
+/**
+ * A version range from the npm registry: "^1.2.3", "~4", ">=22",
+ * "5.0.0-beta.32", "1.2.3 || ^2". Never an alias ("npm:other@1"), a URL,
+ * a git or GitHub reference ("user/repo"), a path ("file:..") or a tag:
+ * those can put any code in place of a test tool.
+ */
+const REGISTRY_RANGE = /^(?:[~^]|[<>]=?|=)?\d[0-9A-Za-z.+-]*(?:\s*(?:\|\||\s-\s|\s)\s*(?:[~^]|[<>]=?|=)?\d[0-9A-Za-z.+-]*)*$/;
+
+/** `overrides` may also point at the root's own range ("$name"). */
+const OVERRIDE_REFERENCE = /^\$[@a-z0-9][\w./@-]*$/i;
+
+/**
+ * Whether every version in a dependency field (nested, for `overrides`) is
+ * a registry range.
+ *
+ * @param {unknown} value
+ * @param {boolean} isOverride
+ * @returns {boolean}
+ */
+function onlyRegistryRanges(value, isOverride) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    return REGISTRY_RANGE.test(text) || (isOverride && OVERRIDE_REFERENCE.test(text));
+  }
+  if (!isObject(value)) return false;
+  if (!isOverride) return Object.values(value).every((range) => typeof range === "string" && onlyRegistryRanges(range, false));
+  // overrides: { "pkg": "range" } or { "pkg": { ".": "range", "dep": "range" } }
+  return Object.values(value).every((range) => onlyRegistryRanges(range, true));
+}
+
+/**
+ * Whether a package.json change only touches dependency versions, so the
+ * pull request needs no label: every field outside
+ * PACKAGE_JSON_DEPENDENCY_FIELDS is identical (same keys, same values,
+ * `scripts` included), each changed dependency field holds registry version
+ * ranges only, and `engines` names only node and npm. Invalid JSON on
+ * either side counts as not only dependencies.
+ *
+ * @param {string} baseText
+ * @param {string} headText
+ */
+export function packageJsonOnlyDependencies(baseText, headText) {
+  try {
+    const base = /** @type {unknown} */ (JSON.parse(baseText));
+    const head = /** @type {unknown} */ (JSON.parse(headText));
+    if (!isObject(base) || !isObject(head)) return false;
+    const keys = new Set([...Object.keys(base), ...Object.keys(head)]);
+    for (const key of keys) {
+      const same = JSON.stringify(base[key]) === JSON.stringify(head[key]);
+      if (same) continue;
+      if (!PACKAGE_JSON_DEPENDENCY_FIELDS.includes(key) || !(key in head)) return false;
+      const value = head[key];
+      if (key === "engines") {
+        if (!isObject(value)) return false;
+        const names = Object.keys(value);
+        if (!names.every((name) => name === "node" || name === "npm")) return false;
+        if (!onlyRegistryRanges(value, false)) return false;
+        continue;
+      }
+      if (!onlyRegistryRanges(value, key === "overrides")) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {unknown} value
  * @returns {value is Record<string, unknown>}
  */
@@ -90,15 +179,20 @@ function isObject(value) {
 /**
  * The check's outcome and the text for the log and the job summary.
  *
- * @param {{ changed: readonly string[], exception: boolean, thresholdsRaisedOnly: boolean }} input
+ * @param {{ changed: readonly string[], exception: boolean, thresholdsRaisedOnly: boolean, packageDependenciesOnly?: boolean }} input
  */
-export function evaluate({ changed, exception, thresholdsRaisedOnly }) {
+export function evaluate({ changed, exception, thresholdsRaisedOnly, packageDependenciesOnly = false }) {
   const matches = protectedChanges(changed).filter(
-    (file) => !(file === "coverage-thresholds.json" && thresholdsRaisedOnly),
+    (file) =>
+      !(file === "coverage-thresholds.json" && thresholdsRaisedOnly) &&
+      !(file === "package.json" && packageDependenciesOnly),
   );
   const lines = ["### Test bar guard", ""];
   if (thresholdsRaisedOnly && changed.includes("coverage-thresholds.json")) {
     lines.push("coverage-thresholds.json changed, and only upward: allowed without the label.", "");
+  }
+  if (packageDependenciesOnly && changed.some((file) => file.trim() === "package.json")) {
+    lines.push("package.json changed, in dependency versions only (no scripts or other fields): allowed without the label.", "");
   }
   if (matches.length === 0) {
     lines.push("No test-bar file changed.");
@@ -124,6 +218,8 @@ function main() {
       files: { type: "string" },
       "thresholds-base": { type: "string" },
       "thresholds-head": { type: "string" },
+      "package-base": { type: "string" },
+      "package-head": { type: "string" },
     },
   });
   if (!values.files) {
@@ -136,7 +232,19 @@ function main() {
   const thresholdsRaisedOnly =
     !!base && !!head && thresholdsOnlyRaised(readFileSync(base, "utf8"), readFileSync(head, "utf8"));
 
-  const result = evaluate({ changed, exception: process.env.HAS_EXCEPTION === "true", thresholdsRaisedOnly });
+  const packageBase = values["package-base"];
+  const packageHead = values["package-head"];
+  const packageDependenciesOnly =
+    !!packageBase &&
+    !!packageHead &&
+    packageJsonOnlyDependencies(readFileSync(packageBase, "utf8"), readFileSync(packageHead, "utf8"));
+
+  const result = evaluate({
+    changed,
+    exception: process.env.HAS_EXCEPTION === "true",
+    packageDependenciesOnly,
+    thresholdsRaisedOnly,
+  });
   console.log(result.summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${result.summary}\n`);
   if (!result.pass) process.exit(1);

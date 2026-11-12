@@ -184,6 +184,17 @@ The job summary lists the files and says the label is required. A change
 to `coverage-thresholds.json` that only raises numbers (a ratchet) passes
 without the label; it compares the two JSON texts read through the API.
 
+`package.json` is guarded field by field, from its two JSON texts read the
+same way. A change that only touches dependency versions passes without the
+label: `dependencies`, `devDependencies`, `optionalDependencies`,
+`peerDependencies`, `overrides` and `engines` (node and npm only), each
+version a registry range (`^1.2.3`, `>=26`, `1.0.0-beta.2`; in `overrides`
+also `$name`). Anything else needs the label: a change to `scripts`, a field
+added, removed or changed outside that list (`imports` or `type` can
+redirect what a test runs), or a version that is an alias (`npm:`), a URL,
+a git or GitHub reference, a path or a dist-tag. CODEOWNERS cannot review a
+single field, so `package.json` still needs code-owner review either way.
+
 It takes effect once it is on the default branch (so not for the pull
 request that adds it). Make "Test bar guard" a **required status check** in
 branch protection, alongside requiring code-owner review.

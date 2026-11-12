@@ -1,9 +1,18 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { evaluate, isProtectedPath, PROTECTED_PATHS, protectedChanges, thresholdsOnlyRaised } from "./test-bar-paths.mjs";
+import {
+  evaluate,
+  isProtectedPath,
+  packageJsonOnlyDependencies,
+  PROTECTED_PATHS,
+  protectedChanges,
+  thresholdsOnlyRaised,
+} from "./test-bar-paths.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -115,5 +124,122 @@ describe("evaluate", () => {
     expect(
       evaluate({ changed: ["coverage-thresholds.json"], exception: false, thresholdsRaisedOnly: false }).pass,
     ).toBe(false);
+  });
+});
+
+describe("packageJsonOnlyDependencies", () => {
+  const basePackage = {
+    dependencies: { next: "^16.4.6", react: "^19.3.1" },
+    devDependencies: { vitest: "^5.1.0" },
+    engines: { node: ">=22" },
+    name: "my-iso",
+    overrides: { "@react-email/render": "$@react-email/render", glob: "^11.0.0" },
+    scripts: { test: "vitest run", "test:coverage": "vitest run --coverage" },
+    type: "module",
+  };
+  const base = JSON.stringify(basePackage, null, 2);
+  const withChange = (change: Record<string, unknown>) => JSON.stringify({ ...basePackage, ...change });
+
+  it("allows version bumps, added and removed dependencies, engines and overrides", () => {
+    expect(packageJsonOnlyDependencies(base, base)).toBe(true);
+    expect(
+      packageJsonOnlyDependencies(
+        base,
+        withChange({
+          dependencies: { next: "^16.5.0", "new-lib": "~2.1", react: "19.3.2" },
+          devDependencies: { vitest: ">=5.2.0 <6", "@types/node": "^26.1.0" },
+          engines: { node: ">=26", npm: ">=11" },
+          overrides: { "@react-email/render": "$@react-email/render", glob: "^13.0.0", "some-dep": { ".": "1.2.3-beta.4", inner: "^1 || ^2" } },
+        }),
+      ),
+    ).toBe(true);
+    // Formatting alone is not a change.
+    expect(packageJsonOnlyDependencies(base, JSON.stringify(basePackage))).toBe(true);
+  });
+
+  it.each([
+    ["a changed script", { scripts: { test: "vitest run --passWithNoTests", "test:coverage": "vitest run --coverage" } }],
+    ["a removed script", { scripts: { test: "vitest run" } }],
+    ["a new script", { scripts: { ...basePackage.scripts, pretest: "node x.js" } }],
+    ["a new top-level field (imports can redirect modules)", { imports: { "#vitest": "./fake.js" } }],
+    ["a changed type", { type: "commonjs" }],
+    ["a changed name", { name: "other" }],
+    ["a removed dependency field", { devDependencies: undefined }],
+  ])("refuses %s", (_label, change) => {
+    expect(packageJsonOnlyDependencies(base, withChange(change))).toBe(false);
+  });
+
+  it.each([
+    ["an npm alias", "npm:not-vitest@1.0.0"],
+    ["a git URL", "git+https://example.com/vitest.git"],
+    ["a GitHub shorthand", "someone/vitest"],
+    ["a local path", "file:../vitest"],
+    ["a tarball URL", "https://example.com/vitest.tgz"],
+    ["a dist-tag", "latest"],
+    ["an empty range", ""],
+  ])("refuses %s as a version", (_label, range) => {
+    expect(packageJsonOnlyDependencies(base, withChange({ devDependencies: { vitest: range } }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ overrides: { vitest: range } }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ overrides: { vitest: { ".": range } } }))).toBe(false);
+  });
+
+  it("refuses a $reference outside overrides, a non-string version and unknown engines", () => {
+    expect(packageJsonOnlyDependencies(base, withChange({ dependencies: { next: "$next" } }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ dependencies: { next: 16 } }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ dependencies: ["next"] }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ engines: { node: ">=26", vscode: "^1" } }))).toBe(false);
+    expect(packageJsonOnlyDependencies(base, withChange({ engines: ">=26" }))).toBe(false);
+  });
+
+  it("refuses anything that is not a JSON object on either side", () => {
+    expect(packageJsonOnlyDependencies(base, "not json")).toBe(false);
+    expect(packageJsonOnlyDependencies("[]", base)).toBe(false);
+    expect(packageJsonOnlyDependencies(base, "null")).toBe(false);
+  });
+});
+
+describe("evaluate with package.json", () => {
+  it("lets a dependency-only package.json change through without the label", () => {
+    const result = evaluate({
+      changed: ["package.json", "package-lock.json"],
+      exception: false,
+      packageDependenciesOnly: true,
+      thresholdsRaisedOnly: false,
+    });
+    expect(result.pass).toBe(true);
+    expect(result.summary).toContain("dependency versions only");
+  });
+
+  it("still needs the label for package.json when the change is not dependency-only, or with other test-bar files", () => {
+    expect(evaluate({ changed: ["package.json"], exception: false, thresholdsRaisedOnly: false }).pass).toBe(false);
+    expect(
+      evaluate({ changed: ["package.json", "vitest.config.ts"], exception: false, packageDependenciesOnly: true, thresholdsRaisedOnly: false }),
+    ).toMatchObject({ pass: false });
+  });
+});
+
+describe("the command line", () => {
+  const script = path.join(root, "scripts/test-bar-paths.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "test-bar-"));
+  const write = (name: string, text: string) => {
+    const file = path.join(dir, name);
+    writeFileSync(file, text);
+    return file;
+  };
+  const run = (args: string[]) =>
+    spawnSync(process.execPath, [script, ...args], { encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "", HAS_EXCEPTION: "false" } });
+  const files = write("changed.txt", "package.json\npackage-lock.json\n");
+  const pkgBase = write("base.json", JSON.stringify({ devDependencies: { vitest: "^5.1.0" }, scripts: { test: "vitest run" } }));
+
+  it("passes a dependency bump given both package.json texts", () => {
+    const head = write("head-deps.json", JSON.stringify({ devDependencies: { vitest: "^5.2.0" }, scripts: { test: "vitest run" } }));
+    const result = run(["--files", files, "--package-base", pkgBase, "--package-head", head]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+  });
+
+  it("fails a scripts change, and a package.json change it could not read", () => {
+    const head = write("head-scripts.json", JSON.stringify({ devDependencies: { vitest: "^5.1.0" }, scripts: { test: "true" } }));
+    expect(run(["--files", files, "--package-base", pkgBase, "--package-head", head]).status).toBe(1);
+    expect(run(["--files", files]).status).toBe(1);
   });
 });
