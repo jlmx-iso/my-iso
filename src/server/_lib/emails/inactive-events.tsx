@@ -67,7 +67,7 @@ export function InactiveEventsEmail({
             View Details &rarr;
           </Button>
           {index < events.length - 1 && (
-            <Hr style={{ borderColor: colors.gray200, marginTop: "16px" }} />
+            <Hr style={{ borderTop: `1px solid ${colors.gray200}`, marginTop: "16px" }} />
           )}
         </Section>
       ))}

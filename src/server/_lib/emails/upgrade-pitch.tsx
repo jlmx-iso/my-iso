@@ -61,12 +61,12 @@ export function UpgradePitchEmail({
           <Text style={statNumber}>{profileViews}</Text>
           <Text style={statLabel}>Profile Views</Text>
         </Section>
-        <Hr style={{ borderColor: colors.gray200, margin: "8px 0" }} />
+        <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "8px 0" }} />
         <Section style={statRow}>
           <Text style={statNumber}>{bookingCount}</Text>
           <Text style={statLabel}>Bookings</Text>
         </Section>
-        <Hr style={{ borderColor: colors.gray200, margin: "8px 0" }} />
+        <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "8px 0" }} />
         <Section style={statRow}>
           <Text style={statNumber}>{messageCount}</Text>
           <Text style={statLabel}>Messages</Text>
