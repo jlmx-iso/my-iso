@@ -21,8 +21,8 @@ function empty(status: number): Response {
 /**
  * Receives Content-Security-Policy violation reports from browsers (the
  * `report-uri` / `report-to` target in src/securityHeaders.js) and forwards
- * them to PostHog as `csp_violation` events, so violations are visible
- * while the policy is still report-only.
+ * them to PostHog as `csp_violation` events, so what the policy blocks
+ * (or, with CSP_MODE=report-only, would block) stays visible.
  *
  * Unauthenticated by nature, so it is size-capped, rate-limited per client
  * address, and keeps only a few fields of each report.

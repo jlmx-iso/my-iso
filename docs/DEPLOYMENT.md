@@ -100,6 +100,7 @@ secret, but they are yours to choose):
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
 | `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
+| `CSP_MODE` | Optional. The Content-Security-Policy kill switch: `enforce` (the default) blocks what the policy does not allow; `report-only` blocks nothing and only reports. Violations are reported in both modes (`csp_violation` events). See "Content-Security-Policy" below. | Leave unset; `report-only` only to stop the policy breaking pages |
 | `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
 
 ### 3. Secrets: `wrangler secret put`
@@ -308,6 +309,25 @@ sync ([BILLING.md](BILLING.md)), not by a scheduled job.
 
 To run the jobs locally: `npx wrangler dev --test-scheduled`, then
 `npm run jobs:local`.
+
+## Content-Security-Policy
+
+Every page is served with an enforced `Content-Security-Policy` carrying a
+fresh nonce (`src/middleware.ts`, `src/securityHeaders.js`; why it is built
+this way: [adr/0002-csp.md](adr/0002-csp.md)). Browsers report violations to
+`/api/csp-report`, which forwards the ones that matter to PostHog as
+`csp_violation` events.
+
+If a release makes the policy block something the app needs, switch it to
+report-only without a deploy, then fix the policy:
+
+```sh
+wrangler secret put CSP_MODE --env staging     # enter: report-only
+# production: the same with --env=""; or add CSP_MODE = "report-only" to [vars] and deploy
+```
+
+The change applies to the next request. Delete the variable (or set it to
+`enforce`) to enforce the policy again.
 
 ## Rollback
 

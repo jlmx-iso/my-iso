@@ -2,6 +2,7 @@ import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
 import { AI_MODELS } from "./aiModels.js";
+import { CSP_MODES, DEFAULT_CSP_MODE } from "./securityHeaders.js";
 
 // Every variable the app reads. docs/DEPLOYMENT.md says what each one is for
 // and where it is set; .env.example and .dev.vars.example must list exactly
@@ -47,6 +48,7 @@ export const env = createEnv({
     CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
+    CSP_MODE: process.env.CSP_MODE,
     DATABASE_URL: process.env.DATABASE_URL,
     EMAIL_FROM: process.env.EMAIL_FROM,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -89,6 +91,10 @@ export const env = createEnv({
     CLOUDINARY_API_KEY: z.string(),
     CLOUDINARY_API_SECRET: z.string(),
     CLOUDINARY_CLOUD_NAME: z.string(),
+    // Content-Security-Policy kill switch: "enforce" (default) blocks what
+    // the policy does not allow; "report-only" only reports it
+    // (src/securityHeaders.js, docs/adr/0002-csp.md).
+    CSP_MODE: z.enum(CSP_MODES).default(DEFAULT_CSP_MODE),
     // Local SQLite file for `next dev`. Unused on Cloudflare (D1 binding).
     DATABASE_URL: z.string().url().optional(),
     // Sender of every transactional email.

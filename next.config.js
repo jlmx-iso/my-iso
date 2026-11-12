@@ -89,10 +89,9 @@ const config = {
         // Every route. Listed first: for a header set twice, the later
         // (more specific) entry below wins.
         source: "/:path*",
-        headers: buildSecurityHeaders({
-          baseUrl: process.env.NEXT_PUBLIC_BASE_URL,
-          isDevelopment: process.env.NODE_ENV === "development",
-        }),
+        // The Content-Security-Policy is not among them: it carries a
+        // per-request nonce and is set by src/middleware.ts.
+        headers: buildSecurityHeaders(),
       },
       {
         source: "/login",

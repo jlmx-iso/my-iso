@@ -9,7 +9,9 @@ import "~/styles/overrides.css";
 import { ColorSchemeScript } from '@mantine/core';
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { headers } from "next/headers";
 
+import { NONCE_HEADER } from "~/_lib/contentSecurityPolicy";
 import { SITE_URL } from "~/_lib/site";
 import { auth } from "~/auth";
 import { TRPCReactProvider } from "~/trpc/react";
@@ -71,6 +73,9 @@ export default async function RootLayout({
 }) {
   const session = await auth();
   const isAuthed = !!session?.user;
+  // Set by src/middleware.ts on every page request; the Content-Security-
+  // Policy lets inline scripts run only with it.
+  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
 
   return (
     // The app is light-only. The colour scheme attribute is in the server HTML
@@ -85,8 +90,8 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <ColorSchemeScript forceColorScheme="light" />
-        <script dangerouslySetInnerHTML={{ __html: REVEAL_SCRIPT }} />
+        <ColorSchemeScript forceColorScheme="light" nonce={nonce} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: REVEAL_SCRIPT }} />
       </head>
       <body>
         <CSPostHogProvider
