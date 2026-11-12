@@ -10,7 +10,7 @@ import {
 } from "~/server/_db/invite";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { verifyOtp } from "~/server/_db/verificationToken";
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { checkRateLimitsInOrder, otpVerifyLimits } from "~/server/_utils/rateLimit";
 
 /**
  * Account creation and email-code sign-in, independent of Auth.js so that it
@@ -127,8 +127,9 @@ export type OtpSignInResult =
 /**
  * Email-code sign-in for the web (`POST /api/auth/callback/otp`).
  *
- * Applies the same per-IP and per-email limits and the same attempt-capped,
- * constant-time verification as the mobile tRPC procedure. An invitee has no
+ * Applies the same per-IP and per-email limits (15-minute and daily) and the
+ * same attempt-capped, constant-time verification as the mobile tRPC
+ * procedure. An invitee has no
  * account until their first code checks out; it is created here.
  */
 export async function signInWithOtp(
@@ -141,11 +142,10 @@ export async function signInWithOtp(
   if (!parsed.success) return { status: "rejected" };
   const { code, email } = parsed.data;
 
-  const limits = await Promise.all([
-    checkRateLimit(db, RateLimits.OTP_VERIFY_IP, `ip:${clientIp}`),
-    checkRateLimit(db, RateLimits.OTP_VERIFY_EMAIL, `email:${email}`),
-  ]);
-  if (limits.some((limit) => !limit.allowed)) return { status: "rate_limited" };
+  // The client's own limit first: once it is over, the address's counters
+  // are not touched (see checkRateLimitsInOrder).
+  const refused = await checkRateLimitsInOrder(db, otpVerifyLimits(clientIp, email));
+  if (refused) return { status: "rate_limited" };
 
   if (!(await verifyOtp(db, email, code))) return { status: "rejected" };
 

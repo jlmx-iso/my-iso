@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { threadParticipantKey } from "~/server/_db/messaging";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -16,6 +17,9 @@ vi.mock("~/server/_lib/ai", () => ({
 import { discoverRouter } from "./discover";
 
 type TestUser = { email: string; id: string };
+
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+freezeRateLimitClock();
 
 describe("discoverRouter.swipe against SQLite", () => {
   let testDb: TestDb;

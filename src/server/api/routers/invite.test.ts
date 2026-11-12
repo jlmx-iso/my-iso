@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -11,6 +12,9 @@ vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
 import { inviteRouter } from "./invite";
 
 const CODE = "ISO-PENNY-AAAAAAAA";
+
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+freezeRateLimitClock();
 
 describe("inviteRouter against SQLite", () => {
   let testDb: TestDb;

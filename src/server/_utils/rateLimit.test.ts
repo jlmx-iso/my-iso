@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, type TestDb } from "~/test/helpers/sqlite";
 
 import {
   checkRateLimit,
+  checkRateLimitsInOrder,
   consumeRateLimit,
   enforceRateLimit,
   purgeExpiredRateLimits,
@@ -31,6 +33,9 @@ const brokenDb: RateLimitDb = {
     throw new Error("database unavailable");
   },
 };
+
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+const limiterClock = freezeRateLimitClock();
 
 describe("rate limiter against SQLite", () => {
   let testDb: TestDb;
@@ -146,6 +151,53 @@ describe("rate limiter against SQLite", () => {
     expect(error).toBeInstanceOf(TRPCError);
     expect(error).toMatchObject({ code: "TOO_MANY_REQUESTS" });
   });
+
+  it("says how long to wait in words", async () => {
+    const waitAfter = async (windowSeconds: number, elapsedSeconds: number) => {
+      const timed: RateLimitPolicy = { ...policy, limit: 1, name: `wait-${windowSeconds}-${elapsedSeconds}`, windowSeconds };
+      await enforceRateLimit(testDb.db, timed, "user:1");
+      limiterClock.advance(elapsedSeconds);
+      const error = await enforceRateLimit(testDb.db, timed, "user:1").catch((e: unknown) => e);
+      limiterClock.advance(-elapsedSeconds);
+      return (error as Error).message;
+    };
+
+    await expect(waitAfter(60, 15)).resolves.toBe("Too many requests. Try again in 45 seconds.");
+    await expect(waitAfter(60, 59)).resolves.toBe("Too many requests. Try again in 1 second.");
+    await expect(waitAfter(900, 10)).resolves.toBe("Too many requests. Try again in 15 minutes.");
+    await expect(waitAfter(3600, 3540)).resolves.toBe("Too many requests. Try again in 1 minute.");
+    await expect(waitAfter(86_400, 3600)).resolves.toBe("Too many requests. Try again in 23 hours.");
+  });
+
+  it("checks limits in order and does not count the ones after a refusal", async () => {
+    const first: RateLimitPolicy = { ...policy, limit: 1, name: "first" };
+    const second: RateLimitPolicy = { ...policy, limit: 5, name: "second" };
+    const checks = [
+      { identifier: "ip:203.0.113.9", policy: first },
+      { identifier: "email:someone@example.com", policy: second },
+    ];
+
+    await expect(checkRateLimitsInOrder(testDb.db, checks)).resolves.toBeNull();
+    for (let i = 0; i < 10; i++) {
+      await expect(checkRateLimitsInOrder(testDb.db, checks)).resolves.toMatchObject({
+        allowed: false,
+        policy: { name: "first" },
+      });
+    }
+
+    const rows = await testDb.raw.rateLimit.findMany({ orderBy: { count: "asc" } });
+    // The second limit was counted once, by the request that passed the first.
+    expect(rows.map((row) => [row.key.split(":")[0], row.count])).toEqual([
+      ["second", 1],
+      ["first", 11],
+    ]);
+  });
+
+  it("fails closed in an ordered check when the limiter is down", async () => {
+    await expect(
+      checkRateLimitsInOrder(brokenDb, [{ identifier: "user:1", policy }]),
+    ).resolves.toMatchObject({ allowed: false, limiterFailed: true });
+  });
 });
 
 describe("limiter failure", () => {
@@ -184,6 +236,8 @@ describe("RateLimits", () => {
       RateLimits.OTP_REQUEST_IP,
       RateLimits.OTP_VERIFY_EMAIL,
       RateLimits.OTP_VERIFY_IP,
+      RateLimits.OTP_REQUEST_EMAIL_DAILY,
+      RateLimits.OTP_VERIFY_EMAIL_DAILY,
       RateLimits.MOBILE_TOKEN_EXCHANGE,
       RateLimits.INVITE_VALIDATE,
       RateLimits.INVITE_PREPARE,

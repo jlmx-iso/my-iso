@@ -4,6 +4,7 @@ import { issueOtp, OTP_MAX_ATTEMPTS } from "~/server/_db/verificationToken";
 import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,9 @@ const EMAIL = "ada@example.com";
 
 /** Lets the after-response email task run. */
 const flushBackgroundTasks = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+const limiterClock = freezeRateLimitClock();
 
 describe("authRouter against SQLite", () => {
   let testDb: TestDb;
@@ -178,6 +182,57 @@ describe("authRouter against SQLite", () => {
       ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
     });
 
+    it("caps codes requested for one address per day", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const perWindow = RateLimits.OTP_REQUEST_EMAIL.limit;
+      const perDay = RateLimits.OTP_REQUEST_EMAIL_DAILY.limit;
+
+      for (let sent = 0; sent < perDay; sent++) {
+        if (sent > 0 && sent % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+        }
+        await caller(`198.51.100.${sent}`).requestMobileOtp({ email: EMAIL });
+      }
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+
+      await expect(
+        caller("192.0.2.1").requestMobileOtp({ email: EMAIL }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      // The same answer for an address with no account.
+      for (let sent = 0; sent < perDay; sent++) {
+        if (sent > 0 && sent % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+        }
+        await caller(`198.51.100.${sent}`).requestMobileOtp({ email: "nobody@example.com" });
+      }
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+      await expect(
+        caller("192.0.2.1").requestMobileOtp({ email: "nobody@example.com" }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL_DAILY.windowSeconds);
+      await expect(caller("192.0.2.1").requestMobileOtp({ email: EMAIL })).resolves.toMatchObject({
+        sent: true,
+      });
+    });
+
+    it("does not count a request against the address once the client is over its own limit", async () => {
+      const blockedIp = "198.51.100.200";
+      for (let i = 0; i < RateLimits.OTP_REQUEST_IP.limit; i++) {
+        await caller(blockedIp).requestMobileOtp({ email: `user${i}@example.com` });
+      }
+      const bucketsBefore = await testDb.raw.rateLimit.count();
+
+      for (let i = 0; i < RateLimits.OTP_REQUEST_EMAIL.limit + 1; i++) {
+        await expect(
+          caller(blockedIp).requestMobileOtp({ email: EMAIL }),
+        ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      }
+
+      await expect(testDb.raw.rateLimit.count()).resolves.toBe(bucketsBefore);
+      await expect(caller().requestMobileOtp({ email: EMAIL })).resolves.toMatchObject({ sent: true });
+    });
+
     it("fails closed when the rate limiter is unavailable", async () => {
       await createTestUser(testDb.db, { email: EMAIL });
       const withoutLimiter = Object.create(testDb.db, {
@@ -249,6 +304,30 @@ describe("authRouter against SQLite", () => {
       await expect(
         caller().verifyMobileOtp({ code: "123456", email: EMAIL }),
       ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    });
+
+    it("answers TOO_MANY_REQUESTS, not UNAUTHORIZED, once the daily cap for the address is reached", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const perWindow = RateLimits.OTP_VERIFY_EMAIL.limit;
+      const perDay = RateLimits.OTP_VERIFY_EMAIL_DAILY.limit;
+
+      for (let guess = 0; guess < perDay; guess++) {
+        if (guess > 0 && guess % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+        }
+        await issueOtp(testDb.db, EMAIL, { code: "123456" });
+        await expect(
+          caller(`198.51.100.${guess}`).verifyMobileOtp({ code: "000000", email: EMAIL }),
+        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      }
+      limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+      await expect(
+        caller("192.0.2.1").verifyMobileOtp({ code: "123456", email: EMAIL }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      // The refused attempt did not touch the code.
+      expect(await tokens()).toMatchObject([{ attempts: 0 }]);
     });
 
     it("cannot be brute-forced by sending many guesses at once", async () => {

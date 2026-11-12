@@ -37,6 +37,10 @@ export type RateLimitPolicy = {
   onError: "allow" | "deny";
 };
 
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
 export type RateLimitResult = {
   /** Whether the request is allowed */
   allowed: boolean;
@@ -58,13 +62,29 @@ export type RateLimitDb = {
   ) => Prisma.PrismaPromise<number>;
 };
 
+let clock: () => number = Date.now;
+
+/**
+ * Replaces the clock every limiter call reads (milliseconds since the epoch)
+ * and returns a function that puts the previous one back. For tests: windows
+ * are fixed slices of wall-clock time, so a test that counts up to a limit
+ * with the real clock fails whenever it straddles a window boundary.
+ */
+export function setRateLimitClock(now: () => number): () => void {
+  const previous = clock;
+  clock = now;
+  return () => {
+    clock = previous;
+  };
+}
+
 /** Share of newly opened windows that also sweep expired rows. */
 const CLEANUP_PROBABILITY = 0.02;
 
 /** Deletes counters whose window has ended. Returns the number removed. */
 export function purgeExpiredRateLimits(
   db: RateLimitDb,
-  nowMs: number = Date.now(),
+  nowMs: number = clock(),
 ): Promise<number> {
   const nowSeconds = Math.floor(nowMs / 1000);
   return db.$executeRaw`DELETE FROM "RateLimit" WHERE "expiresAt" <= ${nowSeconds}`;
@@ -84,7 +104,7 @@ export async function consumeRateLimit(
   identifier: string,
   options: { nowMs?: number; random?: () => number } = {},
 ): Promise<RateLimitResult> {
-  const nowSeconds = Math.floor((options.nowMs ?? Date.now()) / 1000);
+  const nowSeconds = Math.floor((options.nowMs ?? clock()) / 1000);
   const windowStart = nowSeconds - (nowSeconds % policy.windowSeconds);
   const expiresAt = windowStart + policy.windowSeconds;
   const key = `${policy.name}:${await keyedHash("rate-limit", identifier)}`;
@@ -144,6 +164,29 @@ export async function checkRateLimit(
   }
 }
 
+export type RateLimitCheck = { identifier: string; policy: RateLimitPolicy };
+
+/**
+ * Checks several limits one after the other and stops at the first that
+ * refuses, so the limits after it are NOT counted.
+ *
+ * Order matters: put the limit keyed on something the caller controls (their
+ * IP address) before one keyed on something they merely name (an email
+ * address). Checked the other way round, or in parallel, a client that is
+ * already blocked could keep spending someone else's per-email allowance and
+ * lock them out of signing in.
+ */
+export async function checkRateLimitsInOrder(
+  db: RateLimitDb,
+  checks: readonly RateLimitCheck[],
+): Promise<(RateLimitResult & { limiterFailed: boolean; policy: RateLimitPolicy }) | null> {
+  for (const { identifier, policy } of checks) {
+    const result = await checkRateLimit(db, policy, identifier);
+    if (!result.allowed) return { ...result, policy };
+  }
+  return null;
+}
+
 /**
  * Counts one request and throws a tRPC error when it is over the limit
  * (TOO_MANY_REQUESTS, HTTP 429) or when the limiter failed under a "deny"
@@ -154,8 +197,29 @@ export async function enforceRateLimit(
   policy: RateLimitPolicy,
   identifier: string,
 ): Promise<void> {
-  const result = await checkRateLimit(db, policy, identifier);
-  if (result.allowed) return;
+  await enforceRateLimitsInOrder(db, [{ identifier, policy }]);
+}
+
+/** Seconds as "45 seconds", "12 minutes" or "3 hours", rounded up. */
+function describeWait(seconds: number): string {
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (seconds < MINUTE) return plural(seconds, "second");
+  if (seconds < HOUR) return plural(Math.ceil(seconds / MINUTE), "minute");
+  return plural(Math.ceil(seconds / HOUR), "hour");
+}
+
+/**
+ * `enforceRateLimit` for several limits, with the ordering guarantee of
+ * `checkRateLimitsInOrder`: a refusal stops before the remaining limits are
+ * counted.
+ */
+export async function enforceRateLimitsInOrder(
+  db: RateLimitDb,
+  checks: readonly RateLimitCheck[],
+): Promise<void> {
+  const result = await checkRateLimitsInOrder(db, checks);
+  if (!result) return;
+  const { policy } = result;
 
   if (result.limiterFailed) {
     throw new TRPCError({
@@ -167,12 +231,18 @@ export async function enforceRateLimit(
   logger.warn("Rate limit exceeded", { policy: policy.name });
   throw new TRPCError({
     code: "TOO_MANY_REQUESTS",
-    message: `Too many requests. Try again in ${result.retryAfter}s.`,
+    message: `Too many requests. Try again in ${describeWait(result.retryAfter)}.`,
   });
 }
 
-const MINUTE = 60;
-const HOUR = 60 * MINUTE;
+
+/**
+ * New conversations (threads that did not exist before) one user may open
+ * per day. The single place this number lives: plans will make it depend on
+ * the caller's subscription, by passing
+ * `{ ...RateLimits.NEW_CONVERSATION_DAILY, limit }` to the limiter.
+ */
+export const MAX_NEW_CONVERSATIONS_PER_DAY = 20;
 
 /** Every limit the app applies, in one place. */
 export const RateLimits = {
@@ -182,6 +252,11 @@ export const RateLimits = {
   OTP_REQUEST_IP: { limit: 20, name: "otp-request-ip", onError: "deny", windowSeconds: 15 * MINUTE },
   OTP_VERIFY_EMAIL: { limit: 10, name: "otp-verify-email", onError: "deny", windowSeconds: 15 * MINUTE },
   OTP_VERIFY_IP: { limit: 30, name: "otp-verify-ip", onError: "deny", windowSeconds: 15 * MINUTE },
+  // Per-day caps on top of the 15-minute ones. A fresh code resets the
+  // per-code attempt counter, so without these the 15-minute verify limit
+  // alone would allow about 960 guesses a day against one address.
+  OTP_REQUEST_EMAIL_DAILY: { limit: 20, name: "otp-request-email-daily", onError: "deny", windowSeconds: DAY },
+  OTP_VERIFY_EMAIL_DAILY: { limit: 30, name: "otp-verify-email-daily", onError: "deny", windowSeconds: DAY },
   MOBILE_TOKEN_EXCHANGE: { limit: 20, name: "mobile-token-exchange", onError: "deny", windowSeconds: 15 * MINUTE },
 
   // Invite codes and the waitlist (public, per IP).
@@ -191,12 +266,38 @@ export const RateLimits = {
 
   // Signed-in activity (per user).
   MESSAGE_SEND: { limit: 60, name: "message-send", onError: "allow", windowSeconds: MINUTE },
-  THREAD_CREATE: { limit: 20, name: "thread-create", onError: "allow", windowSeconds: HOUR },
+  // Every message.createThread call, including ones that land in an existing
+  // thread. Deliberately looser than NEW_CONVERSATION_DAILY, which is the
+  // limit a person actually meets and has its own error reason.
+  THREAD_CREATE: { limit: 60, name: "thread-create", onError: "allow", windowSeconds: HOUR },
+  NEW_CONVERSATION_DAILY: { limit: MAX_NEW_CONVERSATIONS_PER_DAY, name: "new-conversation-daily", onError: "allow", windowSeconds: DAY },
   SWIPE: { limit: 120, name: "swipe", onError: "allow", windowSeconds: MINUTE },
   EVENT_CREATE: { limit: 20, name: "event-create", onError: "allow", windowSeconds: HOUR },
   COMMENT_CREATE: { limit: 30, name: "comment-create", onError: "allow", windowSeconds: 5 * MINUTE },
+  BOOKING_APPLY: { limit: 20, name: "booking-apply", onError: "allow", windowSeconds: HOUR },
   REVIEW_CREATE: { limit: 10, name: "review-create", onError: "allow", windowSeconds: HOUR },
   UPLOAD: { limit: 40, name: "upload", onError: "allow", windowSeconds: HOUR },
   SEARCH: { limit: 60, name: "search", onError: "allow", windowSeconds: MINUTE },
   PLACES_AUTOCOMPLETE: { limit: 60, name: "places-autocomplete", onError: "allow", windowSeconds: MINUTE },
 } as const satisfies Record<string, RateLimitPolicy>;
+
+/**
+ * Limits on asking for a sign-in code, in the order they must be checked:
+ * the requesting client first, then the address it names.
+ */
+export function otpRequestLimits(clientIp: string, email: string): RateLimitCheck[] {
+  return [
+    { identifier: `ip:${clientIp}`, policy: RateLimits.OTP_REQUEST_IP },
+    { identifier: `email:${email}`, policy: RateLimits.OTP_REQUEST_EMAIL },
+    { identifier: `email:${email}`, policy: RateLimits.OTP_REQUEST_EMAIL_DAILY },
+  ];
+}
+
+/** Limits on submitting a sign-in code; same ordering as otpRequestLimits. */
+export function otpVerifyLimits(clientIp: string, email: string): RateLimitCheck[] {
+  return [
+    { identifier: `ip:${clientIp}`, policy: RateLimits.OTP_VERIFY_IP },
+    { identifier: `email:${email}`, policy: RateLimits.OTP_VERIFY_EMAIL },
+    { identifier: `email:${email}`, policy: RateLimits.OTP_VERIFY_EMAIL_DAILY },
+  ];
+}

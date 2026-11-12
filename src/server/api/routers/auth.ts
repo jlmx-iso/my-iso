@@ -8,7 +8,12 @@ import { runAfterResponse } from "~/server/_lib/background";
 import { captureEvent } from "~/server/_lib/posthog";
 import { signMobileToken } from "~/server/_utils/auth/mobileToken";
 import { getClientIp, isCloudflareRuntime } from "~/server/_utils/clientIp";
-import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import {
+  enforceRateLimitsInOrder,
+  otpRequestLimits,
+  otpVerifyLimits,
+  RateLimits,
+} from "~/server/_utils/rateLimit";
 import { createTRPCRouter, publicProcedure, rateLimit } from "~/server/api/trpc";
 
 /** Local `next dev` only: a fixed code, returned to the client, no email. */
@@ -111,8 +116,10 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const email = input.email;
 
-      await enforceRateLimit(ctx.db, RateLimits.OTP_REQUEST_IP, `ip:${getClientIp(ctx.headers)}`);
-      await enforceRateLimit(ctx.db, RateLimits.OTP_REQUEST_EMAIL, `email:${email}`);
+      // Per client, then per address (15 minutes and per day). Refused with
+      // TOO_MANY_REQUESTS before any lookup, so it says nothing about
+      // whether the address has an account.
+      await enforceRateLimitsInOrder(ctx.db, otpRequestLimits(getClientIp(ctx.headers), email));
 
       // The `otp` sign-in (src/auth.ts) accepts a code for an existing user,
       // or for an invitee whose invite /join has just validated: it creates
@@ -157,17 +164,23 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
-   * Exchanges an emailed code for a mobile bearer token. Every failure is
-   * the same UNAUTHORIZED error: wrong code, expired code, too many attempts
-   * and "no such account" are indistinguishable to the caller.
+   * Exchanges an emailed code for a mobile bearer token.
+   *
+   * Client contract (the tRPC counterpart of `code=rate_limited` on the web
+   * sign-in, see src/auth.ts):
+   * - TOO_MANY_REQUESTS: too many attempts from this client or for this
+   *   address (15-minute or daily cap). The code was not looked at; a new
+   *   code will not help until the window passes. Counted before any lookup,
+   *   so it is the same for addresses with and without an account.
+   * - UNAUTHORIZED: wrong, expired, used or attempt-exhausted code, or no
+   *   such account; these are indistinguishable. Offer to send a new code.
    */
   verifyMobileOtp: publicProcedure
     .input(z.object({ email: emailInput, code: z.string().regex(/^\d{6}$/) }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email;
 
-      await enforceRateLimit(ctx.db, RateLimits.OTP_VERIFY_IP, `ip:${getClientIp(ctx.headers)}`);
-      await enforceRateLimit(ctx.db, RateLimits.OTP_VERIFY_EMAIL, `email:${email}`);
+      await enforceRateLimitsInOrder(ctx.db, otpVerifyLimits(getClientIp(ctx.headers), email));
 
       const isValid = await verifyOtp(ctx.db, email, input.code);
 
