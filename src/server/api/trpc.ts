@@ -122,10 +122,29 @@ export const createTRPCRouter = t.router;
  */
 export const publicProcedure = t.procedure;
 
+/**
+ * The cause of every error the access gates below throw, so a gate's
+ * refusal can be told apart from a resolver's own UNAUTHORIZED/FORBIDDEN
+ * (the authorization matrix test relies on it). It changes nothing a client
+ * sees: the message is the same as before, and causes are not serialised.
+ */
+export class AccessGateError extends Error {
+  constructor(
+    readonly gate: "signed-in" | "pro" | "admin",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AccessGateError";
+  }
+}
+
+const notSignedIn = () =>
+  new TRPCError({ cause: new AccessGateError("signed-in", "UNAUTHORIZED"), code: "UNAUTHORIZED" });
+
 /** Reusable middleware that enforces users are logged in before running the procedure. */
 const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
   if (!ctx.session?.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+    throw notSignedIn();
   }
   return next({
     ctx: {
@@ -165,7 +184,7 @@ export const protectedProcedure = t.procedure.use(enforceUserIsAuthed);
 /** Reusable middleware that enforces the user has an active Pro subscription. */
 const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session?.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+    throw notSignedIn();
   }
 
   // The stored row; one that was never read from Stripe syncs itself
@@ -174,10 +193,8 @@ const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
 
   // Access is derived from the stored Stripe state in one place.
   if (!entitlementsFor(subscription, new Date()).hasProAccess) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "An active Pro subscription is required to access this feature.",
-    });
+    const message = "An active Pro subscription is required to access this feature.";
+    throw new TRPCError({ cause: new AccessGateError("pro", message), code: "FORBIDDEN", message });
   }
 
   return next({
@@ -207,7 +224,7 @@ const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
   // founderProcedure chain, but we check here too so this middleware is safe
   // to use standalone.
   if (!ctx.session?.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+    throw notSignedIn();
   }
 
   const user = await ctx.db.user.findUnique({
@@ -220,10 +237,8 @@ const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
     typeof user.role !== "string" ||
     !ADMIN_ROLES.includes(user.role as UserRole)
   ) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Founder or ambassador access is required.",
-    });
+    const message = "Founder or ambassador access is required.";
+    throw new TRPCError({ cause: new AccessGateError("admin", message), code: "FORBIDDEN", message });
   }
 
   return next({

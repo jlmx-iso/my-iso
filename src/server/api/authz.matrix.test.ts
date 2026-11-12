@@ -10,15 +10,22 @@
  *   access    anonymous   member      Pro member  founder / ambassador
  *   public    reaches     reaches     reaches     reaches
  *   member    UNAUTHORIZED reaches    reaches     reaches
- *   pro       UNAUTHORIZED FORBIDDEN  reaches     reaches
+ *   pro       UNAUTHORIZED FORBIDDEN  reaches     FORBIDDEN (no subscription)
  *   admin     UNAUTHORIZED FORBIDDEN  FORBIDDEN   reaches
  *
  * "member" is protectedProcedure, "pro" proProcedure, "admin"
  * founderProcedure (roles in ADMIN_ROLES), all in src/server/api/trpc.ts.
+ * Roles do not grant Pro: proProcedure looks only at the subscription, so a
+ * founder or ambassador without one is refused like any member (the
+ * fixtures give them none). No procedure uses proProcedure yet; the "pro
+ * gate" test below runs the same check on a probe procedure, so adding a
+ * `pro` row needs nothing else.
+ *
  * "Reaches" means the call got past the procedure's gate: it may still fail
  * on its own terms (NOT_FOUND for the made-up ids used here, a business
  * rule), but not with the gate's error, and not on input validation (the
- * inputs must stay valid).
+ * inputs must stay valid). A gate's error is recognised by its cause,
+ * AccessGateError (trpc.ts), not by its code or message.
  *
  * A resolver may itself answer UNAUTHORIZED or FORBIDDEN for the minimal
  * input (for instance "not a participant of this thread"): the row must say
@@ -26,10 +33,11 @@
  *
  * Changing a row's `access` is a security decision. See docs/TESTING.md.
  */
-import { TRPCError } from "@trpc/server";
+import { TRPCError, type AnyTRPCRouter } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
+import { EVENT_MAX_AHEAD_MS } from "~/_utils/eventDates";
 import { hasProAccess } from "~/server/_billing/entitlements";
 import type * as StripeModule from "~/server/_billing/stripe";
 import type * as PosthogModule from "~/server/_lib/posthog";
@@ -67,6 +75,13 @@ vi.mock("~/server/_billing/stripe", async (importOriginal) => {
 });
 
 import { appRouter } from "./root";
+import {
+  AccessGateError,
+  createTRPCRouter,
+  founderProcedure,
+  proProcedure,
+  protectedProcedure,
+} from "./trpc";
 
 type Access = "public" | "member" | "pro" | "admin";
 
@@ -82,7 +97,8 @@ type Row = {
 };
 
 const MISSING = "missing-id";
-const FUTURE = new Date(Date.UTC(2031, 5, 1)).toISOString();
+// A month ahead: always inside event.create's window (EVENT_MAX_AHEAD_MS).
+const FUTURE = new Date(Date.now() + Math.min(30 * 24 * 60 * 60 * 1000, EVENT_MAX_AHEAD_MS / 2)).toISOString();
 const SOCIALS = { facebook: null, instagram: null, tiktok: null, twitter: null, vimeo: null, website: null, youtube: null };
 
 // One row per procedure, grouped by router as in src/server/api/routers.
@@ -244,13 +260,14 @@ const CALLERS: CallerKind[] = ["anonymous", "member", "pro", "founder", "ambassa
 const EXPECTED: Record<Access, Record<CallerKind, Outcome>> = {
   admin: { ambassador: "reaches", anonymous: "UNAUTHORIZED", founder: "reaches", member: "FORBIDDEN", pro: "FORBIDDEN" },
   member: { ambassador: "reaches", anonymous: "UNAUTHORIZED", founder: "reaches", member: "reaches", pro: "reaches" },
-  pro: { ambassador: "reaches", anonymous: "UNAUTHORIZED", founder: "reaches", member: "FORBIDDEN", pro: "reaches" },
+  // Roles do not grant Pro (see the top of this file).
+  pro: { ambassador: "FORBIDDEN", anonymous: "UNAUTHORIZED", founder: "FORBIDDEN", member: "FORBIDDEN", pro: "reaches" },
   public: { ambassador: "reaches", anonymous: "reaches", founder: "reaches", member: "reaches", pro: "reaches" },
 };
 
 type Outcome = "reaches" | "UNAUTHORIZED" | "FORBIDDEN" | "INVALID_INPUT";
 
-type Observed = { code?: string; message?: string; outcome: Outcome };
+type Observed = { code?: string; gate?: AccessGateError["gate"]; message?: string; outcome: Outcome };
 
 const procedurePaths = Object.keys(appRouter._def.procedures).sort();
 
@@ -266,7 +283,11 @@ async function call(caller: unknown, procedurePath: string, input: unknown): Pro
     return { outcome: "reaches" };
   } catch (error) {
     if (!(error instanceof TRPCError)) throw error;
-    const observed = { code: error.code, message: error.message };
+    const observed = {
+      code: error.code,
+      gate: error.cause instanceof AccessGateError ? error.cause.gate : undefined,
+      message: error.message,
+    };
     if (error.cause instanceof ZodError) return { ...observed, outcome: "INVALID_INPUT" };
     if (error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN") {
       return { ...observed, outcome: error.code };
@@ -276,17 +297,20 @@ async function call(caller: unknown, procedurePath: string, input: unknown): Pro
 }
 
 /**
- * The gates' own errors (src/server/api/trpc.ts). A row with
- * `resolverDenies` may get UNAUTHORIZED/FORBIDDEN from its resolver; it must
- * still never get one of these when its access level lets the caller in.
+ * Whether a gate in src/server/api/trpc.ts refused the call: its error
+ * carries an AccessGateError cause. A row with `resolverDenies` may get
+ * UNAUTHORIZED/FORBIDDEN from its resolver; it must still never get a gate's
+ * error when its access level lets the caller in.
  */
 function isGateError(observed: Observed): boolean {
-  return (
-    (observed.code === "UNAUTHORIZED" && observed.message === "UNAUTHORIZED") ||
-    (observed.code === "FORBIDDEN" &&
-      (observed.message === "Founder or ambassador access is required." ||
-        (observed.message ?? "").startsWith("An active Pro subscription is required")))
-  );
+  return observed.gate !== undefined;
+}
+
+/** The gate that must refuse `outcome` for `access`. */
+function expectedGate(access: Access, outcome: Outcome): AccessGateError["gate"] | undefined {
+  if (outcome === "UNAUTHORIZED") return "signed-in";
+  if (outcome === "FORBIDDEN") return access === "admin" ? "admin" : "pro";
+  return undefined;
 }
 
 freezeRateLimitClock();
@@ -294,6 +318,54 @@ freezeRateLimitClock();
 let stub: StripeStub;
 let testDb: TestDb;
 const callers = {} as Record<CallerKind, unknown>;
+const users = {} as Record<Exclude<CallerKind, "anonymous">, { email: string; id: string }>;
+
+/** One caller of each kind for `router`, each from its own address. */
+function callersFor(router: AnyTRPCRouter): Record<CallerKind, unknown> {
+  const ip = (n: number) => new Headers({ "cf-connecting-ip": `203.0.113.${n}` });
+  return {
+    ambassador: createDbCaller(router, testDb.db, { headers: ip(14), user: users.ambassador }),
+    anonymous: createDbCaller(router, testDb.db, { headers: ip(10) }),
+    founder: createDbCaller(router, testDb.db, { headers: ip(13), user: users.founder }),
+    member: createDbCaller(router, testDb.db, { headers: ip(11), user: users.member }),
+    pro: createDbCaller(router, testDb.db, { headers: ip(12), user: users.pro }),
+  };
+}
+
+/** Calls `procedurePath` as every kind of caller and checks the row. */
+async function checkRow(callersByKind: Record<CallerKind, unknown>, procedurePath: string, row: Row) {
+  let resolverDenied = false;
+  for (const kind of CALLERS) {
+    const expected = EXPECTED[row.access][kind];
+    const observed = await call(callersByKind[kind], procedurePath, row.input);
+    const label = `${procedurePath} as ${kind}`;
+
+    expect(observed.outcome, `${label}: input failed validation (${observed.message})`).not.toBe("INVALID_INPUT");
+
+    if (expected !== "reaches") {
+      expect({ gate: observed.gate, label, outcome: observed.outcome }).toEqual({
+        gate: expectedGate(row.access, expected),
+        label,
+        outcome: expected,
+      });
+      continue;
+    }
+
+    expect(isGateError(observed), `${label}: stopped by the ${observed.gate} gate: ${observed.message}`).toBe(false);
+    if (observed.outcome === "reaches") continue;
+    if (!row.resolverDenies) {
+      throw new Error(
+        `${label}: the resolver answered ${observed.outcome} (${observed.message}). ` +
+          "Pick an input that avoids it or document it in `resolverDenies`.",
+      );
+    }
+    resolverDenied = true;
+  }
+
+  if (row.resolverDenies) {
+    expect(resolverDenied, `${procedurePath}: \`resolverDenies\` is stale, nothing was denied`).toBe(true);
+  }
+}
 
 beforeAll(async () => {
   stub = await startStripeStub();
@@ -338,12 +410,8 @@ beforeAll(async () => {
     },
   });
 
-  const ip = (n: number) => new Headers({ "cf-connecting-ip": `203.0.113.${n}` });
-  callers.anonymous = createDbCaller(appRouter, testDb.db, { headers: ip(10) });
-  callers.member = createDbCaller(appRouter, testDb.db, { headers: ip(11), user: member });
-  callers.pro = createDbCaller(appRouter, testDb.db, { headers: ip(12), user: pro });
-  callers.founder = createDbCaller(appRouter, testDb.db, { headers: ip(13), user: founder });
-  callers.ambassador = createDbCaller(appRouter, testDb.db, { headers: ip(14), user: ambassador });
+  Object.assign(users, { ambassador, founder, member, pro });
+  Object.assign(callers, callersFor(appRouter));
 
   expect(await hasProAccess(testDb.db, pro.id)).toBe(true);
   expect(await hasProAccess(testDb.db, member.id)).toBe(false);
@@ -366,34 +434,36 @@ describe("authorization matrix", () => {
   it.each(procedurePaths)("%s", async (procedurePath) => {
     const row = POLICY[procedurePath];
     if (!row) throw new Error(`No POLICY row for ${procedurePath}: add one (see the top of this file).`);
+    await checkRow(callers, procedurePath, row);
+  });
 
-    let resolverDenied = false;
-    for (const kind of CALLERS) {
-      const expected = EXPECTED[row.access][kind];
-      const observed = await call(callers[kind], procedurePath, row.input);
-      const label = `${procedurePath} as ${kind}`;
+  // No app procedure uses proProcedure or a resolver that answers
+  // UNAUTHORIZED itself yet: these probes run the same checks on them, so
+  // the "pro" column and the gate detection are proven before they are
+  // needed.
+  describe("probes", () => {
+    const probeRouter = createTRPCRouter({
+      probe: createTRPCRouter({
+        admin: founderProcedure.query(() => "ok"),
+        member: protectedProcedure.query(() => "ok"),
+        pro: proProcedure.query(() => "ok"),
+        resolverRefuses: protectedProcedure.query(() => {
+          // The same code and default message as the sign-in gate.
+          throw new TRPCError({ code: "UNAUTHORIZED" });
+        }),
+      }),
+    });
 
-      expect(observed.outcome, `${label}: input failed validation (${observed.message})`).not.toBe("INVALID_INPUT");
+    it.each(["admin", "member", "pro"] as const)("the %s gate refuses and admits as EXPECTED says", async (access) => {
+      await checkRow(callersFor(probeRouter), `probe.${access}`, { access });
+    });
 
-      if (expected !== "reaches") {
-        expect({ label, outcome: observed.outcome }).toEqual({ label, outcome: expected });
-        expect(isGateError(observed), `${label}: denied, but not by the gate: ${observed.message}`).toBe(true);
-        continue;
-      }
-
-      expect(isGateError(observed), `${label}: stopped by a gate: ${observed.message}`).toBe(false);
-      if (observed.outcome === "reaches") continue;
-      if (!row.resolverDenies) {
-        throw new Error(
-          `${label}: the resolver answered ${observed.outcome} (${observed.message}). ` +
-            "Pick an input that avoids it or document it in `resolverDenies`.",
-        );
-      }
-      resolverDenied = true;
-    }
-
-    if (row.resolverDenies) {
-      expect(resolverDenied, `${procedurePath}: \`resolverDenies\` is stale, nothing was denied`).toBe(true);
-    }
+    it("tells a resolver's own UNAUTHORIZED from the sign-in gate's", async () => {
+      const probeCallers = callersFor(probeRouter);
+      const fromResolver = await call(probeCallers.member, "probe.resolverRefuses", undefined);
+      expect(fromResolver).toMatchObject({ code: "UNAUTHORIZED", gate: undefined, message: "UNAUTHORIZED" });
+      const fromGate = await call(probeCallers.anonymous, "probe.resolverRefuses", undefined);
+      expect(fromGate).toMatchObject({ code: "UNAUTHORIZED", gate: "signed-in", message: "UNAUTHORIZED" });
+    });
   });
 });
