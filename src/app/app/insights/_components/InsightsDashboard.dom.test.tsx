@@ -82,6 +82,8 @@ describe("InsightsDashboard", () => {
     expect(within(sources).getByText("Search")).toBeTruthy();
     expect(within(sources).getByText("Other")).toBeTruthy();
     expect(screen.getByText(/12 views, by the part of ISO/)).toBeTruthy();
+    // There is an Other row, so the folding is explained.
+    expect(screen.getByTestId("sources-other-note").textContent).toContain("fewer than 3 views are counted under");
 
     expect(within(screen.getByTestId("top-events")).getByRole("link", { name: "Garden wedding" }).getAttribute("href")).toBe("/app/events/e1");
     expect(screen.getByTestId("utc-footnote").textContent).toContain(
@@ -90,6 +92,19 @@ describe("InsightsDashboard", () => {
     // Counting began long before this period: nothing to say about it.
     expect(screen.queryByTestId("counting-since")).toBeNull();
     expect(screen.queryByTestId("insights-empty")).toBeNull();
+  });
+
+  it("explains folding into Other only when there is an Other row", async () => {
+    renderWithProviders(<InsightsDashboard profileUrl={PROFILE_URL} />, {
+      trpc: {
+        insights: {
+          getSummary: () => insights({ profileViews: { ...insights().profileViews, sources: [{ count: 12, source: "search" }] } }),
+        },
+      },
+    });
+    expect(await screen.findByTestId("view-sources")).toBeTruthy();
+    expect(screen.queryByTestId("sources-other-note")).toBeNull();
+    expect(screen.queryByText(/counted under/)).toBeNull();
   });
 
   it("asks for the period the member picks", async () => {
@@ -157,7 +172,8 @@ describe("InsightsDashboard", () => {
 describe("changeLabel", () => {
   it("says what changed, and plain words when there is nothing to compare with", () => {
     expect(changeLabel({ changePercent: null, previous: null, value: 4 }, 30)).toBe("No earlier period to compare with yet");
-    expect(changeLabel({ changePercent: null, previous: 0, value: 0 }, 7)).toBe("Same as the previous 7 days");
+    expect(changeLabel({ changePercent: null, previous: 0, value: 0 }, 7)).toBe("None in the previous 7 days either");
+    expect(changeLabel({ changePercent: 0, previous: 5, value: 5 }, 7)).toBe("Same as the previous 7 days");
     expect(changeLabel({ changePercent: null, previous: 0, value: 3 }, 7)).toBe("New: none in the previous 7 days");
     expect(changeLabel({ changePercent: 25, previous: 4, value: 5 }, 90)).toBe("+25% vs previous 90 days");
     expect(changeLabel({ changePercent: -100, previous: 4, value: 0 }, 90)).toBe("−100% vs previous 90 days");

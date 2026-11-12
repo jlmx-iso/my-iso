@@ -21,7 +21,7 @@ import { IconAlertCircle, IconCheck, IconEyeOff, IconLink, IconPhotoPlus } from 
 import Link from "next/link";
 import { useState } from "react";
 
-import { INSIGHT_RANGES, type InsightRange, VIEW_SOURCE_LABELS } from "~/_utils/viewSources";
+import { INSIGHT_RANGES, type InsightRange, MIN_SOURCE_COUNT, VIEW_SOURCE_LABELS } from "~/_utils/viewSources";
 import LocalDate from "~/app/_components/LocalDate";
 import { type RouterOutputs, api } from "~/trpc/react";
 
@@ -41,7 +41,7 @@ const number = (value: number) => value.toLocaleString("en-US");
 /** "+12% vs previous 30 days"; plain words when there is nothing to compare with. */
 export function changeLabel(compared: Compared, days: number): string {
     if (compared.previous === null) return "No earlier period to compare with yet";
-    if (compared.changePercent === null) return compared.value > 0 ? `New: none in the previous ${days} days` : `Same as the previous ${days} days`;
+    if (compared.changePercent === null) return compared.value > 0 ? `New: none in the previous ${days} days` : `None in the previous ${days} days either`;
     if (compared.changePercent === 0) return `Same as the previous ${days} days`;
     const sign = compared.changePercent > 0 ? "+" : "−";
     return `${sign}${Math.abs(compared.changePercent)}% vs previous ${days} days`;
@@ -50,14 +50,15 @@ export function changeLabel(compared: Compared, days: number): string {
 function Stat({ label, caption, compared, days, testId }: { label: string; caption: string; compared: Compared; days: number; testId: string }) {
     const tone = compared.changePercent === null || compared.changePercent === 0 ? "dimmed" : compared.changePercent > 0 ? "teal.8" : "dimmed";
     return (
-        <Paper withBorder radius="md" p="md" data-testid={testId}>
+        <Paper withBorder radius="md" p={{ base: "sm", xs: "md" }} data-testid={testId}>
             <Text size="xs" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: 0.4 }}>
                 {label}
             </Text>
-            <Text fz={28} fw={700} lh={1.2} mt={4}>
+            <Text fz={{ base: 24, xs: 28 }} fw={700} lh={1.2} mt={4}>
                 {number(compared.value)}
             </Text>
-            <Text size="xs" c="dimmed" mt={2}>{caption}</Text>
+            {/* Two cards a row on phones: the label says enough there. */}
+            <Text size="xs" c="dimmed" mt={2} visibleFrom="xs">{caption}</Text>
             <Text size="xs" c={tone} fw={500} mt={6} data-testid={`${testId}-change`}>
                 {changeLabel(compared, days)}
             </Text>
@@ -209,7 +210,7 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                 <DashboardSkeleton />
             ) : (
                 <Stack gap="lg" style={{ opacity: summary.isPlaceholderData ? 0.6 : 1, transition: "opacity 150ms" }}>
-                    <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="sm">
+                    <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
                         <Stat label="Profile views" caption="Times your profile was opened" compared={data.profileViews} days={days} testId="stat-profile-views" />
                         <Stat label="Event views" caption="Times your events were opened" compared={data.eventViews} days={days} testId="stat-event-views" />
                         <Stat label="Applications" caption="Applications to your events" compared={data.applications} days={days} testId="stat-applications" />
@@ -238,7 +239,12 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
                                 <Title order={2} size="h5">Where your views came from</Title>
                                 <Text size="xs" c="dimmed" mb="sm">
                                     {number(data.profileViews.value)} {data.profileViews.value === 1 ? "view" : "views"}, by the part of ISO (or the web)
-                                    they came from. Sources with fewer than 3 views are counted under &ldquo;Other&rdquo;.
+                                    they came from.
+                                    {data.profileViews.sources.some(({ source }) => source === "other") && (
+                                        <span data-testid="sources-other-note">
+                                            {" "}Sources with fewer than {MIN_SOURCE_COUNT} views are counted under &ldquo;Other&rdquo;.
+                                        </span>
+                                    )}
                                 </Text>
                                 <Sources sources={data.profileViews.sources} total={data.profileViews.value} />
                             </Paper>
@@ -252,7 +258,7 @@ export default function InsightsDashboard({ profileUrl }: InsightsDashboardProps
 
                     <Text size="xs" c="dimmed">
                         Counts only: ISO does not record who viewed you. A member counts once a day per page (a signed-out visitor,
-                        once per browser); your own visits and automated traffic are not counted.
+                        once per connection); your own visits and automated traffic are not counted.
                     </Text>
                     <Text size="xs" c="dimmed" data-testid="utc-footnote">
                         * Days run midnight to midnight UTC, so a late-evening view may land on the next day. Every number on

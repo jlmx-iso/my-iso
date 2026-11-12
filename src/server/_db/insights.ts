@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 
-import { isViewSource, VIEW_SOURCES, type InsightRange, type ViewSource } from "~/_utils/viewSources";
+import { isViewSource, MIN_SOURCE_COUNT, VIEW_SOURCES, type InsightRange, type ViewSource } from "~/_utils/viewSources";
 import { storedTimestamp } from "~/server/_billing/proStatus";
 import { utcDay } from "~/server/_lib/viewCounter";
 
@@ -11,12 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** How many of the member's events the insights page lists. */
 export const TOP_EVENTS = 10;
 
-/**
- * A source with fewer views than this in the period is folded into
- * "other": with one or two views from, say, Messages, the member could
- * guess who looked.
- */
-export const MIN_SOURCE_COUNT = 3;
+export { MIN_SOURCE_COUNT } from "~/_utils/viewSources";
 
 /** A number for the period, and the same number for the period before it. */
 export type Compared = {

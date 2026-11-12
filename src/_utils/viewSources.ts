@@ -24,6 +24,13 @@ export function isViewSource(value: string): value is ViewSource {
   return VIEW_SOURCES.some((source) => source === value);
 }
 
+/**
+ * A source with fewer views than this in the period is folded into
+ * "other": with one or two views from, say, Messages, the member could
+ * guess who looked.
+ */
+export const MIN_SOURCE_COUNT = 3;
+
 /** The ranges the insights page offers, in days. */
 export const INSIGHT_RANGES = [7, 30, 90] as const;
 export type InsightRange = (typeof INSIGHT_RANGES)[number];
