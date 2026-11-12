@@ -7,15 +7,65 @@
 //   npm run coverage:diff -- --base main --threshold 90
 //
 // Only lines the coverage report counts as executable are measured: comments,
-// blank lines, types and imports are not. Files outside the coverage scope
-// (vitest.config.ts `coverage.exclude`) are listed but not measured. CI runs
-// this on pull requests (docs/TESTING.md).
+// blank lines, types and imports are not. Changed files that coverage.config.mjs
+// excludes are listed as a warning but not measured. It fails closed: a
+// coverage report with no src/ file, or a changed file that should be
+// measured but has no record, fails the run. CI runs this on pull requests
+// (docs/TESTING.md).
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+
+import { coverageExclude, coverageStatus } from "../coverage.config.mjs";
+
+const C_ESCAPES = /** @type {Record<string, number>} */ ({
+  '"': 0x22,
+  "\\": 0x5c,
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+});
+
+/**
+ * Git writes a path with non-ASCII bytes, quotes, backslashes or control
+ * characters C-style quoted: `"b/src/caf\303\251.ts"`. Returns the path
+ * as it is on disk (octal escapes are UTF-8 bytes). An unquoted path is
+ * returned as it is.
+ *
+ * @param {string} text
+ */
+export function unquoteGitPath(text) {
+  if (text.length < 2 || !text.startsWith('"') || !text.endsWith('"')) return text;
+  /** @type {number[]} */
+  const bytes = [];
+  const body = text.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(/** @type {string} */ (char), "utf8"));
+      continue;
+    }
+    const next = body[i + 1] ?? "";
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1));
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8));
+      i += 3;
+    } else if (next in C_ESCAPES) {
+      bytes.push(/** @type {number} */ (C_ESCAPES[next]));
+      i += 1;
+    } else {
+      bytes.push(0x5c);
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
 
 /**
  * Parses `git diff --unified=0` output into the new-side line numbers each
@@ -46,7 +96,8 @@ export function parseDiff(diff) {
         current = null;
         continue;
       }
-      const file = target.startsWith("b/") ? target.slice(2) : target;
+      const unquoted = unquoteGitPath(target);
+      const file = unquoted.startsWith("b/") ? unquoted.slice(2) : unquoted;
       current = changed.get(file) ?? new Set();
       changed.set(file, current);
       continue;
@@ -142,29 +193,69 @@ export function formatRanges(lines) {
 
 /**
  * @typedef {{ file: string, covered: number, total: number, uncovered: number[] }} FileResult
- * @typedef {{ files: FileResult[], unmeasured: string[], covered: number, total: number, percent: number }} DiffCoverage
+ * @typedef {{
+ *   covered: number,
+ *   excluded: string[],
+ *   failures: string[],
+ *   files: FileResult[],
+ *   missing: string[],
+ *   percent: number,
+ *   total: number,
+ * }} DiffCoverage
+ * @typedef {(file: string) => "measured" | "excluded" | "outside"} CoverageStatus
  */
 
 /**
- * Intersects changed lines with coverage.
+ * The threshold argument as a percentage, or an error.
+ *
+ * @param {string | undefined} value
+ * @returns {number}
+ */
+export function parseThreshold(value) {
+  const threshold = Number(value);
+  if (value === undefined || value.trim() === "" || !Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+    throw new Error(`--threshold must be a number from 0 to 100, got ${JSON.stringify(value)}`);
+  }
+  return threshold;
+}
+
+/**
+ * Intersects changed lines with coverage. Fails closed: a report without
+ * any src/ file, or a changed file coverage should measure but has no
+ * record of, is a failure, not a pass.
  *
  * @param {Map<string, Set<number>>} changed
  * @param {Map<string, Map<number, number>>} coverage
+ * @param {CoverageStatus} status  how coverage.config.mjs treats a path
  * @returns {DiffCoverage}
  */
-export function computeDiffCoverage(changed, coverage) {
+export function computeDiffCoverage(changed, coverage, status) {
   /** @type {FileResult[]} */
   const files = [];
   /** @type {string[]} */
-  const unmeasured = [];
+  const excluded = [];
+  /** @type {string[]} */
+  const missing = [];
+  /** @type {string[]} */
+  const failures = [];
   let covered = 0;
   let total = 0;
 
+  if (![...coverage.keys()].some((file) => file.startsWith("src/"))) {
+    failures.push("The coverage report has no files under src/: it is not this project's report, or coverage did not run.");
+  }
+
   for (const [file, lines] of [...changed].sort(([a], [b]) => a.localeCompare(b))) {
     if (!isMeasuredSource(file)) continue;
+    const kind = status(file);
+    if (kind === "outside") continue;
+    if (kind === "excluded") {
+      excluded.push(file);
+      continue;
+    }
     const hits = coverage.get(file);
     if (!hits) {
-      unmeasured.push(file);
+      missing.push(file);
       continue;
     }
     /** @type {number[]} */
@@ -184,7 +275,24 @@ export function computeDiffCoverage(changed, coverage) {
     total += fileTotal;
   }
 
-  return { covered, files, percent: total === 0 ? 100 : (100 * covered) / total, total, unmeasured };
+  if (missing.length) {
+    failures.push(
+      `${missing.length} changed file(s) should be measured but have no coverage record ` +
+        "(was the coverage run complete?).",
+    );
+  }
+
+  return { covered, excluded, failures, files, missing, percent: total === 0 ? 100 : (100 * covered) / total, total };
+}
+
+/**
+ * Whether the change passes: no failure, and at least `threshold` percent.
+ *
+ * @param {DiffCoverage} result
+ * @param {number} threshold
+ */
+export function passes(result, threshold) {
+  return result.failures.length === 0 && result.percent >= threshold;
 }
 
 /**
@@ -193,7 +301,12 @@ export function computeDiffCoverage(changed, coverage) {
  */
 export function formatReport(result, threshold) {
   const lines = [];
-  const pass = result.percent >= threshold;
+  const pass = passes(result, threshold);
+  for (const failure of result.failures) lines.push(`FAIL: ${failure}`);
+  if (result.missing.length) {
+    for (const f of result.missing) lines.push(`  no coverage record: ${f}`);
+  }
+  if (result.failures.length) lines.push("");
   if (result.total === 0) {
     lines.push("Diff coverage: no executable lines changed under src/ (tests excluded).");
   } else {
@@ -208,10 +321,13 @@ export function formatReport(result, threshold) {
       lines.push(`  ${pct}%  ${f.covered}/${f.total}  ${f.file}${missing}`);
     }
   }
-  if (result.unmeasured.length) {
+  if (result.excluded.length) {
     lines.push("");
-    lines.push("Changed but outside the coverage scope (vitest.config.ts coverage.exclude):");
-    for (const f of result.unmeasured) lines.push(`  ${f}`);
+    lines.push(
+      "WARNING: changed but excluded from coverage (coverage.config.mjs), so not measured. " +
+        "Keep logic out of these files:",
+    );
+    for (const f of result.excluded) lines.push(`  ${f}`);
   }
   return lines.join("\n");
 }
@@ -225,7 +341,14 @@ function main() {
     },
   });
   const root = process.cwd();
-  const threshold = Number(values.threshold);
+  let threshold;
+  try {
+    threshold = parseThreshold(values.threshold);
+  } catch (error) {
+    console.error(/** @type {Error} */ (error).message);
+    process.exit(2);
+  }
+  const exclude = coverageExclude(root);
 
   let lcov;
   try {
@@ -242,14 +365,16 @@ function main() {
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
 
-  const result = computeDiffCoverage(parseDiff(diff), parseLcov(lcov, root));
+  const result = computeDiffCoverage(parseDiff(diff), parseLcov(lcov, root), (file) =>
+    coverageStatus(file, exclude),
+  );
   const report = formatReport(result, threshold);
   console.log(report);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Diff coverage\n\n\`\`\`\n${report}\n\`\`\`\n`);
   }
-  if (result.percent < threshold) process.exit(1);
+  if (!passes(result, threshold)) process.exit(1);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

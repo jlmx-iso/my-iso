@@ -7,6 +7,9 @@ import {
   isMeasuredSource,
   parseDiff,
   parseLcov,
+  parseThreshold,
+  passes,
+  unquoteGitPath,
 } from "./diff-coverage.mjs";
 
 const DIFF = `diff --git a/src/server/a.ts b/src/server/a.ts
@@ -83,6 +86,31 @@ describe("parseDiff", () => {
     expect([...(changed.get("src/y.ts") ?? [])]).toEqual([2, 3]);
   });
 
+  it("reads paths git quotes (non-ASCII bytes, quotes, backslashes, control characters)", () => {
+    const changed = parseDiff(
+      [
+        'diff --git "a/src/caf\\303\\251.ts" "b/src/caf\\303\\251.ts"',
+        '--- "a/src/caf\\303\\251.ts"',
+        '+++ "b/src/caf\\303\\251.ts"',
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        'diff --git "a/src/odd\\"name\\\\x\\t.ts" "b/src/odd\\"name\\\\x\\t.ts"',
+        '--- "a/src/odd\\"name\\\\x\\t.ts"',
+        '+++ "b/src/odd\\"name\\\\x\\t.ts"',
+        "@@ -0,0 +4 @@",
+        "+added",
+      ].join("\n"),
+    );
+    expect([...changed.keys()]).toEqual(["src/café.ts", 'src/odd"name\\x\t.ts']);
+    expect([...(changed.get("src/café.ts") ?? [])]).toEqual([1]);
+  });
+
+  it("leaves unquoted paths alone", () => {
+    expect(unquoteGitPath("b/src/plain.ts")).toBe("b/src/plain.ts");
+    expect(unquoteGitPath('"b/src/\\346\\227\\245.ts"')).toBe("b/src/日.ts");
+  });
+
   it("returns nothing for an empty diff", () => {
     expect(parseDiff("").size).toBe(0);
   });
@@ -152,39 +180,96 @@ describe("computeDiffCoverage", () => {
     ["src/types/only.ts", new Map<number, number>()],
   ]);
 
+  // As coverage.config.mjs would say for these paths.
+  const status = (file: string) =>
+    file === "src/server/excluded.ts" || file.startsWith("src/types/") ? ("excluded" as const) : ("measured" as const);
+
   it("counts only executable changed lines in measured source files", () => {
-    const result = computeDiffCoverage(changed, coverage);
+    const result = computeDiffCoverage(changed, coverage, status);
     expect(result.total).toBe(3);
     expect(result.covered).toBe(1);
     expect(result.percent).toBeCloseTo(33.33, 1);
     expect(result.files).toEqual([{ covered: 1, file: "src/server/a.ts", total: 3, uncovered: [5, 12] }]);
+    expect(result.failures).toEqual([]);
   });
 
-  it("lists changed files the coverage report does not know as unmeasured", () => {
-    expect(computeDiffCoverage(changed, coverage).unmeasured).toEqual(["src/server/excluded.ts"]);
+  it("lists changed files that coverage excludes, as a warning, not a failure", () => {
+    const result = computeDiffCoverage(changed, coverage, status);
+    expect(result.excluded).toEqual(["src/server/excluded.ts", "src/types/only.ts"]);
+    expect(passes({ ...result, percent: 100 }, 90)).toBe(true);
+  });
+
+  it("ignores changed files under src/ that coverage does not include at all", () => {
+    const result = computeDiffCoverage(new Map([["src/styles/x.css", new Set([1])]]), coverage, () => "outside");
+    expect(result).toMatchObject({ excluded: [], failures: [], missing: [], total: 0 });
   });
 
   it("passes when no executable line changed", () => {
-    const result = computeDiffCoverage(new Map([["src/types/only.ts", new Set([3])]]), coverage);
-    expect(result).toMatchObject({ percent: 100, total: 0 });
+    const result = computeDiffCoverage(new Map([["src/types/only.ts", new Set([3])]]), coverage, status);
+    expect(result).toMatchObject({ failures: [], percent: 100, total: 0 });
+    expect(passes(result, 90)).toBe(true);
+  });
+
+  it("fails a changed file that should be measured but has no coverage record", () => {
+    const result = computeDiffCoverage(new Map([["src/server/new.mjs", new Set([1, 2])]]), coverage, status);
+    expect(result.missing).toEqual(["src/server/new.mjs"]);
+    expect(result.failures).toHaveLength(1);
+    expect(passes(result, 0)).toBe(false);
+  });
+
+  it("fails a coverage report that has no file under src/", () => {
+    const foreign = new Map([["lib/other.ts", new Map([[1, 1]])]]);
+    const result = computeDiffCoverage(new Map(), foreign, status);
+    expect(result.failures[0]).toMatch(/no files under src\//);
+    expect(passes(result, 0)).toBe(false);
   });
 });
 
+describe("parseThreshold", () => {
+  it.each([
+    ["90", 90],
+    ["0", 0],
+    ["100", 100],
+    ["87.5", 87.5],
+  ])("accepts %s", (value, expected) => {
+    expect(parseThreshold(value)).toBe(expected);
+  });
+
+  it.each([["ninety"], [""], [" "], ["NaN"], ["Infinity"], ["-1"], ["101"], [undefined]])(
+    "refuses %s",
+    (value) => {
+      expect(() => parseThreshold(value)).toThrow(/--threshold must be a number from 0 to 100/);
+    },
+  );
+});
+
 describe("formatReport", () => {
-  it("names each uncovered range and the verdict", () => {
+  const base = { excluded: [], failures: [], missing: [] };
+
+  it("names each uncovered range and the verdict, and warns about excluded files", () => {
     const report = formatReport(
       {
+        ...base,
         covered: 1,
+        excluded: ["src/app/x/page.tsx"],
         files: [{ covered: 1, file: "src/server/a.ts", total: 3, uncovered: [5, 6, 12] }],
         percent: 33.3,
         total: 3,
-        unmeasured: ["src/server/excluded.ts"],
       },
       90,
     );
     expect(report).toContain("33.3% of 3 changed executable lines");
     expect(report).toContain("FAIL");
     expect(report).toContain("src/server/a.ts  uncovered: 5-6, 12");
-    expect(report).toContain("src/server/excluded.ts");
+    expect(report).toMatch(/WARNING: changed but excluded from coverage[\s\S]*src\/app\/x\/page\.tsx/);
+  });
+
+  it("puts failures first, with the files that have no record", () => {
+    const report = formatReport(
+      { ...base, covered: 0, failures: ["1 changed file(s) ..."], files: [], missing: ["src/a.mjs"], percent: 100, total: 0 },
+      90,
+    );
+    expect(report.split("\n")[0]).toBe("FAIL: 1 changed file(s) ...");
+    expect(report).toContain("no coverage record: src/a.mjs");
   });
 });
