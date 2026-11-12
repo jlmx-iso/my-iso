@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reviewGate } from "./reviewGate";
+import { memberReviewView, reviewGate } from "./reviewGate";
 
 const review = { createdAt: new Date("2026-06-01T10:00:00Z"), description: null, id: "r1", rating: 5, title: "Great" };
 const state = (overrides: Partial<Parameters<typeof reviewGate>[0]>): Parameters<typeof reviewGate>[0] => ({
@@ -46,5 +46,19 @@ describe("reviewGate", () => {
 
   it("never shows the form when the server says no, even without a reason", () => {
     expect(reviewGate(state({ canReview: false }), "Ada")).toEqual({ kind: "none" });
+  });
+});
+
+describe("memberReviewView", () => {
+  it("is an error, not silence, when eligibility fails to load", () => {
+    expect(memberReviewView({ isError: true }, "Ada")).toEqual({ kind: "error" });
+  });
+
+  it("is loading until the server answers", () => {
+    expect(memberReviewView({ isError: false }, "Ada")).toEqual({ kind: "loading" });
+  });
+
+  it("keeps an answer it already has when a later refetch fails", () => {
+    expect(memberReviewView({ data: state({}), isError: true }, "Ada")).toEqual({ kind: "form" });
   });
 });
