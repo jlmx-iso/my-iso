@@ -4,7 +4,7 @@ import { cache } from "react";
 
 import { ErrorReason } from "~/_utils/errorReason";
 import ViewBeacon from "~/app/_components/ViewBeacon";
-import { viewSource } from "~/app/_server_utils/views";
+import { viewBeaconProps } from "~/app/_server_utils/views";
 import { auth } from "~/auth";
 import { reasonOf } from "~/server/api/reasonedError";
 import { api } from "~/trpc/server";
@@ -36,12 +36,12 @@ export default async function Page({ params }: PageProps) {
     const [session, event] = await Promise.all([auth(), findEvent(id)]);
     if (!event) notFound();
     const isOwner = session?.user?.id === event.photographer.userId;
-    const source = await viewSource();
+    const beacon = await viewBeaconProps({ id: event.id, kind: "event" });
 
     return (
         <>
             {/* For the owner's insights; their own visits are not counted. */}
-            {!isOwner && <ViewBeacon kind="event" id={event.id} source={source} />}
+            {!isOwner && <ViewBeacon {...beacon} />}
             <EventDetail initialEvent={event} currentUserId={session?.user?.id ?? null} />
         </>
     );

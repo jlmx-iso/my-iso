@@ -218,6 +218,19 @@ database access at all. A signed-in member can cause at most 20 writes of
 each kind a minute. Reloads, back-navigation and a second visit the same
 day are not counted again.
 
+**The source is vouched for by the server.** The page renders the beacon
+with a token, `viewSourceToken`: a keyed hash (`AUTH_SECRET`) of kind,
+target, source and UTC day. The counter files a profile view under the
+posted `source` only when the token matches it, compared in constant time
+(`verifiedViewSource`; yesterday's token is still accepted for the first 10
+minutes after midnight, for a page rendered just before). A missing, forged,
+other-target or stale-day token does not reject the view: it is counted
+under **Other**. Rejecting would lose real views (a tab left open across
+midnight) and protect nothing more. The view has already passed every
+limiter and dedupe step, and Other is where small sources are folded anyway,
+so a client cannot inflate a named source or push one past the
+three-view threshold to single out a visitor.
+
 **The cookie.** `iso_views`: HttpOnly, SameSite=Lax, Secure on https, path
 `/api/views` (sent nowhere else), expires at the end of the UTC day. Its
 value is the day, up to 40 twelve-character keyed hashes of

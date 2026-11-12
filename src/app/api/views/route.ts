@@ -22,6 +22,8 @@ const bodySchema = z.object({
   id: z.string().min(1).max(64),
   kind: z.enum(["profile", "event"]),
   source: z.enum(VIEW_SOURCES),
+  /** viewSourceToken() from the page; without a matching one the view counts under "other". */
+  token: z.string().max(64).optional(),
 });
 
 /**
@@ -150,6 +152,7 @@ export async function POST(request: Request): Promise<Response> {
       clientIp: getClientIp(request.headers),
       cookie: cookieValue(request.headers.get("cookie")),
       source: parsed.data.source,
+      sourceToken: parsed.data.token ?? null,
       target: { id: parsed.data.id, kind: parsed.data.kind },
       userAgent: request.headers.get("user-agent"),
       viewerId: session?.user?.id ?? null,
