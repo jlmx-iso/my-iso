@@ -17,10 +17,13 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { formatLocalDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
+
+import { bookingCardActions } from "./bookingActions";
 
 const STATUS_COLORS: Record<string, string> = {
   accepted: "teal",
@@ -39,6 +42,8 @@ type BookingUser = {
 
 type BookingEvent = {
   date: Date;
+  /** Hours. */
+  duration: number;
   id: string;
   location: string;
   title: string;
@@ -67,6 +72,9 @@ export default function BookingCard({
   variant,
 }: BookingCardProps) {
   const utils = api.useUtils();
+  // Read once per mount; the server checks again when a button is used.
+  const [now] = useState(() => new Date());
+  const actions = bookingCardActions({ event, now, status: booking.status, variant });
 
   const { mutate: updateStatus, isPending } =
     api.booking.updateStatus.useMutation({
@@ -198,48 +206,46 @@ export default function BookingCard({
 
         {/* Actions */}
         <Group gap="xs" mt={4}>
-          {/* Owner actions: accept/decline for "applied" status */}
-          {variant === "received" && booking.status === "applied" && (
-            <>
-              <Button
-                size="xs"
-                color="teal"
-                leftSection={<IconCheck size={14} />}
-                onClick={handleAccept}
-                loading={isPending}
-              >
-                Accept
-              </Button>
-              <Button
-                size="xs"
-                color="red"
-                variant="light"
-                leftSection={<IconX size={14} />}
-                onClick={handleDecline}
-                loading={isPending}
-              >
-                Decline
-              </Button>
-            </>
+          {/* Owner actions on an application: accept (before the event starts) or decline */}
+          {actions.accept && (
+            <Button
+              size="xs"
+              color="teal"
+              leftSection={<IconCheck size={14} />}
+              onClick={handleAccept}
+              loading={isPending}
+            >
+              Accept
+            </Button>
+          )}
+          {actions.decline && (
+            <Button
+              size="xs"
+              color="red"
+              variant="light"
+              leftSection={<IconX size={14} />}
+              onClick={handleDecline}
+              loading={isPending}
+            >
+              Decline
+            </Button>
           )}
 
-          {/* Applicant can cancel if still applied or accepted */}
-          {variant === "sent" &&
-            (booking.status === "applied" ||
-              booking.status === "accepted") && (
-              <Button
-                size="xs"
-                color="gray"
-                variant="light"
-                onClick={handleCancel}
-                loading={isPending}
-              >
-                Cancel Application
-              </Button>
-            )}
+          {/* Applicant: withdraw an application, or cancel an accepted booking before the event */}
+          {actions.cancel && (
+            <Button
+              size="xs"
+              color="gray"
+              variant="light"
+              onClick={handleCancel}
+              loading={isPending}
+            >
+              Cancel Application
+            </Button>
+          )}
 
-          {/* Either party can mark as completed if accepted */}
-          {booking.status === "accepted" && (
+          {/* Either party can mark an accepted booking completed once the event has ended */}
+          {actions.complete && (
             <Button
               size="xs"
               variant="light"

@@ -52,6 +52,8 @@ const onLiveEvent = { event: { isDeleted: false } } as const;
 
 const bookingEventSelect = {
   date: true,
+  // With `date`, lets the client tell whether the event has ended.
+  duration: true,
   id: true,
   location: true,
   title: true,

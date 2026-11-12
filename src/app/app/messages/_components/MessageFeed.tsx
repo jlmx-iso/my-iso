@@ -1,11 +1,11 @@
 "use client";
 
 import { ActionIcon, Box, Group, Stack, Text, VisuallyHidden } from "@mantine/core";
-import { useScrollIntoView } from "@mantine/hooks";
+import { useDocumentVisibility, useScrollIntoView } from "@mantine/hooks";
 import { IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mergeThreadMessages, type ThreadMessage } from "~/_utils/threadMessages";
 import ScrollButton from "~/app/_components/buttons/ScrollButton";
@@ -17,6 +17,31 @@ import MessageTile from "./MessageTile";
 
 /** How often to refetch the thread while the realtime socket is not open. */
 const POLL_INTERVAL_MS = 5_000;
+
+/** At most one markThreadRead per this long (its limit is 120 a minute). */
+const MARK_READ_MIN_INTERVAL_MS = 3_000;
+
+/**
+ * The newest message this tab has already marked read, per user and thread,
+ * so that coming back to a thread with nothing new sends nothing.
+ */
+const markedReadKey = (userId: string, threadId: string) => `iso:marked-read:${userId}:${threadId}`;
+
+function getMarkedRead(key: string): string | null {
+    try {
+        return window.sessionStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function setMarkedRead(key: string, messageId: string) {
+    try {
+        window.sessionStorage.setItem(key, messageId);
+    } catch {
+        // Storage unavailable: the call is only repeated on the next visit.
+    }
+}
 
 type MessageFeedProps = {
     threadId: string;
@@ -67,6 +92,41 @@ export default function MessageFeed({ threadId }: MessageFeedProps) {
         () => mergeThreadMessages(data?.messages ?? [], liveMessages),
         [data?.messages, liveMessages],
     );
+
+    // Mark the thread read up to the newest message rendered here: once it
+    // has loaded, and again when a message arrives while it is open. Only
+    // while the tab is visible, at most once per MARK_READ_MIN_INTERVAL_MS
+    // (a burst of messages is one call, for the last of them), and never
+    // twice for the same message: a failure is not retried, the next
+    // message or visit marks the thread anyway.
+    const isThreadLoaded = data != null;
+    const newestMessageId = messages.at(-1)?.id;
+    const isDocumentVisible = useDocumentVisibility() === "visible";
+    const lastMarkReadAttempt = useRef<{ at: number; messageId: string } | null>(null);
+    const { mutate: markThreadRead } = api.message.markThreadRead.useMutation({
+        onSuccess: (_result, variables) => {
+            if (userId && variables.upToMessageId) {
+                setMarkedRead(markedReadKey(userId, threadId), variables.upToMessageId);
+            }
+            void utils.message.getThreadsByUserId.invalidate();
+            void utils.message.getThreadsPage.invalidate();
+            void utils.message.getUnreadCount.invalidate();
+        },
+    });
+
+    useEffect(() => {
+        if (!userId || !isThreadLoaded || !newestMessageId || !isDocumentVisible) return;
+        const last = lastMarkReadAttempt.current;
+        if (last?.messageId === newestMessageId) return;
+        if (getMarkedRead(markedReadKey(userId, threadId)) === newestMessageId) return;
+
+        const wait = last ? Math.max(0, last.at + MARK_READ_MIN_INTERVAL_MS - Date.now()) : 0;
+        const timer = setTimeout(() => {
+            lastMarkReadAttempt.current = { at: Date.now(), messageId: newestMessageId };
+            markThreadRead({ threadId, upToMessageId: newestMessageId });
+        }, wait);
+        return () => clearTimeout(timer);
+    }, [isDocumentVisible, isThreadLoaded, markThreadRead, newestMessageId, threadId, userId]);
 
     const hideScrollButton = () => setIsScrollButtonHidden(true);
 

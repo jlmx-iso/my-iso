@@ -20,6 +20,8 @@ type ApplyModalProps = {
   eventId: string;
   eventTitle: string;
   hasApplied: boolean;
+  /** From booking.hasApplied: the application was withdrawn and may be sent again. */
+  canReapply?: boolean;
   onSuccess?: () => void;
 };
 
@@ -27,6 +29,7 @@ export default function ApplyModal({
   eventId,
   eventTitle,
   hasApplied,
+  canReapply = false,
   onSuccess,
 }: ApplyModalProps) {
   const [opened, { open, close }] = useDisclosure(false);
@@ -68,7 +71,7 @@ export default function ApplyModal({
     });
   };
 
-  if (hasApplied) {
+  if (hasApplied && !canReapply) {
     return (
       <Button
         size="xs"
@@ -126,7 +129,7 @@ export default function ApplyModal({
       </Modal>
 
       <Button size="xs" variant="light" onClick={open}>
-        I&apos;m Interested
+        {canReapply ? "Apply again" : "I'm Interested"}
       </Button>
     </>
   );
