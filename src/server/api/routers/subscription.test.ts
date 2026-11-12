@@ -1,7 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 import { ErrorReason } from "~/_utils/errorReason";
-import { MAX_STRIPE_CALLS_PER_ROW, MAX_SUBREQUESTS_PER_ROW, RESYNC_MAX_BATCH, SUBREQUEST_BUDGET } from "~/server/_billing/resync";
+import {
+  MAX_STRIPE_CALLS_PER_ROW,
+  MAX_SUBREQUESTS_PER_ROW,
+  RESYNC_MAX_BATCH,
+  resyncScopeFilter,
+  rowNeedsFirstSync,
+  SUBREQUEST_BUDGET,
+} from "~/server/_billing/resync";
 import type * as StripeModule from "~/server/_billing/stripe";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
@@ -1005,6 +1012,43 @@ describe("a row is settled only once its payment standing has been derived compl
     stub.failWhen(null);
     expect(await as(user).getStatus()).toMatchObject({ hasProAccess: false, isDisputed: true });
     expect(await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ disputeId: "dp_0", disputeStatus: "open" });
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+  });
+
+  it("a previously settled row that qualifies again (null expiresAt) is not left looking settled when the work stops before the standing write", async () => {
+    const admin = await createTestUser(testDb.db, { role: "founder" });
+    const { row, user } = await legacyActive();
+    await as(admin).resyncFromStripe({});
+    const settled = await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } });
+    expect(settled.standingSyncedAt).not.toBeNull();
+    expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
+
+    // The previous release nulls expiresAt (cutover): the row qualifies again.
+    await testDb.db.subscription.update({ data: { expiresAt: null }, where: { id: row.id } });
+    // Meanwhile a dispute has opened on its payment.
+    stub.invoices.set("in_0", buildInvoice({ customer: "cus_a", id: "in_0", status: "paid", subscriptionId: "sub_a" }));
+    stub.invoicePayments.set("inpay_0", buildInvoicePayment({ id: "inpay_0", invoice: "in_0", paymentIntent: "pi_0" }));
+    stub.charges.set("ch_0", buildCharge({ created: Math.floor(Date.now() / 1000) - DAY, customer: "cus_a", id: "ch_0", paymentIntent: "pi_0" }));
+    stub.disputes.set("dp_0", buildDispute({ charge: "ch_0", id: "dp_0", paymentIntent: "pi_0", status: "needs_response" }));
+    // The sync restores expiresAt with the same-subscription write, then stops before the standing write.
+    stub.failWhen((request) => request.path === "/v1/charges", 503);
+    expect((await as(admin).resyncFromStripe({})).outcomes).toEqual({ failed: 1 });
+
+    const half = await testDb.db.subscription.findUniqueOrThrow({ where: { id: row.id } });
+    expect(half.expiresAt).not.toBeNull();
+    // The old marker does not vouch for it: nothing but `standingSyncedAt` would make it qualify now.
+    expect(half.standingSyncedAt).toBeNull();
+    expect(half.disputeStatus).toBeNull();
+
+    // Both paths still select it: the pending re-sync's scope and the lazy sync's test.
+    expect(await testDb.db.subscription.count({ where: { AND: [resyncScopeFilter("pending"), { id: row.id }] } })).toBe(1);
+    expect(rowNeedsFirstSync(half)).toBe(true);
+
+    // And the lazy sync, on the next access check, does the work and records the dispute.
+    stub.failWhen(null);
+    const calls = stub.requests.length;
+    expect(await as(user).getStatus()).toMatchObject({ hasProAccess: false, isDisputed: true });
+    expect(stub.requests.length).toBeGreaterThan(calls);
     expect((await as(admin).resyncFromStripe({})).processed).toBe(0);
   });
 

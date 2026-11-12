@@ -128,6 +128,7 @@ function writeVariants(
   state: SubscriptionState,
   pastDueAnchor: Date,
   authoritative: boolean,
+  standingFollows: boolean,
 ): WriteVariant[] {
   const row = { ...state, ...legacyFlags(state) };
   const sameSubscription: Where = {
@@ -148,10 +149,13 @@ function writeVariants(
       : [];
 
   if (state.status !== "past_due") {
-    return [{ data: { ...row, pastDueSince: null }, where: sameSubscription }, ...replaceOther(null)];
+    return [
+      ...keepingSettledIfUnchanged(state, standingFollows, { data: { ...row, pastDueSince: null }, where: sameSubscription }),
+      ...replaceOther(null),
+    ];
   }
   return [
-    {
+    ...keepingSettledIfUnchanged(state, standingFollows, {
       data: row,
       where: {
         AND: [
@@ -159,10 +163,50 @@ function writeVariants(
           { pastDueSince: { not: null }, status: "past_due", subscriptionId: state.subscriptionId },
         ],
       },
-    },
-    { data: { ...row, pastDueSince: pastDueAnchor }, where: sameSubscription },
+    }),
+    ...keepingSettledIfUnchanged(state, standingFollows, { data: { ...row, pastDueSince: pastDueAnchor }, where: sameSubscription }),
     ...replaceOther(pastDueAnchor),
   ];
+}
+
+/**
+ * A same-subscription write, split in two so that `standingSyncedAt` (the
+ * row is settled: its payment standing was derived completely, see
+ * writePaymentStanding) follows the state it was derived for:
+ *
+ * (When the caller is about to derive the standing itself, `standingFollows`,
+ * the write always withdraws "settled" and the standing write restores it.)
+ * For a write that is NOT followed by a derivation (subscription and
+ * checkout events):
+ *
+ * 1. when the reading leaves `status`, `latestInvoiceId` and
+ *    `paidThroughAt` as stored, the row is written as before and stays
+ *    settled. This is every no-op delivery, and most real ones (a changed
+ *    cancellation date, period or price does not change the standing);
+ * 2. otherwise the same write also clears `standingSyncedAt`. Those three
+ *    are what the standing is derived against (which invoice is the latest,
+ *    whether it is paid, what the subscription's status makes of a refund
+ *    or a loss), so a standing derived before they changed no longer
+ *    vouches for the row. The dispute and refund markers themselves are
+ *    left as they are; only "settled" is withdrawn, until a derivation has
+ *    completed for the new state. If that derivation is cut off or fails,
+ *    the re-sync's default scope and the lazy sync still select the row.
+ */
+function keepingSettledIfUnchanged(
+  state: SubscriptionState,
+  standingFollows: boolean,
+  variant: WriteVariant,
+): WriteVariant[] {
+  const unsettling: WriteVariant = { data: { ...variant.data, standingSyncedAt: null }, where: variant.where };
+  // The caller derives the standing next and settles the row with it: until
+  // then it is not settled, changed or not (see applySubscriptionState).
+  if (standingFollows) return [unsettling];
+  const standingBasisUnchanged: Where = {
+    latestInvoiceId: state.latestInvoiceId,
+    paidThroughAt: state.paidThroughAt,
+    status: state.status,
+  };
+  return [{ data: variant.data, where: { AND: [variant.where, standingBasisUnchanged] } }, unsettling];
 }
 
 export type ApplyOutcome =
@@ -193,7 +237,18 @@ export async function applySubscriptionState(
   db: BillingDb,
   userId: string,
   state: SubscriptionState,
-  options: { authoritative?: boolean; pastDueAnchor?: Date } = {},
+  options: {
+    authoritative?: boolean;
+    pastDueAnchor?: Date;
+    /**
+     * The caller derives the payment standing right after this write. The
+     * write then always withdraws "settled" (`standingSyncedAt`), and the
+     * standing write gives it back when it has completed: if the work stops
+     * in between, the row does not pass for settled on an earlier
+     * derivation.
+     */
+    standingFollows?: boolean;
+  } = {},
 ): Promise<ApplyOutcome> {
   if (!isSubscriptionStatus(state.status)) {
     // Stored verbatim and treated as "no access, manage in the portal"
@@ -206,7 +261,12 @@ export async function applySubscriptionState(
   }
 
   const pastDueAnchor = options.pastDueAnchor ?? state.stripeSyncedAt;
-  const variants = writeVariants(state, pastDueAnchor, options.authoritative ?? false);
+  const variants = writeVariants(
+    state,
+    pastDueAnchor,
+    options.authoritative ?? false,
+    options.standingFollows ?? false,
+  );
   const update = async (): Promise<boolean> => {
     for (const { data, where } of variants) {
       const result = await db.subscription.updateMany({ data, where: { AND: [{ userId }, where] } });
@@ -559,10 +619,15 @@ async function storePaymentStanding(
   const lost = await knownOf(["lost"], KNOWN_DISPUTES_READ + 1 - live.length);
   const rows = [...live, ...lost];
   const known = rows.slice(0, KNOWN_DISPUTES_READ).filter((row): row is KnownDispute => isKnownDisputeStatus(row.status));
+  const storedRow = await db.subscription.findFirst({
+    select: { refundedInvoiceId: true },
+    where: { subscriptionId: subscription.id },
+  });
   const reading = await readPaymentStanding(stripe, subscription, {
     known,
     knownTruncated: rows.length > KNOWN_DISPUTES_READ,
     paymentIntentId,
+    storedRefundedInvoiceId: storedRow?.refundedInvoiceId ?? null,
   });
   if (!reading) return null;
   const { standing } = reading;
@@ -621,6 +686,7 @@ async function syncSubscriptionLocked(
       const state = subscriptionStateFromStripe(subscription, stripeResponseTime(subscription, requestedAt));
       const outcome = await applySubscriptionState(db, userId, state, {
         pastDueAnchor: pastDueAnchorOf(subscription, state.stripeSyncedAt),
+        standingFollows: options.standing === true,
       });
       read.subscription = subscription;
       return { outcome, state, userId };
@@ -861,6 +927,7 @@ async function syncUserLocked(
       const outcome = await applySubscriptionState(db, userId, state, {
         authoritative: true,
         pastDueAnchor: pastDueAnchorOf(primary, syncedAt),
+        standingFollows: options.standing === true,
       });
       return { hasLiveSubscription: live.length > 0, outcome, primary, state } satisfies Reading;
     },

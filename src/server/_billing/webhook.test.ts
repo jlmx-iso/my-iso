@@ -1101,6 +1101,24 @@ describe("disputes and refunds", () => {
         expect((await access(user.id)).hasProAccess).toBe(false);
       });
 
+      it("never concludes 'fully refunded' from part of an invoice's payments", async () => {
+        const user = await paidSubscription("canceled", { cancellationReason: "cancellation_requested" });
+        longHistory();
+        // in_1 was paid in three parts, all by charges the listing does not reach. Two were refunded; the third was not.
+        stub.charges.set("ch_1", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1", paymentIntent: "pi_1", refunded: true }));
+        stub.invoicePayments.set("inpay_1b", buildInvoicePayment({ id: "inpay_1b", invoice: "in_1", paymentIntent: "pi_1b" }));
+        stub.charges.set("ch_1b", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1b", paymentIntent: "pi_1b", refunded: true }));
+        stub.invoicePayments.set("inpay_1c", buildInvoicePayment({ id: "inpay_1c", invoice: "in_1", paymentIntent: "pi_1c" }));
+        stub.charges.set("ch_1c", buildCharge({ created: nowSeconds() - 500 * DAY, customer: "cus_alice", id: "ch_1c", paymentIntent: "pi_1c" }));
+
+        const delivered = await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+
+        // Not every payment's charge could be read: no refund is recorded, and it is said to be incomplete.
+        expect((await subscriptionRow(user.id))?.refundedInvoiceId).toBeNull();
+        expect((await access(user.id)).reason).toBe("canceled_paid_period");
+        expect(delivered).toMatchObject({ result: "standing_incomplete", status: 200 });
+      });
+
       it("is not called incomplete when the unread charges are older than any dispute can be", async () => {
         const user = await paidSubscription();
         for (let i = 1; i <= 320; i += 1) {
@@ -1144,6 +1162,40 @@ describe("disputes and refunds", () => {
       subscriptionId: "sub_paid",
     });
     expect(entitlementsFor(await subscriptionRow(user.id), new Date())).toMatchObject({ hasProAccess: false, isDisputed: true });
+  });
+
+  it("a settled row whose subscription changes is no longer settled until its standing has been derived again", async () => {
+    const user = await paidSubscription("canceled", { cancellationReason: "cancellation_requested" });
+    await deliver(buildEvent("invoice.paid", buildInvoice({ customer: "cus_alice", id: "in_1", status: "paid", subscriptionId: "sub_1" })));
+    const settled = await subscriptionRow(user.id);
+    expect(settled?.standingSyncedAt).not.toBeNull();
+
+    // A delivery that changes nothing leaves it settled (no lazy sync is forced by a no-op event).
+    await deliver(buildEvent("customer.subscription.updated", buildSubscription({ customer: "cus_alice", id: "sub_1", status: "canceled" })));
+    expect((await subscriptionRow(user.id))?.standingSyncedAt).toEqual(settled?.standingSyncedAt);
+
+    // A new latest invoice, paid and then refunded in full. The event's
+    // work is cut off after the subscription write, before the standing.
+    const now = Math.floor(Date.now() / 1000);
+    stripeHas({ cancellationReason: "cancellation_requested", customer: "cus_alice", id: "sub_1", latestInvoice: "in_2", periodEnd: now + 20 * DAY, periodStart: now - 10 * DAY, status: "canceled" });
+    const next = buildInvoice({ created: T0 + 30 * DAY, customer: "cus_alice", id: "in_2", status: "paid", subscriptionId: "sub_1" });
+    stub.invoices.set("in_2", next);
+    stub.invoicePayments.set("inpay_2", buildInvoicePayment({ id: "inpay_2", invoice: "in_2", paymentIntent: "pi_2" }));
+    stub.charges.set("ch_2", buildCharge({ created: now, customer: "cus_alice", id: "ch_2", paymentIntent: "pi_2", refunded: true }));
+    stub.failWhen((request) => request.path === "/v1/charges", 503);
+
+    expect((await deliver(buildEvent("invoice.paid", next))).status).toBe(500);
+
+    // The row has the new invoice and the old, empty refund marker; it must not pass for settled.
+    expect(await subscriptionRow(user.id)).toMatchObject({ latestInvoiceId: "in_2", refundedInvoiceId: null, standingSyncedAt: null });
+
+    // So the redelivery (or the re-sync, or the lazy sync) derives it.
+    stub.failWhen(null);
+    await deliver(buildEvent("invoice.payment_succeeded", next));
+    const after = await subscriptionRow(user.id);
+    expect(after).toMatchObject({ refundedInvoiceId: "in_2" });
+    expect(after?.standingSyncedAt).not.toBeNull();
+    expect(entitlementsFor(after, new Date()).hasProAccess).toBe(false);
   });
 
   it("winning one dispute does not hide another that is still open, in either order of arrival", async () => {

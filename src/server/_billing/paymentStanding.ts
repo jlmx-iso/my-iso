@@ -268,26 +268,25 @@ async function newestInvoicePaidFor(stripe: Stripe, subscriptionId: string): Pro
 
 /**
  * Whether every successful charge that paid `invoiceId` was refunded in
- * full. A payment whose charge is not among `charges` (the listing did not
- * reach it) has that charge read directly, by payment intent: "not in the
- * list" must never be taken for "not refunded".
+ * full: true, false, or "unknown".
+ *
+ * A payment whose charge is not among `charges` (the listing did not reach
+ * it) has that charge read directly, by payment intent, for up to
+ * MAX_UNLISTED_PAYMENTS_READ payments. "Not in the list" must never be
+ * taken for "not refunded", and a PART of an invoice's payments must never
+ * be taken for all of them: if any paid payment is left without a known
+ * charge, the answer is "unknown", not a verdict on the ones that were
+ * read.
  */
 async function isRefundedInFull(
   stripe: Stripe,
   invoiceId: string,
   charges: readonly Stripe.Charge[],
-): Promise<boolean> {
+): Promise<boolean | "unknown"> {
   const payments = await stripe.invoicePayments.list({ invoice: invoiceId, limit: LIST_LIMIT, status: "paid" });
+  if (payments.has_more) return "unknown";
   const known = [...charges];
-  let directReads = 0;
-  for (const payment of payments.data) {
-    const intent = stripeId(payment.payment.payment_intent);
-    if (!intent || known.some((charge) => stripeId(charge.payment_intent) === intent)) continue;
-    if (directReads >= MAX_UNLISTED_PAYMENTS_READ) break;
-    directReads += 1;
-    known.push(...(await stripe.charges.list({ limit: LIST_LIMIT, payment_intent: intent })).data);
-  }
-  const paying = payments.data.flatMap((payment) => {
+  const chargesOf = (payment: Stripe.InvoicePayment) => {
     const intent = stripeId(payment.payment.payment_intent);
     const direct = stripeId(payment.payment.charge);
     return known.filter(
@@ -295,7 +294,23 @@ async function isRefundedInFull(
         charge.status === "succeeded" &&
         ((intent !== null && stripeId(charge.payment_intent) === intent) || charge.id === direct),
     );
-  });
+  };
+
+  let directReads = 0;
+  const paying: Stripe.Charge[] = [];
+  for (const payment of payments.data) {
+    let found = chargesOf(payment);
+    const intent = stripeId(payment.payment.payment_intent);
+    if (found.length === 0 && intent && directReads < MAX_UNLISTED_PAYMENTS_READ) {
+      directReads += 1;
+      known.push(...(await stripe.charges.list({ limit: LIST_LIMIT, payment_intent: intent })).data);
+      found = chargesOf(payment);
+    }
+    // A paid payment has a successful charge; one this could not find was
+    // not read, and nothing can be said about the invoice as a whole.
+    if (found.length === 0) return "unknown";
+    paying.push(...found);
+  }
   // `refunded` is true only while succeeded refunds cover the whole charge:
   // a partial refund leaves it false, and a refund that fails afterwards
   // turns it false again.
@@ -352,6 +367,8 @@ export async function readPaymentStanding(
     knownTruncated?: boolean;
     nowMs?: number;
     paymentIntentId?: string | null;
+    /** The refund marker the row holds: kept when the refund question cannot be answered. */
+    storedRefundedInvoiceId?: string | null;
   } = {},
 ): Promise<StandingReading | null> {
   const customerId = stripeId(subscription.customer);
@@ -385,7 +402,15 @@ export async function readPaymentStanding(
   const invoice = subscription.latest_invoice;
   const latestPaidInvoiceId = invoice && typeof invoice !== "string" && invoice.status === "paid" ? invoice.id : null;
   const refunded = latestPaidInvoiceId !== null && (await isRefundedInFull(stripe, latestPaidInvoiceId, charges));
-  const refundedInvoiceId = refunded ? latestPaidInvoiceId : null;
+  // Not every payment of the invoice could be read: neither "refunded" nor
+  // "not refunded" is concluded. The marker stays as stored and the
+  // derivation is incomplete.
+  const refundUnknown = refunded === "unknown";
+  const refundedInvoiceId = refundUnknown
+    ? (options.storedRefundedInvoiceId ?? null)
+    : refunded
+      ? latestPaidInvoiceId
+      : null;
 
   // Unread charges that are recent enough to carry a live dispute.
   const oldestRead = listed.at(-1);
@@ -409,6 +434,7 @@ export async function readPaymentStanding(
   ];
   const knownNotAllRead = remembered.overflow || options.knownTruncated === true;
   const notAllExamined = held || knownNotAllRead;
+  const refundIncomplete = refundUnknown;
 
   if (!deciding && notAllExamined) {
     return {
@@ -424,7 +450,7 @@ export async function readPaymentStanding(
       disputeInvoiceId: deciding?.invoiceId ?? null,
       disputeStatus: deciding?.status === "open" || deciding?.status === "lost" ? deciding.status : null,
       // What withholds access is definite whatever else there is.
-      incomplete: notAllExamined || (!deciding && unreadWithinHorizon),
+      incomplete: notAllExamined || refundIncomplete || (!deciding && unreadWithinHorizon),
       refundedInvoiceId,
     },
   };
