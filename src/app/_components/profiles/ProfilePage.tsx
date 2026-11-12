@@ -37,7 +37,10 @@ export const ProfilePage = async ({ photographer, isEditing }: ProfilePageProps)
     caller.photographer.getPortfolioImages({ photographerId: photographer.id }),
     isSelf ? Promise.resolve({ isFavorite: false }) : caller.user.isFavorite({ targetId: photographer.id }),
     isSelf ? caller.user.getMe() : Promise.resolve(null),
-    viewBeaconProps({ id: photographer.userId, kind: "profile" }),
+    viewBeaconProps(
+      { id: photographer.userId, kind: "profile" },
+      { ownerId: photographer.userId, viewerId: session.user.id },
+    ),
     // A Pro member's own profile links to their insights with last week's number.
     isSelf && photographer.isPro
       ? caller.insights

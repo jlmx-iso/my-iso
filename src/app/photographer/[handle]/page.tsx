@@ -33,7 +33,10 @@ export default async function PhotographerProfilePage({ params }: PageProps) {
       ? "owner"
       : "member";
 
-  const beacon = await viewBeaconProps({ id: photographer.userId, kind: "profile" });
+  const beacon = await viewBeaconProps(
+    { id: photographer.userId, kind: "profile" },
+    { ownerId: photographer.userId, viewerId: viewerId ?? null },
+  );
 
   const messageHref = `/app/messages?new=${photographer.userId}`;
   const signInHref = (destination: string) => `/login?callbackUrl=${encodeURIComponent(destination)}`;

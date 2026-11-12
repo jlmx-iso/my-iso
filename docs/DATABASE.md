@@ -218,18 +218,40 @@ database access at all. A signed-in member can cause at most 20 writes of
 each kind a minute. Reloads, back-navigation and a second visit the same
 day are not counted again.
 
-**The source is vouched for by the server.** The page renders the beacon
-with a token, `viewSourceToken`: a keyed hash (`AUTH_SECRET`) of kind,
-target, source and UTC day. The counter files a profile view under the
-posted `source` only when the token matches it, compared in constant time
-(`verifiedViewSource`; yesterday's token is still accepted for the first 10
-minutes after midnight, for a page rendered just before). A missing, forged,
-other-target or stale-day token does not reject the view: it is counted
-under **Other**. Rejecting would lose real views (a tab left open across
-midnight) and protect nothing more. The view has already passed every
-limiter and dedupe step, and Other is where small sources are folded anyway,
-so a client cannot inflate a named source or push one past the
-three-view threshold to single out a visitor.
+**The source breakdown is approximate.** Like any web analytics, it is
+based on the `Referer` the browser sends with the page request, and a
+visitor can send any `Referer` they like. What the server adds:
+
+- **The source cannot be swapped after the page is rendered.** The page
+  renders the beacon with a token, `viewSourceToken`: a keyed hash
+  (`AUTH_SECRET`) of kind, target, source, UTC day and viewer (the
+  `viewerKey` the dedupe uses: the member when signed in, the client
+  address /64 when signed out). The counter files a profile view under the
+  posted `source` only when the token matches all of them, compared in
+  constant time (`verifiedViewSource`; yesterday's token is still accepted
+  for the first 10 minutes after midnight, for a page rendered just
+  before). So a token cannot be edited, moved to another profile, kept for
+  another day, or replayed by another account or network. A missing or
+  non-matching token does not reject the view: it is counted under
+  **Other**. Rejecting would lose real views (a tab left open across
+  midnight) and protect nothing more, since the view has already passed
+  every limiter and dedupe step.
+- **Messages is checked against real threads.** A `Referer` that says
+  Messages is vouched for only when the signed-in viewer shares a message
+  thread with the profile's member (for an event, the event's owner):
+  `checkedViewSource`, one indexed lookup on the thread-membership table,
+  run only for that claim. Otherwise the view is Other. So a Messages view
+  always comes from someone the owner already talks to.
+- **How far one person can skew the numbers is bounded** by the rate limits,
+  the once-a-day dedupe per member or address, and invite-only membership
+  (each account is a real invitation). A forged `Referer` can still file a
+  visitor's own view under Search, Events, Discover and so on.
+
+What remains possible: an owner who really exchanges messages with extra
+accounts of their own can make real Messages views. Invite-only membership
+and the shared-thread requirement make that costly, and all it can reveal
+is whether a visitor who already talks to the owner came from Messages.
+Sources under three views are still folded into Other.
 
 **The cookie.** `iso_views`: HttpOnly, SameSite=Lax, Secure on https, path
 `/api/views` (sent nowhere else), expires at the end of the UTC day. Its
