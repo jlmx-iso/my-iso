@@ -289,14 +289,27 @@ export const bookingRouter = createTRPCRouter({
       // by (newest first) and the card shows. A new application must stand
       // among the new ones, where the owner who has just been notified
       // looks for it, not where the withdrawn one was months ago.
+      //
+      // Everything the answer and the owner's notification need is read
+      // BEFORE the write (the applicant's name, the withdrawn booking as it
+      // is), and the answer is built from that plus what the write sets.
+      // Once the write has committed nothing is read again: a read that
+      // failed then would report a failure for an application that exists.
+      const [applicant, withdrawn] = await Promise.all([
+        ctx.db.user.findUnique({ select: { firstName: true, lastName: true }, where: { id: userId } }),
+        ctx.db.booking.findUnique({ where: { eventId_applicantId: applicationKey } }),
+      ]);
+      const now = new Date();
+      const reopened = {
+        cancelOrigin: null,
+        createdAt: now,
+        notes: input.notes ?? null,
+        rate: input.rate ?? null,
+        status: "applied",
+        updatedAt: now,
+      };
       const reapplied = await ctx.db.booking.updateMany({
-        data: {
-          cancelOrigin: null,
-          createdAt: new Date(),
-          notes: input.notes ?? null,
-          rate: input.rate ?? null,
-          status: "applied",
-        },
+        data: reopened,
         where: {
           ...applicationKey,
           cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
@@ -307,10 +320,10 @@ export const bookingRouter = createTRPCRouter({
       });
 
       let booking: Booking;
-      if (reapplied.count > 0) {
-        booking = await ctx.db.booking.findUniqueOrThrow({
-          where: { eventId_applicantId: applicationKey },
-        });
+      if (reapplied.count > 0 && withdrawn) {
+        // The fields this request does not write (the owner's notes among
+        // them) cannot change while a booking is withdrawn.
+        booking = { ...withdrawn, ...reopened };
       } else {
         // A first application: inserted only if the slot is still open, in
         // one statement (INSERT ... SELECT ... WHERE NOT EXISTS). An
@@ -321,7 +334,6 @@ export const bookingRouter = createTRPCRouter({
         // once the insert has committed, a read that failed would report a
         // failure for an application that exists, skip the owner's
         // notification, and leave a retry to be told "already applied".
-        const now = new Date();
         const created: Booking = {
           applicantId: userId,
           cancelOrigin: null,
@@ -370,10 +382,6 @@ export const bookingRouter = createTRPCRouter({
         booking = created;
       }
 
-      const applicant = await ctx.db.user.findUnique({
-        select: { firstName: true, lastName: true },
-        where: { id: userId },
-      });
       await notify(ctx.db, {
         body: `${displayName(applicant)} applied to "${event.title}".`,
         bookingId: booking.id,

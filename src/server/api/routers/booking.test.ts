@@ -279,30 +279,41 @@ describe("booking state machine", () => {
         });
       });
 
-      it("a first application that is committed is answered and notified even if nothing can be read afterwards", async () => {
-        const event = await createEvent();
-        // After the insert, every read of bookings fails.
-        let inserted = false;
-        const db = new Proxy(testDb.db, {
+      /** A database on which, once `isTheWrite` has run, every read of bookings and users fails. */
+      function readsFailAfter(isTheWrite: (model: string, args: unknown[]) => boolean) {
+        let written = false;
+        const failing = <T extends object>(model: T, name: string): T =>
+          new Proxy(model, {
+            get(target, method) {
+              const original = Reflect.get(target, method) as unknown;
+              if (typeof original !== "function") return original;
+              return async (...args: unknown[]) => {
+                if (written && String(method).startsWith("find")) throw new Error("database unavailable");
+                const result: unknown = await (original as (...rest: unknown[]) => Promise<unknown>).apply(target, args);
+                if (isTheWrite(`${name}.${String(method)}`, args)) written = true;
+                return result;
+              };
+            },
+          });
+        return new Proxy(testDb.db, {
           get(target, property) {
             if (property === "$queryRaw") {
               return async (...args: unknown[]) => {
                 const result = await (target.$queryRaw as (...rest: unknown[]) => Promise<unknown>)(...args);
-                if (sqlOf(args).includes('INSERT INTO "Booking"')) inserted = true;
+                if (isTheWrite("$queryRaw", args)) written = true;
                 return result;
               };
             }
-            if (property === "booking") {
-              return new Proxy(target.booking, {
-                get(model, method) {
-                  if (!inserted || !String(method).startsWith("find")) return Reflect.get(model, method) as unknown;
-                  return () => Promise.reject(new Error("database unavailable"));
-                },
-              });
-            }
+            if (property === "booking") return failing(target.booking, "booking");
+            if (property === "user") return failing(target.user, "user");
             return Reflect.get(target, property) as unknown;
           },
         });
+      }
+
+      it("a first application that is committed is answered and notified even if nothing can be read afterwards", async () => {
+        const event = await createEvent();
+        const db = readsFailAfter((model, args) => model === "$queryRaw" && sqlOf(args).includes('INSERT INTO "Booking"'));
         const before = Date.now();
 
         const booking = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Hello", rate: "$300" });
@@ -311,7 +322,24 @@ describe("booking state machine", () => {
         expect(booking).toEqual(stored);
         expect(booking).toMatchObject({ cancelOrigin: null, isDeleted: false, notes: "Hello", ownerId: owner.id, ownerNotes: null, rate: "$300", status: "applied" });
         expect(booking.createdAt.getTime()).toBeGreaterThanOrEqual(before - 1);
-        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(1);
+        const notes = (await notificationsFor(owner)).filter((note) => note.title === "New application");
+        expect(notes).toHaveLength(1);
+        // With the applicant's name, which was read before the write.
+        expect(notes[0]?.body).not.toMatch(/undefined|Someone applied/);
+      });
+
+      it("a re-application that is committed is answered and notified even if nothing can be read afterwards", async () => {
+        const { booking, event } = await applied();
+        await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+        await testDb.raw.booking.update({ data: { ownerNotes: "Kept for my records" }, where: { id: booking.id } });
+        const db = readsFailAfter((model) => model === "booking.updateMany");
+
+        const again = await createDbCaller(bookingRouter, db, { user: applicant }).applyToEvent({ eventId: event.id, notes: "Back again", rate: "$350" });
+
+        const stored = await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } });
+        expect(again).toEqual(stored);
+        expect(again).toMatchObject({ cancelOrigin: null, notes: "Back again", ownerNotes: "Kept for my records", rate: "$350", status: "applied" });
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(2);
       });
 
       it("a second application of the same person is still a conflict, not 'filled'", async () => {
