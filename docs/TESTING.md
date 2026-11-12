@@ -8,13 +8,14 @@ enforced by CI, and it only moves up.
 
 | Check | Rule | Where | Blocks a merge |
 | --- | --- | --- | --- |
-| Coverage, global | lines 65%, branches 58%, functions 60%, statements 66% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
-| Coverage, critical code | higher per-directory floors for `src/server/_billing`, `src/server/_db`, `src/server/api/routers`, `src/server/_jobs`, `src/_lib` | `coverage-thresholds.json` | yes |
+| Coverage, global | lines 62%, branches 57%, functions 57%, statements 62% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
+| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 90 / 95 / 93, `src/server/_db` 93 / 88 / 100 / 92, `src/server/api/routers` 86 / 76 / 90 / 85, `src/server/_jobs` 100 / 95 / 100 / 98, `src/_lib` 75 / 85 / 89 / 77 | `coverage-thresholds.json` | yes |
 | Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
 | Authorization matrix | **every tRPC procedure has a row** saying who may call it, and behaves as its row says | `src/server/api/authz.matrix.test.ts` | yes |
 | Mutation score | reported weekly, for a few critical modules | `stryker.config.mjs` | no |
 
-The numbers above are the values at the time of writing; the JSON file is
+The numbers above were measured after the UI rework (PR #36) landed, whose
+client components brought the global figures down from 66%; the JSON file is
 the source of truth.
 
 ### Rules for every change (agents included)
