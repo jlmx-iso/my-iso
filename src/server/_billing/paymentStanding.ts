@@ -275,8 +275,9 @@ async function newestInvoicePaidFor(stripe: Stripe, subscriptionId: string): Pro
  * MAX_UNLISTED_PAYMENTS_READ payments. "Not in the list" must never be
  * taken for "not refunded", and a PART of an invoice's payments must never
  * be taken for all of them: if any paid payment is left without a known
- * charge, the answer is "unknown", not a verdict on the ones that were
- * read.
+ * charge, "refunded" is never concluded from the ones that were read. "Not
+ * refunded" is: a single charge read as not refunded in full decides it,
+ * whichever payment it belongs to and whatever was left unread.
  */
 async function isRefundedInFull(
   stripe: Stripe,
@@ -297,6 +298,7 @@ async function isRefundedInFull(
   };
 
   let directReads = 0;
+  let unread = false;
   const paying: Stripe.Charge[] = [];
   for (const payment of payments.data) {
     let found = chargesOf(payment);
@@ -306,15 +308,21 @@ async function isRefundedInFull(
       known.push(...(await stripe.charges.list({ limit: LIST_LIMIT, payment_intent: intent })).data);
       found = chargesOf(payment);
     }
-    // A paid payment has a successful charge; one this could not find was
-    // not read, and nothing can be said about the invoice as a whole.
-    if (found.length === 0) return "unknown";
+    // One charge that is not refunded in full settles it: whatever the
+    // payments still unread turn out to be, the invoice was not.
+    if (found.some((charge) => !charge.refunded)) return false;
     paying.push(...found);
+    // A paid payment has a successful charge; one this could not find was
+    // not read. That is remembered, not returned: a later payment may still
+    // settle the answer as "not refunded".
+    if (found.length === 0) unread = true;
   }
   // `refunded` is true only while succeeded refunds cover the whole charge:
   // a partial refund leaves it false, and a refund that fails afterwards
-  // turns it false again.
-  return paying.length > 0 && paying.every((charge) => charge.refunded);
+  // turns it false again. Every charge that was read is refunded here, so
+  // an unread payment leaves the invoice as a whole unknown.
+  if (unread) return "unknown";
+  return paying.length > 0;
 }
 
 /** What a derivation found: the standing, and every dispute it knows of, to be remembered. */
