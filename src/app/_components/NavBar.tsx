@@ -6,6 +6,7 @@ import { auth } from "~/auth";
 
 import { LoginButton } from "./buttons/LoginButton";
 import { UserProfileButton } from "./buttons/UserProfileButton";
+import MobileSearchButton from "./nav/MobileSearchButton";
 import NavLinks from "./nav/NavLinks";
 import { NotificationBell } from "./nav/NotificationBell";
 import logo from "../../../public/img/logo.webp";
@@ -56,12 +57,15 @@ export async function Navbar() {
                     </Group>
                 </Box>
 
-                {/* Mobile: show login button for unauthenticated users */}
-                {!isAuthed && (
-                    <Box hiddenFrom="sm">
+                {/* Mobile: search for signed-in users (the other sections are in
+                    the bottom tab bar), login button otherwise */}
+                <Box hiddenFrom="sm">
+                    {isAuthed ? (
+                        <MobileSearchButton />
+                    ) : (
                         <LoginButton />
-                    </Box>
-                )}
+                    )}
+                </Box>
             </Group>
         </Container>
     );

@@ -6,7 +6,7 @@ import {
     IconCalendarStats,
     IconHeartHandshake,
     IconMessageCircle,
-    IconSearch,
+    IconUser,
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -14,9 +14,9 @@ import { usePathname } from "next/navigation";
 const tabs = [
     { href: "/app/events", label: "Events", icon: IconCalendarEvent },
     { href: "/app/discover", label: "Discover", icon: IconHeartHandshake },
-    { href: "/app/search", label: "Search", icon: IconSearch },
     { href: "/app/messages", label: "Messages", icon: IconMessageCircle },
     { href: "/app/bookings", label: "Bookings", icon: IconCalendarStats },
+    { href: "/app/profile", label: "Profile", icon: IconUser },
 ] as const;
 
 export default function BottomTabBar() {
@@ -24,6 +24,8 @@ export default function BottomTabBar() {
 
     return (
         <Group
+            component="nav"
+            aria-label="Main"
             h="100%"
             justify="space-around"
             align="center"
@@ -36,15 +38,17 @@ export default function BottomTabBar() {
             {tabs.map((tab) => {
                 const isActive = pathname.startsWith(tab.href);
                 const color = isActive
-                    ? "var(--mantine-color-orange-5)"
-                    : "var(--mantine-color-gray-5)";
+                    ? "var(--mantine-color-orange-7)"
+                    : "var(--mantine-color-gray-7)";
                 return (
                     <UnstyledButton
                         key={tab.href}
                         component={Link}
                         href={tab.href}
+                        aria-current={isActive ? "page" : undefined}
                         style={{
                             flex: 1,
+                            minWidth: 0,
                             display: "flex",
                             justifyContent: "center",
                         }}
@@ -52,7 +56,7 @@ export default function BottomTabBar() {
                         <Stack align="center" gap={2}>
                             <tab.icon size={22} color={color} stroke={isActive ? 2 : 1.5} />
                             <Text
-                                fz={10}
+                                fz={11}
                                 fw={isActive ? 600 : 400}
                                 c={color}
                                 lh={1}
