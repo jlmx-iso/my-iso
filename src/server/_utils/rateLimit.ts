@@ -343,8 +343,6 @@ export const RateLimits = {
   RECIPIENT_SEARCH: { limit: 120, name: "recipient-search", onError: "allow", windowSeconds: MINUTE },
   // Opening a match (asks the AI provider for icebreakers).
   MATCH_DETAIL: { limit: 60, name: "match-detail", onError: "allow", windowSeconds: MINUTE },
-  /** @deprecated Shared bucket; use one of the specific policies above. */
-  SEARCH: { limit: 60, name: "search", onError: "allow", windowSeconds: MINUTE },
   // Billing: each call talks to Stripe.
   BILLING_CHECKOUT: { limit: 10, name: "billing-checkout", onError: "allow", windowSeconds: HOUR },
   BILLING_PORTAL: { limit: 20, name: "billing-portal", onError: "allow", windowSeconds: HOUR },

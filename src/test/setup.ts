@@ -15,7 +15,6 @@ process.env.GOOGLE_PLACES_API_KEY = "test-places-key";
 process.env.CLOUDINARY_API_KEY = "test-cloudinary-key";
 process.env.CLOUDINARY_API_SECRET = "test-cloudinary-secret";
 process.env.CLOUDINARY_CLOUD_NAME = "test-cloud";
-process.env.NEXT_PUBLIC_POSTHOG_HOST = "https://us.posthog.com";
 process.env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY = "test-posthog-key";
 process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY = "test-places-key";
 process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY = "stripe_public_key_placeholder";

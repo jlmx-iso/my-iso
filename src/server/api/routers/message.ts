@@ -16,6 +16,7 @@ import {
 } from "~/server/_db/messaging";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
+import { markMatchMessaged } from "~/server/_jobs/expireStaleMatches";
 import { captureEvent } from "~/server/_lib/posthog";
 import { publishThreadMessage } from "~/server/_lib/realtime";
 import { checkRateLimit, RateLimits, refundRateLimit } from "~/server/_utils/rateLimit";
@@ -23,6 +24,20 @@ import { checkRateLimit, RateLimits, refundRateLimit } from "~/server/_utils/rat
 import { reasonedError } from "../reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "../trpc";
 
+
+/**
+ * A message in a match's conversation keeps the match from expiring.
+ * Runs after the message is stored, as its own statement (D1 has no
+ * transactions). A failure is logged, not thrown: the message is already
+ * sent, and an error here would make the client send it again.
+ */
+async function recordMatchMessaged(db: Pick<ExtendedPrismaClient, "match">, threadId: string): Promise<void> {
+  try {
+    await markMatchMessaged(db, threadId);
+  } catch (error) {
+    logger.error("Could not record that a match was messaged", { error, threadId });
+  }
+}
 
 const recipientSelect = {
   firstName: true,
@@ -189,6 +204,7 @@ export const messageRouter = createTRPCRouter({
 
         // The thread's activity time moved with the insert (database
         // trigger), so the conversation list is already in the right order.
+        await recordMatchMessaged(ctx.db, input.threadId);
         publishThreadMessage(input.threadId, {
           content: message.content,
           createdAt: message.createdAt,
@@ -311,6 +327,7 @@ export const messageRouter = createTRPCRouter({
           include: { sender: { select: senderSelect } },
           omit: { isRead: true },
         });
+        await recordMatchMessaged(ctx.db, thread.id);
         if (created) {
           captureEvent(userId, 'thread_created', { platform: input.platform, thread_id: thread.id });
         } else {

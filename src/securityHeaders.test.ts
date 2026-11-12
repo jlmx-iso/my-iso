@@ -7,11 +7,12 @@ import {
   buildContentSecurityPolicy,
   buildSecurityHeaders,
   CSP_HEADER,
+  CSP_REPORT_GROUP,
+  CSP_REPORT_PATH,
 } from "./securityHeaders.js";
 
 const options = {
   baseUrl: "https://myiso.app",
-  posthogHost: "https://us.i.posthog.com",
 };
 
 function directives(policy: string): Record<string, string[]> {
@@ -33,9 +34,7 @@ describe("buildContentSecurityPolicy", () => {
     expect(csp["base-uri"]).toEqual(["'self'"]);
   });
 
-  it("allows what the app loads: PostHog, Cloudinary and Google images, its WebSocket", () => {
-    expect(csp["script-src"]).toContain("https://us.i.posthog.com");
-    expect(csp["connect-src"]).toContain("https://us.i.posthog.com");
+  it("allows what the app loads: Cloudinary and Google images, its WebSocket", () => {
     expect(csp["connect-src"]).toContain("wss://myiso.app");
     expect(csp["img-src"]).toEqual(
       expect.arrayContaining(["https://res.cloudinary.com", "https://lh3.googleusercontent.com"]),
@@ -57,6 +56,20 @@ describe("buildContentSecurityPolicy", () => {
     }
   });
 
+  it("names no third-party telemetry host: analytics go through this origin", () => {
+    const policy = buildContentSecurityPolicy(options);
+    expect(policy).not.toMatch(/posthog|sentry/i);
+    expect(csp["script-src"]).toEqual(["'self'", "'unsafe-inline'"]);
+    expect(csp["connect-src"]).toEqual(["'self'", "wss://myiso.app"]);
+  });
+
+  it("sends violation reports to the app's own endpoint", () => {
+    expect(csp["report-uri"]).toEqual([CSP_REPORT_PATH]);
+    expect(csp["report-to"]).toEqual([CSP_REPORT_GROUP]);
+    const headers = new Map(buildSecurityHeaders(options).map(({ key, value }) => [key, value]));
+    expect(headers.get("Reporting-Endpoints")).toBe(`${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`);
+  });
+
   it("adds eval and the dev WebSocket only in development", () => {
     const dev = directives(buildContentSecurityPolicy({ ...options, isDevelopment: true }));
     expect(dev["script-src"]).toContain("'unsafe-eval'");
@@ -65,7 +78,7 @@ describe("buildContentSecurityPolicy", () => {
 
   it("copes with missing or malformed configuration", () => {
     expect(() => buildContentSecurityPolicy()).not.toThrow();
-    const policy = buildContentSecurityPolicy({ baseUrl: "not a url", posthogHost: "" });
+    const policy = buildContentSecurityPolicy({ baseUrl: "not a url" });
     expect(policy).toContain("default-src 'self'");
     expect(policy).not.toContain("not a url");
   });

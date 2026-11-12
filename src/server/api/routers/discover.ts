@@ -5,8 +5,13 @@ import { logger } from "~/_utils";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { findOrCreateThread } from "~/server/_db/messaging";
 import { MAX_LIST_OFFSET } from "~/server/_db/pagination";
-import { generateIcebreakers, generateMatchSummary } from "~/server/_lib/ai";
+import { isMatchExpired, liveMatchFilter } from "~/server/_jobs/expireStaleMatches";
 import { runAfterResponse } from "~/server/_lib/background";
+import {
+  ensureIcebreakers,
+  generateMatchInsights,
+  readIcebreakers,
+} from "~/server/_lib/matchInsights";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { db as prismaDb } from "~/server/db";
 
@@ -291,8 +296,9 @@ export const discoverRouter = createTRPCRouter({
           logger.error("Failed to create match notifications", { error, matchId: match.id });
         }
 
-        runAfterResponse("match-summary", () =>
-          generateMatchSummaryForMatch(match.id, userId, targetId),
+        // Summary and icebreakers are written once, after the response.
+        runAfterResponse("match-insights", () =>
+          generateMatchInsights(prismaDb, { matchId: match.id, requestedBy: userId }),
         );
 
         return { matched: true, matchId: match.id, threadId: match.messageThreadId };
@@ -321,7 +327,9 @@ export const discoverRouter = createTRPCRouter({
         const matches = await ctx.db.match.findMany({
           where: {
             OR: [{ user1Id: userId }, { user2Id: userId }],
-            status: { not: "expired" },
+            // Expiry is enforced here, at read time; the scheduled job only
+            // tidies the stored status afterwards.
+            ...liveMatchFilter(),
           },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: input.limit,
@@ -393,8 +401,7 @@ export const discoverRouter = createTRPCRouter({
     }),
 
   getMatchById: protectedProcedure
-    // Each call asks the AI provider for icebreakers.
-    .use(rateLimit(RateLimits.SEARCH))
+    .use(rateLimit(RateLimits.MATCH_DETAIL))
     .input(z.object({ matchId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
@@ -410,6 +417,7 @@ export const discoverRouter = createTRPCRouter({
             createdAt: true,
             status: true,
             aiSummary: true,
+            icebreakers: true,
             expiresAt: true,
             messageThreadId: true,
             user1: {
@@ -470,20 +478,35 @@ export const discoverRouter = createTRPCRouter({
         }
 
         const otherUser = match.user1.id === userId ? match.user2 : match.user1;
-        const currentUser = match.user1.id === userId ? match.user1 : match.user2;
+        const expired = isMatchExpired(match);
 
-        // Generate icebreakers on demand
-        const icebreakers = await generateIcebreakers(currentUser, otherUser);
+        // Icebreakers are generated once per match and stored. A match made
+        // before that existed (or whose generation failed) gets them now,
+        // after this response; until then the list is empty and
+        // `icebreakersStatus` says "pending".
+        const read = readIcebreakers(match.icebreakers);
+        // Nothing is generated for an expired match, so it is never pending.
+        const stored =
+          expired && read.icebreakersStatus === "pending"
+            ? { ...read, icebreakersStatus: "unavailable" as const }
+            : read;
+        if (stored.icebreakersStatus === "pending") {
+          runAfterResponse("match-icebreakers", () =>
+            ensureIcebreakers(prismaDb, { matchId: match.id, requestedBy: userId }),
+          );
+        }
 
         return {
           id: match.id,
           createdAt: match.createdAt,
-          status: match.status,
+          // Expiry is enforced at read time (see getMatches).
+          status: expired ? "expired" : match.status,
           aiSummary: match.aiSummary,
           expiresAt: match.expiresAt,
           messageThreadId: match.messageThreadId,
           otherUser,
-          icebreakers,
+          icebreakers: stored.icebreakers,
+          icebreakersStatus: stored.icebreakersStatus,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -568,95 +591,11 @@ export const discoverRouter = createTRPCRouter({
     }
   }),
 
-  expireStaleMatches: protectedProcedure.mutation(async ({ ctx }) => {
-    try {
-      const result = await ctx.db.match.updateMany({
-        where: {
-          status: "matched",
-          expiresAt: { lt: new Date() },
-        },
-        data: { status: "expired" },
-      });
-      return { expiredCount: result.count };
-    } catch (error) {
-      logger.error("Failed to expire stale matches", { error });
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to expire stale matches.",
-        cause: error,
-      });
-    }
-  }),
+  /**
+   * Kept so clients that still call it keep working; it changes nothing.
+   * Matches expire at read time (getMatches, getMatchById) and the stored
+   * status is tidied by a scheduled job (~/server/_jobs/expireStaleMatches),
+   * so no member's request triggers a write across everyone's matches.
+   */
+  expireStaleMatches: protectedProcedure.mutation(() => ({ expiredCount: 0 })),
 });
-
-/** Fire-and-forget helper to generate AI summary for a match */
-async function generateMatchSummaryForMatch(
-  matchId: string,
-  userId1: string,
-  userId2: string,
-) {
-  try {
-    const prisma = prismaDb;
-
-    const [u1, u2] = await Promise.all([
-      prisma.user.findUnique({
-        where: { id: userId1 },
-        select: {
-          firstName: true,
-          lastName: true,
-          city: true,
-          state: true,
-          photographer: {
-            select: {
-              name: true,
-              location: true,
-              bio: true,
-              companyName: true,
-              portfolioImages: {
-                where: { isDeleted: false },
-                select: { tags: true, title: true },
-                take: 10,
-              },
-              reviews: { select: { rating: true } },
-            },
-          },
-        },
-      }),
-      prisma.user.findUnique({
-        where: { id: userId2 },
-        select: {
-          firstName: true,
-          lastName: true,
-          city: true,
-          state: true,
-          photographer: {
-            select: {
-              name: true,
-              location: true,
-              bio: true,
-              companyName: true,
-              portfolioImages: {
-                where: { isDeleted: false },
-                select: { tags: true, title: true },
-                take: 10,
-              },
-              reviews: { select: { rating: true } },
-            },
-          },
-        },
-      }),
-    ]);
-
-    if (!u1 || !u2) return;
-
-    const summary = await generateMatchSummary(u1, u2);
-    if (summary) {
-      await prisma.match.update({
-        where: { id: matchId },
-        data: { aiSummary: summary },
-      });
-    }
-  } catch (error) {
-    logger.error("Failed to generate match summary", { error, matchId });
-  }
-}

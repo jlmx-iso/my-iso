@@ -228,6 +228,19 @@ event for the same customer is (`busy`). `500` a
 transient failure, or `STRIPE_WEBHOOK_SECRET` is not set (reported once);
 Stripe retries.
 
+## Where billing problems are reported
+
+Everything in `src/server/_billing` that a person should look at goes
+through `reportBillingError` (`report.ts`): it writes a structured log line
+(`wrangler tail`) and sends the problem to PostHog error tracking with
+`source: "billing"`. The report carries the message, the original error
+when there is one, and the plain-valued context fields (event, customer,
+subscription and row ids, event types, outcome strings). Objects are never
+attached, so no Stripe payload reaches it, and no user id is attached; email
+addresses and query strings are scrubbed like for every event
+([DEPLOYMENT.md](DEPLOYMENT.md), "What is sent to PostHog"). Reporting
+never fails the payment flow that called it.
+
 ## Platform limits this is sized for
 
 The app runs on the **Workers Paid** plan (its bundle is over the Free

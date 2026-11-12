@@ -1,3 +1,8 @@
+# Cloudflare Workers configuration. The top level is PRODUCTION; `[env.staging]`
+# is staging. Wrangler does not inherit bindings or `vars` into an
+# environment, so everything a deployment needs is spelled out twice.
+# docs/DEPLOYMENT.md lists every variable and secret and how to set them.
+
 name = "my-iso"
 compatibility_date = "2025-12-29"
 compatibility_flags = ["nodejs_compat"]
@@ -5,6 +10,15 @@ compatibility_flags = ["nodejs_compat"]
 main = "worker.ts"
 
 assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+# Custom domain. Left commented because the Cloudflare account and zone are
+# not recorded in this repository: uncomment once the zone for myiso.app is
+# on the account that owns this Worker. Until then the Worker is served on
+# its workers.dev address, which content blockers tend to block, so the
+# first-party telemetry proxy only does its job on the custom domain.
+# routes = [
+#   { pattern = "myiso.app", custom_domain = true },
+# ]
 
 # worker.ts imports the generated OpenNext worker through this alias so that
 # TypeScript never has to load the build output (see open-next-worker.d.ts).
@@ -27,18 +41,47 @@ database_id = "aad00920-a190-4144-b414-c17ff5388755"
 # SQL files applied in order by `wrangler d1 migrations apply` (docs/DATABASE.md).
 migrations_dir = "migrations"
 
+# Scheduled jobs. Each expression must have an entry in CRON_JOBS
+# (src/worker/scheduled.ts); a test fails when they drift.
+[triggers]
+crons = ["*/15 * * * *", "17 3 * * *"]
+
+# Non-secret runtime configuration. Secrets are set with
+# `wrangler secret put <NAME>` (docs/DEPLOYMENT.md).
 [vars]
 NODE_ENV = "production"
+APP_ENV = "production"
+# PostHog region. These are the US Cloud defaults; for EU use
+# https://eu.i.posthog.com and https://eu-assets.i.posthog.com.
+POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_ASSETS_HOST = "https://us-assets.i.posthog.com"
+# NEXT_PUBLIC_POSTHOG_PUBLIC_KEY (the public PostHog project token) is added
+# at deploy time by scripts/deploy.mjs from the build's own configuration.
 
 [observability.logs]
 enabled = true
 invocation_logs = true
 
+# ---------------------------------------------------------------------------
+# Staging: `wrangler deploy --env staging`
+# ---------------------------------------------------------------------------
+
 [env.staging]
 name = "my-iso-staging"
 
+# Custom domain for staging; see the note on `routes` above.
+# routes = [
+#   { pattern = "staging.myiso.app", custom_domain = true },
+# ]
+
+[env.staging.triggers]
+crons = ["*/15 * * * *", "17 3 * * *"]
+
 [env.staging.vars]
 NODE_ENV = "production"
+APP_ENV = "staging"
+POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_ASSETS_HOST = "https://us-assets.i.posthog.com"
 
 [[env.staging.durable_objects.bindings]]
 name = "CHAT_ROOM"

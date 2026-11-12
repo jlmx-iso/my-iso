@@ -9,7 +9,13 @@
 import openNextWorker from "open-next-worker";
 
 import type { CloudflareEnv } from "./cloudflare-env";
+import { isJobsRoutePath } from "./src/_lib/jobToken";
+import { type PostHogSettings, sendException } from "./src/_lib/posthogServer";
+import { handleTelemetryProxy, isTelemetryProxyPath } from "./src/_lib/telemetryProxy";
+import { scrubErrorForLog } from "./src/_lib/telemetryScrub";
 import { handleRealtimeRequest, REALTIME_PATH, type RealtimeIdentity } from "./src/do/realtimeGateway";
+import { resolvePostHogHosts } from "./src/telemetryConfig.js";
+import { runScheduledJobs } from "./src/worker/scheduled";
 
 // Re-export the ChatRoom Durable Object so wrangler can bind it
 export { ChatRoom } from "./src/do/ChatRoom";
@@ -49,9 +55,75 @@ async function getRealtimeIdentity(
     }
     return { expiresAt, userId: id };
   } catch (error) {
-    console.error("Realtime session lookup failed", error);
+    console.error("Realtime session lookup failed", scrubErrorForLog(error));
     return null;
   }
+}
+
+/** PostHog settings from the Worker's variables; null when not configured. */
+function postHogSettings(env: CloudflareEnv): PostHogSettings | null {
+  // The project token is public and inlined into the Next.js build; the
+  // Worker entry is bundled separately and reads it from its variables.
+  const apiKey = env.NEXT_PUBLIC_POSTHOG_PUBLIC_KEY;
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    environment: env.APP_ENV ?? "development",
+    host: resolvePostHogHosts(env).apiHost,
+  };
+}
+
+/**
+ * Reports an error caught at the top of the Worker to PostHog, after the
+ * response. Carries the request path at most: no body, cookies or headers.
+ */
+function reportError(
+  env: CloudflareEnv,
+  ctx: ExecutionContext,
+  error: unknown,
+  context: { path?: string; source: string },
+): void {
+  // Workers Logs keep what is written here: only the scrubbed error. The
+  // original goes to sendException, which scrubs it on the way out.
+  console.error(`Unhandled error in ${context.source}`, scrubErrorForLog(error));
+  const settings = postHogSettings(env);
+  if (!settings) return;
+  ctx.waitUntil(
+    sendException(settings, error, context).catch((reportingError: unknown) => {
+      console.error("Could not report error", scrubErrorForLog(reportingError));
+    }),
+  );
+}
+
+async function route(
+  request: Request,
+  env: CloudflareEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const { pathname } = new URL(request.url);
+
+  // Browser telemetry: forwarded to PostHog without touching Next.js.
+  if (isTelemetryProxyPath(pathname)) {
+    return handleTelemetryProxy(request, {
+      ...resolvePostHogHosts(env),
+      clientIp: request.headers.get("CF-Connecting-IP"),
+    });
+  }
+
+  // Scheduled jobs are started by this Worker's own `scheduled` handler,
+  // never by a request from outside.
+  if (isJobsRoutePath(pathname)) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  if (pathname === REALTIME_PATH) {
+    return handleRealtimeRequest(request, env, (req) =>
+      getRealtimeIdentity(req, env, ctx),
+    );
+  }
+
+  // All other requests go through the OpenNext Next.js worker
+  return openNextWorker.fetch(request, env, ctx);
 }
 
 const worker = {
@@ -60,14 +132,44 @@ const worker = {
     env: CloudflareEnv,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    if (new URL(request.url).pathname === REALTIME_PATH) {
-      return handleRealtimeRequest(request, env, (req) =>
-        getRealtimeIdentity(req, env, ctx),
-      );
+    try {
+      return await route(request, env, ctx);
+    } catch (error) {
+      // Errors inside the Next.js app are handled and reported there
+      // (src/instrumentation.ts); this catches what escapes it and anything
+      // thrown by the Worker's own routes.
+      reportError(env, ctx, error, { path: new URL(request.url).pathname, source: "worker" });
+      return new Response("Internal Server Error", {
+        headers: { "Cache-Control": "no-store" },
+        status: 500,
+      });
     }
+  },
 
-    // All other requests go through the OpenNext Next.js worker
-    return openNextWorker.fetch(request, env, ctx);
+  /** Cron Triggers (wrangler.toml `[triggers]`), see src/worker/scheduled.ts. */
+  async scheduled(
+    controller: ScheduledController,
+    env: CloudflareEnv,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    try {
+      const runs = await runScheduledJobs(controller.cron, {
+        appFetch: (request) => openNextWorker.fetch(request, env, ctx),
+        authSecret: env.AUTH_SECRET,
+      });
+      // Each job logs its own summary from inside the app.
+      const failed = runs.filter((run) => !run.ok).map((run) => run.job);
+      if (failed.length > 0) {
+        // Each job reports its own failure with detail from inside the app.
+        // This covers the cases where it could not: the request never got
+        // there, or was refused.
+        throw new Error(`Scheduled jobs failed: ${failed.join(", ")}`);
+      }
+    } catch (error) {
+      reportError(env, ctx, error, { source: `scheduled:${controller.cron}` });
+      // Rethrow so Cloudflare records the invocation as failed.
+      throw error;
+    }
   },
 } satisfies ExportedHandler<CloudflareEnv>;
 

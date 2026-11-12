@@ -4,6 +4,8 @@ import {
 } from "@react-email/components";
 import { render } from "@react-email/render";
 
+import { env } from "~/env";
+
 import { Layout } from "./components/Layout";
 import {
   heading,
@@ -39,7 +41,7 @@ export function WaitlistConfirmationEmail({
 
       <Text style={paragraph}>
         When a spot opens for you, you&apos;ll hear from us at{" "}
-        hello@myiso.app, so keep an eye out.
+        {env.EMAIL_FROM}, so keep an eye out.
       </Text>
 
       <Text style={paragraph}>
