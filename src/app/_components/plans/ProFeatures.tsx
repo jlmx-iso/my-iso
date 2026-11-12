@@ -45,7 +45,7 @@ export default function ProFeatures({ pricing }: ProFeaturesProps) {
 }
 
 /** Planned features under their own heading; nothing at all when none are planned. */
-function ComingSoon({ features }: { features: readonly string[] }) {
+export function ComingSoon({ features }: { features: readonly string[] }) {
     if (features.length === 0) return null;
     return (
         <Stack gap={6} data-testid="pro-features-coming-soon">

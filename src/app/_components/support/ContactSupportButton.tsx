@@ -70,6 +70,7 @@ export default function ContactSupportButton({ replyTo, prominent = false }: Con
                 }}
                 {...dialogLock(isPending)}
                 title="Contact priority support"
+                closeButtonProps={{ "aria-label": "Close" }}
                 size="md"
             >
                 {sentSubject !== null ? (
