@@ -70,3 +70,6 @@ src/generated/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Claude Code agent worktrees
+.claude/worktrees/

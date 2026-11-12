@@ -34,24 +34,31 @@
       "~/*": [
         "./src/*"
       ]
-    },
-    "typeRoots": [
-      "./node_modules/@types",
-      "./types"
-    ]
+    }
   },
   "include": [
-    ".eslintrc.cjs",
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     "**/*.cjs",
     "**/*.js",
+    "**/*.mjs",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "coverage"
+    "coverage",
+    ".claude",
+    /* Build output. Type-checking the generated ~20 MB OpenNext bundle under
+       checkJs exhausts the heap. */
+    ".next",
+    ".open-next",
+    ".wrangler",
+    /* Cloudflare Worker entry: type-checked against the Workers runtime types
+       by tsconfig.worker.json (see `npm run typecheck`). */
+    "worker.ts",
+    "src/do",
+    "open-next-worker.d.ts"
   ]
 }

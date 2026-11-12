@@ -6,6 +6,11 @@ main = "worker.ts"
 
 assets = { directory = ".open-next/assets", binding = "ASSETS" }
 
+# worker.ts imports the generated OpenNext worker through this alias so that
+# TypeScript never has to load the build output (see open-next-worker.d.ts).
+[alias]
+"open-next-worker" = "./.open-next/worker.js"
+
 [[durable_objects.bindings]]
 name = "CHAT_ROOM"
 class_name = "ChatRoom"

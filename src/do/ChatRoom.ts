@@ -1,27 +1,24 @@
-// @ts-nocheck
-// ChatRoom Durable Object — compiled by wrangler, not Next.js.
+// ChatRoom Durable Object. Bundled by wrangler (see worker.ts), not Next.js,
+// and type-checked against the Workers runtime via tsconfig.worker.json.
 // Uses the Hibernation API to keep connections alive across DO sleep cycles.
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
  * ChatRoom manages one WebSocket room per message thread.
  * One DO instance per threadId (keyed via CHAT_ROOM.idFromName(threadId)).
  */
 export class ChatRoom {
-  private readonly ctx: any;
+  private readonly ctx: DurableObjectState;
 
-  constructor(ctx: any, _env: unknown) {
+  constructor(ctx: DurableObjectState, _env: unknown) {
     this.ctx = ctx;
   }
 
   async fetch(request: Request): Promise<Response> {
     const upgradeHeader = request.headers.get("Upgrade");
-    if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
+    if (upgradeHeader?.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket upgrade", { status: 426 });
     }
 
-    // @ts-expect-error — WebSocketPair is a Cloudflare Workers global
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
@@ -45,7 +42,7 @@ export class ChatRoom {
 
   /** Called via DO RPC from tRPC message.create — broadcasts ciphertext to all connected clients */
   async broadcast(payload: string): Promise<void> {
-    const sockets: WebSocket[] = this.ctx.getWebSockets();
+    const sockets = this.ctx.getWebSockets();
     for (const ws of sockets) {
       try {
         ws.send(payload);
