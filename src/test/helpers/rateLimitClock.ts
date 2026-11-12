@@ -2,6 +2,7 @@ import { afterEach, beforeEach } from "vitest";
 
 import {
   consumeRateLimit,
+  otpRequestLimits,
   otpVerifyLimits,
   setRateLimitClock,
   type RateLimitDb,
@@ -69,5 +70,18 @@ export async function spendOtpVerifyLimit(
 ): Promise<void> {
   const check = otpVerifyLimits(clientIp, email).find((candidate) => candidate.policy.name === policy.name);
   if (!check) throw new Error(`${policy.name} is not a sign-in code limit`);
+  await spendRateLimit(db, policy, check.identifier, count);
+}
+
+/** spendRateLimit for one of the code-request limits of (clientIp, email). */
+export async function spendOtpRequestLimit(
+  db: RateLimitDb,
+  policy: RateLimitPolicy,
+  clientIp: string,
+  email: string,
+  count: number,
+): Promise<void> {
+  const check = otpRequestLimits(clientIp, email).find((candidate) => candidate.policy.name === policy.name);
+  if (!check) throw new Error(`${policy.name} is not a code-request limit`);
   await spendRateLimit(db, policy, check.identifier, count);
 }
