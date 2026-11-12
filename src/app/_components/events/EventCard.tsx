@@ -116,6 +116,8 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
                                         eventId={data.id}
                                         eventTitle={data.title}
                                         hasApplied={applicationStatus?.hasApplied ?? false}
+                                        canReapply={applicationStatus?.canReapply ?? false}
+                                        applyBlockedBy={applicationStatus?.applyBlockedBy ?? null}
                                     />
                                 )}
                             </Group>
@@ -207,6 +209,8 @@ export default function EventCard({ eventId, initialCommentCount = 0, isEventPag
                                     eventId={data.id}
                                     eventTitle={data.title}
                                     hasApplied={applicationStatus?.hasApplied ?? false}
+                                    canReapply={applicationStatus?.canReapply ?? false}
+                                        applyBlockedBy={applicationStatus?.applyBlockedBy ?? null}
                                 />
                             )}
                         </Group>

@@ -98,12 +98,6 @@ function makeOk<T>(value: T) {
   return { isErr: false, isOk: true, value };
 }
 
-const baseSubmitInput = {
-  email: "photographer@example.com",
-  name: "Jane Smith",
-  userType: "both" as const,
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
   // Allow rate limit by default
@@ -114,107 +108,7 @@ beforeEach(() => {
   mockDb.user.findUnique.mockResolvedValue({ role: "founder" });
 });
 
-// ---------------------------------------------------------------------------
-// submit
-// ---------------------------------------------------------------------------
-
-describe("waitlistRouter.submit", () => {
-  it("creates entry and returns { success: true, position }", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
-    mockDb.waitlist.findFirst.mockResolvedValueOnce({ position: 5 });
-    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 6 });
-
-    const caller = makePublicCaller();
-    const result = await caller.submit(baseSubmitInput);
-
-    expect(result.success).toBe(true);
-    expect(result.position).toBe(6);
-    expect(mockDb.waitlist.create).toHaveBeenCalledOnce();
-    expect(mockCaptureEvent).toHaveBeenCalledOnce();
-  });
-
-  it("identifies the applicant to analytics by a hash, never by email address", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
-    mockDb.waitlist.findFirst.mockResolvedValueOnce({ position: 5 });
-    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 6 });
-
-    await makePublicCaller().submit(baseSubmitInput);
-
-    const [distinctId] = mockCaptureEvent.mock.calls[0] as [string, ...unknown[]];
-    expect(distinctId).toMatch(/^[0-9a-f]{32}$/);
-    expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toContain(baseSubmitInput.email);
-  });
-
-  it("assigns position = maxPosition + 1", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
-    mockDb.waitlist.findFirst.mockResolvedValueOnce({ position: 42 });
-    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 43 });
-
-    const caller = makePublicCaller();
-    const result = await caller.submit(baseSubmitInput);
-
-    expect(result.position).toBe(43);
-    // Verify create was called with position 43
-    expect(mockDb.waitlist.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ position: 43 }),
-      }),
-    );
-  });
-
-  it("assigns position 1 when waitlist is empty", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
-    mockDb.waitlist.findFirst.mockResolvedValueOnce(null); // no existing entries
-    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 1 });
-
-    const caller = makePublicCaller();
-    const result = await caller.submit(baseSubmitInput);
-
-    expect(result.position).toBe(1);
-  });
-
-  it("throws CONFLICT on duplicate email", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce({
-      id: "existing-wl",
-      email: "photographer@example.com",
-    });
-
-    const caller = makePublicCaller();
-
-    await expect(caller.submit(baseSubmitInput)).rejects.toMatchObject({
-      code: "CONFLICT",
-    });
-    expect(mockDb.waitlist.create).not.toHaveBeenCalled();
-  });
-
-  it("throws TOO_MANY_REQUESTS when rate limited", async () => {
-    mockDb.$queryRaw.mockResolvedValueOnce([{ count: 6 }]);
-
-    const caller = makePublicCaller();
-
-    await expect(caller.submit(baseSubmitInput)).rejects.toMatchObject({
-      code: "TOO_MANY_REQUESTS",
-    });
-  });
-
-  it("does NOT throw when email fails (fire-and-forget)", async () => {
-    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
-    mockDb.waitlist.findFirst.mockResolvedValueOnce({ position: 0 });
-    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 1 });
-    mockSendTemplateEmail.mockResolvedValueOnce({
-      error: new Error("email failed"),
-      isErr: true,
-      isOk: false,
-    });
-
-    const caller = makePublicCaller();
-
-    // Should not throw even when email fails
-    await expect(caller.submit(baseSubmitInput)).resolves.toMatchObject({
-      success: true,
-    });
-  });
-});
+// submit is tested against a real database in waitlist.submit.test.ts.
 
 // ---------------------------------------------------------------------------
 // getAll (founderProcedure)
@@ -334,6 +228,14 @@ describe("waitlistRouter.approve", () => {
     const result = await caller.approve({ id: "wl-1" });
 
     expect(result.success).toBe(true);
+    // The join link points at the configured base URL.
+    expect(mockSendTemplateEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        props: expect.objectContaining({
+          joinUrl: "http://localhost:3000/join?waitlist=approved&email=user%40example.com",
+        }),
+      }),
+    );
     expect(mockDb.pendingInviteValidation.upsert).toHaveBeenCalledOnce();
     expect(mockDb.waitlist.update).toHaveBeenCalledWith(
       expect.objectContaining({

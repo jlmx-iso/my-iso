@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { isUniqueViolation } from "./errors";
 import type { ExtendedPrismaClient } from "./softDelete";
@@ -175,5 +175,161 @@ export async function classifyRecipients(
   return {
     messageable: ids.filter((id) => allowedIds.has(id)),
     notMessageable: ids.filter((id) => !allowedIds.has(id)),
+  };
+}
+
+// ── Read state ──────────────────────────────────────────────────────────────
+//
+// ThreadRead(threadId, userId, lastReadAt, lastReadMessageId): the
+// participant has seen everything in the thread up to that place. One row
+// per participant, so it works the same for group threads.
+//
+// A "place" in a thread is the pair (createdAt, id), which is also the order
+// messages are listed in. A timestamp alone is not a place: two messages
+// can carry the same millisecond, and "read up to the first of them" must
+// leave the second unread. `lastReadMessageId` null means "everything at
+// lastReadAt", which is what a mark-read by time says (and what the rows
+// back-filled by the migration say).
+//
+// A message is unread for a user when someone else sent it and it lies
+// after that place (or the user has no row yet).
+
+type ReadDb = Pick<ExtendedPrismaClient, "$queryRaw">;
+
+/** The order of messages within a thread, oldest first; newest first is each key reversed. */
+export const MESSAGE_ORDER_ASC = [{ createdAt: "asc" }, { id: "asc" }] as const satisfies Prisma.MessageOrderByWithRelationInput[];
+export const MESSAGE_ORDER_DESC = [{ createdAt: "desc" }, { id: "desc" }] as const satisfies Prisma.MessageOrderByWithRelationInput[];
+
+/**
+ * Records that `userId` has read `threadId` up to `at`, and returns how far
+ * they have read now. The caller has checked that they are a participant.
+ *
+ * `messageId` is the message that was seen, when the caller knows it: its
+ * `createdAt` must be `at`. Without it, everything sent at `at` counts as
+ * read.
+ *
+ * The place only ever moves forward: the stored value becomes the later of
+ * what is stored and what is given, in (createdAt, id) order, in ONE
+ * statement (an upsert whose update takes the maximum). So a delayed write
+ * of an earlier place (the sender's own "read up to my message", overtaken
+ * by an explicit mark-read) cannot make messages unread again, two first
+ * reads at once cannot collide, and there is no read-then-write window.
+ *
+ * Both sides of the comparison are timestamps written through Prisma, in
+ * the one text format the adapter uses, so comparing them as text is
+ * comparing them in time.
+ */
+export async function markThreadReadAt(
+  db: ReadDb,
+  threadId: string,
+  userId: string,
+  at: Date,
+  messageId: string | null = null,
+): Promise<Date> {
+  // SQLite evaluates every right-hand side against the row as it was, so
+  // both columns are computed from the same stored pair.
+  const rows = await db.$queryRaw<Array<{ lastReadAt: string | Date }>>(Prisma.sql`
+    INSERT INTO "ThreadRead" ("threadId", "userId", "lastReadAt", "lastReadMessageId")
+    VALUES (${threadId}, ${userId}, ${at}, ${messageId})
+    ON CONFLICT ("threadId", "userId") DO UPDATE SET
+      "lastReadMessageId" = CASE
+        WHEN excluded."lastReadAt" > "ThreadRead"."lastReadAt" THEN excluded."lastReadMessageId"
+        WHEN excluded."lastReadAt" < "ThreadRead"."lastReadAt" THEN "ThreadRead"."lastReadMessageId"
+        WHEN excluded."lastReadMessageId" IS NULL OR "ThreadRead"."lastReadMessageId" IS NULL THEN NULL
+        ELSE MAX(excluded."lastReadMessageId", "ThreadRead"."lastReadMessageId")
+      END,
+      "lastReadAt" = MAX("ThreadRead"."lastReadAt", excluded."lastReadAt")
+    RETURNING "lastReadAt"`);
+  const stored = rows[0]?.lastReadAt;
+  return stored === undefined ? at : new Date(stored);
+}
+
+/**
+ * Thread ids per unread-count statement. D1 accepts at most 100 bound
+ * parameters (each statement below binds the user id twice); a page of the
+ * conversation list holds up to 50 threads.
+ */
+const UNREAD_LOOKUP_CHUNK = 80;
+
+const toCount = (value: number | bigint | null | undefined): number => Number(value ?? 0);
+
+/**
+ * The participant rows of `userId` ("_MessageThreadToUser": A = thread,
+ * B = user), each with the user's read place in that thread (`r`, all NULL
+ * when they have never read it).
+ */
+const participantRows = Prisma.sql`
+    "_MessageThreadToUser" p
+    LEFT JOIN "ThreadRead" r ON r."threadId" = p."A" AND r."userId" = p."B"`;
+
+/**
+ * The unread messages of one thread, for the participant row `p` and its
+ * read place `r`.
+ *
+ * Written so that SQLite walks only the tail of the thread: the lower bound
+ * on "createdAt" is a single value (the user's lastReadAt, or 0, which
+ * sorts before every timestamp, when they have never read it), so the
+ * (threadId, createdAt) index is used as a RANGE. The bound is inclusive
+ * and the messages AT lastReadAt are then told apart by id: read are those
+ * up to lastReadMessageId, or all of them when that is NULL.
+ */
+const unreadInThread = (userId: string) => Prisma.sql`(
+    SELECT COUNT(*) FROM "Message" m
+    WHERE m."threadId" = p."A"
+      AND m."createdAt" >= COALESCE(r."lastReadAt", 0)
+      AND NOT (
+        r."lastReadAt" IS NOT NULL
+        AND m."createdAt" = r."lastReadAt"
+        AND (r."lastReadMessageId" IS NULL OR m."id" <= r."lastReadMessageId")
+      )
+      AND m."senderId" <> ${userId}
+      AND NOT m."isDeleted"
+  )`;
+
+/**
+ * Unread messages of `userId` in each of `threadIds`: one statement per
+ * UNREAD_LOOKUP_CHUNK threads (never one per thread). Threads without
+ * unread messages, and threads the user does not take part in, are absent
+ * from the map.
+ */
+export async function countUnreadByThread(
+  db: ReadDb,
+  userId: string,
+  threadIds: readonly string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (let start = 0; start < threadIds.length; start += UNREAD_LOOKUP_CHUNK) {
+    const chunk = threadIds.slice(start, start + UNREAD_LOOKUP_CHUNK);
+    const rows = await db.$queryRaw<Array<{ threadId: string; unread: number | bigint }>>(Prisma.sql`
+      SELECT p."A" AS "threadId", ${unreadInThread(userId)} AS "unread"
+      FROM ${participantRows}
+      WHERE p."B" = ${userId} AND p."A" IN (${Prisma.join(chunk)})`);
+    for (const row of rows) {
+      const unread = toCount(row.unread);
+      if (unread > 0) counts.set(row.threadId, unread);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Totals for the navigation badge: how many of the user's conversations have
+ * something unread, and how many messages that is. One statement: the
+ * user's participant rows, and for each the unread tail of that thread.
+ */
+export async function countUnreadTotals(
+  db: ReadDb,
+  userId: string,
+): Promise<{ unreadMessages: number; unreadThreads: number }> {
+  const rows = await db.$queryRaw<Array<{ messages: number | bigint | null; threads: number | bigint }>>(Prisma.sql`
+    SELECT SUM(t."unread") AS "messages", COUNT(CASE WHEN t."unread" > 0 THEN 1 END) AS "threads"
+    FROM (
+      SELECT ${unreadInThread(userId)} AS "unread"
+      FROM ${participantRows}
+      WHERE p."B" = ${userId}
+    ) t`);
+  return {
+    unreadMessages: toCount(rows[0]?.messages),
+    unreadThreads: toCount(rows[0]?.threads),
   };
 }

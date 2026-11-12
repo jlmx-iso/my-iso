@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { MAX_IMAGE_BYTES } from "~/server/_utils/image";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller, fakeCloudinary } from "~/test/helpers/dbCaller";
-import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +66,14 @@ describe("content routers against SQLite", () => {
         title: "Wedding",
         ...overrides,
       },
+    });
+  }
+
+  /** `user` has completed a booking on one of the owner's events: they may review. */
+  async function workedTogether(user: TestUser) {
+    const event = await createEvent({ title: "Past job" });
+    await testDb.db.booking.create({
+      data: { applicantId: user.id, eventId: event.id, ownerId: owner.id, status: "completed" },
     });
   }
 
@@ -190,9 +198,8 @@ describe("content routers against SQLite", () => {
     });
 
     it("is rate limited per user", async () => {
-      for (let i = 0; i < RateLimits.SEARCH.limit; i++) {
-        await searchAs(visitor).searchAll({ query: "o" });
-      }
+      await spendRateLimit(testDb.db, RateLimits.MEMBER_SEARCH, `user:${visitor.id}`, RateLimits.MEMBER_SEARCH.limit - 1);
+      await searchAs(visitor).searchAll({ query: "o" });
       await expect(searchAs(visitor).searchAll({ query: "o" })).rejects.toMatchObject({
         code: "TOO_MANY_REQUESTS",
       });
@@ -261,6 +268,7 @@ describe("content routers against SQLite", () => {
     });
 
     it("public reviews carry the reviewer's name, not their user id or email", async () => {
+      await workedTogether(visitor);
       await reviewsAs(visitor).create({ photographerId, rating: 5, title: "Great" });
 
       const reviews = await reviewsAs().getByPhotographerId({ photographerId });
@@ -646,6 +654,10 @@ describe("content routers against SQLite", () => {
   describe("reviews", () => {
     const review = { photographerId: "", rating: 5, title: "Great to work with" };
 
+    beforeEach(async () => {
+      await workedTogether(visitor);
+    });
+
     it("allows one review per reviewer per photographer", async () => {
       await reviewsAs(visitor).create({ ...review, photographerId });
 
@@ -681,6 +693,7 @@ describe("content routers against SQLite", () => {
 
     it("computes the average in the database", async () => {
       const third = await createTestUser(testDb.db);
+      await workedTogether(third);
       await reviewsAs(visitor).create({ ...review, photographerId, rating: 5 });
       await reviewsAs(third).create({ ...review, photographerId, rating: 4 });
 

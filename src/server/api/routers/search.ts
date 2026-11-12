@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
@@ -21,7 +22,7 @@ export const searchRouter = createTRPCRouter({
    * the whole table in one request.
    */
   searchAll: protectedProcedure
-    .use(rateLimit(RateLimits.SEARCH))
+    .use(rateLimit(RateLimits.MEMBER_SEARCH))
     .input(z.object({
       query: z.string().trim().min(1).max(100),
       location: z.string().trim().max(200).optional(),
@@ -128,7 +129,7 @@ export const searchRouter = createTRPCRouter({
 
       return {
         photographers,
-        events,
+        events: await withDerivedFulfilled(ctx.db, events),
       };
     }),
 });

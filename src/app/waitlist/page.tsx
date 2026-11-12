@@ -22,12 +22,12 @@ import { api } from "~/trpc/react";
 import logo from "../../../public/img/logo.webp";
 
 export default function Page() {
-  const [position, setPosition] = useState<number | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const { mutate: apply, isPending, isError, error } =
     api.waitlist.submit.useMutation({
-      onSuccess: (data) => {
-        setPosition(data.position);
+      onSuccess: () => {
+        setSubmitted(true);
       },
     });
 
@@ -62,7 +62,7 @@ export default function Page() {
     });
   };
 
-  if (position !== null) {
+  if (submitted) {
     return (
       <Box maw={420} w="100%" mx="auto">
         <Paper withBorder shadow="md" p="xl" radius="md">
@@ -74,8 +74,8 @@ export default function Page() {
               You&apos;re on the list!
             </Title>
             <Text c="dimmed" ta="center">
-              You&apos;re #{position} on the waitlist. We&apos;ll send you an
-              invite when a spot opens up.
+              Check your inbox for a confirmation. We&apos;ll email your invite
+              when a spot opens up.
             </Text>
             <Button component={Link} href="/" variant="subtle">
               Back to home

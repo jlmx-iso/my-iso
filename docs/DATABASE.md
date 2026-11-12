@@ -92,6 +92,176 @@ mistake with a new migration.
 that `next dev` uses (`DATABASE_URL=file:./dev.db`). It never touches D1 and
 is not a substitute for a migration.
 
+## What Prisma does not see: the `Message_touch_thread` trigger
+
+`migrations/0003_billing_read_state_indexes.sql` creates one database object
+that is not in `prisma/schema.prisma`, because Prisma has no notion of it:
+
+```sql
+CREATE TRIGGER "Message_touch_thread" AFTER INSERT ON "Message"
+BEGIN
+  UPDATE "MessageThread" SET "updatedAt" = NEW."createdAt" WHERE "id" = NEW."threadId";
+END;
+```
+
+It moves a conversation's activity time (`MessageThread.updatedAt`, which the
+conversation list sorts by) in the same statement that inserts a message. D1
+has no multi-statement transactions, so doing it from application code would
+leave a window in which a sent message has not moved its thread.
+
+What follows from Prisma not knowing about it:
+
+- **`npm run db:check` does not detect its loss.** The check compares tables,
+  columns and indexes; a database without the trigger still "matches".
+- **Rebuilding the `Message` table drops it.** SQLite removes a table's
+  triggers with the table, and Prisma's generated migrations rebuild a table
+  (create `new_Message`, copy, drop `Message`, rename) for most column
+  changes. **Any migration that rebuilds `Message` must end by creating the
+  trigger again**, with the statement above. The next one that will is the
+  removal of `Message.isRead` (below): SQLite's `ALTER TABLE ... DROP COLUMN`
+  keeps the trigger, a rebuild does not. Prefer `DROP COLUMN`; if
+  `db:migrate:diff` hands you a rebuild, append the `CREATE TRIGGER`.
+- **The test that catches its loss** is `thread activity time > moves with
+  the message insert itself (database trigger), for any writer` in
+  `src/server/api/routers/message.test.ts`. Tests build their database from
+  `migrations/`, so a migration that loses the trigger fails that test (and
+  `a reply brings an older conversation back to the top` next to it).
+- To check a deployed database:
+  `wrangler d1 execute DB --remote --env staging --command "SELECT name FROM sqlite_master WHERE type = 'trigger'"`
+  must list `Message_touch_thread`.
+
+## Timestamps are text: one spelling
+
+SQLite has no date type. Prisma stores a `DateTime` as ISO-8601 **text**,
+and both adapters this project uses (`@prisma/adapter-d1` on Cloudflare,
+`@prisma/adapter-better-sqlite3` in the tests) write it the same way:
+milliseconds, and the offset spelled **`+00:00`**, for example
+`2026-03-03T20:00:00.000+00:00`. The test "Prisma stores every timestamp in
+ONE spelling" in `src/server/api/routers/event.test.ts` reads the stored
+text and fails if an adapter upgrade changes this.
+
+Comparisons and `ORDER BY` on these columns are comparisons of text. They
+agree with time **only while every row uses the same spelling**:
+`...000+00:00` and `...000Z` are the same instant, but `+` sorts before `Z`,
+so two rows at one instant are ordered by their spelling before anything
+else. The events feed pages by `(date, id)` and would skip or repeat an
+event across such a pair; the unread counts and read state compare
+`createdAt` the same way.
+
+So:
+
+- **Every write goes through Prisma, or writes the `+00:00` spelling.**
+  Raw SQL in the app binds `Date` values as parameters (the adapter formats
+  them). SQL written by hand (seed files, one-off fixes, migrations) must
+  spell timestamps `strftime('%Y-%m-%dT%H:%M:%f+00:00', ...)` or as a
+  literal ending in `+00:00`, never `Z` and never SQLite's
+  `CURRENT_TIMESTAMP` format. `prisma/seed-staging.sql` and migration
+  `0003` do.
+- **Existing rows written with `Z`** (the staging seed did so before it was
+  fixed; `INSERT OR IGNORE` leaves those rows as they are) are normalised
+  once per database:
+
+  ```sql
+  UPDATE "Event" SET "date" = replace("date", 'Z', '+00:00') WHERE "date" LIKE '%Z';
+  UPDATE "Event" SET "createdAt" = replace("createdAt", 'Z', '+00:00') WHERE "createdAt" LIKE '%Z';
+  UPDATE "Event" SET "updatedAt" = replace("updatedAt", 'Z', '+00:00') WHERE "updatedAt" LIKE '%Z';
+  ```
+
+  (`wrangler d1 execute DB --remote --env staging --command "..."`.) Any
+  other table a hand-written script has filled gets the same treatment for
+  its `DateTime` columns; this finds them:
+
+  ```sql
+  SELECT 'Event' AS "table", COUNT(*) FROM "Event" WHERE "date" LIKE '%Z' OR "createdAt" LIKE '%Z'
+  UNION ALL SELECT 'Message', COUNT(*) FROM "Message" WHERE "createdAt" LIKE '%Z'
+  UNION ALL SELECT 'Booking', COUNT(*) FROM "Booking" WHERE "createdAt" LIKE '%Z';
+  ```
+
+The feed does recognise a `Z` row as being AT its cursor's instant (it
+matches the instant as a range, not by equality), so rows at different
+instants page correctly whatever their spelling; it is only the order
+within one instant that needs the single spelling.
+
+## Columns kept for the previous release (staged removal)
+
+Migration `0003` left columns in place that the current code no longer
+depends on. They are there because the release before it still reads or
+writes them and, per the rule above, a migration must be something the
+deployed code can live with:
+
+| Columns | Why they are still there | What the current code does with them |
+| --- | --- | --- |
+| `Subscription.isTrial`, `isActive`, `isCanceled`, `isPaused`, `isPending`, `isExpired`, `expiresAt` | The previous release decides Pro access from `isActive` and writes these flags from its webhook | Writes them on every sync, derived from `status` (`legacyFlags` in `src/server/_billing/subscriptionStore.ts`), so a rollback finds them correct. Never decides anything from them: access comes from `status` and the columns described in `docs/BILLING.md`. The billing re-sync and the lazy first sync only look at them to recognise a row the previous release wrote (flags that contradict `status`, a null `expiresAt`) |
+| `Message.isRead` | The previous release selects it | Neither reads nor writes it (read state is `ThreadRead`); queries omit it |
+| `Event.isFulfilled` | Legacy: part of the baseline schema; the previous release neither reads nor writes it, so only earlier commits of this branch and ad-hoc queries ever did | **Neither reads nor writes it.** Whether an event is filled is derived from its bookings on every read (`withDerivedFulfilled` in `src/server/_db/bookingTransitions.ts`), so there is no second write that can fail and no stored value that can be wrong. The column keeps whatever it last held (default `false`) until it is dropped |
+
+### Removal order
+
+The `Subscription` flags decide the order: `isTrial`, `isActive`,
+`isCanceled`, `isPaused`, `isPending` and `isExpired` are **`NOT NULL`
+without a default** (`migrations/0001_init.sql`), so an insert that leaves
+them out fails, and Prisma selects every column of a model unless told
+otherwise, so a read fails once a column it still knows is gone. **Until
+step 2 below has been applied, every release must keep writing the flags**
+(`legacyFlags` in `subscriptionStore.ts`), on every insert and update.
+
+1. **This release** (done): the code stops *depending* on the columns and
+   keeps **writing** the `Subscription` flags. Deploy it, run the billing
+   re-sync (`docs/BILLING.md`), and keep it deployed until a rollback to the
+   release before it is no longer on the table.
+2. **Migration: give the flags a default.** Add `@default(false)` to the six
+   flags in `schema.prisma` and generate the migration. SQLite cannot add a
+   default with `ALTER COLUMN`, so it is a rebuild of `Subscription`
+   (`new_Subscription`, copy, drop, rename; see "Changing the schema" for
+   the `PRAGMA` lines). Apply it while the code from step 1 is deployed:
+   that code still writes every flag, so nothing changes for it.
+3. **Code: stop writing and stop selecting.** Only now remove `legacyFlags`
+   (inserts succeed on the defaults), and stop reading the columns at all:
+   `omit` the seven `Subscription` columns and `Event.isFulfilled` in the
+   Prisma client (as the message queries already do with
+   `omit: { isRead: true }`), and remove the "pending" scope's legacy
+   conditions in `src/server/_billing/resync.ts` together with
+   `rowNeedsFirstSync`'s. The fields stay in `schema.prisma`, so
+   `npm run db:check` still passes. Deploy, and keep it deployed until a
+   rollback to step 1's code is off the table (that code would find flags
+   no longer kept up to date).
+4. **Migration, then code: drop.** Remove the fields from `schema.prisma`
+   and the `omit`s, and add the migration:
+
+   ```sql
+   ALTER TABLE "Subscription" DROP COLUMN "isTrial";
+   -- ... likewise isActive, isCanceled, isPaused, isPending, isExpired, expiresAt
+   ALTER TABLE "Message" DROP COLUMN "isRead";
+   ALTER TABLE "Event" DROP COLUMN "isFulfilled";
+   ```
+
+   Apply it while the code from step 3 is deployed (it neither writes nor
+   selects the columns), then deploy.
+
+What must not be done is what this section used to describe: deploy code
+that no longer writes the flags while they are still `NOT NULL` without a
+default (no subscription row could be created until the drop), or drop the
+columns while the deployed code still writes or selects them.
+
+`isLifetime` stays: it is how a comped account is recorded. If a migration
+is generated as a table rebuild instead of `DROP COLUMN`, see the trigger
+note above before applying it to `Message`.
+
+`Event.isFulfilled` has a default and no reader in either release, so it
+can be dropped with the others without a step of its own. An ad-hoc query
+that wants the value computes it:
+
+```sql
+SELECT e."id", EXISTS (
+  SELECT 1 FROM "Booking" b
+  WHERE b."eventId" = e."id" AND NOT b."isDeleted" AND b."status" IN ('accepted', 'completed')
+) AS "isFulfilled" FROM "Event" e;
+```
+
+Doing it in one step (dropping the columns in the same release that stops
+using them) would break the still-running previous release for the length of
+the deploy, and make a rollback impossible.
+
 ## Local D1 from scratch
 
 ```sh

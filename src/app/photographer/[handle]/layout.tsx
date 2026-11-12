@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { Providers } from "~/app/app/providers";
+import { auth } from "~/auth";
 import { db } from "~/server/db";
 
 type Props = {
@@ -52,10 +54,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function PhotographerLayout({
+export default async function PhotographerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // The page asks whether the viewer is signed in (to offer the review form).
+  const session = await auth();
+  return <Providers params={{ session }}>{children}</Providers>;
 }

@@ -1,12 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { ErrorReason, logger } from "~/_utils";
+import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { base64ImageInput, requireValidImage, type ValidImage } from "~/server/_utils/image";
 import { enforceRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 export const MAX_COMMENT_LENGTH = 2000;
@@ -24,6 +26,38 @@ const pageInput = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The feed's cursor: the place in (date, id) order where the previous page
+ * ended, as it was WHEN that page was read. Opaque to the client (base64url
+ * of `[date in ms, id]`).
+ *
+ * It carries the date instead of looking the event up again, because the
+ * event's date can be edited between two requests: a boundary taken from
+ * the event as it is now would jump with it, skipping the events in between
+ * (moved later) or repeating earlier ones (moved earlier). A place that was
+ * once the end of a page stays where it was, whatever has become of the
+ * event since: rescheduled, started, or deleted.
+ */
+const feedCursorShape = z.tuple([z.number().int().min(0).max(8.64e15), idInput]);
+
+function encodeFeedCursor(event: { date: Date; id: string }): string {
+  return btoa(JSON.stringify([event.date.getTime(), event.id]))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+/** The place a cursor names, or null when it is not a cursor this server issued. */
+function decodeFeedCursor(cursor: string): { date: Date; id: string } | null {
+  try {
+    const json: unknown = JSON.parse(atob(cursor.replaceAll("-", "+").replaceAll("_", "/")));
+    const parsed = feedCursorShape.safeParse(json);
+    return parsed.success ? { date: new Date(parsed.data[0]), id: parsed.data[1] } : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * An event date: a full ISO-8601 timestamp, not in the past (one day of
@@ -135,6 +169,19 @@ function findNewestComments(
     where: { eventId: input.eventId, ...onLiveEvent },
   });
 }
+
+/**
+ * Filters for the location strings a feed is asked for. Only the city part
+ * is matched, so "Austin, TX, USA" finds events in "Austin, TX".
+ */
+function locationFilters(locations: readonly string[]) {
+  return locations
+    .map((loc) => loc.split(",")[0]?.trim())
+    .filter((city): city is string => Boolean(city))
+    .map((city) => ({ location: { contains: city } }));
+}
+
+const feedLocationsInput = z.array(z.string().min(1).max(200)).max(10);
 
 export const eventRouter = createTRPCRouter({
   addCommentToEvent: protectedProcedure
@@ -273,9 +320,14 @@ export const eventRouter = createTRPCRouter({
         ? await uploadEventImage(ctx, photographer.id, image)
         : undefined;
 
-      return ctx.db.event.create({
+      const created = await ctx.db.event.create({
         data: { ...fields, image: imageUrl, photographerId: photographer.id },
       });
+      // A new event has no bookings, so it is not filled. Said outright,
+      // not looked up: a read that failed here would report the creation
+      // as failed although the event exists, and the form would invite a
+      // retry that creates it twice.
+      return { ...created, isFulfilled: false };
     }),
 
   delete: protectedProcedure
@@ -321,26 +373,33 @@ export const eventRouter = createTRPCRouter({
         where: { id: input.id },
       });
 
+      // Missing and deleted look the same. The reason lets the client show a
+      // "not found" page instead of a generic error.
       if (!event) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Event not found" });
+        throw reasonedError("NOT_FOUND", ErrorReason.EVENT_NOT_FOUND, "Event not found");
       }
 
       const commentCount = await ctx.db.comment.count({
         where: { eventId: event.id },
       });
 
-      return { ...event, commentCount };
+      // `isFulfilled` is derived from the bookings; the stored column is
+      // legacy and is neither read nor written.
+      const [derived] = await withDerivedFulfilled(ctx.db, [event]);
+
+      return { ...(derived ?? event), commentCount };
     }),
 
   getByPhotographerId: protectedProcedure
     .input(z.object({ photographerId: idInput, ...pageInput }))
-    .query(({ ctx, input }) => {
-      return ctx.db.event.findMany({
+    .query(async ({ ctx, input }) => {
+      const events = await ctx.db.event.findMany({
         ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
         orderBy: [{ date: "desc" }, { id: "desc" }],
         take: input.limit,
         where: { photographerId: input.photographerId },
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   getCommentById: protectedProcedure
@@ -403,21 +462,113 @@ export const eventRouter = createTRPCRouter({
       return { items: views.reverse(), nextCursor };
     }),
 
+  /**
+   * The events feed, one page at a time, as `{ items, nextCursor }`.
+   *
+   * - `when: "upcoming"` (the default): events that have not started yet
+   *   (date >= now), SOONEST FIRST.
+   * - `when: "past"`: events that have started or are over (date < now),
+   *   most recent first.
+   *
+   * `locations` narrows to events in those places (city match, as
+   * getRecentByLocation); empty or omitted means everywhere. Pass
+   * `nextCursor` back as `cursor` for the next page; it is null on the last.
+   * The cursor is an opaque token (not an event id): do not build or parse
+   * it. Deleted events never appear. The next page continues after the
+   * place where the previous one ended, even if the event that stood there
+   * has since been rescheduled, has started (and so left the upcoming
+   * feed) or been deleted; an event moved to a later date is met again at
+   * its new place. Anything that is not a cursor from this procedure is a
+   * BAD_REQUEST.
+   */
+  getFeedPage: protectedProcedure
+    .input(z.object({
+      ...pageInput,
+      cursor: z.string().min(1).max(200).optional(),
+      locations: feedLocationsInput.optional(),
+      when: z.enum(["upcoming", "past"]).default("upcoming"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const filters = locationFilters(input.locations ?? []);
+      const upcoming = input.when === "upcoming";
+      const direction = upcoming ? "asc" : "desc";
+
+      // Keyset paging: the next page is "everything after the cursor's
+      // place in (date, id) order", stated as a condition on those two
+      // columns. (Prisma's `cursor` + `skip: 1` positions itself within the
+      // FILTERED rows: once the cursor event has started, or been deleted,
+      // it is no longer among them, and the skip would swallow the first
+      // event of the next page instead.) The place comes from the cursor
+      // itself, not from the event as it is now: see encodeFeedCursor.
+      const after = input.cursor ? decodeFeedCursor(input.cursor) : null;
+      if (input.cursor && !after) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This page of the feed is no longer available. Reload the feed.",
+        });
+      }
+      // "After the cursor" in (date, id) order. Timestamps are stored as
+      // TEXT. Everything Prisma writes, on D1 and on the SQLite adapter the
+      // tests use, ends in "+00:00"; only SQL written by hand can store the
+      // same instant as "...Z" (the staging seed did until it was fixed).
+      // The cursor's own instant is matched as the range [date, date + 1 ms)
+      // rather than by equality, so that such a row is still recognised as
+      // BEING at the cursor's instant ("Z" sorts after "+", inside the
+      // range). What a stray spelling does break is the ORDER within one
+      // instant, which is by text before it is by id; that is why every
+      // write path keeps to the one spelling and existing rows are
+      // normalised once (docs/DATABASE.md, "Timestamps are text").
+      const tieStart = after?.date;
+      const tieEnd = after ? new Date(after.date.getTime() + 1) : undefined;
+      const afterCursor = after
+        ? {
+            OR: [
+              { date: upcoming ? { gte: tieEnd } : { lt: tieStart } },
+              { date: { gte: tieStart, lt: tieEnd }, id: upcoming ? { gt: after.id } : { lt: after.id } },
+            ],
+          }
+        : null;
+
+      const rows = await ctx.db.event.findMany({
+        include: {
+          photographer: { select: eventPhotographerSelect },
+        },
+        // The id breaks ties between events at the same time, so pages
+        // neither repeat nor skip one.
+        orderBy: [{ date: direction }, { id: direction }],
+        take: input.limit + 1,
+        where: {
+          AND: [
+            { date: upcoming ? { gte: now } : { lt: now } },
+            ...(filters.length > 0 ? [{ OR: filters }] : []),
+            ...(afterCursor ? [afterCursor] : []),
+          ],
+        },
+      });
+      const { items, nextCursor } = toPage(rows, input.limit);
+      const last = items.at(-1);
+      return {
+        items: await withDerivedFulfilled(ctx.db, items),
+        nextCursor: nextCursor && last ? encodeFeedCursor(last) : null,
+      };
+    }),
+
+  /**
+   * @deprecated Use getFeedPage, which separates upcoming from past events
+   * and pages with a cursor. This returns upcoming and past events mixed,
+   * latest date first, and is kept for clients that still call it.
+   */
   getRecentByLocation: protectedProcedure
     .input(z.object({
       limit: z.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
-      locations: z.array(z.string().min(1).max(200)).max(10),
+      locations: feedLocationsInput,
       startAt: z.number().int().min(0).max(10_000).optional(),
     }))
-    .query(({ ctx, input }) => {
-      // Extract city names from location strings for fuzzy matching
-      // e.g. "Austin, TX, USA" → "Austin" so it matches "Austin, TX"
-      const locationFilters = input.locations
-        .map((loc) => loc.split(",")[0]?.trim())
-        .filter((city): city is string => Boolean(city))
-        .map((city) => ({ location: { contains: city } }));
+    .query(async ({ ctx, input }) => {
+      const filters = locationFilters(input.locations);
 
-      return ctx.db.event.findMany({
+      const events = await ctx.db.event.findMany({
         include: {
           photographer: { select: eventPhotographerSelect },
         },
@@ -425,22 +576,21 @@ export const eventRouter = createTRPCRouter({
         skip: input.startAt ?? 0,
         take: input.limit ?? 10,
         where: {
-          ...(locationFilters.length > 0
-            ? { OR: locationFilters }
-            : {}),
+          ...(filters.length > 0 ? { OR: filters } : {}),
         },
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   search: protectedProcedure
-    .use(rateLimit(RateLimits.SEARCH))
+    .use(rateLimit(RateLimits.EVENT_SEARCH))
     .input(z.object({
       afterDate: z.date(),
       beforeDate: z.date(),
       query: z.string().trim().min(1).max(100),
     }))
-    .query(({ ctx, input }) => {
-      return ctx.db.event.findMany({
+    .query(async ({ ctx, input }) => {
+      const events = await ctx.db.event.findMany({
         orderBy: [{ date: "asc" }, { id: "asc" }],
         where: {
           date: { gte: input.afterDate, lte: input.beforeDate },
@@ -452,6 +602,7 @@ export const eventRouter = createTRPCRouter({
         },
         take: 50,
       });
+      return withDerivedFulfilled(ctx.db, events);
     }),
 
   update: protectedProcedure
@@ -482,10 +633,13 @@ export const eventRouter = createTRPCRouter({
         ? await uploadEventImage(ctx, event.photographerId, image)
         : undefined;
 
-      return ctx.db.event.update({
+      const updated = await ctx.db.event.update({
         data: { ...fields, ...(imageUrl ? { image: imageUrl } : {}) },
         where: { id: event.id },
       });
+      // `isFulfilled` from the bookings, never the stored column.
+      const [derived] = await withDerivedFulfilled(ctx.db, [updated]);
+      return derived ?? updated;
     }),
 });
 

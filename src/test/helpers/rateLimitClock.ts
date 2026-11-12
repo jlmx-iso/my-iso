@@ -1,6 +1,13 @@
 import { afterEach, beforeEach } from "vitest";
 
-import { setRateLimitClock } from "~/server/_utils/rateLimit";
+import {
+  consumeRateLimit,
+  otpRequestLimits,
+  otpVerifyLimits,
+  setRateLimitClock,
+  type RateLimitDb,
+  type RateLimitPolicy,
+} from "~/server/_utils/rateLimit";
 
 /**
  * Midnight UTC, which is the start of a window for every window length the
@@ -34,4 +41,47 @@ export function freezeRateLimitClock() {
     },
     now: () => nowMs,
   };
+}
+
+/**
+ * Puts a limit's counter where `count` requests would have left it, in one
+ * statement (through the limiter itself, so key and window are the real
+ * ones). Tests use it to get next to a limit and then make only the few real
+ * requests that cross it: looping hundreds of real requests up to a limit is
+ * slow, and a test that times out under load keeps running in the
+ * background and moves the shared frozen clock under the tests after it.
+ */
+export async function spendRateLimit(
+  db: RateLimitDb,
+  policy: RateLimitPolicy,
+  identifier: string,
+  count: number,
+): Promise<void> {
+  if (count > 0) await consumeRateLimit(db, policy, identifier, { cost: count });
+}
+
+/** spendRateLimit for one of the sign-in code limits of (clientIp, email). */
+export async function spendOtpVerifyLimit(
+  db: RateLimitDb,
+  policy: RateLimitPolicy,
+  clientIp: string,
+  email: string,
+  count: number,
+): Promise<void> {
+  const check = otpVerifyLimits(clientIp, email).find((candidate) => candidate.policy.name === policy.name);
+  if (!check) throw new Error(`${policy.name} is not a sign-in code limit`);
+  await spendRateLimit(db, policy, check.identifier, count);
+}
+
+/** spendRateLimit for one of the code-request limits of (clientIp, email). */
+export async function spendOtpRequestLimit(
+  db: RateLimitDb,
+  policy: RateLimitPolicy,
+  clientIp: string,
+  email: string,
+  count: number,
+): Promise<void> {
+  const check = otpRequestLimits(clientIp, email).find((candidate) => candidate.policy.name === policy.name);
+  if (!check) throw new Error(`${policy.name} is not a code-request limit`);
+  await spendRateLimit(db, policy, check.identifier, count);
 }

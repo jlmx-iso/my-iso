@@ -60,6 +60,33 @@ Over the limit, both throw `TOO_MANY_REQUESTS` (HTTP 429).
 The email-code sign-in at `/api/auth/callback/otp` is not a tRPC procedure; it
 applies the same policies through `signInWithOtp` in `src/server/_lib/signup.ts`.
 
+## Sign-in codes: who can be locked out by whom
+
+Requesting a code (`otpRequestLimits`) and submitting one (`otpVerifyLimits`)
+are each limited by a chain that is checked in order and stops at the first
+refusal:
+
+1. the client (IP) across all addresses;
+2. this client for this address, per 15 minutes and per day;
+3. the address across all clients, per 15 minutes and per day.
+
+The limits a person can meet are the ones keyed on **address and client
+together** (2). The address-wide ceilings (3) are three times higher or more,
+and a client that is over one of its own limits is refused before the
+shared counters are touched. So one client cannot use up an address's
+allowance and lock its owner out; doing that takes several clients.
+
+| | per client + address | address, all clients |
+| --- | --- | --- |
+| Request a code, 15 min | 5 | 15 |
+| Request a code, day | 20 | 60 |
+| Submit a code, 15 min | 10 | 30 |
+| Submit a code, day | 30 | 100 |
+
+Guesses against one account are bounded by the last row whatever else
+happens: 100 a day from all clients together (a code also dies after 5
+wrong guesses), which is a 1 in 10,000 chance per day against a 6-digit code.
+
 ## Related controls
 
 - Sign-in codes carry their own attempt counter (`VerificationToken.attempts`):

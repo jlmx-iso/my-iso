@@ -57,6 +57,7 @@ export const env = createEnv({
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
+    STRIPE_API_BASE_URL: process.env.STRIPE_API_BASE_URL,
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: process.env.STRIPE_FOUNDING_MONTHLY_PRICE_ID,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
@@ -108,6 +109,11 @@ export const env = createEnv({
     ANTHROPIC_API_KEY: z.string().optional(), // Optional — AI features degrade gracefully
     POSTHOG_API_KEY: z.string().optional(), // Optional — analytics degrade gracefully
     RESEND_API_KEY: z.string().optional(), // Make optional until API key is obtained
+    // TEST ONLY: a local stand-in for the Stripe API. Honoured only for
+    // loopback addresses and refused outright in a production deployment,
+    // see src/server/_billing/stripe.ts. Leave unset otherwise.
+    // The four price ids are required for checkout (docs/BILLING.md).
+    STRIPE_API_BASE_URL: z.string().url().optional(),
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: z.string().optional(),
     STRIPE_SECRET_KEY: z.string(),

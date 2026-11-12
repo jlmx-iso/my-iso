@@ -54,8 +54,21 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 STRIPE_SECRET_KEY=
 NEXT_PUBLIC_STRIPE_PUBLIC_KEY=
 
-# CRITICAL: Required for webhook security
+# CRITICAL: Required for webhook security. While it is empty the webhook
+# answers 500 to every delivery.
 STRIPE_WEBHOOK_SECRET=
+
+# Stripe Price ids (price_...) of the four recurring prices of the Pro
+# product, from the Stripe dashboard (Product catalogue -> the Pro product ->
+# each price -> "Copy price ID"). REQUIRED for checkout. See docs/BILLING.md.
+STRIPE_FOUNDING_MONTHLY_PRICE_ID=
+STRIPE_FOUNDING_ANNUAL_PRICE_ID=
+STRIPE_STANDARD_MONTHLY_PRICE_ID=
+STRIPE_STANDARD_ANNUAL_PRICE_ID=
+
+# TEST ONLY: a local stand-in for the Stripe API. Loopback addresses only;
+# refused in a production deployment. Leave unset otherwise.
+# STRIPE_API_BASE_URL=http://127.0.0.1:12111
 
 # ==============================================================================
 # GOOGLE MAPS / PLACES API
