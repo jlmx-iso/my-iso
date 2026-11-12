@@ -29,12 +29,6 @@ export async function isFoundingMember(userId: string): Promise<boolean> {
   return (await ph.isFeatureEnabled("founding_member", userId)) === true;
 }
 
-export async function hasProAccess(userId: string): Promise<boolean> {
-  const ph = getPostHogClient();
-  if (!ph) return false;
-  return (await ph.isFeatureEnabled("pro_access", userId)) === true;
-}
-
 export async function isFoundingMemberPricingActive(): Promise<boolean> {
   const ph = getPostHogClient();
   if (!ph) return true; // default open if PostHog unavailable

@@ -13,6 +13,7 @@ import { ZodError } from "zod";
 
 import { cloudinaryClient } from "~/_lib";
 import { auth } from "~/auth";
+import { entitlementsFor } from "~/server/_billing/entitlements";
 import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
 import { getClientIp } from "~/server/_utils/clientIp";
 import { enforceRateLimit, type RateLimitPolicy } from "~/server/_utils/rateLimit";
@@ -169,7 +170,8 @@ const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
     where: { userId: ctx.session.user.id },
   });
 
-  if (!subscription?.isActive) {
+  // Access is derived from the stored Stripe state in one place.
+  if (!entitlementsFor(subscription, new Date()).hasProAccess) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "An active Pro subscription is required to access this feature.",
