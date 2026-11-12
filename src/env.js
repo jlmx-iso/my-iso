@@ -104,8 +104,9 @@ export const env = createEnv({
     // Optional: without a key no email is sent.
     RESEND_API_KEY: z.string().optional(),
     // Local stand-in for the Stripe API (end-to-end runs only). Honoured only
-    // for loopback addresses, see src/server/_billing/stripe.ts. Never set
-    // it on a deployed Worker.
+    // for loopback addresses and refused outright in a production deployment,
+    // see src/server/_billing/stripe.ts. Never set it on a deployed Worker.
+    // The four price ids are required for checkout (docs/BILLING.md).
     STRIPE_API_BASE_URL: z.string().url().optional(),
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: z.string().optional(),
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: z.string().optional(),

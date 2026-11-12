@@ -20,7 +20,16 @@ import type { RateLimitDb } from "~/server/_utils/rateLimit";
 /** The raw-query surface of any Prisma client. */
 export type EventLogDb = RateLimitDb;
 
-/** Longer than any handler can run (Stripe gives up on a delivery sooner). */
+/**
+ * How long a claim keeps other deliveries of the same event out. It covers
+ * a handler's usual run (a few Stripe calls) with room to spare, but NOT
+ * its worst case: Stripe calls that time out and are retried can take
+ * longer. A redelivery may then take the claim over while the first handler
+ * is still at work. That is safe, not merely tolerated: both run the same
+ * idempotent read-and-store, one after the other under the customer's lease
+ * (./subscriptionStore.ts), and the first one's complete/release, which
+ * carries its own `claimedAt`, no longer matches and changes nothing.
+ */
 export const CLAIM_LEASE_SECONDS = 60;
 
 /** Stripe retries a failed delivery for up to three days; keep ids well past that. */

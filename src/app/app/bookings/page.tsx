@@ -17,7 +17,6 @@ import BookingCard from "~/app/_components/bookings/BookingCard";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
 import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
-import { useNow } from "~/app/_hooks/useNow";
 import { api } from "~/trpc/react";
 
 const pageOptions = {
@@ -132,7 +131,6 @@ export default function BookingsPage() {
   // `?tab=received` opens the second tab (linked from "View applications").
   const requestedTab = useSearchParams().get("tab");
   const tab: BookingsTab = isTab(requestedTab) ? requestedTab : "applications";
-  const now = useNow();
   const sent = api.booking.getMyApplicationsPage.useInfiniteQuery({ limit: BOOKINGS_PAGE_SIZE }, pageOptions);
   const received = api.booking.getReceivedApplicationsPage.useInfiniteQuery({ limit: BOOKINGS_PAGE_SIZE }, pageOptions);
 
@@ -197,7 +195,6 @@ export default function BookingsPage() {
                   event={booking.event}
                   user={booking.owner}
                   variant="sent"
-                  now={now}
                 />
               ))}
             </PanelState>
@@ -231,7 +228,6 @@ export default function BookingsPage() {
                   event={booking.event}
                   user={booking.applicant}
                   variant="received"
-                  now={now}
                 />
               ))}
             </PanelState>

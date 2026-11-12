@@ -4,15 +4,19 @@ import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
 import { IconCreditCard, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { formatDate } from "~/_lib/dayjs";
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { type BillingInterval, type PlanPricing, proPriceView } from "~/_utils/plans";
-import type { BillingAction } from "~/_utils/subscriptionView";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
 import { api } from "~/trpc/react";
 
+import type { BillingMode } from "./billingMode";
+
 type BillingActionsProps = {
-  /** What the member's subscription calls for: checkout, the portal, or nothing. */
-  action: BillingAction;
+  /** What the member's subscription calls for (see billingModeFor). */
+  mode: BillingMode;
+  /** With "resubscribe": until when the period already paid for lasts. */
+  paidUntil?: Date | null;
   /** The portal button's label: "Manage subscription", "Fix payment", ... */
   portalLabel: string;
   pricing: PlanPricing;
@@ -31,12 +35,12 @@ const PORTAL_FAILED = "We couldn't open billing. Please try again.";
  * unfinished). If the server knows better than this page did, the button
  * follows the server.
  */
-export default function BillingActions({ action, portalLabel, pricing, portalIsPrimary = false }: BillingActionsProps) {
+export default function BillingActions({ mode: initialMode, paidUntil, portalLabel, pricing, portalIsPrimary = false }: BillingActionsProps) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   // Set when the server's answer shows the page was out of date.
-  const [override, setOverride] = useState<BillingAction | null>(null);
-  const mode = override ?? action;
+  const [override, setOverride] = useState<BillingMode | null>(null);
+  const mode = override ?? initialMode;
 
   const createPortal = api.subscription.createPortalSession.useMutation({
     onError: (error) => {
@@ -137,8 +141,25 @@ export default function BillingActions({ action, portalLabel, pricing, portalIsP
         w={{ base: "100%", xs: "auto" }}
         data-testid="billing-checkout"
       >
-        {price.cta}
+        {mode === "resubscribe" ? price.cta.replace("Upgrade to", "Resubscribe to") : price.cta}
       </Button>
+      {mode === "resubscribe" && (
+        // Not an upgrade: a second subscription, charged now.
+        <Text size="xs" c="gray.7" maw={320} data-testid="resubscribe-note">
+          This starts a new subscription and you are charged today.{" "}
+          {paidUntil ? (
+            <>
+              You already have Pro until{" "}
+              <time dateTime={new Date(paidUntil).toISOString()} suppressHydrationWarning>
+                {formatDate(paidUntil, "dateLong")}
+              </time>
+              ; that time is not added on.
+            </>
+          ) : (
+            "The time left on your canceled subscription is not added on."
+          )}
+        </Text>
+      )}
       {price.annualNote && (
         <Text size="xs" c="gray.7">
           {price.annualNote}

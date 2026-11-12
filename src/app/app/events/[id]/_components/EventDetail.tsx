@@ -4,7 +4,6 @@ import { Alert, Anchor, Badge, Box, Button, Divider, Group, Skeleton, Stack, Tex
 import { IconAlertCircle, IconArrowLeft } from "@tabler/icons-react";
 import Link from "next/link";
 
-import { applicationOf } from "~/_utils/bookings";
 import { COMMENTS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { mergePagesOldestFirst, partialCountNote } from "~/_utils/pagination";
 import AddCommentForm from "~/app/_components/AddCommentForm";
@@ -36,7 +35,7 @@ export default function EventDetail({ initialEvent, currentUserId }: EventDetail
     );
     const isOwnEvent = event.photographer.userId === currentUserId;
     const applied = api.booking.hasApplied.useQuery({ eventId }, { enabled: !isOwnEvent });
-    const application = applied.data === undefined ? undefined : applicationOf(applied.data);
+    const application = applied.data;
     const now = useNow();
     const isPast = new Date(event.date).getTime() < now.getTime();
 
@@ -77,7 +76,7 @@ export default function EventDetail({ initialEvent, currentUserId }: EventDetail
                 {/* The page's primary action: above the description and the
                     cover, so it is on screen without scrolling on a phone. */}
                 <Box data-testid="event-primary-action">
-                    <ApplyAction event={event} application={application} isOwnEvent={isOwnEvent} now={now} prominent />
+                    <ApplyAction event={event} application={application} isOwnEvent={isOwnEvent} prominent />
                 </Box>
 
                 {event.description && (

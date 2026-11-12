@@ -71,12 +71,36 @@ model Subscription {
   // replaces a newer one.
   stripeCreatedAt    DateTime?
   stripeSyncedAt     DateTime?
+  // The subscription's latest invoice (in_...), and the end of the current
+  // period when that invoice is paid (null when it is not): a cancelled
+  // subscription keeps access only for a period that was paid for.
+  latestInvoiceId    String?
+  paidThroughAt      DateTime?
+  // When the subscription first turned past_due; kept while it stays
+  // past_due (also across new billing periods) and cleared when it leaves
+  // that status. The grace window is counted from here.
+  pastDueSince       DateTime?
+  // The payment standing, derived from Stripe as a whole each time (see
+  // src/server/_billing/paymentStanding.ts), never updated per event: the
+  // dispute that withholds access (dp_...), "open" | "lost" ("lost": the
+  // last paid invoice was taken back and none has been paid since), and
+  // the invoice its charge paid. All null when nothing is withheld.
+  disputeId          String?
+  disputeStatus      String?
+  disputeInvoiceId   String?
+  // The latest invoice, when its payment was refunded in full (same source).
+  refundedInvoiceId  String?
+  // When the payment standing was last derived completely and recorded.
+  // Null: never, or the last derivation was incomplete. A row is settled
+  // only when both this and stripeSyncedAt are set.
+  standingSyncedAt   DateTime?
   // A comped account: Pro without a Stripe subscription. Set by hand.
   isLifetime         Boolean
 
   // DEPRECATED legacy flags, still written (derived from `status`) so that
   // the previously deployed release keeps working during a deploy or a
-  // rollback. Nothing reads them; drop them in a later migration.
+  // rollback, and because they are NOT NULL without a default: keep writing
+  // them until they have one. Removal order: docs/DATABASE.md.
   isTrial            Boolean
   isActive           Boolean
   isCanceled         Boolean
@@ -85,6 +109,25 @@ model Subscription {
   isExpired          Boolean
   expiresAt          DateTime?
   user               User      @relation(fields: userId, references: id, onDelete: Cascade)
+}
+
+// Every dispute (chargeback or inquiry) the app has learned of, by Stripe
+// subscription id (sub_...). Never deleted: a dispute that is not finished
+// is re-read from Stripe by its id whenever the payment standing is derived,
+// so one on a charge too old for the charge listing cannot be forgotten.
+// `status`: "open" | "inquiry" | "lost" | "superseded" | "cleared" (see
+// src/server/_billing/paymentStanding.ts). The disputeId/disputeStatus/
+// disputeInvoiceId columns on Subscription are the summary derived from
+// this set, so that an access check needs no join.
+model SubscriptionDispute {
+  disputeId      String   @id
+  subscriptionId String
+  // The invoice the disputed charge paid.
+  invoiceId      String
+  status         String
+  updatedAt      DateTime
+
+  @@index([subscriptionId, status])
 }
 
 // Stripe webhook events this app has taken on (see
@@ -101,6 +144,15 @@ model StripeEvent {
   processedAt  Int?
 
   @@index([claimedAt])
+}
+
+// Short leases that serialise billing work per user (starting Checkout);
+// see src/server/_billing/lease.ts. `expiresAt` is Unix seconds: a lease
+// whose holder died is taken over after that.
+model BillingLease {
+  key       String @id
+  holder    String
+  expiresAt Int
 }
 
 model Session {
@@ -205,11 +257,15 @@ model MessageThread {
 }
 
 // Per-participant read state: `userId` has seen everything in the thread up
-// to `lastReadAt`. No row means nothing has been read.
+// to the place (lastReadAt, lastReadMessageId). No row means nothing has
+// been read.
 model ThreadRead {
   threadId   String
   userId     String
   lastReadAt DateTime
+  // With lastReadAt, the place read up to in (createdAt, id) order: the
+  // message that was seen. Null: everything sent at lastReadAt.
+  lastReadMessageId String?
   thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -304,6 +360,9 @@ model Event {
   date           DateTime
   duration       Int          @default(1) // In hours
   image          String?
+  // LEGACY, neither read nor written: whether an event is filled is
+  // derived from its bookings (withDerivedFulfilled). Kept until a drop
+  // migration; see docs/DATABASE.md.
   isFulfilled    Boolean      @default(false)
   isDeleted      Boolean      @default(false)
   comments       Comment[]
@@ -375,6 +434,12 @@ model Booking {
   rate        String? // Proposed rate
   notes       String? // Message from applicant
   ownerNotes  String? // Response from event owner
+  // How a canceled booking ended: "withdrawn" (the applicant took back an
+  // application), "canceled_by_applicant" or "canceled_by_owner" (an
+  // accepted booking was called off). Only a withdrawal can be followed by a
+  // new application. Null on other statuses and on rows canceled before the
+  // column existed.
+  cancelOrigin String?
   isDeleted   Boolean  @default(false)
 
   // Also the index for "bookings of this event" (eventId comes first).

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { THREADS_PAGE_SIZE } from "~/_utils/pageSizes";
 import { markThreadReadInPages, totalsAfterRead } from "~/_utils/unread";
+import { isLatestMarkReadAttempt, markReadRetryDelayMs } from "~/app/app/messages/_components/markReadRetry";
 import { api } from "~/trpc/react";
 
 /**
@@ -33,6 +34,12 @@ export function useMarkThreadRead({
     const utils = api.useUtils();
     const { mutate } = api.message.markThreadRead.useMutation();
     const markedUpTo = useRef<string | undefined>(undefined);
+    // A failed request is tried again a bounded number of times while the
+    // thread stays open (markReadRetryDelayMs); `retry` re-runs the effect.
+    const failures = useRef(0);
+    const latestAttempt = useRef<string | undefined>(undefined);
+    const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const [retry, setRetry] = useState(0);
 
     useEffect(() => {
         if (!enabled || !latestMessageId || markedUpTo.current === latestMessageId) return;
@@ -41,6 +48,7 @@ export function useMarkThreadRead({
         const markRead = () => {
             if (document.visibilityState !== "visible" || markedUpTo.current === latestMessageId) return;
             markedUpTo.current = latestMessageId;
+            latestAttempt.current = latestMessageId;
 
             // Optimistic: the row loses its unread state and the badge drops now.
             const listInput = { limit: THREADS_PAGE_SIZE };
@@ -61,13 +69,24 @@ export function useMarkThreadRead({
             const input = { threadId, upToMessageId: latestMessageId };
             mutate(input, {
                 onError: () => {
-                    markedUpTo.current = undefined;
                     void utils.message.getThreadsPage.invalidate();
                     void utils.message.getUnreadCount.invalidate();
+                    // Only the newest attempt may schedule a retry: an older
+                    // request failing late must not disturb it.
+                    if (!isLatestMarkReadAttempt(latestAttempt.current, latestMessageId)) return;
+                    failures.current += 1;
+                    const delay = markReadRetryDelayMs(failures.current);
+                    if (delay === null) return;
+                    clearTimeout(retryTimer.current);
+                    retryTimer.current = setTimeout(() => {
+                        if (markedUpTo.current === latestMessageId) markedUpTo.current = undefined;
+                        setRetry((count) => count + 1);
+                    }, delay);
                 },
                 // The thread was not in the loaded list (or the list was not
                 // loaded): the optimistic step had nothing to go on.
                 onSuccess: () => {
+                    failures.current = 0;
                     if (!listed) void utils.message.getUnreadCount.invalidate();
                 },
             });
@@ -85,5 +104,8 @@ export function useMarkThreadRead({
             clearTimeout(timer);
             document.removeEventListener("visibilitychange", schedule);
         };
-    }, [enabled, latestMessageId, mutate, threadId, utils]);
+    }, [enabled, latestMessageId, mutate, retry, threadId, utils]);
+
+    // Leaving the thread ends any pending retry.
+    useEffect(() => () => clearTimeout(retryTimer.current), [threadId]);
 }

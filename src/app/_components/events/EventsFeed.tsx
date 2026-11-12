@@ -5,7 +5,7 @@ import { IconAlertCircle, IconCalendarEvent, IconHistory } from '@tabler/icons-r
 import Link from 'next/link'
 import { useState } from 'react'
 
-import { type Application, applicationOf, applicationsByEvent } from '~/_utils/bookings'
+import { type Application, NOT_APPLIED, applicationsByEvent, applyBlockerOf } from '~/_utils/bookings'
 import { EVENTS_PAGE_SIZE, type FeedWhen, feedView, isFeedWhen } from '~/_utils/eventFeed'
 import { trpcErrorCode } from '~/_utils/userError'
 import EmptyState from "~/app/_components/EmptyState";
@@ -28,7 +28,6 @@ type EventsFeedProps = {
 
 /** One request tells every card in the feed how the viewer's application stands. */
 const APPLICATIONS_LIMIT = 100;
-const NOT_APPLIED: Application = { canReapply: false, status: "none" };
 /** The server just rendered this data: no need to ask again on mount. */
 const FRESH_FOR_MS = 30_000;
 
@@ -53,7 +52,11 @@ function FeedCard({
     const known = applications?.byEvent.get(event.id) ?? (applications?.isComplete ? NOT_APPLIED : undefined);
     const needsLookup = !!applications && known === undefined && !isOwnEvent;
     const lookup = api.booking.hasApplied.useQuery({ eventId: event.id }, { enabled: needsLookup });
-    const application = known ?? (lookup.data === undefined ? undefined : applicationOf(lookup.data));
+    // From the list: whether the event still takes applications is read off
+    // the row. From the lookup: the server says (`applyBlockedBy`).
+    const application: Application | undefined = known
+        ? { ...known, applyBlockedBy: applyBlockerOf(event, now) }
+        : lookup.data;
 
     return <EventCard event={event} application={application} currentUserId={currentUserId} now={now} />;
 }

@@ -101,5 +101,5 @@ src/server/_jobs/         Scheduled jobs
 src/server/_lib/          Email, AI, PostHog, background work
 src/do/                   ChatRoom Durable Object and its gateway
 src/env.js                Every environment variable, validated
-docs/                     DATABASE, DEPLOYMENT, RATE_LIMITING, adr/
+docs/                     BILLING, DATABASE, DEPLOYMENT, RATE_LIMITING, adr/
 ```

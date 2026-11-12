@@ -33,6 +33,13 @@ env:
   GOOGLE_PLACES_API_KEY: ci-placeholder
   STRIPE_SECRET_KEY: sk_test_ci_placeholder
   STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+  # Price ids come from the Stripe dashboard; placeholders here. Checkout
+  # needs all four. STRIPE_API_BASE_URL (test-only, loopback-only, refused in
+  # production) is deliberately not set: tests start their own stub.
+  STRIPE_FOUNDING_MONTHLY_PRICE_ID: price_ci_founding_monthly
+  STRIPE_FOUNDING_ANNUAL_PRICE_ID: price_ci_founding_annual
+  STRIPE_STANDARD_MONTHLY_PRICE_ID: price_ci_standard_monthly
+  STRIPE_STANDARD_ANNUAL_PRICE_ID: price_ci_standard_annual
 
 jobs:
   verify:

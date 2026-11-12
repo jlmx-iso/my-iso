@@ -1,8 +1,10 @@
 /**
  * Turns the server's subscription state (`subscription.getStatus` /
  * `syncStatus`) into what Settings shows: which plan, one line about what
- * happens next and when, a banner when something needs the member's
- * attention, and which billing action to offer.
+ * happens next and when, and a banner when something needs the member's
+ * attention. WHICH billing action is offered (checkout, resubscribe, portal,
+ * none) is billingModeFor's decision
+ * (~/app/app/settings/_components/billingMode).
  *
  * Only the current fields are read (`hasProAccess`, `renewsAt`,
  * `accessEndsAt`, `canStartCheckout`, ...), never the deprecated
@@ -31,14 +33,6 @@ export function hasProAccess(subscription: Pick<SubscriptionState, "hasProAccess
   return subscription?.hasProAccess === true;
 }
 
-export type BillingAction =
-  /** No running subscription: offer checkout. */
-  | "checkout"
-  /** A subscription exists: it is managed (or repaired) in the billing portal. */
-  | "portal"
-  /** A comped account: nothing to pay or manage. */
-  | "none";
-
 export type BillingIssue = "payment_failed" | "disputed" | "paused" | "incomplete" | "unknown_status";
 
 export type SubscriptionSummary = {
@@ -52,8 +46,7 @@ export type SubscriptionSummary = {
   line: { date: Date | null; text: string };
   /** Something is wrong with billing and the member can fix it. */
   banner: { actionLabel: string; body: string; date: Date | null; title: string; tone: "red" | "tan" } | null;
-  action: BillingAction;
-  /** Label of the portal button when `action` is "portal". */
+  /** Label of the portal button, when the portal is what is offered. */
   portalLabel: string;
 };
 
@@ -143,7 +136,6 @@ function bannerFor(issue: BillingIssue, subscription: SubscriptionState): NonNul
 
 export function subscriptionSummary(subscription: SubscriptionState | null | undefined): SubscriptionSummary {
   const free = {
-    action: "checkout",
     banner: null,
     line: { date: null, text: "You're on the Free plan." },
     planDetail: null,
@@ -158,7 +150,6 @@ export function subscriptionSummary(subscription: SubscriptionState | null | und
   if (subscription.isLifetime) {
     return {
       ...free,
-      action: "none",
       line: { date: null, text: "You have complimentary Pro access. There is nothing to pay or manage." },
       planDetail: "Complimentary",
       planName: "Pro",
@@ -169,7 +160,6 @@ export function subscriptionSummary(subscription: SubscriptionState | null | und
   if (issue) {
     const banner = bannerFor(issue, subscription);
     return {
-      action: "portal",
       banner,
       line: pro
         ? { date: subscription.accessEndsAt, text: subscription.accessEndsAt ? "Pro stays on until {date} while we retry your payment." : "Pro stays on while we retry your payment." }
@@ -185,9 +175,6 @@ export function subscriptionSummary(subscription: SubscriptionState | null | und
     // Set to end, or already cancelled with paid time left: it will not renew.
     if (subscription.cancelAtPeriodEnd || subscription.status === "canceled" || (!subscription.renewsAt && endsAt)) {
       return {
-        // A cancelled subscription can be replaced by a new one; one that is
-        // only set to end is resumed in the portal.
-        action: subscription.canStartCheckout ? "checkout" : "portal",
         banner: null,
         line: endsAt
           ? { date: endsAt, text: "Your subscription is canceled. You keep Pro until {date}, and you won't be charged again." }
@@ -198,7 +185,6 @@ export function subscriptionSummary(subscription: SubscriptionState | null | und
       };
     }
     return {
-      action: "portal",
       banner: null,
       line: subscription.renewsAt
         ? {

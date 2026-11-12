@@ -21,6 +21,20 @@ ALTER TABLE "Subscription" ADD COLUMN "endedAt" DATETIME;
 ALTER TABLE "Subscription" ADD COLUMN "cancellationReason" TEXT;
 ALTER TABLE "Subscription" ADD COLUMN "stripeCreatedAt" DATETIME;
 ALTER TABLE "Subscription" ADD COLUMN "stripeSyncedAt" DATETIME;
+-- What entitlements need beyond the status: whether the current period was
+-- paid for, since when the subscription has been past due, and an open or
+-- lost dispute / a full refund on one of its invoices.
+ALTER TABLE "Subscription" ADD COLUMN "latestInvoiceId" TEXT;
+ALTER TABLE "Subscription" ADD COLUMN "paidThroughAt" DATETIME;
+ALTER TABLE "Subscription" ADD COLUMN "pastDueSince" DATETIME;
+ALTER TABLE "Subscription" ADD COLUMN "disputeId" TEXT;
+ALTER TABLE "Subscription" ADD COLUMN "disputeStatus" TEXT;
+ALTER TABLE "Subscription" ADD COLUMN "disputeInvoiceId" TEXT;
+ALTER TABLE "Subscription" ADD COLUMN "refundedInvoiceId" TEXT;
+-- When the payment standing above was last derived COMPLETELY and recorded.
+-- NULL: never, or the last derivation was incomplete; such a row is not
+-- settled (the re-sync's default scope and the lazy sync select it).
+ALTER TABLE "Subscription" ADD COLUMN "standingSyncedAt" DATETIME;
 
 -- Back-fill from the legacy flags, as well as they can express it. Rows that
 -- belong to a Stripe subscription are corrected from Stripe by the next
@@ -47,6 +61,30 @@ UPDATE "Subscription" SET
 UPDATE "Subscription" SET "stripeCustomerId" =
   (SELECT "stripeId" FROM "User" WHERE "User"."id" = "Subscription"."userId");
 
+-- ── Booking: how it was cancelled ───────────────────────────────────────────
+-- Existing canceled rows keep NULL (unknown), which never allows re-applying.
+ALTER TABLE "Booking" ADD COLUMN "cancelOrigin" TEXT;
+
+-- ── Every dispute the app has learned of, per Stripe subscription ──────────
+-- A dispute is never removed; one that is not finished is re-read from
+-- Stripe by its id whenever the subscription's payment standing is derived
+-- (src/server/_billing/paymentStanding.ts).
+CREATE TABLE "SubscriptionDispute" (
+    "disputeId" TEXT NOT NULL PRIMARY KEY,
+    "subscriptionId" TEXT NOT NULL,
+    "invoiceId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "updatedAt" DATETIME NOT NULL
+);
+CREATE INDEX "SubscriptionDispute_subscriptionId_status_idx" ON "SubscriptionDispute"("subscriptionId", "status");
+
+-- ── Leases that serialise billing work per user ─────────────────────────────
+CREATE TABLE "BillingLease" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "holder" TEXT NOT NULL,
+    "expiresAt" INTEGER NOT NULL
+);
+
 -- ── Stripe webhook events already taken on ──────────────────────────────────
 CREATE TABLE "StripeEvent" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -63,6 +101,7 @@ CREATE TABLE "ThreadRead" (
     "threadId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "lastReadAt" DATETIME NOT NULL,
+    "lastReadMessageId" TEXT,
 
     PRIMARY KEY ("threadId", "userId"),
     CONSTRAINT "ThreadRead_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "MessageThread" ("id") ON DELETE CASCADE ON UPDATE CASCADE,

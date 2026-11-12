@@ -21,7 +21,6 @@ import {
   type BookingAction,
   type BookingRole,
   applicationOfBooking,
-  availableBookingActions,
   bookingHint,
   bookingStatusView,
   formatRate,
@@ -34,6 +33,9 @@ import ConfirmDialog from "~/app/_components/ConfirmDialog";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
+import { bookingCardActions } from "./bookingActions";
+import { useNowAtBoundaries } from "./boundaryClock";
+
 type BookingUser = {
   firstName: string;
   id: string;
@@ -44,7 +46,7 @@ type BookingUser = {
 type BookingEvent = {
   date: Date;
   /** Hours; with the date, when the event is over. */
-  duration?: number | null;
+  duration: number;
   id: string;
   location: string;
   title: string;
@@ -66,9 +68,9 @@ type BookingCardProps = {
   variant: "sent" | "received";
   /** The other party (owner if I'm the applicant, applicant if I'm the owner) */
   user: BookingUser;
-  /** The page's clock (see useNow): actions change when the event starts and ends. */
-  now: Date;
 };
+
+const HOUR_MS = 60 * 60 * 1000;
 
 const STATUS_ICONS: Record<string, typeof IconCheck> = {
   accepted: IconCheck,
@@ -153,7 +155,7 @@ const STALE_REASONS: ReadonlySet<string> = new Set([
   ErrorReason.BOOKING_NOT_YET_COMPLETABLE,
 ]);
 
-export default function BookingCard({ booking, event, user, variant, now }: BookingCardProps) {
+export default function BookingCard({ booking, event, user, variant }: BookingCardProps) {
   const utils = api.useUtils();
   const [confirming, setConfirming] = useState<BookingAction | null>(null);
   const role: BookingRole = variant === "received" ? "owner" : "applicant";
@@ -192,8 +194,20 @@ export default function BookingCard({ booking, event, user, variant, now }: Book
     );
   };
 
+  // What can be done changes when the event starts and when it ends: the
+  // card's clock moves at exactly those moments.
+  const startsAt = new Date(event.date);
+  const now = useNowAtBoundaries([startsAt, new Date(startsAt.getTime() + event.duration * HOUR_MS)]);
+  // Which buttons: the server's own rule (see bookingCardActions).
+  const offered = bookingCardActions({ event: { date: startsAt, duration: event.duration }, now, status: booking.status, variant });
+  const actions: BookingAction[] = [
+    ...(offered.accept ? (["accept"] as const) : []),
+    ...(offered.decline ? (["decline"] as const) : []),
+    // "Cancel" is a withdrawal while it is still an application.
+    ...(offered.cancel ? ([booking.status === "accepted" ? "cancel" : "withdraw"] as const) : []),
+    ...(offered.complete ? (["complete"] as const) : []),
+  ];
   const situation = { event, now, role, status: booking.status };
-  const actions = availableBookingActions(situation);
   const hint = bookingHint({ ...situation, canReapply: applicationOfBooking(booking).canReapply });
   const status = bookingStatusView(booking.status);
   const StatusIcon = STATUS_ICONS[booking.status];

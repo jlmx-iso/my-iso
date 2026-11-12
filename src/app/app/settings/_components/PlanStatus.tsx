@@ -8,6 +8,7 @@ import type { PlanPricing } from "~/_utils/plans";
 import { type SubscriptionState, subscriptionSummary } from "~/_utils/subscriptionView";
 
 import BillingActions from "./BillingActions";
+import { billingModeFor } from "./billingMode";
 
 type PlanStatusProps = {
   subscription: SubscriptionState | null;
@@ -37,6 +38,8 @@ function withDate(text: string, date: Date | null) {
  */
 export default function PlanStatus({ subscription, pricing }: PlanStatusProps) {
   const summary = subscriptionSummary(subscription);
+  // Checkout, resubscribe, the portal, or nothing: what the server will accept.
+  const mode = billingModeFor(subscription);
   const isPro = summary.planName === "Pro";
   const { banner } = summary;
 
@@ -51,7 +54,7 @@ export default function PlanStatus({ subscription, pricing }: PlanStatusProps) {
         >
           <Stack gap="sm" align="flex-start">
             <Text size="sm">{withDate(banner.body, banner.date)}</Text>
-            <BillingActions action="portal" portalLabel={banner.actionLabel} pricing={pricing} portalIsPrimary />
+            <BillingActions mode="portal" portalLabel={banner.actionLabel} pricing={pricing} portalIsPrimary />
           </Stack>
         </Alert>
       )}
@@ -82,7 +85,12 @@ export default function PlanStatus({ subscription, pricing }: PlanStatusProps) {
           </Stack>
           {/* With a banner, its button is the action: one way to do it. */}
           {!banner && (
-            <BillingActions action={summary.action} portalLabel={summary.portalLabel} pricing={pricing} />
+            <BillingActions
+              mode={mode}
+              portalLabel={summary.portalLabel}
+              pricing={pricing}
+              paidUntil={subscription?.accessEndsAt ?? null}
+            />
           )}
         </Group>
       </Paper>

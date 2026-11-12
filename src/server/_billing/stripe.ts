@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 
 import { env } from "~/env";
+import { isCloudflareRuntime } from "~/server/_utils/clientIp";
 
 /**
  * The Stripe API version every request from this app is made with, and the
@@ -25,14 +26,57 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 type HostOverride = { host: string; port: string; protocol: "http" | "https" };
 
+const isLoopbackUrl = (value: string): boolean => {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether this is a production deployment, as far as the Stripe override is
+ * concerned. `NODE_ENV` cannot answer that on its own for the Worker: every
+ * OpenNext build is a production build, including the one `wrangler dev`
+ * serves locally. So a deployment counts as production when ANY of these
+ * holds:
+ *
+ * - the Stripe key is a live-mode key (`sk_live_`/`rk_live_`);
+ * - the app's public origin (`NEXT_PUBLIC_BASE_URL`) is not this machine;
+ * - `NODE_ENV` is "production" and the code is not running in the Worker
+ *   runtime (a Node production server).
+ */
+export function isProductionDeployment(config: {
+  baseUrl: string | undefined;
+  isWorkerRuntime: boolean;
+  nodeEnv: string | undefined;
+  secretKey: string;
+}): boolean {
+  if (/^(sk|rk)_live_/.test(config.secretKey)) return true;
+  if (!config.baseUrl || !isLoopbackUrl(config.baseUrl)) return true;
+  return config.nodeEnv === "production" && !config.isWorkerRuntime;
+}
+
 /**
  * `STRIPE_API_BASE_URL` sends API calls to a local stand-in for Stripe
- * (stripe-mock, or a stub server in an end-to-end run). It is honoured only
- * for loopback addresses, so a stray value can never send live keys or
- * customer data anywhere else.
+ * (stripe-mock, or a stub server in an end-to-end run). TEST ONLY:
+ *
+ * - it is refused outright in a production deployment
+ *   (isProductionDeployment), whatever it points at;
+ * - elsewhere it is honoured only for loopback addresses, so a stray value
+ *   can never send keys or customer data to another machine.
+ *
+ * Refusing means throwing: a deployment configured this way must fail
+ * loudly rather than quietly talk to the real API or to a stand-in.
  */
-export function parseStripeApiBaseUrl(value: string | undefined): HostOverride | null {
+export function parseStripeApiBaseUrl(
+  value: string | undefined,
+  options: { production: boolean } = { production: false },
+): HostOverride | null {
   if (!value) return null;
+  if (options.production) {
+    throw new Error("STRIPE_API_BASE_URL must not be set in production");
+  }
   let url: URL;
   try {
     url = new URL(value);
@@ -57,7 +101,7 @@ export function parseStripeApiBaseUrl(value: string | undefined): HostOverride |
 export function createStripeClient(
   secretKey: string,
   override: HostOverride | null = null,
-  options: { maxNetworkRetries?: number } = {},
+  options: { maxNetworkRetries?: number; timeoutMs?: number } = {},
 ): Stripe {
   return new Stripe(secretKey, {
     apiVersion: STRIPE_API_VERSION,
@@ -67,7 +111,7 @@ export function createStripeClient(
     // every POST), so a retry can never create a second object.
     maxNetworkRetries: options.maxNetworkRetries ?? 2,
     // A Worker request must not hang on Stripe.
-    timeout: 15_000,
+    timeout: options.timeoutMs ?? 15_000,
     ...(override ?? {}),
   });
 }
@@ -77,25 +121,54 @@ let client: Stripe | null = null;
 /**
  * The shared Stripe client, created on first use: at module load there are
  * no secrets yet on Workers, and most requests never talk to Stripe.
+ *
+ * Tests do not replace this client from outside: they mock this module's
+ * `getStripe`, or pass a client to the functions in _billing directly.
  */
 export function getStripe(): Stripe {
   client ??= createStripeClient(
     env.STRIPE_SECRET_KEY,
-    parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL),
+    parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL, {
+      production: isProductionDeployment({
+        baseUrl: env.NEXT_PUBLIC_BASE_URL,
+        isWorkerRuntime: isCloudflareRuntime(),
+        nodeEnv: env.NODE_ENV,
+        secretKey: env.STRIPE_SECRET_KEY,
+      }),
+    }),
   );
   return client;
 }
 
+let accessCheckClient: Stripe | null = null;
+
 /**
- * Replaces the shared client and returns a function that restores the
- * previous one. For tests, which point the real SDK at a local stub server.
+ * A Stripe client for work done inside someone's request with a small time
+ * budget (the lazy first sync of a subscription row, ./lazySync.ts): each
+ * call gives up after three seconds and is not retried. The limit is per
+ * call, not for the sync: work handed to `waitUntil` usually finishes well
+ * inside the 30 seconds Workers allow, but is not guaranteed to. What
+ * makes a cut-off harmless is in ./lazySync.ts, not here.
  */
-export function setStripeClientForTests(replacement: Stripe): () => void {
-  const previous = client;
-  client = replacement;
-  return () => {
-    client = previous;
-  };
+export function getAccessCheckStripe(): Stripe {
+  accessCheckClient ??= createStripeClient(
+    env.STRIPE_SECRET_KEY,
+    parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL, {
+      production: isProductionDeployment({
+        baseUrl: env.NEXT_PUBLIC_BASE_URL,
+        isWorkerRuntime: isCloudflareRuntime(),
+        nodeEnv: env.NODE_ENV,
+        secretKey: env.STRIPE_SECRET_KEY,
+      }),
+    }),
+    { maxNetworkRetries: 0, timeoutMs: 3000 },
+  );
+  return accessCheckClient;
+}
+
+/** Whether a webhook signing secret is configured at all. */
+export function isWebhookSecretConfigured(secret: string | undefined = env.STRIPE_WEBHOOK_SECRET): boolean {
+  return typeof secret === "string" && secret.trim().length > 0;
 }
 
 /** Web Crypto HMAC: works on Workers, where Node's sync crypto is not used. */

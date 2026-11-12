@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-import { SEARCH_MAX_LIMIT, SEARCH_MAX_OFFSET } from "~/_utils/limits";
+import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
-export { SEARCH_MAX_LIMIT, SEARCH_MAX_OFFSET };
+export const SEARCH_MAX_LIMIT = 50;
+export const SEARCH_MAX_OFFSET = 1000;
 
 const searcherUserSelect = {
   id: true,
@@ -128,7 +129,7 @@ export const searchRouter = createTRPCRouter({
 
       return {
         photographers,
-        events,
+        events: await withDerivedFulfilled(ctx.db, events),
       };
     }),
 });

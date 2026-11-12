@@ -271,6 +271,8 @@ describe("RateLimits", () => {
       RateLimits.OTP_VERIFY_EMAIL,
       RateLimits.OTP_VERIFY_IP,
       RateLimits.OTP_REQUEST_EMAIL_DAILY,
+      RateLimits.OTP_REQUEST_EMAIL_IP,
+      RateLimits.OTP_REQUEST_EMAIL_IP_DAILY,
       RateLimits.OTP_VERIFY_EMAIL_DAILY,
       RateLimits.OTP_VERIFY_EMAIL_IP,
       RateLimits.OTP_VERIFY_EMAIL_IP_DAILY,
@@ -293,7 +295,18 @@ describe("RateLimits", () => {
       "otp-verify-email",
       "otp-verify-email-daily",
     ]);
-    expect(otpRequestLimits("203.0.113.9", "ada@example.com")[0]?.policy.name).toBe("otp-request-ip");
+    expect(otpRequestLimits("203.0.113.9", "ada@example.com").map((check) => check.policy.name)).toEqual([
+      "otp-request-ip",
+      "otp-request-email-ip",
+      "otp-request-email-ip-daily",
+      "otp-request-email",
+      "otp-request-email-daily",
+    ]);
+    // The first three are keyed on something the client controls; only the
+    // last two are shared with the address's owner.
+    expect(otpRequestLimits("203.0.113.9", "ada@example.com").map((check) => check.identifier.includes("ip:"))).toEqual([
+      true, true, true, false, false,
+    ]);
     // One client cannot reach the address-wide ceilings on its own.
     expect(RateLimits.OTP_VERIFY_EMAIL_IP.limit).toBeLessThan(RateLimits.OTP_VERIFY_EMAIL.limit);
     expect(RateLimits.OTP_VERIFY_EMAIL_IP_DAILY.limit).toBe(30);

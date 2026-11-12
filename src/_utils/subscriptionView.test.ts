@@ -31,9 +31,8 @@ describe("hasProAccess", () => {
 });
 
 describe("subscriptionSummary", () => {
-  it("offers checkout to someone who never subscribed", () => {
+  it("is Free for someone who never subscribed", () => {
     expect(subscriptionSummary(null)).toMatchObject({
-      action: "checkout",
       banner: null,
       line: { date: null, text: "You're on the Free plan." },
       planName: "Free",
@@ -42,7 +41,6 @@ describe("subscriptionSummary", () => {
 
   it("shows the plan and the renewal date of an active subscription, managed in the portal", () => {
     expect(subscriptionSummary(active)).toMatchObject({
-      action: "portal",
       banner: null,
       line: { date: renewal, text: "Renews on {date}." },
       planDetail: "Founding price · Monthly",
@@ -59,17 +57,15 @@ describe("subscriptionSummary", () => {
   it("warns about a failed payment while access continues, with Fix payment opening the portal", () => {
     const summary = subscriptionSummary({ ...active, accessEndsAt: graceEnd, isPastDue: true, renewsAt: null, status: "past_due" });
     expect(summary.planName).toBe("Pro");
-    expect(summary.action).toBe("portal");
     expect(summary.portalLabel).toBe("Fix payment");
     expect(summary.banner).toMatchObject({ actionLabel: "Fix payment", date: graceEnd, tone: "red" });
     expect(summary.banner?.title).toMatch(/payment didn't go through/);
   });
 
-  it("offers the portal, never checkout, when a subscription exists that cannot start checkout", () => {
+  it("explains a subscription that exists but gives no access", () => {
     const lapsed = { ...active, hasProAccess: false, renewsAt: null };
     for (const status of ["unpaid", "paused", "incomplete", "past_due", "something_new"]) {
       const summary = subscriptionSummary({ ...lapsed, status });
-      expect(summary.action, status).toBe("portal");
       expect(summary.planName, status).toBe("Free");
       expect(summary.banner, status).not.toBeNull();
       expect(summary.line.text, status).toMatch(/switched off/);
@@ -88,7 +84,7 @@ describe("subscriptionSummary", () => {
 
   it("says until when a subscription set to end keeps Pro, and lets it be resumed in the portal", () => {
     const summary = subscriptionSummary({ ...active, accessEndsAt: renewal, cancelAt: renewal, cancelAtPeriodEnd: true, renewsAt: null });
-    expect(summary).toMatchObject({ action: "portal", banner: null, planName: "Pro", portalLabel: "Resume or manage" });
+    expect(summary).toMatchObject({ banner: null, planName: "Pro", portalLabel: "Resume or manage" });
     expect(summary.line).toEqual({
       date: renewal,
       text: "Your subscription is canceled. You keep Pro until {date}, and you won't be charged again.",
@@ -103,7 +99,7 @@ describe("subscriptionSummary", () => {
       renewsAt: null,
       status: "canceled",
     });
-    expect(summary).toMatchObject({ action: "checkout", planName: "Pro" });
+    expect(summary).toMatchObject({ planName: "Pro" });
     expect(summary.line.date).toEqual(renewal);
   });
 
@@ -116,12 +112,12 @@ describe("subscriptionSummary", () => {
       renewsAt: null,
       status: "canceled",
     });
-    expect(summary).toMatchObject({ action: "checkout", banner: null, planName: "Free" });
+    expect(summary).toMatchObject({ banner: null, planName: "Free" });
     expect(summary.line).toEqual({ date: renewal, text: "Your Pro subscription ended on {date}. You're on the Free plan." });
   });
 
   it("has nothing to manage for a comped account", () => {
     const summary = subscriptionSummary({ ...active, isLifetime: true, isPastDue: true, renewsAt: null });
-    expect(summary).toMatchObject({ action: "none", banner: null, planDetail: "Complimentary", planName: "Pro" });
+    expect(summary).toMatchObject({ banner: null, planDetail: "Complimentary", planName: "Pro" });
   });
 });

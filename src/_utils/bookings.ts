@@ -2,10 +2,9 @@
  * Bookings as the browser sees them: which actions to offer, what each
  * status is called, and how an application to an event stands.
  *
- * The rules mirror the server's state machine
- * (src/server/_db/bookingTransitions.ts); bookings.test.ts checks the two
- * against each other, so a button is only shown when the server would accept
- * the request it sends.
+ * WHICH actions a card offers is decided by bookingCardActions
+ * (~/app/_components/bookings/bookingActions), from the server's own rule;
+ * this module holds what goes around them: labels, hints, money.
  */
 
 export const BOOKING_STATUSES = ["applied", "accepted", "declined", "completed", "canceled"] as const;
@@ -22,9 +21,6 @@ export const ACTION_TARGET_STATUS = {
   decline: "declined",
   withdraw: "canceled",
 } as const satisfies Record<BookingAction, Exclude<BookingStatus, "applied">>;
-
-/** Actions that end something for the other person: asked twice. */
-export const DESTRUCTIVE_ACTIONS: ReadonlySet<BookingAction> = new Set(["decline", "cancel", "withdraw"]);
 
 export function isBookingStatus(value: unknown): value is BookingStatus {
   return BOOKING_STATUSES.some((status) => status === value);
@@ -48,28 +44,12 @@ export function eventPhase(event: BookingEventTimes, now: Date = new Date()): "b
   return now.getTime() < end ? "during" : "after";
 }
 
-type BookingSituation = {
+export type BookingSituation = {
   role: BookingRole;
   status: string;
   event: BookingEventTimes;
   now?: Date;
 };
-
-/** What `role` can do with a booking right now, most important first. */
-export function availableBookingActions({ role, status, event, now = new Date() }: BookingSituation): BookingAction[] {
-  const phase = eventPhase(event, now);
-  if (status === "applied") {
-    if (role === "applicant") return ["withdraw"];
-    // An application to an event that has started can only be declined.
-    return phase === "before" ? ["accept", "decline"] : ["decline"];
-  }
-  if (status === "accepted") {
-    if (phase === "before") return ["cancel"];
-    // Under way: too late to cancel, too early to call it done.
-    return phase === "after" ? ["complete"] : [];
-  }
-  return [];
-}
 
 /**
  * A line under the actions when the status alone does not explain what can
@@ -135,72 +115,32 @@ export function formatRate(rate: string | null | undefined): string | null {
   return text;
 }
 
-/** How the viewer's own application to an event stands. */
-export type ApplicationStatus = "none" | BookingStatus;
-
+/**
+ * How the viewer's own application to an event stands, for the apply
+ * control: the shape `booking.hasApplied` answers with (see applyButtonState
+ * in ~/app/_components/bookings/applyButton), plus the booking's status for
+ * the badge.
+ */
 export type Application = {
-  status: ApplicationStatus;
-  /** The server will accept a new application in place of this one. */
+  applyBlockedBy?: "event_not_found" | "event_started" | "event_filled" | null;
   canReapply: boolean;
+  hasApplied: boolean;
+  status: string | null;
 };
 
-const NO_APPLICATION: Application = { canReapply: false, status: "none" };
-
-function readField(value: object, key: string): unknown {
-  return key in value ? (value as Record<string, unknown>)[key] : undefined;
-}
+export const NOT_APPLIED: Application = { canReapply: false, hasApplied: false, status: null };
 
 /**
- * Reads the answer of `booking.hasApplied`, whichever shape it has: a plain
- * boolean, `{ hasApplied }`, `{ hasApplied, status }`, or that with
- * `canReapply`. An application whose status is missing or not one we know
- * counts as "applied".
- *
- * Only an application the applicant withdrew can be sent again. A server
- * that says so (`canReapply`) is believed; one that does not yet is assumed
- * to allow it for any canceled application, and refuses if it does not.
- */
-export function applicationOf(value: unknown): Application {
-  if (typeof value === "boolean") return value ? { canReapply: false, status: "applied" } : NO_APPLICATION;
-  if (typeof value !== "object" || value === null) return NO_APPLICATION;
-
-  const rawStatus = readField(value, "status");
-  const hasApplied = readField(value, "hasApplied");
-  let status: ApplicationStatus = "none";
-  if (isBookingStatus(rawStatus)) status = rawStatus;
-  else if (hasApplied === true || (typeof rawStatus === "string" && rawStatus !== "")) status = "applied";
-
-  const stated = readField(value, "canReapply");
-  const canReapply = status === "canceled" && (typeof stated === "boolean" ? stated : true);
-  return { canReapply, status };
-}
-
-/**
- * The same, from one of the viewer's own bookings. `cancelOrigin` (how a
- * canceled booking ended) decides when the server sends it; without it any
- * canceled application is assumed to be reopenable.
+ * The same, from one of the viewer's own bookings (the feed learns about
+ * every card's application from one list). Only an application the
+ * applicant withdrew can be sent again (`cancelOrigin`).
  */
 export function applicationOfBooking(booking: { status: string; cancelOrigin?: string | null }): Application {
-  const application = applicationOf({ hasApplied: true, status: booking.status });
-  if (application.status !== "canceled" || !("cancelOrigin" in booking)) return application;
-  return { ...application, canReapply: booking.cancelOrigin === "withdrawn" };
-}
-
-/** Whether the viewer can send (or send again) an application. */
-export function canApply({
-  application,
-  eventDate,
-  isFilled = false,
-  now = new Date(),
-}: {
-  application: Application;
-  eventDate: Date | string;
-  isFilled?: boolean;
-  now?: Date;
-}): boolean {
-  if (new Date(eventDate).getTime() < now.getTime()) return false;
-  if (isFilled) return false;
-  return application.status === "none" || application.canReapply;
+  return {
+    canReapply: booking.status === "canceled" && booking.cancelOrigin === "withdrawn",
+    hasApplied: true,
+    status: booking.status,
+  };
 }
 
 /** The viewer's application for each event they have applied to. */
@@ -208,4 +148,16 @@ export function applicationsByEvent(
   bookings: ReadonlyArray<{ eventId: string; status: string; cancelOrigin?: string | null }>,
 ): Map<string, Application> {
   return new Map(bookings.map((booking) => [booking.eventId, applicationOfBooking(booking)]));
+}
+
+/**
+ * Why an event takes no applications, as far as a feed row shows it (the
+ * detail page asks the server, which also knows about deleted events).
+ */
+export function applyBlockerOf(
+  event: { date: Date | string; isFulfilled?: boolean },
+  now: Date,
+): "event_started" | "event_filled" | null {
+  if (new Date(event.date).getTime() <= now.getTime()) return "event_started";
+  return event.isFulfilled ? "event_filled" : null;
 }
