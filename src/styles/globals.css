@@ -1,6 +1,38 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+ * Minimal element reset, loaded before the Mantine styles. Mantine styles its
+ * own components but leaves bare elements alone, and the markup relies on:
+ *  - media being block-level (no baseline gap under linked images, icons
+ *    stacking rather than sitting inline with text);
+ *  - bare <a> (next/link) inheriting colour and decoration from its parent;
+ *  - bare headings and paragraphs carrying no default margins.
+ */
+img,
+svg,
+video,
+canvas {
+  display: block;
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin: 0;
+}
 
 /* Message animation */
 @keyframes messageIn {

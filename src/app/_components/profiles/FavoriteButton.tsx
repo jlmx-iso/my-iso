@@ -35,7 +35,9 @@ export const FavoriteButton = ({ isFavorite, targetUserId }: FavoriteButtonProps
       variant="subtle"
       radius="sm"
       size="xl"
-      className="relative top-0 right-0"
+      pos="relative"
+      top={0}
+      right={0}
     >
       {isExistingFavorite ?
         <IconBookmarkFilled size={24} aria-label="Remove bookmark" /> :

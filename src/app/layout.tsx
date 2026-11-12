@@ -21,7 +21,7 @@ import { ThemeProvider } from "./theme/ThemeProvider";
 
 const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
 });
 
 export const metadata = {
@@ -65,11 +65,11 @@ export default async function RootLayout({
   const isAuthed = !!session?.user;
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <ColorSchemeScript />
       </head>
-      <body className={`font-sans ${inter.variable}`}>
+      <body>
         <CSPostHogProvider>
           <ThemeProvider>
             <TRPCReactProvider cookies={cookieStore.toString()}>
