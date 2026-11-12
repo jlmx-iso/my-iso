@@ -12,7 +12,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { logger } from "~/_utils";
 import {
@@ -28,7 +28,7 @@ import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
-import { routeFailure } from "~/app/_components/dialogFailure";
+import { releaseDialogOnUnmount, routeFailure } from "~/app/_components/dialogFailure";
 import LocalDate from "~/app/_components/LocalDate";
 import { useLatestRef } from "~/app/_hooks/useLatestRef";
 import { notify } from "~/app/_lib/notify";
@@ -184,6 +184,13 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
   // Whether the confirmation is open when a failure ARRIVES (the request may
   // have been sent from an earlier render).
   const dialogOpen = useLatestRef(confirming !== null);
+  // Unmounted with the dialog open (a refetch dropped this booking): the page
+  // would keep its groups frozen for good, so release them here.
+  const onDialogOpenChangeRef = useLatestRef(onDialogOpenChange);
+  useEffect(
+    () => releaseDialogOnUnmount(() => dialogOpen.current, () => onDialogOpenChangeRef.current?.(false)),
+    [dialogOpen, onDialogOpenChangeRef],
+  );
   const { mutate: updateStatus, isPending, variables } = api.booking.updateStatus.useMutation({
     onError: (error) => {
       logger.error("Error updating booking status", { error });

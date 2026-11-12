@@ -37,3 +37,16 @@ export function routeFailure({ dialogOpen, stale }: { dialogOpen: boolean; stale
   if (dialogOpen) return { refresh: stale ? "on-close" : "no", show: "dialog" };
   return { refresh: stale ? "now" : "no", show: "toast" };
 }
+
+/**
+ * The cleanup for a component that told its parent a dialog opened (so the
+ * parent froze something, e.g. the bookings page's grouping). If it unmounts
+ * with that dialog still open (a refetch dropped it), nothing will ever say
+ * "closed": release the parent here. Reads both through functions so the
+ * values are the ones current at unmount.
+ */
+export function releaseDialogOnUnmount(isOpen: () => boolean, release: () => void): () => void {
+  return () => {
+    if (isOpen()) release();
+  };
+}

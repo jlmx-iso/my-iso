@@ -7,7 +7,7 @@ import { IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
-import { EVENT_DATE_FORMAT, defaultEventStart, eventDateError } from "~/_utils/eventDates";
+import { EVENT_DATE_FORMAT, defaultEventStart, eventDateError, latestEventStart } from "~/_utils/eventDates";
 import {
     IMAGE_ACCEPT,
     IMAGE_TOO_LARGE_MESSAGE,
@@ -204,6 +204,7 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange, on
                         required
                         withSeconds={false}
                         minDate={dayjs().format(EVENT_DATE_FORMAT)}
+                        maxDate={dayjs(latestEventStart()).format(EVENT_DATE_FORMAT)}
                         firstDayOfWeek={0}
                         {...form.getInputProps("date")}
                     />

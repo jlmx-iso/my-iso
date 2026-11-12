@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ErrorReason, logger } from "~/_utils";
+import { EVENT_MAX_AHEAD_MS } from "~/_utils/eventDates";
 import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
@@ -72,7 +73,7 @@ export const eventDateInput = z.iso
   .refine(
     (date) => {
       const now = Date.now();
-      return date.getTime() >= now - DAY_MS && date.getTime() <= now + 5 * 365 * DAY_MS;
+      return date.getTime() >= now - DAY_MS && date.getTime() <= now + EVENT_MAX_AHEAD_MS;
     },
     { message: "Event date must be in the future, within the next five years." },
   );

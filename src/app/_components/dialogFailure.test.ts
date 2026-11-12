@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { dialogLock, routeFailure } from "./dialogFailure";
+import { dialogLock, releaseDialogOnUnmount, routeFailure } from "./dialogFailure";
 
 describe("dialogLock", () => {
   it("makes a busy dialog impossible to dismiss, and an idle one dismissable", () => {
@@ -26,5 +26,22 @@ describe("routeFailure", () => {
     // Nothing is left to wait for: waiting for "on close" would leave the
     // card offering an action that fails again.
     expect(routeFailure({ dialogOpen: false, stale: true })).toEqual({ refresh: "now", show: "toast" });
+  });
+});
+
+describe("releaseDialogOnUnmount", () => {
+  it("releases the parent when the component goes away with its dialog open", () => {
+    const release = vi.fn();
+    let open = false;
+    const cleanup = releaseDialogOnUnmount(() => open, release);
+    open = true; // the dialog opened after the effect ran: the value at unmount counts
+    cleanup();
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("does nothing when the dialog was already closed (it said so itself)", () => {
+    const release = vi.fn();
+    releaseDialogOnUnmount(() => false, release)();
+    expect(release).not.toHaveBeenCalled();
   });
 });

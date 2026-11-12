@@ -7,7 +7,7 @@ vi.mock("~/_lib", () => ({ cloudinaryClient: null }));
 
 import { eventDateInput } from "~/server/api/routers/event";
 
-import { defaultEventStart, eventDateError } from "./eventDates";
+import { EVENT_DATE_FORMAT, defaultEventStart, eventDateError, latestEventStart } from "./eventDates";
 
 describe("a new event's default date", () => {
   // Late evening and just before midnight are where "tomorrow" is easiest to get wrong.
@@ -36,5 +36,19 @@ describe("a new event's default date", () => {
     expect(eventDateError("2026-11-12 11:59:00", now)).toBe("Choose a date and time in the future");
     expect(eventDateError(null, now)).toBe("Choose a date and time");
     expect(eventDateError("not a date", now)).toBe("Choose a date and time");
+  });
+
+  it("accepts up to five years ahead and refuses one minute more, as the server does", () => {
+    const now = new Date(2026, 10, 12, 12, 0);
+    vi.setSystemTime(now);
+    const latest = dayjs(latestEventStart(now));
+    const oneMore = latest.add(1, "minute");
+    // The form's check (and the picker's maxDate, which is this same moment).
+    expect(eventDateError(latest.format(EVENT_DATE_FORMAT), now)).toBeNull();
+    expect(eventDateError(oneMore.format(EVENT_DATE_FORMAT), now)).toBe("Choose a date within the next five years");
+    // The server's rule, at the same moment.
+    expect(eventDateInput.safeParse(latest.toISOString()).success).toBe(true);
+    expect(eventDateInput.safeParse(oneMore.toISOString()).success).toBe(false);
+    vi.useRealTimers();
   });
 });
