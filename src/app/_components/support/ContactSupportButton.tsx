@@ -115,6 +115,8 @@ export default function ContactSupportButton({ replyTo, prominent = false }: Con
                             value={subject}
                             onChange={(event) => setSubject(event.currentTarget.value)}
                             maxLength={SUPPORT_SUBJECT_MAX}
+                            // What is being sent cannot change while it is sent.
+                            disabled={isPending}
                             required
                             data-autofocus
                         />
@@ -125,6 +127,7 @@ export default function ContactSupportButton({ replyTo, prominent = false }: Con
                             value={message}
                             onChange={(event) => setMessage(event.currentTarget.value)}
                             maxLength={SUPPORT_MESSAGE_MAX}
+                            disabled={isPending}
                             autosize
                             minRows={4}
                             maxRows={10}

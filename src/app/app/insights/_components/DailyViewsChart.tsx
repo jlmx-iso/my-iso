@@ -45,6 +45,16 @@ export function nextColumn(key: string, index: number, length: number): number |
 export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
     const [active, setActive] = useState<number | null>(null);
     const [focusIndex, setFocusIndex] = useState(Math.max(0, daily.length - 1));
+    // A new range (7 → 30 days, or a later period) is a different set of
+    // columns: the tab stop goes back to the latest day and nothing stays
+    // highlighted. Adjusted while rendering, so no frame shows a stale index.
+    const range = `${daily[0]?.day ?? ""}/${daily.length}`;
+    const [shownRange, setShownRange] = useState(range);
+    if (shownRange !== range) {
+        setShownRange(range);
+        setFocusIndex(Math.max(0, daily.length - 1));
+        setActive(null);
+    }
     const columns = useRef<Array<HTMLDivElement | null>>([]);
     const peakCount = Math.max(0, ...daily.map((entry) => entry.count));
     const max = Math.max(1, peakCount);
@@ -54,6 +64,14 @@ export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
     const shownEntry = shown === null ? undefined : daily[shown];
     const first = daily[0];
     const last = daily.at(-1);
+
+    if (daily.length === 0) {
+        return (
+            <Text size="sm" c="dimmed" data-testid="daily-views-empty">
+                No days counted in this period yet.
+            </Text>
+        );
+    }
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, index: number) => {
         const next = nextColumn(event.key, index, daily.length);

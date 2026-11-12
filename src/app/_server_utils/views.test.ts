@@ -6,7 +6,9 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => request.headers }));
 vi.mock("~/_lib/site", () => ({ SITE_URL: "https://myiso.app" }));
 
-import { viewSource } from "./views";
+import { verifiedViewSource } from "~/server/_lib/viewCounter";
+
+import { viewBeaconProps, viewSource } from "./views";
 
 describe("viewSource", () => {
   it("classifies the page request's referrer against the configured origin only", async () => {
@@ -19,5 +21,14 @@ describe("viewSource", () => {
 
     request.headers = new Headers();
     expect(await viewSource()).toBe("direct");
+  });
+
+  it("gives the beacon the source with a token the counter accepts, for this target only", async () => {
+    request.headers = new Headers({ referer: "https://myiso.app/app/events/e1" });
+    const now = new Date("2030-06-15T12:00:00Z");
+    const props = await viewBeaconProps({ id: "u1", kind: "profile" }, now);
+    expect(props).toMatchObject({ id: "u1", kind: "profile", source: "event" });
+    expect(await verifiedViewSource({ id: "u1", kind: "profile" }, "event", props.token, now)).toBe("event");
+    expect(await verifiedViewSource({ id: "u2", kind: "profile" }, "event", props.token, now)).toBe("other");
   });
 });
