@@ -78,9 +78,12 @@ import { appRouter } from "./root";
 import {
   AccessGateError,
   createTRPCRouter,
+  enforceUserHasProSubscription,
+  enforceUserIsFounder,
   founderProcedure,
   proProcedure,
   protectedProcedure,
+  publicProcedure,
 } from "./trpc";
 
 type Access = "public" | "member" | "pro" | "admin";
@@ -447,6 +450,10 @@ describe("authorization matrix", () => {
         admin: founderProcedure.query(() => "ok"),
         member: protectedProcedure.query(() => "ok"),
         pro: proProcedure.query(() => "ok"),
+        // The Pro and founder middlewares also stand alone (without the
+        // sign-in gate before them) and still refuse an anonymous caller.
+        standaloneAdmin: publicProcedure.use(enforceUserIsFounder).query(() => "ok"),
+        standalonePro: publicProcedure.use(enforceUserHasProSubscription).query(() => "ok"),
         resolverRefuses: protectedProcedure.query(() => {
           // The same code and default message as the sign-in gate.
           throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -456,6 +463,13 @@ describe("authorization matrix", () => {
 
     it.each(["admin", "member", "pro"] as const)("the %s gate refuses and admits as EXPECTED says", async (access) => {
       await checkRow(callersFor(probeRouter), `probe.${access}`, { access });
+    });
+
+    it.each([
+      ["standaloneAdmin", "admin"],
+      ["standalonePro", "pro"],
+    ] as const)("%s, without the sign-in gate before it, still refuses as EXPECTED says", async (path, access) => {
+      await checkRow(callersFor(probeRouter), `probe.${path}`, { access });
     });
 
     it("tells a resolver's own UNAUTHORIZED from the sign-in gate's", async () => {

@@ -182,7 +182,7 @@ export const rateLimit = (policy: RateLimitPolicy) =>
 export const protectedProcedure = t.procedure.use(enforceUserIsAuthed);
 
 /** Reusable middleware that enforces the user has an active Pro subscription. */
-const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
+export const enforceUserHasProSubscription = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session?.user) {
     throw notSignedIn();
   }
@@ -219,7 +219,7 @@ export const proProcedure = t.procedure
   .use(enforceUserHasProSubscription);
 
 /** Reusable middleware that enforces the user has a founder or ambassador role. */
-const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
+export const enforceUserIsFounder = t.middleware(async ({ ctx, next }) => {
   // Defense-in-depth: session is guaranteed by enforceUserIsAuthed in the
   // founderProcedure chain, but we check here too so this middleware is safe
   // to use standalone.
