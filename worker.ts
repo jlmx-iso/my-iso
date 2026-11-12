@@ -9,7 +9,7 @@
 import openNextWorker from "open-next-worker";
 
 import type { CloudflareEnv } from "./cloudflare-env";
-import { handleRealtimeRequest, REALTIME_PATH } from "./src/do/realtimeGateway";
+import { handleRealtimeRequest, REALTIME_PATH, type RealtimeIdentity } from "./src/do/realtimeGateway";
 
 // Re-export the ChatRoom Durable Object so wrangler can bind it
 export { ChatRoom } from "./src/do/ChatRoom";
@@ -18,15 +18,15 @@ export { ChatRoom } from "./src/do/ChatRoom";
 export { DOQueueHandler, DOShardedTagCache } from "open-next-worker";
 
 /**
- * Resolves the signed-in user's id by asking Auth.js, which runs inside the
- * OpenNext worker, to read the session cookie. Only the id leaves this
- * function.
+ * Resolves the signed-in user by asking Auth.js, which runs inside the
+ * OpenNext worker, to read the session cookie. Only the user id and the
+ * session's expiry leave this function.
  */
-async function getSessionUserId(
+async function getRealtimeIdentity(
   request: Request,
   env: CloudflareEnv,
   ctx: ExecutionContext,
-): Promise<string | null> {
+): Promise<RealtimeIdentity | null> {
   const cookie = request.headers.get("Cookie");
   if (!cookie) return null;
 
@@ -40,9 +40,14 @@ async function getSessionUserId(
     );
     if (!res.ok) return null;
 
-    const session = await res.json<{ user?: { id?: unknown } } | null>();
+    const session = await res.json<{ expires?: unknown; user?: { id?: unknown } } | null>();
     const id = session?.user?.id;
-    return typeof id === "string" && id.length > 0 ? id : null;
+    const expiresAt =
+      typeof session?.expires === "string" ? Date.parse(session.expires) : Number.NaN;
+    if (typeof id !== "string" || id.length === 0 || !Number.isFinite(expiresAt)) {
+      return null;
+    }
+    return { expiresAt, userId: id };
   } catch (error) {
     console.error("Realtime session lookup failed", error);
     return null;
@@ -57,7 +62,7 @@ const worker = {
   ): Promise<Response> {
     if (new URL(request.url).pathname === REALTIME_PATH) {
       return handleRealtimeRequest(request, env, (req) =>
-        getSessionUserId(req, env, ctx),
+        getRealtimeIdentity(req, env, ctx),
       );
     }
 

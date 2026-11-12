@@ -1,0 +1,9 @@
+# Headers for files served straight from Cloudflare's static asset store
+# (/_next/static/*, /img/*, /favicon.ico, ...). Those responses never pass
+# through the Worker, so the headers set in next.config.js (see
+# src/securityHeaders.js) do not reach them. Keep the two in step.
+/*
+  X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY

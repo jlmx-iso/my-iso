@@ -2,10 +2,18 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { logger } from "~/_utils";
+import { isUniqueViolation } from "~/server/_db/errors";
+import { findOrCreateThread } from "~/server/_db/messaging";
+import { MAX_LIST_OFFSET } from "~/server/_db/pagination";
 import { generateIcebreakers, generateMatchSummary } from "~/server/_lib/ai";
+import { runAfterResponse } from "~/server/_lib/background";
+import { RateLimits } from "~/server/_utils/rateLimit";
 import { db as prismaDb } from "~/server/db";
 
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, rateLimit } from "../trpc";
+
+/** Most recent swipes excluded from a card deck. */
+const MAX_SWIPES_CONSIDERED = 5000;
 
 export const discoverRouter = createTRPCRouter({
   getCardDeck: protectedProcedure
@@ -34,6 +42,8 @@ export const discoverRouter = createTRPCRouter({
         const swipedIds = await ctx.db.swipe.findMany({
           where: { swiperId: userId },
           select: { targetId: true },
+          orderBy: { createdAt: "desc" },
+          take: MAX_SWIPES_CONSIDERED,
         });
         const excludeIds = new Set([userId, ...swipedIds.map((s) => s.targetId)]);
 
@@ -70,10 +80,12 @@ export const discoverRouter = createTRPCRouter({
                 },
                 reviews: {
                   select: { rating: true },
+                  take: 200,
                 },
                 events: {
                   where: { isDeleted: false },
                   select: { id: true },
+                  take: 200,
                 },
               },
             },
@@ -168,110 +180,127 @@ export const discoverRouter = createTRPCRouter({
       }
     }),
 
+  /**
+   * Records a like or a pass, and creates the match when the like is mutual.
+   *
+   * Written without a transaction (Cloudflare D1 has none). Correctness under
+   * concurrency rests on unique constraints instead:
+   *
+   * - Swipe(swiperId, targetId): repeating a swipe updates it.
+   * - Match(user1Id, user2Id), ids sorted: when both users like each other at
+   *   the same moment, both requests see the reciprocal like and both try to
+   *   insert the match; exactly one insert succeeds and the other reads the
+   *   winner's row. Each request writes its own like before it looks for the
+   *   other's, so at least one of the two always sees both.
+   * - MessageThread.participantKey: the pair gets one thread.
+   *
+   * Only the request that inserted the match sends the notifications, so they
+   * are sent once. They are best effort: if that request dies after the
+   * insert, the match still exists and both users see it in their list.
+   */
   swipe: protectedProcedure
+    .use(rateLimit(RateLimits.SWIPE))
     .input(
       z.object({
-        targetId: z.string().min(1),
+        targetId: z.string().min(1).max(64),
         direction: z.enum(["like", "pass"]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const { direction, targetId } = input;
 
-      if (input.targetId === userId) {
+      if (targetId === userId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot swipe on yourself" });
       }
 
       try {
-        // Upsert the swipe (allows changing a pass to a like)
-        await ctx.db.swipe.upsert({
-          where: {
-            swiperId_targetId: { swiperId: userId, targetId: input.targetId },
-          },
-          create: {
-            swiperId: userId,
-            targetId: input.targetId,
-            direction: input.direction,
-          },
-          update: {
-            direction: input.direction,
-          },
+        // Only people who appear in Discover can be swiped on. The same
+        // answer for "no such user" and "not discoverable" keeps this from
+        // being a way to probe user ids.
+        const target = await ctx.db.user.findFirst({
+          select: { id: true },
+          where: { id: targetId, isDiscoverable: true, photographer: { isNot: null } },
         });
-
-        // Check for mutual like
-        if (input.direction === "like") {
-          const reciprocal = await ctx.db.swipe.findFirst({
-            where: {
-              swiperId: input.targetId,
-              targetId: userId,
-              direction: "like",
-            },
-          });
-
-          if (reciprocal) {
-            // Ensure consistent ordering for the unique constraint
-            const [user1Id, user2Id] = [userId, input.targetId].sort();
-
-            // Check if match already exists
-            const existingMatch = await ctx.db.match.findUnique({
-              where: { user1Id_user2Id: { user1Id: user1Id!, user2Id: user2Id! } },
-            });
-
-            if (!existingMatch) {
-              // Create match with message thread in a transaction
-              const match = await ctx.db.$transaction(async (tx) => {
-                const thread = await tx.messageThread.create({
-                  data: {
-                    participants: {
-                      connect: [{ id: userId }, { id: input.targetId }],
-                    },
-                  },
-                });
-
-                const newMatch = await tx.match.create({
-                  data: {
-                    user1Id: user1Id!,
-                    user2Id: user2Id!,
-                    messageThreadId: thread.id,
-                    expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000), // 72h
-                  },
-                });
-
-                // Create notifications for both users
-                await tx.notification.create({
-                  data: {
-                    recipientId: input.targetId,
-                    type: "new_match",
-                    title: "New Match!",
-                    body: "You have a new match! Start a conversation before it expires.",
-                    linkUrl: `/app/discover/matches`,
-                  },
-                });
-
-                await tx.notification.create({
-                  data: {
-                    recipientId: userId,
-                    type: "new_match",
-                    title: "New Match!",
-                    body: "You have a new match! Start a conversation before it expires.",
-                    linkUrl: `/app/discover/matches`,
-                  },
-                });
-
-                return { ...newMatch, threadId: thread.id };
-              });
-
-              // Generate AI summary async (fire and forget)
-              void generateMatchSummaryForMatch(match.id, userId, input.targetId);
-
-              return { matched: true, matchId: match.id, threadId: match.threadId };
-            }
-          }
+        if (!target) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "This profile is not available" });
         }
 
-        return { matched: false, matchId: null, threadId: null };
+        try {
+          await ctx.db.swipe.create({
+            data: { direction, swiperId: userId, targetId },
+          });
+        } catch (error) {
+          if (!isUniqueViolation(error)) throw error;
+          // Already swiped (or a double submit): changing a pass to a like is allowed.
+          await ctx.db.swipe.update({
+            data: { direction },
+            where: { swiperId_targetId: { swiperId: userId, targetId } },
+          });
+        }
+
+        if (direction !== "like") {
+          return { matched: false, matchId: null, threadId: null };
+        }
+
+        const reciprocal = await ctx.db.swipe.findFirst({
+          select: { id: true },
+          where: { direction: "like", swiperId: targetId, targetId: userId },
+        });
+        if (!reciprocal) {
+          return { matched: false, matchId: null, threadId: null };
+        }
+
+        // Sorted ids give the pair one canonical (user1Id, user2Id) row.
+        const [user1Id, user2Id] = userId < targetId ? [userId, targetId] : [targetId, userId];
+        const thread = await findOrCreateThread(ctx.db, [userId, targetId]);
+
+        let match;
+        try {
+          match = await ctx.db.match.create({
+            data: {
+              expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000), // 72h
+              messageThreadId: thread.id,
+              user1Id,
+              user2Id,
+            },
+            select: { id: true, messageThreadId: true },
+          });
+        } catch (error) {
+          if (!isUniqueViolation(error)) throw error;
+          // The pair is already matched: by an earlier swipe, or by the other
+          // user's request racing this one.
+          const existing = await ctx.db.match.findUnique({
+            select: { id: true, messageThreadId: true },
+            where: { user1Id_user2Id: { user1Id, user2Id } },
+          });
+          return existing
+            ? { matched: true, matchId: existing.id, threadId: existing.messageThreadId }
+            : { matched: false, matchId: null, threadId: null };
+        }
+
+        try {
+          await ctx.db.notification.createMany({
+            data: [targetId, userId].map((recipientId) => ({
+              body: "You have a new match! Start a conversation before it expires.",
+              linkUrl: `/app/discover/matches`,
+              recipientId,
+              title: "New Match!",
+              type: "new_match",
+            })),
+          });
+        } catch (error) {
+          logger.error("Failed to create match notifications", { error, matchId: match.id });
+        }
+
+        runAfterResponse("match-summary", () =>
+          generateMatchSummaryForMatch(match.id, userId, targetId),
+        );
+
+        return { matched: true, matchId: match.id, threadId: match.messageThreadId };
       } catch (error) {
-        logger.error("Failed to record swipe", { error, userId, targetId: input.targetId });
+        if (error instanceof TRPCError) throw error;
+        logger.error("Failed to record swipe", { error, userId, targetId });
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to record swipe. Please try again.",
@@ -283,8 +312,8 @@ export const discoverRouter = createTRPCRouter({
   getMatches: protectedProcedure
     .input(
       z.object({
-        limit: z.number().min(1).max(50).default(20),
-        offset: z.number().min(0).default(0),
+        limit: z.number().int().min(1).max(50).default(20),
+        offset: z.number().int().min(0).max(MAX_LIST_OFFSET).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -296,7 +325,7 @@ export const discoverRouter = createTRPCRouter({
             OR: [{ user1Id: userId }, { user2Id: userId }],
             status: { not: "expired" },
           },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: input.limit,
           skip: input.offset,
           select: {
@@ -366,6 +395,8 @@ export const discoverRouter = createTRPCRouter({
     }),
 
   getMatchById: protectedProcedure
+    // Each call asks the AI provider for icebreakers.
+    .use(rateLimit(RateLimits.SEARCH))
     .input(z.object({ matchId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
@@ -471,9 +502,9 @@ export const discoverRouter = createTRPCRouter({
     .input(
       z.object({
         isDiscoverable: z.boolean().optional(),
-        seekingTypes: z.array(z.string()).optional(),
-        budgetMin: z.number().int().min(0).optional().nullable(),
-        budgetMax: z.number().int().min(0).optional().nullable(),
+        seekingTypes: z.array(z.string().min(1).max(40)).max(20).optional(),
+        budgetMin: z.number().int().min(0).max(1_000_000).optional().nullable(),
+        budgetMax: z.number().int().min(0).max(1_000_000).optional().nullable(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

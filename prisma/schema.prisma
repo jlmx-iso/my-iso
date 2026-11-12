@@ -133,15 +133,22 @@ model Review {
   rating         Int
   title          String
   description    String?
+
+  // One review per reviewer per photographer.
+  @@unique([photographerId, userId])
 }
 
 model MessageThread {
-  id           String    @id @default(cuid())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  participants User[]
-  messages     Message[]
-  match        Match?
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  // Sorted participant ids joined with ":" (see threadParticipantKey). Unique,
+  // so that one participant set has exactly one thread. Null only on threads
+  // created before the column existed; they are keyed on first use.
+  participantKey String?   @unique
+  participants   User[]
+  messages       Message[]
+  match          Match?
 }
 
 model Message {
@@ -243,6 +250,8 @@ model EventLike {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isDeleted Boolean  @default(false)
+
+  @@unique([eventId, userId])
 }
 
 model Comment {
@@ -269,6 +278,8 @@ model CommentLike {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isDeleted Boolean  @default(false)
+
+  @@unique([commentId, userId])
 }
 
 model Booking {
@@ -331,8 +342,9 @@ model InviteRedemption {
   redeemedBy   User       @relation(fields: [redeemedById], references: [id], onDelete: Cascade)
   redeemedAt   DateTime   @default(now())
 
-  @@unique([inviteCodeId, redeemedById])
-  @@index([redeemedById])
+  // A user is invited at most once.
+  @@unique([redeemedById])
+  @@index([inviteCodeId])
 }
 
 model Waitlist {
@@ -364,12 +376,33 @@ model PendingInviteValidation {
   @@index([expiresAt])
 }
 
+// Email sign-in codes (identifier = "otp:<email>"), see
+// src/server/_db/verificationToken.ts. A 6-digit code is only unique per
+// identifier, so `token` is deliberately not unique on its own. (The table
+// keeps its Auth.js name and shape; no Auth.js email provider uses it.)
 model VerificationToken {
   identifier String
-  token      String   @unique
+  token      String
   expires    DateTime
+  // Failed + successful verification attempts made against this code. The
+  // code stops being accepted once this passes OTP_MAX_ATTEMPTS.
+  attempts   Int      @default(0)
 
   @@unique([identifier, token])
+  @@index([expires])
+}
+
+// Fixed-window rate limit counters (see src/server/_utils/rateLimit.ts).
+// `key` is "<bucket>:<keyed hash of the client identifier>"; `windowStart`
+// and `expiresAt` are Unix seconds.
+model RateLimit {
+  key         String
+  windowStart Int
+  count       Int
+  expiresAt   Int
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
 }
 
 model Swipe {

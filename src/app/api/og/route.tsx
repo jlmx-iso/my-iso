@@ -2,8 +2,9 @@ import { ImageResponse } from "next/og";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const title = searchParams.get("title") || "ISO";
-  const subtitle = searchParams.get("subtitle") || "The Photographer Network";
+  // Length-capped: these are rendered into an image from a public URL.
+  const title = (searchParams.get("title") || "ISO").slice(0, 80);
+  const subtitle = (searchParams.get("subtitle") || "The Photographer Network").slice(0, 120);
 
   return new ImageResponse(
     (

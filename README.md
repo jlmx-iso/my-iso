@@ -67,7 +67,11 @@ Additional integrations:
 - `yarn start` - Start production server
 - `yarn lint` - Run ESLint
 - `yarn db:studio` - Open Prisma Studio
-- `yarn db:push` - Push schema changes to database
+- `yarn db:push` - Push schema changes to the local SQLite file used by `yarn dev`
+- `yarn db:check` - Check that `migrations/` matches `prisma/schema.prisma`
+
+Staging and production run on Cloudflare D1 and are changed only through the
+SQL files in `migrations/`. See [docs/DATABASE.md](./docs/DATABASE.md).
 
 ## Project Structure
 

@@ -4,12 +4,14 @@ import { z } from "zod";
 import { instagramHandleOptional, logger } from "~/_utils";
 import { sendTemplateEmail } from "~/server/_lib/email";
 import { captureEvent } from "~/server/_lib/posthog";
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
+import { hashEmail } from "~/server/_utils/hash";
+import { RateLimits } from "~/server/_utils/rateLimit";
 import { WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import {
   createTRPCRouter,
   founderProcedure,
   publicProcedure,
+  rateLimit,
 } from "~/server/api/trpc";
 
 const urlPattern = /^https?:\/\/.+/;
@@ -19,10 +21,11 @@ export const waitlistRouter = createTRPCRouter({
    * Submit a waitlist application (public).
    */
   submit: publicProcedure
+    .use(rateLimit(RateLimits.WAITLIST_SUBMIT))
     .input(
       z.object({
         name: z.string().min(1).max(200),
-        email: z.string().email(),
+        email: z.string().trim().email().max(254),
         instagram: instagramHandleOptional,
         website: z.string().max(500).refine(
           (v) => !v || urlPattern.test(v),
@@ -33,16 +36,6 @@ export const waitlistRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Rate limit waitlist submissions (M4)
-      const ip = ctx.headers.get("x-forwarded-for") ?? "unknown";
-      const rl = await checkRateLimit(`waitlist-submit:${ip}`, RateLimits.STRICT);
-      if (!rl.allowed) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `Too many attempts. Try again in ${rl.retryAfter}s.`,
-        });
-      }
-
       const email = input.email.toLowerCase();
 
       const existing = await ctx.db.waitlist.findUnique({
@@ -75,7 +68,8 @@ export const waitlistRouter = createTRPCRouter({
         },
       });
 
-      captureEvent(email, "waitlist_submitted", { role: input.userType ?? "unknown" });
+      // Analytics get a keyed hash of the address, never the address itself.
+      captureEvent(await hashEmail(email), "waitlist_submitted", { role: input.userType ?? "unknown" });
 
       // Send confirmation email — awaited for logging, but failure does not throw
       const emailResult = await sendTemplateEmail({
@@ -87,7 +81,6 @@ export const waitlistRouter = createTRPCRouter({
 
       if (!emailResult.isOk) {
         logger.warn("Failed to send waitlist confirmation email", {
-          email,
           error: emailResult.error?.message,
         });
       }
@@ -182,7 +175,7 @@ export const waitlistRouter = createTRPCRouter({
         },
       });
 
-      captureEvent(entry.email, "waitlist_approved", {});
+      captureEvent(await hashEmail(entry.email), "waitlist_approved", {});
 
       // Send approval email (I1)
       // Include email so the join page can show "Sign in with the Google account matching {email}"
@@ -200,8 +193,8 @@ export const waitlistRouter = createTRPCRouter({
 
       if (!emailResult.isOk) {
         logger.warn("Failed to send waitlist approval email", {
-          email: entry.email,
           error: emailResult.error?.message,
+          waitlistId: entry.id,
         });
       }
 

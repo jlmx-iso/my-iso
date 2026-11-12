@@ -23,13 +23,15 @@ const mockDb = vi.hoisted(() => {
     subscription: {
       findUnique: vi.fn(),
     },
+    // The rate limiter's single statement: resolves to the request count.
+    $executeRaw: vi.fn(),
+    $queryRaw: vi.fn(),
   };
   return db;
 });
 
 const mockCaptureEvent = vi.hoisted(() => vi.fn());
 const mockSendTemplateEmail = vi.hoisted(() => vi.fn());
-const mockCheckRateLimit = vi.hoisted(() => vi.fn());
 
 vi.mock("~/server/db", () => ({ db: mockDb }));
 
@@ -47,15 +49,9 @@ vi.mock("~/server/_lib/email", () => ({
   sendTemplateEmail: mockSendTemplateEmail,
 }));
 
-vi.mock("~/server/_utils/rateLimit", () => ({
-  checkRateLimit: mockCheckRateLimit,
-  RateLimits: {
-    STRICT: { limit: 5, window: 300 },
-  },
-}));
-
 vi.mock("~/env", () => ({
   env: {
+    AUTH_SECRET: "test-secret-that-is-at-least-32-chars-long!!!",
     NEXT_PUBLIC_BASE_URL: "http://localhost:3000",
     NODE_ENV: "test",
     STRIPE_SECRET_KEY: "stripe_test_key_placeholder",
@@ -111,7 +107,7 @@ const baseSubmitInput = {
 beforeEach(() => {
   vi.clearAllMocks();
   // Allow rate limit by default
-  mockCheckRateLimit.mockResolvedValue({ allowed: true, remaining: 4, retryAfter: 0 });
+  mockDb.$queryRaw.mockResolvedValue([{ count: 1 }]);
   // Email succeeds by default
   mockSendTemplateEmail.mockResolvedValue(makeOk({ success: true }));
   // Founder role check: return founder role for founder caller
@@ -135,6 +131,18 @@ describe("waitlistRouter.submit", () => {
     expect(result.position).toBe(6);
     expect(mockDb.waitlist.create).toHaveBeenCalledOnce();
     expect(mockCaptureEvent).toHaveBeenCalledOnce();
+  });
+
+  it("identifies the applicant to analytics by a hash, never by email address", async () => {
+    mockDb.waitlist.findUnique.mockResolvedValueOnce(null);
+    mockDb.waitlist.findFirst.mockResolvedValueOnce({ position: 5 });
+    mockDb.waitlist.create.mockResolvedValueOnce({ id: "wl-1", position: 6 });
+
+    await makePublicCaller().submit(baseSubmitInput);
+
+    const [distinctId] = mockCaptureEvent.mock.calls[0] as [string, ...unknown[]];
+    expect(distinctId).toMatch(/^[0-9a-f]{32}$/);
+    expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toContain(baseSubmitInput.email);
   });
 
   it("assigns position = maxPosition + 1", async () => {
@@ -180,11 +188,7 @@ describe("waitlistRouter.submit", () => {
   });
 
   it("throws TOO_MANY_REQUESTS when rate limited", async () => {
-    mockCheckRateLimit.mockResolvedValueOnce({
-      allowed: false,
-      remaining: 0,
-      retryAfter: 60,
-    });
+    mockDb.$queryRaw.mockResolvedValueOnce([{ count: 6 }]);
 
     const caller = makePublicCaller();
 

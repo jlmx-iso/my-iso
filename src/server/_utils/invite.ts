@@ -1,12 +1,17 @@
+/** No 0/O, 1/I/L: codes are read aloud and typed by hand. */
+export const INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // 30 chars
+export const INVITE_CODE_RANDOM_LENGTH = 8;
+
 /**
  * Generate an invite code in the format: ISO-{HANDLE}-{RANDOM}
  *
  * HANDLE = first 5 chars of the name, uppercased alphanumeric only (min 3 chars, padded with X).
- * RANDOM = 4 chars from an unambiguous charset via crypto.getRandomValues() (edge-compatible).
- * Uses rejection sampling to avoid modulo bias.
+ * RANDOM = 8 chars from an unambiguous 30-character alphabet via
+ * crypto.getRandomValues(): 30^8 (about 6.6e11) possibilities per handle, so
+ * that guessing a live code through the rate-limited validation endpoint is
+ * not practical. Uses rejection sampling to avoid modulo bias.
  */
 export function generateInviteCode(name: string): string {
-  const charset = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // 30 chars
   const handle = name
     .replace(/[^a-zA-Z0-9]/g, "")
     .toUpperCase()
@@ -16,13 +21,13 @@ export function generateInviteCode(name: string): string {
   let random = "";
   // Rejection sampling: largest multiple of 30 that fits in a byte is 240 (30 * 8)
   const maxValid = 240;
-  while (random.length < 4) {
-    const bytes = new Uint8Array(4 - random.length);
+  while (random.length < INVITE_CODE_RANDOM_LENGTH) {
+    const bytes = new Uint8Array(INVITE_CODE_RANDOM_LENGTH - random.length);
     crypto.getRandomValues(bytes);
     for (const byte of bytes) {
-      if (random.length >= 4) break;
+      if (random.length >= INVITE_CODE_RANDOM_LENGTH) break;
       if (byte < maxValid) {
-        random += charset[byte % charset.length];
+        random += INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length];
       }
     }
   }
@@ -30,21 +35,7 @@ export function generateInviteCode(name: string): string {
   return `ISO-${handle}-${random}`;
 }
 
-/**
- * Generate a unique invite code, retrying on collision.
- * Throws if no unique code can be generated after maxAttempts.
- */
-export async function generateUniqueInviteCode(
-  name: string,
-  checkExists: (code: string) => Promise<boolean>,
-  maxAttempts = 5,
-): Promise<string> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const code = generateInviteCode(name);
-    const exists = await checkExists(code);
-    if (!exists) return code;
-  }
-  throw new Error(
-    "Failed to generate a unique invite code after maximum attempts. Please try again.",
-  );
+/** Normalises user input before a code lookup. */
+export function normalizeInviteCode(code: string): string {
+  return code.trim().toUpperCase();
 }

@@ -1,8 +1,9 @@
-import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { phoneSchemaOptional } from "~/_utils";
+import { isUniqueViolation } from "~/server/_db/errors";
+import { handleInput } from "~/server/_utils/handle";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 
 export const userRouter = createTRPCRouter({
@@ -35,13 +36,13 @@ export const userRouter = createTRPCRouter({
    */
   updateProfile: protectedProcedure
     .input(z.object({
-      firstName: z.string().min(1).optional(),
-      lastName: z.string().min(1).optional(),
+      firstName: z.string().trim().min(1).max(100).optional(),
+      lastName: z.string().trim().min(1).max(100).optional(),
       phone: phoneSchemaOptional,
-      handle: z.string().min(1).optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
+      handle: handleInput.optional(),
+      city: z.string().trim().max(100).optional(),
+      state: z.string().trim().max(100).optional(),
+      country: z.string().trim().max(100).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       try {
@@ -60,7 +61,7 @@ export const userRouter = createTRPCRouter({
           },
         });
       } catch (error: unknown) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        if (isUniqueViolation(error)) {
           throw new TRPCError({
             code: 'CONFLICT',
             message: 'That handle is already taken. Please choose a different one.',
@@ -75,15 +76,23 @@ export const userRouter = createTRPCRouter({
    * SECURITY: Uses ctx.session.user.id to prevent authorization bypass
    */
   addFavorite: protectedProcedure
-    .input(z.object({ photographerId: z.string().min(1) }))
+    .input(z.object({ photographerId: z.string().min(1).max(64) }))
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.favorite.create({
-        data: {
-          targetId: input.photographerId,
-          user: {
-            connect: { id: ctx.session.user.id },
-          },
-        },
+      const userId = ctx.session.user.id;
+
+      const photographer = await ctx.db.photographer.findUnique({
+        select: { id: true },
+        where: { id: input.photographerId },
+      });
+      if (!photographer) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Photographer not found' });
+      }
+
+      // Idempotent: Favorite is unique per (user, target).
+      return ctx.db.favorite.upsert({
+        create: { targetId: photographer.id, userId },
+        update: {},
+        where: { userId_targetId: { targetId: photographer.id, userId } },
       });
     }),
 
@@ -92,8 +101,15 @@ export const userRouter = createTRPCRouter({
    * SECURITY: Uses ctx.session.user.id to prevent viewing other users' favorites
    */
   getFavorites: protectedProcedure
-    .query(async ({ ctx }) => {
+    .input(z.object({
+      cursor: z.string().min(1).max(64).optional(),
+      limit: z.number().int().min(1).max(200).default(200),
+    }).optional())
+    .query(async ({ ctx, input }) => {
       return ctx.db.favorite.findMany({
+        ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: input?.limit ?? 200,
         where: {
           userId: ctx.session.user.id,
         },
@@ -101,11 +117,26 @@ export const userRouter = createTRPCRouter({
     }),
 
   /**
+   * Whether the caller has favourited `targetId` (a photographer id). One
+   * indexed lookup, so the answer does not depend on how many favourites the
+   * caller has, unlike searching the capped getFavorites list.
+   */
+  isFavorite: protectedProcedure
+    .input(z.object({ targetId: z.string().min(1).max(64) }))
+    .query(async ({ ctx, input }) => {
+      const favorite = await ctx.db.favorite.findUnique({
+        select: { id: true },
+        where: { userId_targetId: { targetId: input.targetId, userId: ctx.session.user.id } },
+      });
+      return { isFavorite: favorite !== null };
+    }),
+
+  /**
    * Remove a photographer from the authenticated user's favorites
    * SECURITY: Uses ctx.session.user.id to prevent modifying other users' favorites
    */
   removeFavorite: protectedProcedure
-    .input(z.object({ photographerId: z.string().min(1) }))
+    .input(z.object({ photographerId: z.string().min(1).max(64) }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.favorite.deleteMany({
         where: {

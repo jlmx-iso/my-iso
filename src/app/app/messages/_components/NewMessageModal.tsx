@@ -5,6 +5,7 @@ import { IconMessagePlus } from "@tabler/icons-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { Avatar } from "~/app/_components/Avatar";
 import { api } from "~/trpc/react";
 
@@ -43,13 +44,17 @@ export default function NewMessageModal() {
     const isDeepLinkActive = !!deepLinkUserId && deepLinkUserId !== dismissedDeepLink;
     const deepLink = api.message.getRecipientById.useQuery(
         { userId: deepLinkUserId ?? "" },
-        { enabled: isDeepLinkActive },
+        // The server answers 403 for someone who cannot be messaged: asking
+        // again would not change that.
+        { enabled: isDeepLinkActive, retry: false },
     );
     const deepLinkRecipient = isDeepLinkActive ? deepLink.data ?? undefined : undefined;
 
     const recipient = pickedRecipient ?? deepLinkRecipient;
     const isResolvingDeepLink = isDeepLinkActive && !pickedRecipient && deepLink.isPending;
     const isDeepLinkUnknown = isDeepLinkActive && !pickedRecipient && deepLink.isFetched && !deepLink.data;
+    const isDeepLinkNotMessageable =
+        isDeepLinkUnknown && getErrorReason(deepLink.error) === ErrorReason.RECIPIENT_NOT_MESSAGEABLE;
 
     // A deep link to someone the member already talks to opens that
     // conversation. Navigating there drops `?new=`, which closes the composer.
@@ -151,7 +156,9 @@ export default function NewMessageModal() {
                     <Stack gap="sm">
                         {isDeepLinkUnknown && (
                             <Text size="sm" c="red" role="alert">
-                                We couldn&apos;t find that person. Search for a recipient instead.
+                                {isDeepLinkNotMessageable
+                                    ? "You can't message this person yet. To connect, match with them on Discover or apply to one of their events."
+                                    : "We couldn't find that person. Search for a recipient instead."}
                             </Text>
                         )}
                         <Autocomplete
@@ -172,7 +179,8 @@ export default function NewMessageModal() {
                         />
                         {recipientQuery.length > 1 && !isSearching && potentialRecipients.length === 0 && (
                             <Text size="sm" c="dimmed" role="status">
-                                No one matches &ldquo;{recipientQuery}&rdquo;.
+                                No one you can message matches &ldquo;{recipientQuery}&rdquo;. You can message
+                                photographers who are discoverable, and people you have matched or booked with.
                             </Text>
                         )}
                     </Stack>

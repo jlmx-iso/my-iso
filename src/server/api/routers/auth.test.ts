@@ -1,395 +1,347 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+
+import { issueOtp, OTP_MAX_ATTEMPTS } from "~/server/_db/verificationToken";
+import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
+import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 // ---------------------------------------------------------------------------
-// Hoisted mocks
+// Module mocks: only what needs a network or Auth.js. The database is real.
 // ---------------------------------------------------------------------------
 
-const mockDb = vi.hoisted(() => {
-  const db = {
-    pendingInviteValidation: {
-      findFirst: vi.fn(),
-    },
-    user: {
-      findUnique: vi.fn(),
-    },
-    verificationToken: {
-      create: vi.fn(),
-      delete: vi.fn(),
-      deleteMany: vi.fn(),
-      findUnique: vi.fn(),
-    },
-  };
-  return db;
-});
-
-const mockCreateUser = vi.hoisted(() => vi.fn());
-const mockCreateVerificationToken = vi.hoisted(() => vi.fn());
-const mockVerifyUserEmail = vi.hoisted(() => vi.fn());
 const mockSendEmail = vi.hoisted(() => vi.fn());
-const mockCaptureEvent = vi.hoisted(() => vi.fn());
-const mockCheckRateLimit = vi.hoisted(() => vi.fn());
 
-vi.mock("~/server/db", () => ({ db: mockDb }));
-
-// Prevent module-level supabase/cloudinary initialization inside trpc.ts context
-vi.mock("~/_lib", () => ({ cloudinaryClient: null }));
+vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
-
-vi.mock("~/server/_db", () => ({
-  createUser: mockCreateUser,
-  createVerificationToken: mockCreateVerificationToken,
-  verifyUserEmail: mockVerifyUserEmail,
-}));
-
-vi.mock("~/server/_lib/posthog", () => ({
-  captureEvent: mockCaptureEvent,
-  getPostHogClient: vi.fn(() => null),
-}));
-
-vi.mock("~/server/_lib/email", () => ({
-  sendEmail: mockSendEmail,
-  sendTemplateEmail: vi.fn(),
-}));
-
-// auth.ts dynamically imports "../../_lib/emails" for OTP rendering
+vi.mock("~/server/_lib/email", () => ({ sendEmail: mockSendEmail }));
 vi.mock("~/server/_lib/emails", () => ({
-  renderMobileOtpEmail: vi.fn(async () => "<html>OTP code</html>"),
+  renderMobileOtpEmail: vi.fn(async ({ code }: { code: string }) => `<p>${code}</p>`),
 }));
-
-vi.mock("~/server/_utils/rateLimit", () => ({
-  checkRateLimit: mockCheckRateLimit,
-  RateLimits: {
-    AUTH: { limit: 10, window: 900 },
-    STRICT: { limit: 5, window: 300 },
-  },
-}));
-
-vi.mock("~/env", () => ({
-  env: {
-    AUTH_SECRET: "test-secret-that-is-at-least-32-chars-long!!!",
-    GOOGLE_CLIENT_ID: "test-google-client-id",
-    NEXT_PUBLIC_BASE_URL: "http://localhost:3000",
-    NODE_ENV: "test",
-    STRIPE_SECRET_KEY: "stripe_test_key_placeholder",
-  },
-}));
-
-// ---------------------------------------------------------------------------
-// Imports
-// ---------------------------------------------------------------------------
-
-import { UserVerificationErrors } from "~/_types/errors";
 
 import { authRouter } from "./auth";
 
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
+const EMAIL = "ada@example.com";
 
-function makeOk<T>(value: T) {
-  return { isErr: false, isOk: true, value };
-}
+/** Lets the after-response email task run. */
+const flushBackgroundTasks = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-function makeErr(message: string) {
-  return { error: new Error(message), isErr: true, isOk: false };
-}
+// Limiter windows are slices of wall-clock time; see freezeRateLimitClock.
+const limiterClock = freezeRateLimitClock();
 
-const defaultHeaders = new Headers({
-  "x-forwarded-for": "127.0.0.1",
-  "x-real-ip": "127.0.0.1",
-});
+describe("authRouter against SQLite", () => {
+  let testDb: TestDb;
+  let errorLog: MockInstance<typeof console.error>;
 
-function makeCaller(session: unknown = null) {
-  return authRouter.createCaller({
-    cloudinaryClient: null,
-    db: mockDb,
-    headers: defaultHeaders,
-    session,
-  } as unknown as Parameters<typeof authRouter.createCaller>[0]);
-}
+  const caller = (ip = "203.0.113.7") =>
+    createDbCaller(authRouter, testDb.db, {
+      headers: new Headers({ "cf-connecting-ip": ip }),
+    });
 
-const validRegisterInput = {
-  companyName: "Acme Photo",
-  email: "jane@example.com",
-  firstName: "Jane",
-  lastName: "Doe",
-  location: "Los Angeles",
-  phone: "5555551234",
-  provider: "email" as const,
-};
+  const tokens = () => testDb.raw.verificationToken.findMany();
 
-const fakeUser = {
-  createdAt: new Date(),
-  email: "jane@example.com",
-  firstName: "Jane",
-  id: "user-1",
-  lastName: "Doe",
-  role: "standard",
-};
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  // Rate limit: allow by default
-  mockCheckRateLimit.mockResolvedValue({ allowed: true, remaining: 9, retryAfter: 0 });
-});
-
-// ---------------------------------------------------------------------------
-// register
-// ---------------------------------------------------------------------------
-
-describe("authRouter.register", () => {
-  it("creates user and sends verification email on valid input", async () => {
-    mockCreateUser.mockResolvedValueOnce(makeOk(fakeUser));
-    mockCreateVerificationToken.mockResolvedValueOnce(makeOk("123456"));
-    mockSendEmail.mockResolvedValueOnce(makeOk({ success: true }));
-
-    const caller = makeCaller();
-    const result = await caller.register(validRegisterInput);
-
-    expect(result).toBe("User registered successfully!");
-    expect(mockCreateUser).toHaveBeenCalledOnce();
-    expect(mockSendEmail).toHaveBeenCalledOnce();
+  beforeAll(async () => {
+    testDb = await createTestDb();
   });
 
-  it("throws INTERNAL_SERVER_ERROR when createUser returns Err", async () => {
-    mockCreateUser.mockResolvedValueOnce(makeErr("User already exists"));
+  afterAll(async () => {
+    await testDb.close();
+  });
 
-    const caller = makeCaller();
+  beforeEach(async () => {
+    const { raw } = testDb;
+    await raw.rateLimit.deleteMany();
+    await raw.verificationToken.deleteMany();
+    await raw.pendingInviteValidation.deleteMany();
+    await raw.user.deleteMany();
+    mockSendEmail.mockReset();
+    mockSendEmail.mockResolvedValue({ isErr: false, isOk: true, value: { success: true } });
+    errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
 
-    await expect(caller.register(validRegisterInput)).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
+  it("no longer exposes account registration or link verification", () => {
+    expect(Object.keys(authRouter._def.procedures).sort()).toEqual([
+      "exchangeMobileToken",
+      "requestMobileOtp",
+      "verifyMobileOtp",
+    ]);
+  });
+
+  describe("requestMobileOtp", () => {
+    it("stores a code for an existing user and emails it", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+
+      const result = await caller().requestMobileOtp({ email: "Ada@Example.com" });
+      await flushBackgroundTasks();
+
+      expect(result).toEqual({ devCode: undefined, sent: true });
+      const [token] = await tokens();
+      expect(token).toMatchObject({ attempts: 0, identifier: `otp:${EMAIL}` });
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ email: EMAIL, html: `<p>${token?.token}</p>` }),
+      );
+    });
+
+    it("stores a code for an invitee who has no account yet", async () => {
+      await testDb.db.pendingInviteValidation.create({
+        data: { code: "ISO-X-AAAAAAAA", email: EMAIL, expiresAt: new Date(Date.now() + 60_000) },
+      });
+
+      await caller().requestMobileOtp({ email: EMAIL });
+
+      await expect(tokens()).resolves.toHaveLength(1);
+    });
+
+    it("answers identically, and sends nothing, for an unknown address", async () => {
+      const known = await createTestUser(testDb.db, { email: EMAIL });
+
+      const forKnown = await caller().requestMobileOtp({ email: known.email });
+      const forUnknown = await caller().requestMobileOtp({ email: "nobody@example.com" });
+      await flushBackgroundTasks();
+
+      expect(forUnknown).toEqual(forKnown);
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect((await tokens()).map((t) => t.identifier)).toEqual([`otp:${EMAIL}`]);
+    });
+
+    it("answers identically when the email cannot be sent", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      mockSendEmail.mockResolvedValue({
+        error: new Error("provider down"),
+        isErr: true,
+        isOk: false,
+      });
+
+      const result = await caller().requestMobileOtp({ email: EMAIL });
+      await flushBackgroundTasks();
+
+      // Same reply as for an address that does not exist: the failure is
+      // logged, not reported to the (unauthenticated) caller.
+      expect(result).toEqual({ devCode: undefined, sent: true });
+      expect(errorLog).toHaveBeenCalled();
+    });
+
+    it("never logs the email address or the code", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const infoLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      mockSendEmail.mockResolvedValue({ error: new Error("down"), isErr: true, isOk: false });
+
+      await caller().requestMobileOtp({ email: EMAIL });
+      await flushBackgroundTasks();
+
+      const [token] = await tokens();
+      const logged = JSON.stringify([...infoLog.mock.calls, ...errorLog.mock.calls]);
+      expect(logged).not.toContain(EMAIL);
+      expect(logged).not.toContain("a***@");
+      expect(logged).not.toContain(token?.token);
+    });
+
+    it("limits requests per email address, whatever the IP", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const limit = RateLimits.OTP_REQUEST_EMAIL.limit;
+
+      for (let i = 0; i < limit; i++) {
+        await caller(`198.51.100.${i}`).requestMobileOtp({ email: EMAIL });
+      }
+
+      await expect(
+        caller("198.51.100.200").requestMobileOtp({ email: EMAIL }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    });
+
+    it("limits requests per IP address, whatever the email", async () => {
+      const limit = RateLimits.OTP_REQUEST_IP.limit;
+
+      for (let i = 0; i < limit; i++) {
+        await caller().requestMobileOtp({ email: `user${i}@example.com` });
+      }
+
+      await expect(
+        caller().requestMobileOtp({ email: "one-more@example.com" }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    });
+
+    it("does not let X-Forwarded-For choose the rate-limit bucket", async () => {
+      const limit = RateLimits.OTP_REQUEST_IP.limit;
+      const spoofing = (i: number) =>
+        createDbCaller(authRouter, testDb.db, {
+          headers: new Headers({
+            "cf-connecting-ip": "203.0.113.50",
+            "x-forwarded-for": `10.0.0.${i}`,
+          }),
+        });
+
+      for (let i = 0; i < limit; i++) {
+        await spoofing(i).requestMobileOtp({ email: `user${i}@example.com` });
+      }
+
+      await expect(
+        spoofing(250).requestMobileOtp({ email: "one-more@example.com" }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    });
+
+    it("caps codes requested for one address per day", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const perWindow = RateLimits.OTP_REQUEST_EMAIL.limit;
+      const perDay = RateLimits.OTP_REQUEST_EMAIL_DAILY.limit;
+
+      for (let sent = 0; sent < perDay; sent++) {
+        if (sent > 0 && sent % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+        }
+        await caller(`198.51.100.${sent}`).requestMobileOtp({ email: EMAIL });
+      }
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+
+      await expect(
+        caller("192.0.2.1").requestMobileOtp({ email: EMAIL }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      // The same answer for an address with no account.
+      for (let sent = 0; sent < perDay; sent++) {
+        if (sent > 0 && sent % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+        }
+        await caller(`198.51.100.${sent}`).requestMobileOtp({ email: "nobody@example.com" });
+      }
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL.windowSeconds);
+      await expect(
+        caller("192.0.2.1").requestMobileOtp({ email: "nobody@example.com" }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+
+      limiterClock.advance(RateLimits.OTP_REQUEST_EMAIL_DAILY.windowSeconds);
+      await expect(caller("192.0.2.1").requestMobileOtp({ email: EMAIL })).resolves.toMatchObject({
+        sent: true,
+      });
+    });
+
+    it("does not count a request against the address once the client is over its own limit", async () => {
+      const blockedIp = "198.51.100.200";
+      for (let i = 0; i < RateLimits.OTP_REQUEST_IP.limit; i++) {
+        await caller(blockedIp).requestMobileOtp({ email: `user${i}@example.com` });
+      }
+      const bucketsBefore = await testDb.raw.rateLimit.count();
+
+      for (let i = 0; i < RateLimits.OTP_REQUEST_EMAIL.limit + 1; i++) {
+        await expect(
+          caller(blockedIp).requestMobileOtp({ email: EMAIL }),
+        ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      }
+
+      await expect(testDb.raw.rateLimit.count()).resolves.toBe(bucketsBefore);
+      await expect(caller().requestMobileOtp({ email: EMAIL })).resolves.toMatchObject({ sent: true });
+    });
+
+    it("fails closed when the rate limiter is unavailable", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const withoutLimiter = Object.create(testDb.db, {
+        $queryRaw: {
+          value: () => {
+            throw new Error("database unavailable");
+          },
+        },
+      }) as TestDb["db"];
+
+      await expect(
+        createDbCaller(authRouter, withoutLimiter).requestMobileOtp({ email: EMAIL }),
+      ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+      await expect(tokens()).resolves.toHaveLength(0);
     });
   });
 
-  it("throws INTERNAL_SERVER_ERROR when createVerificationToken returns Err", async () => {
-    mockCreateUser.mockResolvedValueOnce(makeOk(fakeUser));
-    mockCreateVerificationToken.mockResolvedValueOnce(makeErr("Token error"));
+  describe("verifyMobileOtp", () => {
+    it("returns a mobile token for the right code and consumes the code", async () => {
+      const user = await createTestUser(testDb.db, { email: EMAIL });
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
 
-    const caller = makeCaller();
+      const result = await caller().verifyMobileOtp({ code: "123456", email: EMAIL });
 
-    await expect(caller.register(validRegisterInput)).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
-    });
-  });
-
-  it("throws BAD_REQUEST when sendEmail returns Err", async () => {
-    mockCreateUser.mockResolvedValueOnce(makeOk(fakeUser));
-    mockCreateVerificationToken.mockResolvedValueOnce(makeOk("123456"));
-    mockSendEmail.mockResolvedValueOnce(makeErr("Email failed"));
-
-    const caller = makeCaller();
-
-    await expect(caller.register(validRegisterInput)).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// verifyAccount
-// ---------------------------------------------------------------------------
-
-describe("authRouter.verifyAccount", () => {
-  it("returns success string on valid token", async () => {
-    mockVerifyUserEmail.mockResolvedValueOnce(makeOk("user-1"));
-
-    const caller = makeCaller();
-    const result = await caller.verifyAccount({ token: "123456" });
-
-    expect(result).toBe("Email verified successfully!");
-  });
-
-  it("throws NOT_FOUND for TOKEN_NOT_FOUND error", async () => {
-    mockVerifyUserEmail.mockResolvedValueOnce(
-      makeErr(UserVerificationErrors.TOKEN_NOT_FOUND),
-    );
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyAccount({ token: "bad" })).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
-  });
-
-  it("throws BAD_REQUEST for TOKEN_EXPIRED error", async () => {
-    mockVerifyUserEmail.mockResolvedValueOnce(
-      makeErr(UserVerificationErrors.TOKEN_EXPIRED),
-    );
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyAccount({ token: "expired" })).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-    });
-  });
-
-  it("throws BAD_REQUEST for USER_ALREADY_VERIFIED error", async () => {
-    mockVerifyUserEmail.mockResolvedValueOnce(
-      makeErr(UserVerificationErrors.USER_ALREADY_VERIFIED),
-    );
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyAccount({ token: "dup" })).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-    });
-  });
-
-  it("throws NOT_FOUND for USER_NOT_FOUND error", async () => {
-    mockVerifyUserEmail.mockResolvedValueOnce(
-      makeErr(UserVerificationErrors.USER_NOT_FOUND),
-    );
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyAccount({ token: "ghost" })).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// requestMobileOtp
-// ---------------------------------------------------------------------------
-
-describe("authRouter.requestMobileOtp", () => {
-  const email = "test@example.com";
-
-  // NODE_ENV='test' → isDev=false → a code that is issued is also emailed.
-  function expectCodeIssued() {
-    mockDb.verificationToken.deleteMany.mockResolvedValueOnce({});
-    mockDb.verificationToken.create.mockResolvedValueOnce({
-      token: "123456",
-      identifier: `otp:${email}`,
-      expires: new Date(),
-    });
-    mockSendEmail.mockResolvedValueOnce({ isOk: true, isErr: false, value: { success: true } });
-  }
-
-  it("sends a code to an existing user", async () => {
-    mockDb.user.findUnique.mockResolvedValueOnce({ id: "user-1" });
-    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce(null);
-    expectCodeIssued();
-
-    const result = await makeCaller().requestMobileOtp({ email });
-
-    expect(result).toEqual({ sent: true, devCode: undefined });
-    expect(mockDb.verificationToken.create).toHaveBeenCalledOnce();
-    expect(mockSendEmail).toHaveBeenCalledOnce();
-    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ email }));
-  });
-
-  it("sends a code to an invitee who has no account yet", async () => {
-    mockDb.user.findUnique.mockResolvedValueOnce(null);
-    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce({ id: "pending-1" });
-    expectCodeIssued();
-
-    const result = await makeCaller().requestMobileOtp({ email: "Test@Example.com" });
-
-    expect(result).toEqual({ sent: true, devCode: undefined });
-    // Looked up by the normalised email, ignoring expired invites.
-    expect(mockDb.pendingInviteValidation.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { email, expiresAt: { gt: expect.any(Date) as Date } },
-      }),
-    );
-    expect(mockDb.verificationToken.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ identifier: `otp:${email}` }) as object,
-    });
-    expect(mockSendEmail).toHaveBeenCalledOnce();
-  });
-
-  it("sends nothing, with an identical response, when there is neither a user nor a pending invite", async () => {
-    mockDb.user.findUnique.mockResolvedValueOnce(null);
-    mockDb.pendingInviteValidation.findFirst.mockResolvedValueOnce(null);
-
-    const result = await makeCaller().requestMobileOtp({ email: "ghost@example.com" });
-
-    expect(result).toEqual({ sent: true, devCode: undefined });
-    expect(mockDb.verificationToken.create).not.toHaveBeenCalled();
-    expect(mockSendEmail).not.toHaveBeenCalled();
-  });
-
-  it("throws TOO_MANY_REQUESTS when rate limited", async () => {
-    mockCheckRateLimit.mockResolvedValueOnce({
-      allowed: false,
-      remaining: 0,
-      retryAfter: 60,
+      expect(result.userId).toBe(user.id);
+      await expect(verifyMobileToken(result.token)).resolves.toMatchObject({ userId: user.id });
+      await expect(tokens()).resolves.toHaveLength(0);
     });
 
-    const caller = makeCaller();
+    it("gives the same error for a wrong code and for an unknown account", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+      // A code exists for this address (pending invite), but no account.
+      await issueOtp(testDb.db, "invitee@example.com", { code: "123456" });
 
-    await expect(
-      caller.requestMobileOtp({ email: "test@example.com" }),
-    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
-  });
-});
+      const wrongCode = await caller()
+        .verifyMobileOtp({ code: "000000", email: EMAIL })
+        .catch((e: unknown) => e);
+      const noAccount = await caller()
+        .verifyMobileOtp({ code: "123456", email: "invitee@example.com" })
+        .catch((e: unknown) => e);
+      const noCodeAtAll = await caller()
+        .verifyMobileOtp({ code: "123456", email: "nobody@example.com" })
+        .catch((e: unknown) => e);
 
-// ---------------------------------------------------------------------------
-// verifyMobileOtp
-// ---------------------------------------------------------------------------
-
-describe("authRouter.verifyMobileOtp", () => {
-  const email = "test@example.com";
-  const code = "000000";
-
-  it("returns token and userId for valid non-expired code", async () => {
-    mockDb.verificationToken.findUnique.mockResolvedValueOnce({
-      expires: new Date(Date.now() + 60_000),
-      identifier: `otp:${email}`,
-      token: code,
-    });
-    mockDb.verificationToken.delete.mockResolvedValueOnce({});
-    mockDb.user.findUnique.mockResolvedValueOnce({
-      email,
-      id: "user-1",
+      for (const error of [wrongCode, noAccount, noCodeAtAll]) {
+        expect(error).toMatchObject({ code: "UNAUTHORIZED", message: "Invalid or expired code." });
+      }
     });
 
-    const caller = makeCaller();
-    const result = await caller.verifyMobileOtp({ code, email });
-
-    expect(result.userId).toBe("user-1");
-    expect(typeof result.token).toBe("string");
-    expect(result.token.length).toBeGreaterThan(0);
-  });
-
-  it("throws UNAUTHORIZED when code not found", async () => {
-    mockDb.verificationToken.findUnique.mockResolvedValueOnce(null);
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyMobileOtp({ code, email })).rejects.toMatchObject({
-      code: "UNAUTHORIZED",
-    });
-  });
-
-  it("throws UNAUTHORIZED when code is expired, and deletes record", async () => {
-    mockDb.verificationToken.findUnique.mockResolvedValueOnce({
-      expires: new Date(Date.now() - 1000),
-      identifier: `otp:${email}`,
-      token: code,
-    });
-    mockDb.verificationToken.delete.mockResolvedValueOnce({});
-
-    const caller = makeCaller();
-
-    await expect(caller.verifyMobileOtp({ code, email })).rejects.toMatchObject({
-      code: "UNAUTHORIZED",
-    });
-    expect(mockDb.verificationToken.delete).toHaveBeenCalledOnce();
-  });
-
-  it("throws TOO_MANY_REQUESTS when rate limited", async () => {
-    mockCheckRateLimit.mockResolvedValueOnce({
-      allowed: false,
-      remaining: 0,
-      retryAfter: 30,
+    it("rejects codes that are not six digits before touching the database", async () => {
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+      await expect(
+        caller().verifyMobileOtp({ code: "12345x", email: EMAIL }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await tokens()).toMatchObject([{ attempts: 0 }]);
     });
 
-    const caller = makeCaller();
+    it(`locks the code after ${OTP_MAX_ATTEMPTS} wrong attempts`, async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
 
-    await expect(caller.verifyMobileOtp({ code, email })).rejects.toMatchObject({
-      code: "TOO_MANY_REQUESTS",
+      for (let i = 0; i < OTP_MAX_ATTEMPTS; i++) {
+        await expect(
+          caller().verifyMobileOtp({ code: `00000${i}`, email: EMAIL }),
+        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      }
+
+      await expect(
+        caller().verifyMobileOtp({ code: "123456", email: EMAIL }),
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    });
+
+    it("answers TOO_MANY_REQUESTS, not UNAUTHORIZED, once the daily cap for the address is reached", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      const perWindow = RateLimits.OTP_VERIFY_EMAIL.limit;
+      const perDay = RateLimits.OTP_VERIFY_EMAIL_DAILY.limit;
+
+      for (let guess = 0; guess < perDay; guess++) {
+        if (guess > 0 && guess % perWindow === 0) {
+          limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+        }
+        await issueOtp(testDb.db, EMAIL, { code: "123456" });
+        await expect(
+          caller(`198.51.100.${guess}`).verifyMobileOtp({ code: "000000", email: EMAIL }),
+        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      }
+      limiterClock.advance(RateLimits.OTP_VERIFY_EMAIL.windowSeconds);
+
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+      await expect(
+        caller("192.0.2.1").verifyMobileOtp({ code: "123456", email: EMAIL }),
+      ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+      // The refused attempt did not touch the code.
+      expect(await tokens()).toMatchObject([{ attempts: 0 }]);
+    });
+
+    it("cannot be brute-forced by sending many guesses at once", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      await issueOtp(testDb.db, EMAIL, { code: "123456" });
+
+      const guesses = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(6, "0")), "123456"];
+      const results = await Promise.allSettled(
+        guesses.map((code, i) =>
+          caller(`198.51.100.${i}`).verifyMobileOtp({ code, email: EMAIL }),
+        ),
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(0);
     });
   });
 });

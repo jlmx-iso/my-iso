@@ -1,37 +1,59 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { generateUniqueInviteCode } from "~/server/_utils/invite";
-import { checkRateLimit, RateLimits } from "~/server/_utils/rateLimit";
-import { USER_ROLES } from "~/server/_utils/roles";
+import { isUniqueViolation } from "~/server/_db/errors";
+import {
+  claimInviteSlot,
+  ensureInviteCode,
+  releaseInviteSlot,
+} from "~/server/_db/invite";
+import { generateInviteCode, normalizeInviteCode } from "~/server/_utils/invite";
+import { RateLimits } from "~/server/_utils/rateLimit";
+import { USER_ROLES, WAITLIST_APPROVED_CODE } from "~/server/_utils/roles";
 import {
   createTRPCRouter,
   protectedProcedure,
   publicProcedure,
+  rateLimit,
 } from "~/server/api/trpc";
+
+const codeInput = z.string().trim().min(1).max(64);
+
+/** Redemptions returned with the caller's own code. */
+const MAX_REDEMPTIONS_LISTED = 100;
+
+const redemptionsInclude = {
+  redemptions: {
+    include: {
+      redeemedBy: {
+        select: {
+          firstName: true,
+          lastName: true,
+          profilePic: true,
+        },
+      },
+    },
+    orderBy: { redeemedAt: "desc" },
+    take: MAX_REDEMPTIONS_LISTED,
+  },
+} as const;
 
 export const inviteRouter = createTRPCRouter({
   /**
-   * Validate an invite code and return the inviter's name.
+   * Validate an invite code. Public, so it is rate limited per IP and gives
+   * away as little as possible: only the inviter's first name, enough for
+   * the invitee to recognise who invited them.
    */
   validate: publicProcedure
-    .input(z.object({ code: z.string().min(1) }))
+    .use(rateLimit(RateLimits.INVITE_VALIDATE))
+    .input(z.object({ code: codeInput }))
     .query(async ({ ctx, input }) => {
-      // Rate limit invite code validation to prevent brute-force (M4)
-      // Backed by Cloudflare KV — see src/server/_utils/rateLimit.ts for setup
-      const ip = ctx.headers.get("x-forwarded-for") ?? "unknown";
-      const rl = await checkRateLimit(`invite-validate:${ip}`, RateLimits.STRICT);
-      if (!rl.allowed) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `Too many attempts. Try again in ${rl.retryAfter}s.`,
-        });
-      }
-
       const inviteCode = await ctx.db.inviteCode.findUnique({
-        where: { code: input.code.toUpperCase() },
-        include: {
-          creator: { select: { firstName: true, lastName: true } },
+        where: { code: normalizeInviteCode(input.code) },
+        select: {
+          creator: { select: { firstName: true } },
+          currentRedemptions: true,
+          maxRedemptions: true,
         },
       });
 
@@ -44,34 +66,33 @@ export const inviteRouter = createTRPCRouter({
 
       return {
         valid: true,
-        inviterName: `${inviteCode.creator.firstName} ${inviteCode.creator.lastName}`,
+        inviterName: inviteCode.creator.firstName,
       };
     }),
 
   /**
-   * Store a PendingInviteValidation so the signIn callback can verify
-   * that this email was pre-approved with a valid code.
+   * Store a PendingInviteValidation so that sign-up (src/auth.ts) knows which
+   * code this email address intends to redeem.
+   *
+   * Nothing is reserved here on purpose: this endpoint is unauthenticated, so
+   * a reservation would let anyone who knows a code hold all of its slots.
+   * The slot is claimed atomically when the account is actually created, and
+   * sign-up is refused at that point if the code has run out.
    */
   prepareRegistration: publicProcedure
+    .use(rateLimit(RateLimits.INVITE_PREPARE))
     .input(
       z.object({
-        code: z.string().min(1),
-        email: z.string().email(),
+        code: codeInput,
+        email: z.string().trim().toLowerCase().email().max(254),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Rate limit registration preparation (M4)
-      const ip = ctx.headers.get("x-forwarded-for") ?? "unknown";
-      const rl = await checkRateLimit(`invite-prepare:${ip}`, RateLimits.STRICT);
-      if (!rl.allowed) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `Too many attempts. Try again in ${rl.retryAfter}s.`,
-        });
-      }
+      const code = normalizeInviteCode(input.code);
+      const now = new Date();
 
       const inviteCode = await ctx.db.inviteCode.findUnique({
-        where: { code: input.code.toUpperCase() },
+        where: { code },
       });
 
       if (
@@ -84,26 +105,27 @@ export const inviteRouter = createTRPCRouter({
         });
       }
 
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
       // Opportunistic cleanup: delete expired PendingInviteValidation records
       // to prevent unbounded table growth (no cron needed)
       await ctx.db.pendingInviteValidation.deleteMany({
-        where: { expiresAt: { lt: new Date() } },
+        where: { expiresAt: { lt: now } },
       });
 
+      // A waitlist approval is worth more than an invite code (it lasts a
+      // week and needs no slot). Never let an anonymous caller replace one.
+      const existing = await ctx.db.pendingInviteValidation.findUnique({
+        where: { email: input.email },
+      });
+      if (existing?.code === WAITLIST_APPROVED_CODE && existing.expiresAt > now) {
+        return { success: true };
+      }
+
+      const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+
       await ctx.db.pendingInviteValidation.upsert({
-        where: { email: input.email.toLowerCase() },
-        update: {
-          code: input.code.toUpperCase(),
-          expiresAt,
-          createdAt: new Date(),
-        },
-        create: {
-          email: input.email.toLowerCase(),
-          code: input.code.toUpperCase(),
-          expiresAt,
-        },
+        where: { email: input.email },
+        update: { code, expiresAt, createdAt: now },
+        create: { email: input.email, code, expiresAt },
       });
 
       return { success: true };
@@ -111,71 +133,71 @@ export const inviteRouter = createTRPCRouter({
 
   /**
    * Redeem an invite code for the current user (post-registration).
-   * Uses interactive transaction to prevent race conditions.
    *
-   * NOTE: Currently unused by the UI — invite redemption happens automatically
-   * in the auth.ts createUser event when a new user signs up via Google OAuth.
-   * This procedure is kept for future API-based or manual redemption flows
-   * (e.g., redeeming a code after initial signup without one).
+   * No transaction (D1 has none): the slot is claimed with one conditional
+   * UPDATE, and the unique InviteRedemption.redeemedById makes a second
+   * redemption by the same user fail, in which case the slot is given back.
+   *
+   * NOTE: Currently unused by the UI — invite redemption happens during
+   * sign-up in src/auth.ts.
    */
   redeem: protectedProcedure
-    .input(z.object({ code: z.string().min(1) }))
+    .use(rateLimit(RateLimits.INVITE_VALIDATE))
+    .input(z.object({ code: codeInput }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const code = input.code.toUpperCase();
+      const code = normalizeInviteCode(input.code);
 
-      // Check for duplicate redemption before entering transaction (I5)
-      const existingRedemption = await ctx.db.inviteRedemption.findFirst({
-        where: { redeemedById: userId },
+      const own = await ctx.db.inviteCode.findUnique({
+        select: { creatorId: true },
+        where: { code },
       });
-      if (existingRedemption) {
+      if (own?.creatorId === userId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "You have already redeemed an invite code.",
+          message: "You cannot use your own invite code.",
         });
       }
 
-      // Interactive transaction prevents race condition (C1)
-      await ctx.db.$transaction(async (tx) => {
-        const inviteCode = await tx.inviteCode.findUnique({
-          where: { code },
+      const slot = await claimInviteSlot(ctx.db, code);
+      if (!slot) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid or exhausted invite code.",
         });
+      }
 
-        if (
-          !inviteCode ||
-          inviteCode.currentRedemptions >= inviteCode.maxRedemptions
-        ) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Invalid or exhausted invite code.",
-          });
-        }
-
-        // Prevent self-invite
-        if (inviteCode.creatorId === userId) {
+      try {
+        // The code may have been regenerated onto the caller between the
+        // check above and the claim; the claim's own row is authoritative.
+        if (slot.creatorId === userId) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "You cannot use your own invite code.",
           });
         }
+        await ctx.db.inviteRedemption.create({
+          data: { inviteCodeId: slot.inviteCodeId, redeemedById: userId },
+        });
+      } catch (error) {
+        await releaseInviteSlot(ctx.db, slot.inviteCodeId);
+        if (isUniqueViolation(error)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "You have already redeemed an invite code.",
+          });
+        }
+        throw error;
+      }
 
-        await tx.inviteCode.update({
-          where: { id: inviteCode.id },
-          data: { currentRedemptions: { increment: 1 } },
-        });
-        await tx.inviteRedemption.create({
-          data: {
-            inviteCodeId: inviteCode.id,
-            redeemedById: userId,
-          },
-        });
-        await tx.user.update({
-          where: { id: userId },
-          data: {
-            role: USER_ROLES.FOUNDING_MEMBER,
-            invitedByUserId: inviteCode.creatorId,
-          },
-        });
+      // Founders and ambassadors keep their role.
+      await ctx.db.user.updateMany({
+        where: { id: userId, role: USER_ROLES.STANDARD },
+        data: { role: USER_ROLES.FOUNDING_MEMBER },
+      });
+      await ctx.db.user.update({
+        where: { id: userId },
+        data: { invitedByUserId: slot.creatorId },
       });
 
       return { success: true };
@@ -187,97 +209,67 @@ export const inviteRouter = createTRPCRouter({
   getMyCode: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
-    const inviteCode = await ctx.db.inviteCode.findUnique({
+    const existing = await ctx.db.inviteCode.findUnique({
       where: { creatorId: userId },
-      include: {
-        redemptions: {
-          include: {
-            redeemedBy: {
-              select: {
-                firstName: true,
-                lastName: true,
-                profilePic: true,
-              },
-            },
-          },
-          orderBy: { redeemedAt: "desc" },
-        },
-      },
+      include: redemptionsInclude,
     });
+    if (existing) return existing;
 
-    if (!inviteCode) {
-      // Auto-generate one for the user
-      const user = await ctx.db.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { firstName: true },
-      });
+    // First visit: generate one.
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { firstName: true },
+    });
+    const created = await ensureInviteCode(ctx.db, userId, user.firstName);
 
-      const code = await generateUniqueInviteCode(
-        user.firstName,
-        async (c) => {
-          const exists = await ctx.db.inviteCode.findUnique({ where: { code: c } });
-          return exists !== null;
-        },
-      );
-
-      const newCode = await ctx.db.inviteCode.create({
-        data: { code, creatorId: userId },
-        include: {
-          redemptions: {
-            include: {
-              redeemedBy: {
-                select: {
-                  firstName: true,
-                  lastName: true,
-                  profilePic: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return newCode;
-    }
-
-    return inviteCode;
+    return ctx.db.inviteCode.findUniqueOrThrow({
+      where: { id: created.id },
+      include: redemptionsInclude,
+    });
   }),
 
   /**
    * Regenerate the invite code string (keeps counter and redemptions).
    */
-  regenerate: protectedProcedure.mutation(async ({ ctx }) => {
-    const userId = ctx.session.user.id;
+  regenerate: protectedProcedure
+    .use(rateLimit(RateLimits.INVITE_PREPARE))
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
 
-    const existing = await ctx.db.inviteCode.findUnique({
-      where: { creatorId: userId },
-    });
-
-    if (!existing) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "No invite code found.",
+      const existing = await ctx.db.inviteCode.findUnique({
+        where: { creatorId: userId },
       });
-    }
 
-    const user = await ctx.db.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { firstName: true },
-    });
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No invite code found.",
+        });
+      }
 
-    const code = await generateUniqueInviteCode(
-      user.firstName,
-      async (c) => {
-        const collision = await ctx.db.inviteCode.findUnique({ where: { code: c } });
-        return collision !== null;
-      },
-    );
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { firstName: true },
+      });
 
-    const updated = await ctx.db.inviteCode.update({
-      where: { id: existing.id },
-      data: { code, regeneratedAt: new Date() },
-    });
+      // `code` is unique: a collision fails the update and a new one is drawn.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          return await ctx.db.inviteCode.update({
+            where: { id: existing.id },
+            data: {
+              code: generateInviteCode(user.firstName || "USER"),
+              regeneratedAt: new Date(),
+            },
+          });
+        } catch (error) {
+          if (!isUniqueViolation(error)) throw error;
+        }
+      }
 
-    return updated;
-  }),
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Could not generate a new invite code. Please try again.",
+      });
+    }),
 });
