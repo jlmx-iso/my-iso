@@ -329,7 +329,7 @@ function PricingPreviewSection() {
               </Text>
             </Group>
             <Box mb="lg">
-              <ProFeatures pricing={{ isFoundingPrice: true }} compact />
+              <ProFeatures pricing={{ isFoundingPrice: true }} />
             </Box>
             <Button component={NextLink} href="/join" fullWidth>
               Get started

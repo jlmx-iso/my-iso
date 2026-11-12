@@ -41,7 +41,7 @@ function NeedsReplyBadge({ count, hasMore }: { count: number; hasMore: boolean }
   const label = needsReplyLabel(count, hasMore);
   if (!label) return null;
   return (
-    <Badge component="span" size="sm" circle={label.length === 1} ml={6} data-testid="tab-needs-reply">
+    <Badge component="span" size="sm" circle={label.length === 1} data-testid="tab-needs-reply">
       <span aria-hidden>{label}</span>
       <span className="sr-only">, {count} {count === 1 ? "needs" : "need"} your reply</span>
     </Badge>
@@ -208,13 +208,19 @@ export default function BookingsPage() {
           }}
         >
           <Tabs.List>
-            <Tabs.Tab value="applications" leftSection={<IconSend size={16} />}>
+            <Tabs.Tab
+              value="applications"
+              leftSection={<IconSend size={16} aria-hidden />}
+              rightSection={<NeedsReplyBadge count={sentNeedingReply} hasMore={sent.hasNextPage} />}
+            >
               My applications
-              <NeedsReplyBadge count={sentNeedingReply} hasMore={sent.hasNextPage} />
             </Tabs.Tab>
-            <Tabs.Tab value="received" leftSection={<IconInbox size={16} />}>
+            <Tabs.Tab
+              value="received"
+              leftSection={<IconInbox size={16} aria-hidden />}
+              rightSection={<NeedsReplyBadge count={receivedNeedingReply} hasMore={received.hasNextPage} />}
+            >
               Received
-              <NeedsReplyBadge count={receivedNeedingReply} hasMore={received.hasNextPage} />
             </Tabs.Tab>
           </Tabs.List>
 
