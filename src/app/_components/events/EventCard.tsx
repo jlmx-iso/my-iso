@@ -41,6 +41,7 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
     const commentCount = event.commentCount + postedHere;
     const href = `/app/events/${event.id}`;
     const isPast = new Date(event.date).getTime() < now.getTime();
+    const isOwnEvent = event.photographer.userId === currentUserId;
 
     return (
         <Card
@@ -75,6 +76,7 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                             location={event.location}
                             payCents={event.payCents}
                             timeFormat="time"
+                            zone="when-different"
                         />
                         {isPast && <Badge variant="light" color="gray" w="fit-content">Past event</Badge>}
                     </Stack>
@@ -84,12 +86,15 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                     <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
                 )}
 
-                <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-                    <UserBadge user={event.photographer} />
-                    <Box style={{ flexShrink: 0 }}>
-                        <Timemarker date={event.createdAt} prefix="Posted" />
-                    </Box>
-                </Group>
+                {/* Who posted it; on your own events the "Your event" pill says so. */}
+                {!isOwnEvent && (
+                    <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+                        <UserBadge user={event.photographer} />
+                        <Box style={{ flexShrink: 0 }}>
+                            <Timemarker date={event.createdAt} prefix="Posted" />
+                        </Box>
+                    </Group>
+                )}
 
                 <Group
                     gap="xs"
@@ -116,7 +121,7 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                     <ApplyAction
                         event={event}
                         application={application}
-                        isOwnEvent={event.photographer.userId === currentUserId}
+                        isOwnEvent={isOwnEvent}
                     />
                 </Group>
 

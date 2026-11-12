@@ -70,7 +70,7 @@ export default function ApplyAction({ event, application, isOwnEvent, prominent 
                 {/* What it pays, where the decision is made. */}
                 <Text size="sm" c="dimmed" data-testid="pay-note">
                     {pay
-                        ? `Pays ${pay} for the event. You can propose a different rate when you apply.`
+                        ? `Pays ${pay} for the whole event. You can propose a different rate when you apply.`
                         : "Pay isn't listed. Propose your rate when you apply."}
                 </Text>
             </Stack>

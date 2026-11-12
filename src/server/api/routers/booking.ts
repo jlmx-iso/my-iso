@@ -58,6 +58,8 @@ const bookingEventSelect = {
   duration: true,
   id: true,
   location: true,
+  // What the event listed as pay, next to the rate the shooter proposed.
+  payCents: true,
   // Booking cards write the start time in the event's own zone.
   timeZone: true,
   title: true,

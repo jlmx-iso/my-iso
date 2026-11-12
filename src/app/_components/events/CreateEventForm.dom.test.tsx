@@ -369,10 +369,30 @@ describe("pay", () => {
     expect(view.callsTo("event.create")).toEqual([]);
   });
 
-  it("labels the start time with the zone it is in", async () => {
+  it("asks for the event's time zone, starting from the browser's (the tests run in UTC)", async () => {
     renderButton();
     const dialog = await openDialog();
 
-    expect(within(dialog).getByText("Start time, in your time zone (UTC)")).toBeTruthy();
+    const zone = within(dialog).getByLabelText<HTMLInputElement>(/^Time zone/, { selector: "input" });
+    expect(zone.value).toBe("UTC (UTC)");
+    expect(within(dialog).getByText("The time where the event happens")).toBeTruthy();
+  });
+
+  it("sends the start as the clock reads in the chosen zone", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    await fillRequired(dialog);
+    const zone = within(dialog).getByLabelText(/^Time zone/, { selector: "input" });
+    await userEvent.click(zone);
+    await userEvent.clear(zone);
+    await userEvent.type(zone, "Denver");
+    await userEvent.click(await screen.findByRole("option", { name: /America\/Denver/ }));
+    await submit(dialog);
+
+    await screen.findByText('"Downtown wedding" is live. Photographers nearby can now apply.');
+    // Tomorrow 10:00 in Denver (MST, UTC-7) is 17:00 UTC.
+    const start = dayjs(defaultEventStart()).add(7, "hour").toISOString();
+    expect(view.callsTo("event.create")[0]).toMatchObject({ date: start, timeZone: "America/Denver" });
   });
 });

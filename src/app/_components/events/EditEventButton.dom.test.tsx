@@ -23,6 +23,8 @@ const EVENT = {
   id: "ev-1",
   location: "Austin, TX",
   payCents: 45_000,
+  // 10:00 AM in Denver (daylight time from that morning, UTC-6).
+  timeZone: "America/Denver",
   title: "Spring wedding",
 };
 
@@ -49,6 +51,9 @@ describe("editing an event", () => {
 
     expect(titleField(dialog).value).toBe("Spring wedding");
     expect(payField(dialog).value).toBe("$450");
+    // The picker reads as the clock does where the event is, not here (UTC).
+    expect(within(dialog).getByLabelText<HTMLInputElement>(/^Time zone/, { selector: "input" }).value).toMatch(/^America\/Denver/);
+    expect(within(dialog).getByRole("button", { name: /Date and time/ }).textContent).toContain("14 Mar 2027 10:00 AM");
     expect(within(dialog).getByText(/Leave empty to keep the current one/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Save changes" })).toBeTruthy();
   });
@@ -68,6 +73,22 @@ describe("editing an event", () => {
     expect(sent).not.toHaveProperty("date");
     expect(sent).not.toHaveProperty("timeZone");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit event" })).toBeNull());
+  });
+
+  it("sends the start and its zone when the zone changes, keeping the clock time", async () => {
+    const view = renderEdit();
+    const dialog = await openDialog();
+
+    const zone = within(dialog).getByLabelText(/^Time zone/, { selector: "input" });
+    await userEvent.click(zone);
+    await userEvent.clear(zone);
+    await userEvent.type(zone, "New York");
+    await userEvent.click(await screen.findByRole("option", { name: /America\/New York/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    await screen.findByText("Changes saved");
+    // 10:00 AM in New York (EDT, UTC-4).
+    expect(view.callsTo("event.update")[0]).toMatchObject({ date: "2027-03-14T14:00:00.000Z", timeZone: "America/New_York" });
   });
 
   it("keeps the changes and says nothing was saved when the server fails", async () => {

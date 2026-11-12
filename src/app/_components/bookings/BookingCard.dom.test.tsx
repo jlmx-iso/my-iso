@@ -18,7 +18,14 @@ const HOUR = 60 * MINUTE;
 
 const USER = { firstName: "Bea", id: "bea", lastName: "Cole", profilePic: null };
 
-function renderCard(options: { duration?: number; startsIn: number; status: string; variant: "sent" | "received" }) {
+function renderCard(options: {
+  duration?: number;
+  payCents?: number | null;
+  startsIn: number;
+  status: string;
+  timeZone?: string | null;
+  variant: "sent" | "received";
+}) {
   return renderWithProviders(
     <BookingCard
       booking={{ createdAt: NOW, id: "bk-1", notes: null, ownerNotes: null, rate: null, status: options.status }}
@@ -27,6 +34,8 @@ function renderCard(options: { duration?: number; startsIn: number; status: stri
         duration: options.duration ?? 2,
         id: "ev-1",
         location: "Austin, TX",
+        payCents: options.payCents ?? null,
+        timeZone: options.timeZone ?? null,
         title: "Garden wedding",
       }}
       user={USER}
@@ -115,5 +124,22 @@ describe("BookingCard clock", () => {
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
 
     await vi.waitFor(() => expect(view.callsTo("booking.updateStatus")).toEqual([{ bookingId: "bk-1", status: "accepted" }]));
+  });
+});
+
+describe("BookingCard details", () => {
+  it("shows the listed pay and the start in the event's zone, labelled", () => {
+    renderCard({ payCents: 45_000, startsIn: HOUR, status: "applied", timeZone: "America/Chicago", variant: "sent" });
+
+    expect(screen.getByTestId("booking-pay").textContent).toBe("Listed pay: $450 total");
+    // 13:00 UTC is 8:00 AM in Chicago (CDT) on June 1.
+    expect(screen.getByText("Sat, Jun 1 · 8:00 AM CDT")).toBeTruthy();
+  });
+
+  it("leaves pay out when the event listed none, and labels a zone-less time as the reader's", () => {
+    renderCard({ startsIn: HOUR, status: "applied", variant: "sent" });
+
+    expect(screen.queryByTestId("booking-pay")).toBeNull();
+    expect(screen.getByText("Sat, Jun 1 · 1:00 PM UTC (your time)")).toBeTruthy();
   });
 });

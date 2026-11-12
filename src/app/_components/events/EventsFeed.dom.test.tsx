@@ -180,7 +180,7 @@ describe("EventsFeed", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "Past" }));
 
-    expect(await screen.findByText("No past events in Austin")).toBeTruthy();
+    expect(await screen.findByText("No past events yet")).toBeTruthy();
   });
 
   it("shows a loading state, then says the list could not load, and Try again loads it", async () => {
@@ -213,6 +213,6 @@ describe("EventsFeed", () => {
     await userEvent.keyboard("{ArrowRight}");
 
     await waitFor(() => expect(screen.getByRole("tab", { name: "Past" }).getAttribute("aria-selected")).toBe("true"));
-    expect(await screen.findByText("No past events in Austin")).toBeTruthy();
+    expect(await screen.findByText("No past events yet")).toBeTruthy();
   });
 });

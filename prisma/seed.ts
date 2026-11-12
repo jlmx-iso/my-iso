@@ -505,6 +505,24 @@ async function main() {
     }),
   ]);
 
+  // Where each event's clock is (its start is stored in UTC), from its state.
+  const zoneByState: Record<string, string> = {
+    CA: "America/Los_Angeles",
+    CO: "America/Denver",
+    FL: "America/New_York",
+    IL: "America/Chicago",
+    Mexico: "America/Cancun",
+    NY: "America/New_York",
+    OR: "America/Los_Angeles",
+    TN: "America/Chicago",
+    TX: "America/Chicago",
+    WA: "America/Los_Angeles",
+  };
+  for (const event of events) {
+    const timeZone = zoneByState[event.location.split(",").at(-1)?.trim() ?? ""];
+    if (timeZone) await db.event.update({ data: { timeZone }, where: { id: event.id } });
+  }
+
   console.log(`Created ${events.length} events`);
 
   console.log("Creating comments on events...");

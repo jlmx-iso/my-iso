@@ -51,10 +51,13 @@ describe("EventCard", () => {
     expect(tile.textContent).toBe("Nov22Sun");
     expect(tile.getAttribute("aria-hidden")).toBe("true");
     const meta = within(card).getByTestId("event-meta");
-    expect(meta.textContent).toContain("Starts: 2:00 PM MST");
+    // The zone is shown: Denver's clock is not the reader's (UTC here).
+    expect(meta.textContent).toContain("2:00 PM MST");
     expect(meta.textContent).toContain("Location: Estes Park, CO");
+    expect(meta.textContent).toContain("Pay: $450 total");
     expect(meta.textContent).toContain("Duration: 6 hours");
-    expect(meta.textContent).toContain("Pay: $450");
+    // Pay comes before the duration.
+    expect(meta.textContent.indexOf("Pay")).toBeLessThan(meta.textContent.indexOf("Duration"));
     expect(within(card).getByRole("link", { name: "Sunrise elopement" }).getAttribute("href")).toBe("/app/events/ev-1");
     expect(within(card).getByText("Pro member")).toBeTruthy();
     expect(within(card).getByRole("button", { name: "Comment on Sunrise elopement, 2 comments" })).toBeTruthy();
@@ -66,8 +69,32 @@ describe("EventCard", () => {
     const meta = screen.getByTestId("event-meta");
 
     expect(meta.textContent).not.toContain("Pay");
-    // The tests run in UTC.
-    expect(meta.textContent).toContain("9:00 PM UTC");
+    // In the reader's zone (UTC in the tests): no zone needed on a card.
+    expect(meta.textContent).toContain("9:00 PM");
+    expect(meta.textContent).not.toContain("UTC");
+  });
+
+  it("leaves the zone out when it shows the reader's own clock", () => {
+    renderCard(feedEvent({ timeZone: "Europe/London" }));
+
+    expect(screen.getByTestId("event-meta").textContent).not.toContain("GMT");
+  });
+
+  it("says the day to screen readers, which skip the date tile", () => {
+    renderCard(feedEvent());
+    const card = screen.getByRole("article");
+
+    // The tile is aria-hidden; the start says the day in words.
+    expect(within(card).getByTestId("event-meta").textContent).toContain("Starts: Sun, Nov 22, 2:00 PM MST");
+  });
+
+  it("leaves the poster out on the viewer's own event (the pill says so)", () => {
+    renderWithProviders(
+      <EventCard event={feedEvent()} application={undefined} currentUserId="marcus" now={NOW} />,
+    );
+
+    expect(screen.queryByText("Marcus Rivera")).toBeNull();
+    expect(screen.getByText("Your event")).toBeTruthy();
   });
 
   it("marks an event that has started", () => {

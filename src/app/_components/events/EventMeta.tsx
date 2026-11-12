@@ -1,5 +1,5 @@
 import { Group, Text } from "@mantine/core";
-import { IconCalendar, IconCash, IconClock, IconMapPin } from "@tabler/icons-react";
+import { IconCalendar, IconCash, IconClock, IconHourglass, IconMapPin } from "@tabler/icons-react";
 
 import { type EventTimeFormat } from "~/_lib/eventTime";
 import { formatPay } from "~/_utils/eventPay";
@@ -20,9 +20,15 @@ type EventMetaProps = {
     payCents?: number | null;
     /**
      * How much of the start to write: the detail page gives weekday, day and
-     * time; a feed card, whose date tile already shows the day, the time.
+     * time; a feed card, whose date tile already shows the day, the time
+     * (screen readers, which skip the tile, still hear the day).
      */
     timeFormat?: EventTimeFormat;
+    /**
+     * When to write the zone: always on the event page and in bookings;
+     * on cards in a list only when it differs from the reader's.
+     */
+    zone?: "always" | "when-different";
 };
 
 function Item({ icon: Icon, label, children, strong = false }: {
@@ -43,11 +49,20 @@ function Item({ icon: Icon, label, children, strong = false }: {
 }
 
 /**
- * When, where, how long and what it pays: plain text with an icon each
- * (and a text alternative for the icon), in that order, wrapping on a phone.
+ * When, where, what it pays and how long: plain text with an icon each
+ * (and a text alternative for the icon), wrapping on a phone.
  */
-export default function EventMeta({ date, timeZone = null, duration, location, payCents = null, timeFormat = "dayTime" }: EventMetaProps) {
+export default function EventMeta({
+    date,
+    timeZone = null,
+    duration,
+    location,
+    payCents = null,
+    timeFormat = "dayTime",
+    zone = "always",
+}: EventMetaProps) {
     const pay = formatPay(payCents);
+    const timeOnly = timeFormat === "time";
     return (
         <Group
             component="ul"
@@ -57,12 +72,17 @@ export default function EventMeta({ date, timeZone = null, duration, location, p
             style={{ columnGap: "var(--mantine-spacing-md)", listStyle: "none", rowGap: 4 }}
             data-testid="event-meta"
         >
-            <Item icon={IconCalendar} label={timeFormat === "time" ? "Starts" : "Date"}>
-                <EventTime date={date} timeZone={timeZone} format={timeFormat} />
+            <Item icon={timeOnly ? IconClock : IconCalendar} label={timeOnly ? "Starts" : "Date"}>
+                {timeOnly && (
+                    <span className="sr-only">
+                        <EventTime date={date} timeZone={timeZone} format="weekdayDate" />,{" "}
+                    </span>
+                )}
+                <EventTime date={date} timeZone={timeZone} format={timeFormat} zone={zone} />
             </Item>
             {location && <Item icon={IconMapPin} label="Location">{location}</Item>}
-            <Item icon={IconClock} label="Duration">{formatDuration(duration)}</Item>
-            {pay && <Item icon={IconCash} label="Pay" strong>{pay}</Item>}
+            {pay && <Item icon={IconCash} label="Pay" strong>{pay} total</Item>}
+            <Item icon={IconHourglass} label="Duration">{formatDuration(duration)}</Item>
         </Group>
     );
 }

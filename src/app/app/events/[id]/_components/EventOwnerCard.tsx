@@ -29,16 +29,23 @@ type EventOwnerCardProps = {
 export default function EventOwnerCard({ event, isOwner, messageAction }: EventOwnerCardProps) {
     const { photographer } = event;
     return (
-        <Paper withBorder radius="md" p="md" component="section" aria-labelledby="event-owner-heading" data-testid="event-owner-card">
+        <Paper
+            withBorder
+            radius="md"
+            p="md"
+            component="section"
+            aria-labelledby="event-owner-heading event-owner-name"
+            data-testid="event-owner-card"
+        >
             <Group justify="space-between" align="center" gap="md" wrap="wrap">
                 <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
                     <Avatar src={photographer.avatar} name={photographer.name} alt="" size="lg" />
                     <Stack gap={2} style={{ minWidth: 0 }}>
                         <Text size="xs" c="dimmed" id="event-owner-heading">
-                            {isOwner ? "You posted this event" : "Posted by"}
+                            {isOwner ? "Your event" : "Lead photographer"}
                         </Text>
                         <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-                            <Text fw={600} truncate>{photographer.name}</Text>
+                            <Text fw={600} truncate id="event-owner-name">{photographer.name}</Text>
                             {photographer.isPro && <ProBadge />}
                         </Group>
                         <Timemarker date={event.createdAt} prefix="Posted" />
@@ -63,6 +70,7 @@ export default function EventOwnerCard({ event, isOwner, messageAction }: EventO
                                 id: event.id,
                                 location: event.location,
                                 payCents: event.payCents,
+                                timeZone: event.timeZone,
                                 title: event.title,
                             }}
                         />

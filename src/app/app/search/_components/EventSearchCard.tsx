@@ -74,6 +74,8 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
           duration={event.duration}
           location={event.location}
           payCents={event.payCents}
+          timeFormat="dateTime"
+          zone="when-different"
         />
 
         <Group gap="md" mt="auto" pt={4}>

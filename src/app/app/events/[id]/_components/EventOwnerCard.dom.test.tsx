@@ -20,6 +20,7 @@ const EVENT = {
   id: "ev-1",
   location: "Austin, TX",
   payCents: null,
+  timeZone: "America/Chicago",
   photographer: { avatar: null, isPro: true, name: "Marcus Rivera", userId: "marcus" },
   title: "Spring wedding",
 };
@@ -29,9 +30,11 @@ describe("EventOwnerCard", () => {
     renderWithProviders(
       <EventOwnerCard event={EVENT} isOwner={false} messageAction={<button type="button">Message</button>} />,
     );
-    const card = screen.getByRole("region", { name: "Posted by" });
+    const card = screen.getByRole("region", { name: "Lead photographer Marcus Rivera" });
 
     expect(within(card).getByText("Marcus Rivera")).toBeTruthy();
+    // "Posted" once, not as an eyebrow as well.
+    expect(within(card).getAllByText(/Posted/)).toHaveLength(1);
     expect(within(card).getByText("Pro member")).toBeTruthy();
     expect(within(card).getByRole("link", { name: "View profile" }).getAttribute("href")).toBe("/app/photographer/marcus");
     expect(within(card).getByRole("button", { name: "Message" })).toBeTruthy();
@@ -47,7 +50,7 @@ describe("EventOwnerCard", () => {
       />,
       { trpc: { google: { getAutocompleteLocations: () => [] } } },
     );
-    const card = screen.getByRole("region", { name: "You posted this event" });
+    const card = screen.getByRole("region", { name: "Your event Marcus Rivera" });
 
     expect(within(card).getByRole("link", { name: "Your profile" })).toBeTruthy();
     expect(within(card).getByRole("button", { name: "Edit event" })).toBeTruthy();

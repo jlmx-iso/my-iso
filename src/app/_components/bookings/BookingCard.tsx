@@ -4,6 +4,7 @@ import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import {
   IconBan,
   IconCalendar,
+  IconCash,
   IconCheck,
   IconChecks,
   IconClock,
@@ -24,6 +25,7 @@ import {
   formatRate,
 } from "~/_utils/bookings";
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { formatPay } from "~/_utils/eventPay";
 import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
@@ -56,6 +58,8 @@ type BookingEvent = {
   location: string;
   /** The zone the start time is written in (null: the reader's). */
   timeZone?: string | null;
+  /** What the event listed as pay, in cents (null: not listed). */
+  payCents?: number | null;
   title: string;
 };
 
@@ -243,6 +247,7 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
   const status = bookingStatusView(booking.status);
   const StatusIcon = STATUS_ICONS[booking.status];
   const rate = formatRate(booking.rate);
+  const listedPay = formatPay(event.payCents);
   const confirmView = confirming ? actionView(confirming, role, name, event.title).confirm : undefined;
 
   return (
@@ -269,6 +274,15 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
                   {event.location}
                 </Text>
               </Group>
+              {listedPay && (
+                <Group gap={4} wrap="nowrap" data-testid="booking-pay">
+                  <IconCash size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                  <Text size="sm" c="dimmed">
+                    <span className="sr-only">Listed pay: </span>
+                    {listedPay} total
+                  </Text>
+                </Group>
+              )}
             </Group>
           </Stack>
           <Badge

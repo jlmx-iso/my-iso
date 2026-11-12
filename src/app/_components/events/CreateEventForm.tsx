@@ -7,7 +7,7 @@ import { IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
-import { localTimeZone, timeZoneLabel } from "~/_lib/eventTime";
+import { dateToZonedWallTime, localTimeZone, timeZoneChoices, zonedWallTimeToDate } from "~/_lib/eventTime";
 import { EVENT_DATE_FORMAT, defaultEventStart, eventDateError, latestEventStart } from "~/_utils/eventDates";
 import { MAX_EVENT_PAY_CENTS, payCentsToDollars, payDollarsToCents, payError } from "~/_utils/eventPay";
 import {
@@ -39,6 +39,8 @@ export type EditableEvent = {
     duration: number;
     location: string;
     payCents: number | null;
+    /** The zone its start is in; null for older events (the browser's is used). */
+    timeZone: string | null;
 };
 
 type CreateEventFormProps = {
@@ -60,7 +62,7 @@ const EDIT_FAILED = "We couldn't save your changes. They are still here — plea
 const COVER_FAILED = "The cover image couldn't be uploaded, so the event wasn't posted. Everything else is still here.";
 const EDIT_COVER_FAILED = "The cover image couldn't be uploaded, so nothing was saved. Everything else is still here.";
 /** In the order the fields appear, for moving focus to the first invalid one. */
-const FIELD_ORDER = ["title", "description", "date", "duration", "location", "pay", "image"] as const;
+const FIELD_ORDER = ["title", "description", "date", "timeZone", "duration", "pay", "location", "image"] as const;
 
 /**
  * Whether a failed create was about the cover image: the image itself was
@@ -93,31 +95,44 @@ type FormValues = {
     location: string;
     /** Dollars, as NumberInput gives them; "" when not listed. */
     pay: number | string;
+    /** The IANA zone `date` is a wall-clock time in. */
+    timeZone: string | null;
     title: string;
 };
 
 function initialValuesOf(event: EditableEvent | undefined): FormValues {
+    const browserZone = localTimeZone();
     if (!event) {
         return {
-            // Tomorrow at 10:00: a sensible start that is already valid.
+            // Tomorrow at 10:00 (in the browser's zone, the default): a
+            // sensible start that is already valid.
             date: defaultEventStart(),
             description: "",
             duration: "4",
             image: null,
             location: "",
             pay: "",
+            timeZone: browserZone,
             title: "",
         };
     }
+    // The picker shows the start as the clock reads where the event is.
+    const timeZone = event.timeZone ?? browserZone;
     return {
-        date: dayjs(event.date).format(EVENT_DATE_FORMAT),
+        date: dateToZonedWallTime(event.date, timeZone),
         description: event.description ?? "",
         duration: String(event.duration),
         image: null,
         location: event.location,
         pay: payCentsToDollars(event.payCents),
+        timeZone,
         title: event.title,
     };
+}
+
+/** The instant the form's wall-clock date names in its zone, or null. */
+function startOf(values: Pick<FormValues, "date" | "timeZone">): Date | null {
+    return zonedWallTimeToDate(values.date, values.timeZone ?? localTimeZone());
 }
 
 /**
@@ -143,7 +158,13 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
         initialValues,
         validate: {
             // An edit may keep the date it has, even once it has passed.
-            date: (value) => (isEdit && value === initialValues.date ? null : eventDateError(value)),
+            // Checked as an instant: 10 AM in Honolulu is later than 10 AM here.
+            date: (value, values) => {
+                if (isEdit && value === initialValues.date && values.timeZone === initialValues.timeZone) return null;
+                const start = startOf({ date: value, timeZone: values.timeZone });
+                return eventDateError(start ? dayjs(start).format(EVENT_DATE_FORMAT) : value);
+            },
+            timeZone: (value) => (value ? null : "Choose the time zone where the event happens"),
             description: (value) => {
                 if (!value.trim()) return "Describe the event so second shooters know what to expect";
                 return value.length > MAX_DESCRIPTION_LENGTH
@@ -168,6 +189,7 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                       values.location !== initialValues.location ||
                       values.date !== initialValues.date ||
                       values.duration !== initialValues.duration ||
+                      values.timeZone !== initialValues.timeZone ||
                       String(values.pay) !== String(initialValues.pay) ||
                       values.image !== null
                     : values.title.trim() !== "" ||
@@ -177,11 +199,9 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                       values.image !== null,
             ),
     });
-    // The zone the picker's times are in: the browser's, saved with the event.
-    const timeZone = localTimeZone();
-    const zoneName = form.values.date && dayjs(form.values.date).isValid()
-        ? timeZoneLabel(dayjs(form.values.date).toDate(), timeZone)
-        : "";
+    // The zones to choose from: common ones (with the browser's and the
+    // event's own) first, then all of them. Built once.
+    const [zoneChoices] = useState(() => timeZoneChoices([initialValues.timeZone, localTimeZone()]));
 
     const save = async (values: FormValues, withCover: boolean) => {
         if (isSaving) return;
@@ -202,14 +222,13 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                 payCents: payDollarsToCents(values.pay),
                 title: values.title.trim(),
             };
-            const dateChanged = !isEdit || values.date !== initialValues.date;
-            // A new or moved start time is in this browser's zone: say which.
-            const when = dateChanged
-                ? { date: dayjs(values.date).toISOString(), ...(timeZone ? { timeZone } : {}) }
-                : {};
+            const moved = !isEdit || values.date !== initialValues.date || values.timeZone !== initialValues.timeZone;
+            // The start goes with its zone, and only when either changed.
+            const start = startOf(values) ?? dayjs(values.date).toDate();
+            const when = { date: start.toISOString(), ...(values.timeZone ? { timeZone: values.timeZone } : {}) };
             const event = editing
-                ? await updateEvent.mutateAsync({ id: editing.id, ...fields, ...when })
-                : await createEvent.mutateAsync({ ...fields, date: dayjs(values.date).toISOString(), ...(timeZone ? { timeZone } : {}) });
+                ? await updateEvent.mutateAsync({ id: editing.id, ...fields, ...(moved ? when : {}) })
+                : await createEvent.mutateAsync({ ...fields, ...when });
             onCreated({ id: event.id, title: event.title });
         } catch (error) {
             // Keep the form and everything in it; say what went wrong.
@@ -264,7 +283,7 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                 <Textarea
                     label="Description"
                     description={`${form.values.description.length}/${MAX_DESCRIPTION_LENGTH} characters`}
-                    placeholder="The schedule, the style, the gear you expect, the pay…"
+                    placeholder="The schedule, the style, the gear you expect…"
                     required
                     autosize
                     minRows={3}
@@ -274,7 +293,7 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                 <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
                     <DateTimePicker
                         label="Date and time"
-                        description={zoneName ? `Start time, in your time zone (${zoneName})` : "Start time, in your time zone"}
+                        description="When it starts"
                         valueFormat="DD MMM YYYY hh:mm A"
                         required
                         withSeconds={false}
@@ -284,11 +303,37 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                         {...form.getInputProps("date")}
                     />
                     <Select
+                        label="Time zone"
+                        description="The time where the event happens"
+                        required
+                        searchable
+                        allowDeselect={false}
+                        nothingFoundMessage="No time zone by that name"
+                        data={zoneChoices}
+                        {...form.getInputProps("timeZone")}
+                    />
+                    <Select
                         label="Duration"
+                        description="How long you need a second shooter"
                         required
                         allowDeselect={false}
                         data={DURATION_HOURS.map((hours) => ({ label: durationLabel(hours), value: String(hours) }))}
                         {...form.getInputProps("duration")}
+                    />
+                    <NumberInput
+                        label="Pay"
+                        description="For the whole event, in US dollars. Optional: leave it empty and applicants propose a rate."
+                        placeholder="$450"
+                        prefix="$"
+                        thousandSeparator=","
+                        decimalScale={2}
+                        allowNegative={false}
+                        min={0}
+                        max={MAX_EVENT_PAY_CENTS / 100}
+                        clampBehavior="none"
+                        hideControls
+                        inputMode="decimal"
+                        {...form.getInputProps("pay")}
                     />
                 </SimpleGrid>
                 <LocationAutocomplete
@@ -296,21 +341,6 @@ export default function CreateEventForm({ event: editing, onCreated, onCancel, o
                     isRequired
                     placeholder="Austin, TX"
                     {...form.getInputProps("location")}
-                />
-                <NumberInput
-                    label="Pay"
-                    description="For the whole event, in US dollars. Optional: leave it empty and applicants propose a rate."
-                    placeholder="450"
-                    prefix="$"
-                    thousandSeparator=","
-                    decimalScale={2}
-                    allowNegative={false}
-                    min={0}
-                    max={MAX_EVENT_PAY_CENTS / 100}
-                    clampBehavior="none"
-                    hideControls
-                    inputMode="decimal"
-                    {...form.getInputProps("pay")}
                 />
                 <FileInput
                     label={isEdit ? "New cover image" : "Cover image"}

@@ -156,8 +156,8 @@ function FeedList({
         ) : (
             <EmptyState
                 icon={IconHistory}
-                title={place ? `No past events in ${place}` : "No past events"}
-                description="Events move here once they have started. Nothing has happened here yet."
+                title="No past events yet"
+                description="Events move here once they've started."
             />
         );
     }
