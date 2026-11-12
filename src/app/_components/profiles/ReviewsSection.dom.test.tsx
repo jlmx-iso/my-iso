@@ -69,12 +69,7 @@ describe("review eligibility", () => {
     expect(screen.queryByRole("link", { name: "Sign in" }) !== null).toBe(viewer === "anonymous");
   });
 
-  // KNOWN GAP (reported, not fixed here): when eligibility fails to load,
-  // the section shows neither the form, nor a reason, nor an error with a way
-  // to retry. The previous profile page did ("We could not check whether you
-  // can review this photographer." + "Try again"). Remove `.fails` once the
-  // section has an error state.
-  it.fails("says so when eligibility fails to load, with a way to try again", async () => {
+  it("says so when eligibility fails to load, with a way to try again", async () => {
     renderSection("member", () => {
       throw trpcError("INTERNAL_SERVER_ERROR", "database unavailable");
     });
