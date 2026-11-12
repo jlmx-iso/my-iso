@@ -65,7 +65,8 @@ function decodeFeedCursor(cursor: string): { date: Date; id: string } | null {
  * An event date: a full ISO-8601 timestamp, not in the past (one day of
  * slack for time zones) and not absurdly far ahead.
  */
-const eventDateInput = z.iso
+/** Exported for tests (the create-event form's default must pass it). */
+export const eventDateInput = z.iso
   .datetime({ offset: true })
   .transform((value) => new Date(value))
   .refine(

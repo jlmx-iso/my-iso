@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
+import { dialogLock } from "~/app/_components/dialogFailure";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -27,9 +28,11 @@ export default function CreateEventButton() {
     // Something has been typed into the form: closing would lose it.
     const [hasDraft, setHasDraft] = useState(false);
     const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     const close = () => {
         setHasDraft(false);
+        setIsSaving(false);
         setConfirmingDiscard(false);
         setOpenedByButton(false);
         // Drop ?create so the modal does not reopen on reload or back.
@@ -38,6 +41,8 @@ export default function CreateEventButton() {
 
     /** Escape, the overlay, the close button and Cancel: ask before losing a draft. */
     const requestClose = () => {
+        // Not while the event is being saved: its outcome is shown in the dialog.
+        if (isSaving) return;
         if (hasDraft) setConfirmingDiscard(true);
         else close();
     };
@@ -59,12 +64,18 @@ export default function CreateEventButton() {
             <Modal
                 opened={openedByButton || openedByLink}
                 onClose={requestClose}
+                {...dialogLock(isSaving)}
                 // The confirmation on top handles Escape while it is open.
-                closeOnEscape={!confirmingDiscard}
+                closeOnEscape={!confirmingDiscard && !isSaving}
                 title="Create event"
                 size="lg"
             >
-                <CreateEventForm onCreated={handleCreated} onCancel={requestClose} onDirtyChange={setHasDraft} />
+                <CreateEventForm
+                    onCreated={handleCreated}
+                    onCancel={requestClose}
+                    onDirtyChange={setHasDraft}
+                    onSavingChange={setIsSaving}
+                />
             </Modal>
             <ConfirmDialog
                 opened={confirmingDiscard}

@@ -5,8 +5,9 @@ import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
 import { IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { EVENT_DATE_FORMAT, defaultEventStart, eventDateError } from "~/_utils/eventDates";
 import {
     IMAGE_ACCEPT,
     IMAGE_TOO_LARGE_MESSAGE,
@@ -20,7 +21,10 @@ import { MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { logger } from "~/_utils/logger";
 import { isRateLimited, trpcErrorCode, zodErrorFields } from "~/_utils/userError";
 import DialogError from "~/app/_components/DialogError";
+import { routeFailure } from "~/app/_components/dialogFailure";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
+import { useIsMounted } from "~/app/_hooks/useIsMounted";
+import { notify } from "~/app/_lib/notify";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
 
@@ -30,11 +34,12 @@ type CreateEventFormProps = {
     onCancel: () => void;
     /** Told whether anything has been typed, so closing can ask first. */
     onDirtyChange?: (isDirty: boolean) => void;
+    /** Told when a save starts and ends, so the dialog cannot be closed under it. */
+    onSavingChange?: (isSaving: boolean) => void;
 };
 
 const MAX_TITLE_LENGTH = 140;
 const MAX_DESCRIPTION_LENGTH = 1000;
-const DATE_FORMAT = "YYYY-MM-DD HH:mm:ss";
 const SAVE_FAILED = "We couldn't create your event. Your details are still here — please try again.";
 const COVER_FAILED = "The cover image couldn't be uploaded, so the event wasn't posted. Everything else is still here.";
 /** In the order the fields appear, for moving focus to the first invalid one. */
@@ -72,18 +77,21 @@ type FormValues = {
     title: string;
 };
 
-export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: CreateEventFormProps) {
+export default function CreateEventForm({ onCreated, onCancel, onDirtyChange, onSavingChange }: CreateEventFormProps) {
     const createEvent = api.event.create.useMutation();
     const [isReadingImage, setIsReadingImage] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     // The last attempt failed on the cover image: offer to post without it.
     const [coverFailed, setCoverFailed] = useState(false);
     const isSaving = isReadingImage || createEvent.isPending;
+    useEffect(() => onSavingChange?.(isSaving), [isSaving, onSavingChange]);
+    // Whether the form (and so its dialog) is still on screen when a save ends.
+    const isMounted = useIsMounted();
 
     const form = useForm<FormValues>({
         initialValues: {
             // Tomorrow at 10:00: a sensible start that is already valid.
-            date: dayjs().add(1, "day").hour(10).minute(0).second(0).format(DATE_FORMAT),
+            date: defaultEventStart(),
             description: "",
             duration: "4",
             image: null,
@@ -91,10 +99,7 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: 
             title: "",
         },
         validate: {
-            date: (value) => {
-                if (!value || !dayjs(value).isValid()) return "Choose a date and time";
-                return dayjs(value).isAfter(dayjs()) ? null : "Choose a date and time in the future";
-            },
+            date: (value) => eventDateError(value),
             description: (value) => {
                 if (!value.trim()) return "Describe the event so second shooters know what to expect";
                 return value.length > MAX_DESCRIPTION_LENGTH
@@ -140,6 +145,12 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: 
             // Keep the form and everything in it; say what went wrong.
             logger.error("Error creating event", { error });
             const message = uploadErrorMessage(error, SAVE_FAILED);
+            // The dialog is gone (it should not be closable mid-save, but if
+            // it is): the failure must still be seen.
+            if (routeFailure({ dialogOpen: isMounted(), stale: false }).show === "toast") {
+                notify.error({ message: `${message} Your draft was not posted.`, title: "Event not posted" });
+                return;
+            }
             // A refused image is reported on the image field as well.
             if (message === IMAGE_TOO_LARGE_MESSAGE || message === IMAGE_WRONG_TYPE_MESSAGE) {
                 form.setFieldError("image", message);
@@ -192,7 +203,7 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: 
                         valueFormat="DD MMM YYYY hh:mm A"
                         required
                         withSeconds={false}
-                        minDate={dayjs().format(DATE_FORMAT)}
+                        minDate={dayjs().format(EVENT_DATE_FORMAT)}
                         firstDayOfWeek={0}
                         {...form.getInputProps("date")}
                     />
