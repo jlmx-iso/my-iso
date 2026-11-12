@@ -50,7 +50,7 @@ export function ComingSoon({ features }: { features: readonly string[] }) {
     return (
         <Stack gap={6} data-testid="pro-features-coming-soon">
             <Group gap="xs">
-                <Text size="xs" fw={700} c="gray.7" tt="uppercase" style={{ letterSpacing: 0.5 }} id="pro-coming-soon">
+                <Text size="xs" fw={700} c="var(--iso-text-secondary)" tt="uppercase" style={{ letterSpacing: 0.5 }} id="pro-coming-soon">
                     Coming soon
                 </Text>
                 <Badge size="xs" variant="outline" color="gray">
@@ -60,9 +60,9 @@ export function ComingSoon({ features }: { features: readonly string[] }) {
             <List
                 spacing={4}
                 size="sm"
-                c="gray.7"
+                c="var(--iso-text-secondary)"
                 styles={LIST_STYLES}
-                icon={<IconClock size={14} color="var(--mantine-color-gray-6)" style={{ marginTop: 3 }} aria-hidden />}
+                icon={<IconClock size={14} color="var(--mantine-color-dimmed)" style={{ marginTop: 3 }} aria-hidden />}
                 aria-labelledby="pro-coming-soon"
             >
                 {features.map((feature) => (

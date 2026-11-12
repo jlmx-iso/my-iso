@@ -86,8 +86,12 @@ type FormValues = {
   website: string;
 };
 
+/**
+ * Each step's fields IN SCREEN ORDER: an invalid step moves the keyboard to
+ * its first field in this list, which must be the first one on screen.
+ */
 const STEPS = [
-  { fields: ["firstName", "lastName", "phoneNumber", "handle", "location"], title: "The basics" },
+  { fields: ["firstName", "lastName", "location", "handle", "phoneNumber"], title: "The basics" },
   { fields: ["companyName", "website", "instagram"], title: "Your business" },
   { fields: [], title: "Your photo" },
 ] as const satisfies ReadonlyArray<{ fields: ReadonlyArray<keyof FormValues>; title: string }>;
@@ -373,25 +377,25 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   component="dl"
                   m={0}
                   p="sm"
-                  bg="gray.0"
+                  bg="var(--iso-surface-subtle)"
                   style={{ borderRadius: "var(--mantine-radius-md)" }}
                   data-testid="onboarding-from-invite"
                 >
                   {!nameEditable && (
                     <Group gap="xs" wrap="nowrap">
-                      <Text component="dt" size="sm" c="gray.7" w={56}>Name</Text>
+                      <Text component="dt" size="sm" c="var(--iso-text-secondary)" w={56}>Name</Text>
                       <Text component="dd" size="sm" fw={600} m={0} style={{ overflowWrap: "anywhere" }}>
                         {`${user.firstName} ${user.lastName}`.trim()}
                       </Text>
                     </Group>
                   )}
                   <Group gap="xs" wrap="nowrap" mt={nameEditable ? 0 : 4}>
-                    <Text component="dt" size="sm" c="gray.7" w={56}>Email</Text>
+                    <Text component="dt" size="sm" c="var(--iso-text-secondary)" w={56}>Email</Text>
                     <Text component="dd" size="sm" fw={600} m={0} style={{ overflowWrap: "anywhere" }}>
                       {user.email}
                     </Text>
                   </Group>
-                  <Text size="xs" c="gray.7" mt={6}>
+                  <Text size="xs" c="var(--iso-text-secondary)" mt={6}>
                     From your invite.
                   </Text>
                 </Box>
@@ -420,7 +424,7 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                     availability === "checking" ? (
                       <Loader size={16} aria-hidden />
                     ) : availability === "available" ? (
-                      <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
+                      <IconCircleCheck size={18} color="var(--mantine-color-teal-text)" aria-hidden />
                     ) : undefined
                   }
                   // Say what is wrong as soon as the field is left, not only on "Next".

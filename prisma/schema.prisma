@@ -360,6 +360,13 @@ model Event {
   location       String
   date           DateTime
   duration       Int          @default(1) // In hours
+  // What the event pays the second shooter, in whole US cents, for the whole
+  // event. Null: not listed (applicants propose a rate).
+  payCents       Int?
+  // IANA zone the start time was entered in (the poster's browser zone),
+  // e.g. "America/Chicago". Times are shown in it, labelled. Null for
+  // events posted before it was recorded: shown in the reader's zone.
+  timeZone       String?
   image          String?
   // LEGACY, neither read nor written: whether an event is filled is
   // derived from its bookings (withDerivedFulfilled). Kept until a drop
@@ -455,7 +462,7 @@ model Notification {
   createdAt   DateTime @default(now())
   recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   recipientId String
-  type        String // booking_applied, booking_accepted, booking_declined, booking_canceled, booking_completed, new_message, review_received, profile_view
+  type        String // booking_applied, booking_accepted, booking_declined, booking_canceled, booking_completed, event_updated, new_message, review_received, profile_view
   title       String
   body        String
   isRead      Boolean  @default(false)

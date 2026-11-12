@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { canonicalTimeZone, formatEventTime } from "~/_lib/eventTime";
 import { ErrorReason, logger } from "~/_utils";
 import { EVENT_MAX_AHEAD_MS } from "~/_utils/eventDates";
+import { formatPay, MAX_EVENT_PAY_CENTS } from "~/_utils/eventPay";
 import { MAX_COMMENT_LENGTH, MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { withProOn } from "~/server/_billing/proStatus";
 import { withDerivedFulfilled } from "~/server/_db/bookingTransitions";
@@ -83,6 +85,23 @@ const eventDurationInput = z.number().int().min(1).max(MAX_EVENT_DURATION_HOURS)
 const eventTitleInput = z.string().trim().min(1).max(200);
 const eventDescriptionInput = z.string().trim().min(1).max(5000);
 const eventLocationInput = z.string().trim().min(1).max(200);
+/**
+ * Whole US cents for the whole event; null clears it (no listed pay), and
+ * so does 0: an unpaid listing is not "pays $0".
+ */
+const eventPayInput = z
+  .number()
+  .int()
+  .min(0)
+  .max(MAX_EVENT_PAY_CENTS)
+  .nullable()
+  .transform((cents) => (cents === 0 ? null : cents));
+/**
+ * The IANA zone of the event's start time, stored as the runtime spells it.
+ * Not refused when unknown or an offset ("+01:00"): stored as null, and the
+ * event is then shown in each reader's zone, labelled, as older events are.
+ */
+const eventTimeZoneInput = z.string().max(64).transform((zone) => canonicalTimeZone(zone));
 
 const eventPhotographerSelect = {
   avatar: true,
@@ -310,6 +329,8 @@ export const eventRouter = createTRPCRouter({
       duration: eventDurationInput,
       image: base64ImageInput.optional(),
       location: eventLocationInput,
+      payCents: eventPayInput.optional(),
+      timeZone: eventTimeZoneInput.optional(),
       title: eventTitleInput,
     }))
     .mutation(async ({ ctx, input }) => {
@@ -622,6 +643,7 @@ export const eventRouter = createTRPCRouter({
     }),
 
   update: protectedProcedure
+    .use(rateLimit(RateLimits.EVENT_UPDATE))
     .input(z.object({
       date: eventDateInput.optional(),
       description: eventDescriptionInput.optional(),
@@ -630,6 +652,9 @@ export const eventRouter = createTRPCRouter({
       // A new image to upload (base64), never a URL to store as given.
       image: base64ImageInput.optional(),
       location: eventLocationInput.optional(),
+      // null removes the listed pay.
+      payCents: eventPayInput.optional(),
+      timeZone: eventTimeZoneInput.optional(),
       title: eventTitleInput.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -638,7 +663,7 @@ export const eventRouter = createTRPCRouter({
 
       // findFirst hides deleted events; ownership is part of the lookup.
       const event = await ctx.db.event.findFirst({
-        select: { id: true, photographerId: true },
+        select: { date: true, id: true, payCents: true, photographerId: true, timeZone: true },
         where: { id, photographer: { userId: ctx.session.user.id } },
       });
       if (!event) {
@@ -653,11 +678,67 @@ export const eventRouter = createTRPCRouter({
         data: { ...fields, ...(imageUrl ? { image: imageUrl } : {}) },
         where: { id: event.id },
       });
+      await notifyBookedOfChanges(ctx.db, event, updated);
       // `isFulfilled` from the bookings, never the stored column.
       const [derived] = await withDerivedFulfilled(ctx.db, [updated]);
       return derived ?? updated;
     }),
 });
+
+type EventWhen = { date: Date; payCents: number | null; timeZone: string | null };
+
+/**
+ * What changed for a booked shooter between two versions of an event: the
+ * start (date or zone) and the pay, in words. Empty when neither changed.
+ */
+export function eventChanges(before: EventWhen, after: EventWhen): string[] {
+  const changes: string[] = [];
+  if (before.date.getTime() !== after.date.getTime() || before.timeZone !== after.timeZone) {
+    changes.push(`it now starts ${formatEventTime(after.date, after.timeZone, "dateTime")}`);
+  }
+  if (before.payCents !== after.payCents) {
+    const pay = formatPay(after.payCents);
+    changes.push(pay ? `it now pays ${pay} total` : "pay is no longer listed");
+  }
+  return changes;
+}
+
+/**
+ * Tells everyone booked on an event (accepted) when its time or pay
+ * changed, in the app. Never fails the edit: a lost notification is logged.
+ */
+async function notifyBookedOfChanges(
+  db: Pick<ExtendedPrismaClient, "booking" | "notification">,
+  before: EventWhen & { id: string },
+  after: EventWhen & { title: string },
+): Promise<void> {
+  const changes = eventChanges(before, after);
+  if (changes.length === 0) return;
+  try {
+    // One accepted booking per event at a time (bookingTransitions); the
+    // cap only bounds a surprise. One insert each: a multi-row insert would
+    // approach D1's bound-parameter limit.
+    const booked = await db.booking.findMany({
+      select: { applicantId: true, id: true },
+      where: { eventId: before.id, status: "accepted" },
+      take: 10,
+    });
+    for (const booking of booked) {
+      await db.notification.create({
+        data: {
+          body: `The event details changed: ${changes.join("; ")}.`,
+          data: JSON.stringify({ bookingId: booking.id, eventId: before.id }),
+          linkUrl: `/app/events/${before.id}`,
+          recipientId: booking.applicantId,
+          title: `"${after.title}" changed`,
+          type: "event_updated",
+        },
+      });
+    }
+  } catch (error) {
+    logger.warn("Failed to notify booked shooters of an event change", { error, eventId: before.id });
+  }
+}
 
 type UploadContext = {
   cloudinaryClient: {

@@ -66,7 +66,7 @@ export default function Icebreakers({ threadId, onPick }: IcebreakersProps) {
     return (
         <Stack gap={6} px="sm" py="xs" component="section" aria-label="Conversation starters" data-testid="icebreakers">
             <Group gap={6} wrap="nowrap">
-                <IconSparkles size={14} color="var(--mantine-color-orange-7)" aria-hidden />
+                <IconSparkles size={14} color="var(--iso-accent-text)" aria-hidden />
                 <Text size="xs" fw={600} c="dimmed">Not sure how to start? Tap one to edit and send.</Text>
             </Group>
             <Group gap="xs" component="ul" m={0} p={0} style={{ listStyle: "none" }}>

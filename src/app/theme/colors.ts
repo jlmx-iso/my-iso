@@ -103,6 +103,20 @@ const colors = {
         "#784e08",
         "#5c3c06",
     ],
+    // Dark mode surfaces and text: Mantine's dark scale, warmed to match the
+    // warm gray. 0 text, 2 dimmed, 4 borders, 6 cards, 7 the page.
+    dark: [
+        "#ece6e5",
+        "#cdc5c4",
+        "#ada5a4",
+        "#7a7271",
+        "#4a4443",
+        "#3b3534",
+        "#2e2928",
+        "#231f1e",
+        "#1b1817",
+        "#131110",
+    ],
     // Accent.
     teal: [
         "#e7faf7",

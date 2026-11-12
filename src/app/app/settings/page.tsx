@@ -127,7 +127,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                   )}
                 </Group>
                 <Group gap="xs" align="baseline">
-                  <Text size="xl" fw={700} c="orange.7" data-testid="pro-price">
+                  <Text size="xl" fw={700} c="var(--iso-accent-text)" data-testid="pro-price">
                     {proPrice.perMonth}
                     <Text span size="sm" fw={400} c="dimmed">
                       /month

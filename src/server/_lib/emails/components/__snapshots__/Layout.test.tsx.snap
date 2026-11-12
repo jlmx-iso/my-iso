@@ -1,0 +1,134 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`an email with dividers > keeps their colour (snapshot) 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Post your first event or browse open calls near you</title></head><body dir="ltr" lang="en" style="background-color:#F3F4F6;margin:0;padding:0"><!--$--><!--html--><!--head--><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Post your first event or browse open calls near you<div> ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿</div></div><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="background-color:#F3F4F6;font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;, Arial, sans-serif;margin:0;padding:0"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;margin:0 auto"><tbody><tr style="width:100%"><td style="padding:20px 0"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background-color:#FFFFFF;border-radius:8px 8px 0 0;text-align:center"><tbody><tr><td style="padding:32px 40px 24px"><p style="font-size:36px;line-height:24px;font-weight:800;color:#F97316;letter-spacing:-1px;margin:0;padding:0;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">ISO</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background-color:#FFFFFF"><tbody><tr><td style="padding:0 40px 32px"><h1 style="font-size:24px;font-weight:700;color:#111827;line-height:32px;margin:0 0 16px">Ready to shoot, <!-- -->Ada<!-- -->?</h1><p style="font-size:16px;line-height:26px;color:#374151;margin:0 0 16px;margin-top:0;margin-right:0;margin-bottom:16px;margin-left:0">Events are the heart of ISO. Whether you&#x27;re looking for your next gig or want to organize a shoot, this is where it happens.</p><hr style="width:100%;border:none;border-color:transparent;border-top:1px solid #E5E7EB;margin:24px 0"/><p style="font-size:18px;line-height:26px;color:#374151;margin:0 0 16px;font-weight:600;margin-top:0;margin-right:0;margin-bottom:16px;margin-left:0">Looking for photographers?</p><p style="font-size:16px;line-height:26px;color:#374151;margin:0 0 16px;margin-top:0;margin-right:0;margin-bottom:16px;margin-left:0">Post an event and let photographers come to you. Wedding, portrait session, creative project, meetup — whatever you need, there are photographers in your area ready to work.</p><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="text-align:center;margin:32px 0"><tbody><tr><td><a href="https://example.com/app/events?create=1" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;background-color:#F97316;border-radius:8px;color:#FFFFFF;font-size:16px;font-weight:600;padding:14px 28px;text-align:center;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Post an Event</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><hr style="width:100%;border:none;border-color:transparent;border-top:1px solid #E5E7EB;margin:24px 0"/><p style="font-size:18px;line-height:26px;color:#374151;margin:0 0 16px;font-weight:600;margin-top:0;margin-right:0;margin-bottom:16px;margin-left:0">Looking for work?</p><p style="font-size:16px;line-height:26px;color:#374151;margin:0 0 16px;margin-top:0;margin-right:0;margin-bottom:16px;margin-left:0">Browse open calls and events near you. Apply to the ones that match your style and your calendar, and propose your rate when you apply.</p><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="text-align:center;margin:32px 0"><tbody><tr><td><a href="https://example.com/app/events" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;background-color:#FFFFFF;border:2px solid #F97316;border-radius:8px;color:#F97316;font-size:16px;font-weight:600;padding:12px 26px;text-align:center;padding-top:12px;padding-right:26px;padding-bottom:12px;padding-left:26px" target="_blank"><span><!--[if mso]><i style="mso-font-width:433.3333333333333%;mso-text-raise:18px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:9px">Browse Events</span><span><!--[if mso]><i style="mso-font-width:433.3333333333333%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><p style="font-size:16px;line-height:26px;color:#6B7280;font-style:italic;margin:24px 0 0;margin-top:24px;margin-right:0;margin-bottom:0;margin-left:0">— Penny &amp; Jordan</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background-color:#FFFFFF;border-radius:0 0 8px 8px"><tbody><tr><td style="padding:0 40px 32px"><hr style="width:100%;border:none;border-color:transparent;border-top:1px solid #F3F4F6;margin:0 0 24px"/><p style="font-size:14px;line-height:24px;font-weight:600;color:#6B7280;text-align:center;margin:0 0 4px;margin-top:0;margin-right:0;margin-bottom:4px;margin-left:0">ISO — The Photographer Network</p><p style="font-size:12px;line-height:20px;color:#9CA3AF;text-align:center;margin:0 0 4px;margin-top:0;margin-right:0;margin-bottom:4px;margin-left:0">Built with care by Penny &amp; Jordan Lamoreaux</p></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`email layout > renders the frame around the content (snapshot) 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html dir="ltr" lang="en">
+  <head>
+    <meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>Preview text</title>
+  </head>
+  <body dir="ltr" lang="en" style="background-color:#F3F4F6;margin:0;padding:0">
+    <!--$--><!--html--><!--head-->
+    <div
+      style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0"
+      data-skip-in-text="true">
+      Preview text
+      <div>
+         ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿ ‌​‍﻿
+      </div>
+    </div>
+    <!--body-->
+    <table
+      border="0"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      role="presentation"
+      align="center">
+      <tbody>
+        <tr>
+          <td
+            dir="ltr"
+            lang="en"
+            style='background-color:#F3F4F6;font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;margin:0;padding:0'>
+            <table
+              align="center"
+              width="100%"
+              border="0"
+              cellpadding="0"
+              cellspacing="0"
+              role="presentation"
+              style="max-width:600px;margin:0 auto">
+              <tbody>
+                <tr style="width:100%">
+                  <td style="padding:20px 0">
+                    <table
+                      align="center"
+                      width="100%"
+                      border="0"
+                      cellpadding="0"
+                      cellspacing="0"
+                      role="presentation"
+                      style="background-color:#FFFFFF;border-radius:8px 8px 0 0;text-align:center">
+                      <tbody>
+                        <tr>
+                          <td style="padding:32px 40px 24px">
+                            <p
+                              style="font-size:36px;line-height:24px;font-weight:800;color:#F97316;letter-spacing:-1px;margin:0;padding:0;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">
+                              ISO
+                            </p>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <table
+                      align="center"
+                      width="100%"
+                      border="0"
+                      cellpadding="0"
+                      cellspacing="0"
+                      role="presentation"
+                      style="background-color:#FFFFFF">
+                      <tbody>
+                        <tr>
+                          <td style="padding:0 40px 32px"><p>Body</p></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <table
+                      align="center"
+                      width="100%"
+                      border="0"
+                      cellpadding="0"
+                      cellspacing="0"
+                      role="presentation"
+                      style="background-color:#FFFFFF;border-radius:0 0 8px 8px">
+                      <tbody>
+                        <tr>
+                          <td style="padding:0 40px 32px">
+                            <hr
+                              style="width:100%;border:none;border-color:transparent;border-top:1px solid #F3F4F6;margin:0 0 24px" />
+                            <p
+                              style="font-size:14px;line-height:24px;font-weight:600;color:#6B7280;text-align:center;margin:0 0 4px;margin-top:0;margin-right:0;margin-bottom:4px;margin-left:0">
+                              ISO — The Photographer Network
+                            </p>
+                            <p
+                              style="font-size:12px;line-height:20px;color:#9CA3AF;text-align:center;margin:0 0 4px;margin-top:0;margin-right:0;margin-bottom:4px;margin-left:0">
+                              Built with care by Penny &amp; Jordan Lamoreaux
+                            </p>
+                            <p
+                              style="font-size:12px;line-height:20px;color:#9CA3AF;text-align:center;margin:0 0 4px;margin-top:0;margin-right:0;margin-bottom:4px;margin-left:0">
+                              <a
+                                href="https://example.com/unsubscribe"
+                                style="color:#9CA3AF;text-decoration-line:none;text-decoration:underline"
+                                target="_blank"
+                                >Unsubscribe</a
+                              >
+                              <!-- -->or<!-- -->
+                              <a
+                                href="https://example.com/unsubscribe"
+                                style="color:#9CA3AF;text-decoration-line:none;text-decoration:underline"
+                                target="_blank"
+                                >manage email preferences</a
+                              >
+                            </p>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <!--/$-->
+  </body>
+</html>
+"
+`;

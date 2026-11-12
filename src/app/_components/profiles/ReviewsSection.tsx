@@ -135,7 +135,7 @@ function ReviewForm({
               value={form.values.rating}
               onChange={(rating) => form.setFieldValue("rating", rating)}
               getSymbolLabel={(value) => `${value} star${value === 1 ? "" : "s"}`}
-              emptySymbol={<IconStar size={32} color="var(--mantine-color-gray-6)" />}
+              emptySymbol={<IconStar size={32} color="var(--mantine-color-dimmed)" />}
               fullSymbol={<IconStarFilled size={32} color="var(--mantine-color-tan-6)" />}
             />
           </Input.Wrapper>
@@ -305,10 +305,10 @@ export default function ReviewsSection({
 
       {gate?.kind === "own" && (
         // One review per person: show theirs instead of a form that would be refused.
-        <Paper p="md" radius="md" withBorder bg="gray.0" data-testid="own-review">
+        <Paper p="md" radius="md" withBorder bg="var(--iso-surface-subtle)" data-testid="own-review">
           <Stack gap={4}>
             <Group gap="xs">
-              <IconCircleCheck size={18} color="var(--mantine-color-teal-7)" aria-hidden />
+              <IconCircleCheck size={18} color="var(--mantine-color-teal-text)" aria-hidden />
               <Text size="sm" fw={600}>
                 You reviewed {photographerName} on <LocalDate date={gate.review.createdAt} format="dateLong" />
               </Text>

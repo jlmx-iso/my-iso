@@ -67,6 +67,22 @@ INSERT OR IGNORE INTO "Event" (id, createdAt, updatedAt, photographerId, title, 
 INSERT OR IGNORE INTO "Event" (id, createdAt, updatedAt, photographerId, title, description, location, date, duration, isFulfilled, isDeleted) VALUES ('seed_e29', '2026-02-24T12:00:00.000+00:00', '2026-02-24T12:00:00.000+00:00', 'seed_p1', 'Austin Food & Wine Festival — Event Photography', 'Three-day Austin Food & Wine Festival needs an event photographer. Cooking demos, celebrity chef appearances, and tastings. Press credentials provided.', 'Austin, TX', strftime('%Y-%m-%dT20:00:00.000+00:00', 'now', '+17 days'), 8, 0, 0);
 INSERT OR IGNORE INTO "Event" (id, createdAt, updatedAt, photographerId, title, description, location, date, duration, isFulfilled, isDeleted) VALUES ('seed_e30', '2026-02-24T12:00:00.000+00:00', '2026-02-24T12:00:00.000+00:00', 'seed_p4', 'Country Music Album Cover Shoot', 'One-day album cover shoot for a rising country artist. Landscape shots on a Tennessee farm and moody studio portraits. Need an assistant experienced with large-format strobes.', 'Franklin, TN', strftime('%Y-%m-%dT20:00:00.000+00:00', 'now', '+28 days'), 8, 0, 0);
 
+-- Each event's time zone, from its state (the seed's times are written in
+-- UTC; these say where the clock is). And listed pay on a few, so pages show
+-- both kinds. Only rows the seed made and nobody has set since.
+UPDATE "Event" SET "timeZone" = CASE
+    WHEN location LIKE '%, TX' OR location LIKE '%, IL' OR location LIKE '%, TN' THEN 'America/Chicago'
+    WHEN location LIKE '%, CO' THEN 'America/Denver'
+    WHEN location LIKE '%, OR' OR location LIKE '%, WA' OR location LIKE '%, CA' THEN 'America/Los_Angeles'
+    WHEN location LIKE '%, NY' OR location LIKE '%, FL' THEN 'America/New_York'
+    WHEN location LIKE 'Tulum, %' THEN 'America/Cancun'
+  END
+  WHERE id LIKE 'seed_e%' AND "timeZone" IS NULL;
+UPDATE "Event" SET "payCents" = 45000 WHERE id = 'seed_e1' AND "payCents" IS NULL;
+UPDATE "Event" SET "payCents" = 35000 WHERE id = 'seed_e2' AND "payCents" IS NULL;
+UPDATE "Event" SET "payCents" = 60000 WHERE id = 'seed_e9' AND "payCents" IS NULL;
+UPDATE "Event" SET "payCents" = 25000 WHERE id = 'seed_e7' AND "payCents" IS NULL;
+
 INSERT OR IGNORE INTO "InviteCode" (id, createdAt, code, creatorId, maxRedemptions, currentRedemptions) VALUES ('seed_inv1', '2026-02-24T12:00:00.000+00:00', 'ISO-SARAH-A2B3C4D5', 'seed_u1', 5, 0);
 INSERT OR IGNORE INTO "InviteCode" (id, createdAt, code, creatorId, maxRedemptions, currentRedemptions) VALUES ('seed_inv2', '2026-02-24T12:00:00.000+00:00', 'ISO-MARCU-C3D4E5F6', 'seed_u2', 5, 0);
 INSERT OR IGNORE INTO "InviteCode" (id, createdAt, code, creatorId, maxRedemptions, currentRedemptions) VALUES ('seed_inv3', '2026-02-24T12:00:00.000+00:00', 'ISO-AISHA-E5F6G7H8', 'seed_u3', 5, 0);

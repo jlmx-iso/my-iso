@@ -29,10 +29,10 @@ export function PortfolioThumbnail({ src, alt, priority, sizes = "(min-width: 75
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "var(--mantine-color-gray-1)",
+          background: "var(--iso-surface-muted)",
         }}
       >
-        <IconCamera size={24} color="var(--mantine-color-gray-6)" aria-hidden />
+        <IconCamera size={24} color="var(--mantine-color-dimmed)" aria-hidden />
         {alt && <span className="sr-only">{alt} (image unavailable)</span>}
       </Box>
     );

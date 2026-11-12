@@ -1,7 +1,7 @@
 import { Card, Skeleton, Stack, Group } from '@mantine/core';
 
 const accentStyle = {
-  borderLeft: '3px solid var(--mantine-color-orange-3)',
+  borderLeft: '3px solid var(--iso-accent-border)',
 };
 
 export function EventSearchCardSkeleton() {

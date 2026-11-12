@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorReason } from "~/_utils/errorReason";
+import { RateLimits } from "~/server/_utils/rateLimit";
 import { reasonOf } from "~/server/api/reasonedError";
 import { createDbCaller } from "~/test/helpers/dbCaller";
+import { freezeRateLimitClock, spendRateLimit } from "~/test/helpers/rateLimitClock";
 import { createTestDb, createTestUser, type TestDb } from "~/test/helpers/sqlite";
 
 vi.mock("~/server/db", () => ({ db: {} }));
@@ -333,6 +335,121 @@ describe("events feed", () => {
       await testDb.db.booking.create({ data: { applicantId: second.id, eventId: event.id, ownerId: owner.id, status: "applied" } });
 
       expect((await as(viewer).getById({ id: event.id })).isFulfilled).toBe(false);
+    });
+  });
+
+  describe("pay and time zone", () => {
+    const start = () => new Date(Date.now() + 3 * DAY_MS).toISOString();
+    const base = { description: "Ceremony", duration: 6, location: "Austin, TX", title: "Wedding" };
+
+    it("stores listed pay in cents and the zone the time was entered in, and every read returns them", async () => {
+      const created = await as(owner).create({ ...base, date: start(), payCents: 45_000, timeZone: "America/Chicago" });
+      expect(created).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+
+      expect(await as(viewer).getById({ id: created.id })).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+      expect((await as(viewer).getFeedPage({})).items[0]).toMatchObject({ payCents: 45_000, timeZone: "America/Chicago" });
+    });
+
+    it("leaves both empty when not given (older clients), and an edit can set and clear pay", async () => {
+      const created = await as(owner).create({ ...base, date: start() });
+      expect(created).toMatchObject({ payCents: null, timeZone: null });
+
+      expect(await as(owner).update({ id: created.id, payCents: 30_000, timeZone: "America/Denver" })).toMatchObject({
+        payCents: 30_000,
+        timeZone: "America/Denver",
+      });
+      // Not mentioned: kept.
+      expect(await as(owner).update({ id: created.id, title: "Renamed" })).toMatchObject({ payCents: 30_000 });
+      // null: no longer listed.
+      expect(await as(owner).update({ id: created.id, payCents: null })).toMatchObject({ payCents: null });
+    });
+
+    it("refuses negative, fractional-cent and absurd pay, and an over-long zone", async () => {
+      for (const payCents of [-1, 1.5, 100_000_01]) {
+        await expect(as(owner).create({ ...base, date: start(), payCents })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      }
+      await expect(as(owner).create({ ...base, date: start(), timeZone: "x".repeat(65) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("stores $0 as no listed pay", async () => {
+      const created = await as(owner).create({ ...base, date: start(), payCents: 0 });
+      expect(created.payCents).toBeNull();
+      expect(await as(owner).update({ id: created.id, payCents: 0 })).toMatchObject({ payCents: null });
+    });
+
+    it("stores a zone as the runtime spells it, and null for an unknown zone or a bare offset", async () => {
+      const zoneOf = async (timeZone: string) => (await as(owner).create({ ...base, date: start(), timeZone })).timeZone;
+      expect(await zoneOf("america/chicago")).toBe("America/Chicago");
+      expect(await zoneOf("Europe/Berlin")).toBe("Europe/Berlin");
+      expect(await zoneOf("Mars/Base")).toBeNull();
+      expect(await zoneOf("+01:00")).toBeNull();
+      expect(await zoneOf("")).toBeNull();
+    });
+
+    describe("rate limit", () => {
+      freezeRateLimitClock();
+
+      it("limits edits per member (EVENT_UPDATE)", async () => {
+        const created = await as(owner).create({ ...base, date: start() });
+        await spendRateLimit(testDb.db, RateLimits.EVENT_UPDATE, `user:${owner.id}`, RateLimits.EVENT_UPDATE.limit);
+
+        await expect(as(owner).update({ id: created.id, title: "Once more" })).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+        // Another member's budget is their own.
+        await expect(as(viewer).update({ id: created.id, title: "Not mine" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      });
+    });
+
+    describe("telling booked shooters", () => {
+      async function bookedEvent() {
+        const event = await as(owner).create({ ...base, date: start(), payCents: 45_000, timeZone: "America/Denver" });
+        const shooter = await createTestUser(testDb.db);
+        await testDb.db.booking.create({ data: { applicantId: shooter.id, eventId: event.id, ownerId: owner.id, status: "accepted" } });
+        // Applied only: not told.
+        const applicant = await createTestUser(testDb.db);
+        await testDb.db.booking.create({ data: { applicantId: applicant.id, eventId: event.id, ownerId: owner.id, status: "applied" } });
+        const inbox = (userId: string) => testDb.db.notification.findMany({ where: { recipientId: userId } });
+        return { applicant, event, inbox, shooter };
+      }
+
+      it("sends the booked shooter what changed when the time or pay changes", async () => {
+        const { applicant, event, inbox, shooter } = await bookedEvent();
+        const moved = new Date("2027-01-10T17:00:00.000Z");
+
+        await as(owner).update({ date: moved.toISOString(), id: event.id, payCents: 50_000, timeZone: "America/Denver" });
+
+        const [notice] = await inbox(shooter.id);
+        expect(notice).toMatchObject({
+          body: "The event details changed: it now starts Jan 10, 2027 · 10:00 AM MST; it now pays $500 total.",
+          linkUrl: `/app/events/${event.id}`,
+          title: '"Wedding" changed',
+          type: "event_updated",
+        });
+        expect(await inbox(applicant.id)).toEqual([]);
+
+        await as(owner).update({ id: event.id, payCents: null });
+        expect((await inbox(shooter.id)).map((n) => n.body)).toContain("The event details changed: pay is no longer listed.");
+      });
+
+      it("still saves the edit when the notification cannot be written", async () => {
+        const { event, inbox, shooter } = await bookedEvent();
+        const create = vi.spyOn(testDb.db.notification, "create").mockRejectedValue(new Error("db down"));
+
+        const saved = await as(owner).update({ id: event.id, payCents: 50_000 });
+
+        expect(saved.payCents).toBe(50_000);
+        expect(create).toHaveBeenCalledOnce();
+        create.mockRestore();
+        expect(await inbox(shooter.id)).toEqual([]);
+      });
+
+      it("sends nothing for other edits, or when the values did not change", async () => {
+        const { event, inbox, shooter } = await bookedEvent();
+
+        await as(owner).update({ description: "More detail", id: event.id, title: "Wedding, again" });
+        await as(owner).update({ id: event.id, payCents: 45_000, timeZone: "America/Denver" });
+
+        expect(await inbox(shooter.id)).toEqual([]);
+      });
     });
   });
 

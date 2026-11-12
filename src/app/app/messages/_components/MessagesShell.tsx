@@ -90,7 +90,7 @@ export default function MessagesShell({ initialThreads, initialNextCursor, curre
                 <DefaultThreadRedirect threads={initialThreads} />
             </Suspense>
             <div className={classes.header}>
-                <Title order={1} size="h2" c="orange.7">Messages</Title>
+                <Title order={1} size="h2">Messages</Title>
                 <div className={classes.headerAction}>
                     <Suspense>
                         <NewMessageModal />

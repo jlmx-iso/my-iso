@@ -77,7 +77,7 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
 
         <Stack align="center" gap="xs">
           <Title order={1} ta="center">
-            You&apos;re in!
+            Your profile is ready
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={440}>
             {isActive
@@ -126,7 +126,7 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
                   <Text fw={600} size="sm">{action.title}</Text>
                   <Text size="sm" c="dimmed">{action.description}</Text>
                 </Stack>
-                <IconChevronRight size={18} color="var(--mantine-color-gray-6)" aria-hidden />
+                <IconChevronRight size={18} color="var(--mantine-color-dimmed)" aria-hidden />
               </Group>
             </Paper>
           ))}

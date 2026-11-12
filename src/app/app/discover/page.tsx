@@ -15,7 +15,7 @@ export default function DiscoverPage() {
     <Stack gap="lg">
       <PageHeader
         title="Discover"
-        description="Like the photographers you'd work with. When it's mutual, you match."
+        description="Like photographers you'd shoot with. If they like you back, you match and can message each other."
         action={
           <Button
             component={NextLink}

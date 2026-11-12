@@ -1,5 +1,5 @@
-import { Heading, Section, Text } from "@react-email/components";
 import { render } from "@react-email/render";
+import { Heading, Section, Text } from "react-email";
 
 import { Layout } from "./components/Layout";
 import { calloutBox, heading, paragraph, smallText } from "./components/styles";

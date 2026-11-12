@@ -4,13 +4,17 @@ name: Test bar guard
 # (thresholds, what coverage measures, the checks and the workflows that
 # run them: scripts/test-bar-paths.mjs) unless it has the
 # `coverage-exception` label. Raising thresholds only (a ratchet) needs no
-# label.
+# label, and neither does a package.json change that only bumps dependency
+# versions (its `scripts` and every other field unchanged, no test tool
+# touched), nor a package-lock.json change whose packages all come from the
+# npm registry with no test tool's version changed.
 #
 # pull_request_target: GitHub runs the BASE branch's copy of this workflow
 # and of the script, so a pull request cannot weaken or delete this check.
 # For the same reason it NEVER checks out or runs the pull request's code:
 # it checks out the base commit, reads the list of changed file names from
-# the API, and, for coverage-thresholds.json, the two JSON texts as data.
+# the API, and, for coverage-thresholds.json, package.json and
+# package-lock.json, the two JSON texts as data.
 # Takes effect once it is on the default branch; make it a required status
 # check (docs/TESTING.md).
 on:
@@ -59,8 +63,8 @@ jobs:
             --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
           echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
 
-      # Only the JSON text, read through the API as data.
-      - name: Thresholds before and after
+      # Only the JSON texts, read through the API as data.
+      - name: Thresholds, package.json and package-lock.json before and after
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_REPO: ${{ github.repository }}
@@ -74,6 +78,18 @@ jobs:
             gh api -H "Accept: application/vnd.github.raw" \
               "repos/$HEAD_REPO/contents/coverage-thresholds.json?ref=$HEAD_SHA" > "$RUNNER_TEMP/thresholds-head.json" || rm -f "$RUNNER_TEMP/thresholds-head.json"
           fi
+          if grep -qx 'package.json' "$RUNNER_TEMP/changed.txt"; then
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$BASE_REPO/contents/package.json?ref=$BASE_SHA" > "$RUNNER_TEMP/package-base.json" || rm -f "$RUNNER_TEMP/package-base.json"
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$HEAD_REPO/contents/package.json?ref=$HEAD_SHA" > "$RUNNER_TEMP/package-head.json" || rm -f "$RUNNER_TEMP/package-head.json"
+          fi
+          if grep -qx 'package-lock.json' "$RUNNER_TEMP/changed.txt"; then
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$BASE_REPO/contents/package-lock.json?ref=$BASE_SHA" > "$RUNNER_TEMP/lock-base.json" || rm -f "$RUNNER_TEMP/lock-base.json"
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$HEAD_REPO/contents/package-lock.json?ref=$HEAD_SHA" > "$RUNNER_TEMP/lock-head.json" || rm -f "$RUNNER_TEMP/lock-head.json"
+          fi
 
       - name: Check
         env:
@@ -82,5 +98,11 @@ jobs:
           args=(--files "$RUNNER_TEMP/changed.txt")
           if [ -s "$RUNNER_TEMP/thresholds-base.json" ] && [ -s "$RUNNER_TEMP/thresholds-head.json" ]; then
             args+=(--thresholds-base "$RUNNER_TEMP/thresholds-base.json" --thresholds-head "$RUNNER_TEMP/thresholds-head.json")
+          fi
+          if [ -s "$RUNNER_TEMP/package-base.json" ] && [ -s "$RUNNER_TEMP/package-head.json" ]; then
+            args+=(--package-base "$RUNNER_TEMP/package-base.json" --package-head "$RUNNER_TEMP/package-head.json")
+          fi
+          if [ -s "$RUNNER_TEMP/lock-base.json" ] && [ -s "$RUNNER_TEMP/lock-head.json" ]; then
+            args+=(--lock-base "$RUNNER_TEMP/lock-base.json" --lock-head "$RUNNER_TEMP/lock-head.json")
           fi
           node scripts/test-bar-paths.mjs "${args[@]}"
