@@ -80,20 +80,23 @@ model Subscription {
   // past_due (also across new billing periods) and cleared when it leaves
   // that status. The grace window is counted from here.
   pastDueSince       DateTime?
-  // A dispute (chargeback) on a payment of this subscription that is open
-  // or was lost: its id (dp_...), "open" | "lost", and the invoice the
-  // disputed charge paid. All null when there is none or it was won.
+  // The payment standing, derived from Stripe as a whole each time (see
+  // src/server/_billing/paymentStanding.ts), never updated per event: the
+  // dispute that withholds access (dp_...), "open" | "lost" ("lost": the
+  // last paid invoice was taken back and none has been paid since), and
+  // the invoice its charge paid. All null when nothing is withheld.
   disputeId          String?
   disputeStatus      String?
   disputeInvoiceId   String?
-  // The invoice whose payment was refunded in full, if any.
+  // The latest invoice, when its payment was refunded in full (same source).
   refundedInvoiceId  String?
   // A comped account: Pro without a Stripe subscription. Set by hand.
   isLifetime         Boolean
 
   // DEPRECATED legacy flags, still written (derived from `status`) so that
   // the previously deployed release keeps working during a deploy or a
-  // rollback. Nothing reads them; drop them in a later migration.
+  // rollback, and because they are NOT NULL without a default: keep writing
+  // them until they have one. Removal order: docs/DATABASE.md.
   isTrial            Boolean
   isActive           Boolean
   isCanceled         Boolean
@@ -231,11 +234,15 @@ model MessageThread {
 }
 
 // Per-participant read state: `userId` has seen everything in the thread up
-// to `lastReadAt`. No row means nothing has been read.
+// to the place (lastReadAt, lastReadMessageId). No row means nothing has
+// been read.
 model ThreadRead {
   threadId   String
   userId     String
   lastReadAt DateTime
+  // With lastReadAt, the place read up to in (createdAt, id) order: the
+  // message that was seen. Null: everything sent at lastReadAt.
+  lastReadMessageId String?
   thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -330,6 +337,9 @@ model Event {
   date           DateTime
   duration       Int          @default(1) // In hours
   image          String?
+  // LEGACY, neither read nor written: whether an event is filled is
+  // derived from its bookings (withDerivedFulfilled). Kept until a drop
+  // migration; see docs/DATABASE.md.
   isFulfilled    Boolean      @default(false)
   isDeleted      Boolean      @default(false)
   comments       Comment[]

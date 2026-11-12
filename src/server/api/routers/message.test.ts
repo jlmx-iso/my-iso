@@ -6,6 +6,7 @@ import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import {
   ACTIVE_BOOKING_STATUSES,
   countUnreadByThread,
+  findOrCreateThread,
   markThreadReadAt,
   threadParticipantKey,
 } from "~/server/_db/messaging";
@@ -388,6 +389,41 @@ describe("messageRouter against SQLite", () => {
         await expect(
           as(alice).createThread({ initialMessage: "hi", participants: [bob.id] }),
         ).resolves.toBeDefined();
+      });
+
+      it("hands nothing back when the limiter itself failed: a request that was never counted cannot lower the counter", async () => {
+        const [first, second] = await strangers(2);
+        // One conversation is on the counter.
+        await as(alice).createThread({ initialMessage: "hi", participants: [first?.id ?? ""] });
+        const counted = async () =>
+          (await testDb.raw.$queryRaw<Array<{ count: number | bigint }>>`
+            SELECT "count" FROM "RateLimit" WHERE "key" LIKE ${`${RateLimits.NEW_CONVERSATION_DAILY.name}:%`}`).map((row) => Number(row.count));
+        expect(await counted()).toEqual([1]);
+
+        // The daily allowance cannot be counted for the next request (the
+        // statement fails, the policy lets the request through), and an
+        // identical request creates the thread first.
+        const allParticipants = [alice.id, second?.id ?? ""];
+        const failingLimiter = new Proxy(testDb.db, {
+          get(target, property) {
+            if (property !== "$queryRaw") return Reflect.get(target, property) as unknown;
+            return async (strings: TemplateStringsArray, ...values: unknown[]) => {
+              if (String(values[0]).startsWith(`${RateLimits.NEW_CONVERSATION_DAILY.name}:`)) {
+                await findOrCreateThread(testDb.db, allParticipants);
+                throw new Error("database unavailable");
+              }
+              return target.$queryRaw(strings, ...values);
+            };
+          },
+        });
+        const caller = createDbCaller(messageRouter, failingLimiter, { user: alice });
+
+        const thread = await caller.createThread({ initialMessage: "hello", participants: [second?.id ?? ""] });
+
+        expect(thread.id).toBeDefined();
+        expect(await testDb.db.message.count({ where: { threadId: thread.id } })).toBe(1);
+        // Still one: nothing was charged for this request, so nothing is refunded.
+        expect(await counted()).toEqual([1]);
       });
 
       it("starts again the next day", async () => {
@@ -895,6 +931,60 @@ describe("messageRouter against SQLite", () => {
 
       expect(await testDb.raw.threadRead.count({ where: { userId: carol.id } })).toBe(0);
       expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 1 });
+    });
+
+    describe("messages with the same timestamp", () => {
+      const sameInstant = new Date("2021-05-05T10:00:00.000Z");
+
+      /** Two messages from Alice bearing the same millisecond; `m_b` follows `m_a` in thread order. */
+      async function twoAtOnce() {
+        const thread = await as(alice).createThread({ initialMessage: "earlier", participants: [bob.id] });
+        await testDb.raw.message.updateMany({ data: { createdAt: new Date("2021-05-05T09:00:00.000Z") }, where: { threadId: thread.id } });
+        for (const id of ["m_b", "m_a"]) {
+          await testDb.raw.message.create({
+            data: { content: id, createdAt: sameInstant, id, senderId: alice.id, threadId: thread.id },
+          });
+        }
+        return thread;
+      }
+
+      it("reading up to the first leaves the second unread", async () => {
+        const thread = await twoAtOnce();
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 3 });
+
+        // Bob has seen m_a; m_b had not arrived on his screen.
+        const marked = await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: "m_a" });
+
+        expect(marked.lastReadAt).toEqual(sameInstant);
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: true, unreadCount: 1 });
+        expect(await as(bob).getUnreadCount()).toEqual({ unreadMessages: 1, unreadThreads: 1 });
+        expect(await countUnreadByThread(testDb.db, bob.id, [thread.id])).toEqual(new Map([[thread.id, 1]]));
+
+        await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: "m_b" });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ hasUnread: false, unreadCount: 0 });
+
+        // Within the same timestamp too, the place never moves backwards.
+        await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: "m_a" });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+      });
+
+      it("reading up to a TIME covers everything sent at that time, and a message id cannot narrow it afterwards", async () => {
+        const thread = await twoAtOnce();
+
+        await as(bob).markThreadRead({ threadId: thread.id, upTo: sameInstant });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+
+        await as(bob).markThreadRead({ threadId: thread.id, upToMessageId: "m_a" });
+        expect(await unreadOf(bob, thread.id)).toMatchObject({ unreadCount: 0 });
+      });
+
+      it("lists them in the order the read state uses", async () => {
+        const thread = await twoAtOnce();
+
+        const listed = await as(bob).getThreadById({ threadId: thread.id });
+
+        expect(listed?.messages.map((message) => message.content)).toEqual(["earlier", "m_a", "m_b"]);
+      });
     });
 
     describe("lastReadAt never moves backwards", () => {

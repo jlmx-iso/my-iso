@@ -84,6 +84,7 @@ CREATE TABLE "ThreadRead" (
     "threadId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "lastReadAt" DATETIME NOT NULL,
+    "lastReadMessageId" TEXT,
 
     PRIMARY KEY ("threadId", "userId"),
     CONSTRAINT "ThreadRead_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "MessageThread" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
