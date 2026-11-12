@@ -78,7 +78,7 @@ function GroupedBookings<T extends { id: string; status: string; event: { date: 
           <Stack key={group} gap="sm" component="section" aria-labelledby={headingId} data-testid={`group-${group}`}>
             <Title order={2} size="h5" id={headingId}>
               {BOOKING_GROUP_TITLES[group]}{" "}
-              <Text span c="gray.7" fw={500} inherit>
+              <Text span c="var(--iso-text-secondary)" fw={500} inherit>
                 ({groups[group].length})
               </Text>
             </Title>

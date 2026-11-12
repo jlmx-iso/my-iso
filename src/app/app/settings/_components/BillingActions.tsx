@@ -145,7 +145,7 @@ export default function BillingActions({ mode: initialMode, paidUntil, portalLab
       </Button>
       {mode === "resubscribe" && (
         // Not an upgrade: a second subscription, charged now.
-        <Text size="xs" c="gray.7" maw={320} data-testid="resubscribe-note">
+        <Text size="xs" c="var(--iso-text-secondary)" maw={320} data-testid="resubscribe-note">
           This starts a new subscription and you are charged today.{" "}
           {paidUntil ? (
             <>
@@ -161,7 +161,7 @@ export default function BillingActions({ mode: initialMode, paidUntil, portalLab
         </Text>
       )}
       {price.annualNote && (
-        <Text size="xs" c="gray.7">
+        <Text size="xs" c="var(--iso-text-secondary)">
           {price.annualNote}
         </Text>
       )}

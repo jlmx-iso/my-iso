@@ -118,7 +118,7 @@ export default function MatchesList() {
                   ) : null}
                 </Stack>
 
-                <IconChevronRight size={20} color="var(--mantine-color-gray-6)" aria-hidden />
+                <IconChevronRight size={20} color="var(--mantine-color-dimmed)" aria-hidden />
               </Group>
             </Paper>
           </li>

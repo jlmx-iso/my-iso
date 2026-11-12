@@ -33,7 +33,7 @@ export default function EventComment({ comment: initialComment }: EventCommentPr
     const name = fullName(user);
 
     return (
-        <Box component="li" py="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)", listStyle: "none" }}>
+        <Box component="li" py="sm" style={{ borderBottom: "1px solid var(--iso-divider)", listStyle: "none" }}>
             <Group justify="space-between" align="center" mb={4} wrap="nowrap">
                 <UserBadge user={{ avatar: user.profilePic, name, userId: comment.userId }} />
                 <Timemarker date={comment.createdAt} />

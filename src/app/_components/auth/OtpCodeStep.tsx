@@ -152,7 +152,7 @@ export function OtpCodeStep({ email, destination, onResend, onChangeEmail, expla
               {error}
             </Text>
           ) : notice ? (
-            <Text c="teal.8" size="sm" ta="center">
+            <Text c="teal" size="sm" ta="center">
               {notice}
             </Text>
           ) : isVerifying ? (

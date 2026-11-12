@@ -118,7 +118,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
         wrap="nowrap"
         pt="sm"
         style={{
-          borderTop: "1px solid var(--mantine-color-gray-3)",
+          borderTop: "1px solid var(--mantine-color-default-border)",
         }}
       >
         <Textarea

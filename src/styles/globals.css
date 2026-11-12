@@ -51,6 +51,46 @@ p {
   }
 }
 
+/*
+ * Colour roles that Mantine has no variable for, for both colour schemes.
+ * Components use these (or Mantine's own scheme-aware variables:
+ * --mantine-color-text, -dimmed, -body, -default-border, -default-hover,
+ * --mantine-color-<name>-text, --mantine-primary-color-light[-color]),
+ * never a fixed palette shade, so dark mode keeps its contrast. The dark
+ * values are checked in src/app/theme/colors.test.ts.
+ */
+:root {
+  /* Secondary text, a step stronger than dimmed (labels, notes). */
+  --iso-text-secondary: var(--mantine-color-gray-7);
+  /* Brand-coloured text and icons (eyebrows, links that are not anchors). */
+  --iso-accent-text: var(--mantine-color-orange-7);
+  /* Quiet tinted surfaces: neutral, and the brand tint. */
+  --iso-surface-subtle: var(--mantine-color-gray-0);
+  --iso-surface-muted: var(--mantine-color-gray-1);
+  --iso-accent-surface: var(--mantine-color-orange-0);
+  --iso-accent-surface-strong: var(--mantine-color-orange-1);
+  /* Decorative brand edge (never text). */
+  --iso-accent-border: var(--mantine-color-orange-3);
+  /* Hairlines inside a card or list. */
+  --iso-divider: var(--mantine-color-gray-2);
+  /* The profile banner when there is no cover photo. */
+  --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%);
+}
+
+:root[data-mantine-color-scheme="dark"] {
+  --iso-text-secondary: var(--mantine-color-dark-1);
+  --iso-accent-text: var(--mantine-color-orange-4);
+  --iso-surface-subtle: var(--mantine-color-dark-6);
+  --iso-surface-muted: var(--mantine-color-dark-5);
+  --iso-accent-surface: var(--mantine-color-orange-light);
+  --iso-accent-surface-strong: var(--mantine-color-orange-light-hover);
+  --iso-accent-border: var(--mantine-color-orange-8);
+  --iso-divider: var(--mantine-color-dark-4);
+  --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-light) 0%, var(--mantine-color-teal-light) 55%, var(--mantine-color-purple-light) 100%);
+  /* Keyboard focus: the lighter blue reads on the dark surfaces. */
+  --focus-ring-color: var(--mantine-color-blue-4);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
@@ -75,7 +115,7 @@ html {
   padding: 8px 14px;
   border-radius: var(--mantine-radius-md);
   background: var(--mantine-color-body);
-  color: var(--mantine-color-orange-7);
+  color: var(--iso-accent-text);
   font-weight: 600;
   box-shadow: var(--mantine-shadow-md);
   transform: translateY(-200%);
@@ -136,7 +176,7 @@ html {
 
 @media (hover: hover) {
   .row-interactive:hover {
-    background-color: var(--mantine-color-gray-0);
+    background-color: var(--mantine-color-default-hover);
   }
 }
 

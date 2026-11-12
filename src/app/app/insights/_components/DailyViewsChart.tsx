@@ -81,8 +81,8 @@ export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
                     aria-hidden
                     style={{ display: "block", overflow: "visible" }}
                 >
-                    <line x1={0} x2={100} y1={0.5} y2={0.5} stroke="var(--mantine-color-gray-2)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-                    <line x1={0} x2={100} y1={HEIGHT - 0.5} y2={HEIGHT - 0.5} stroke="var(--mantine-color-gray-4)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+                    <line x1={0} x2={100} y1={0.5} y2={0.5} stroke="var(--iso-divider)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+                    <line x1={0} x2={100} y1={HEIGHT - 0.5} y2={HEIGHT - 0.5} stroke="var(--mantine-color-default-border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
                     {daily.map((entry, index) => {
                         const barHeight = entry.count === 0 ? 0 : Math.max(3, (entry.count / max) * (HEIGHT - 4));
                         return (

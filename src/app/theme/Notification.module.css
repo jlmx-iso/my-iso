@@ -6,7 +6,7 @@
 .root {
   align-items: flex-start;
   padding: 12px 14px;
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-default-border);
   border-left: 4px solid var(--notification-color);
   border-radius: var(--mantine-radius-md);
   background: var(--mantine-color-white);
@@ -39,11 +39,11 @@
 }
 
 .description {
-  color: var(--mantine-color-gray-7);
+  color: var(--iso-text-secondary);
   font-size: var(--mantine-font-size-sm);
   line-height: 1.45;
 }
 
 .closeButton {
-  color: var(--mantine-color-gray-7);
+  color: var(--iso-text-secondary);
 }

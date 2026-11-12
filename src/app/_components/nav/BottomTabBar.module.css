@@ -4,7 +4,7 @@
   justify-content: space-around;
   height: 100%;
   padding: 0 var(--mantine-spacing-xs) env(safe-area-inset-bottom, 0px);
-  border-top: 1px solid var(--mantine-color-gray-2);
+  border-top: 1px solid var(--iso-divider);
   background: var(--mantine-color-body);
 }
 
@@ -16,13 +16,13 @@
   justify-content: center;
   gap: 3px;
   min-width: 0;
-  color: var(--mantine-color-gray-7);
+  color: var(--iso-text-secondary);
   font-size: 11px;
   line-height: 1;
 }
 
 .tab[aria-current="page"] {
-  color: var(--mantine-color-orange-7);
+  color: var(--iso-accent-text);
   font-weight: 600;
 }
 

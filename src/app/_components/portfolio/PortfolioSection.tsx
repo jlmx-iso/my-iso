@@ -70,7 +70,7 @@ function Thumbnail({ image }: { image: PortfolioImage }) {
 
   if (brokenSrc === image.image) {
     return (
-      <Group justify="center" align="center" h="100%" bg="gray.1" c="gray.6">
+      <Group justify="center" align="center" h="100%" bg="var(--iso-surface-muted)" c="dimmed">
         <IconCamera size={32} aria-hidden />
         <span className="sr-only">{image.title} (image unavailable)</span>
       </Group>
@@ -455,7 +455,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       {sorted.length === 0 ? (
         <Paper p="xl" radius="md" withBorder style={{ borderStyle: "dashed" }}>
           <Stack align="center" gap="md" py="md">
-            <IconCamera size={40} color="var(--mantine-color-gray-6)" stroke={1.5} aria-hidden />
+            <IconCamera size={40} color="var(--mantine-color-dimmed)" stroke={1.5} aria-hidden />
             <Stack align="center" gap={4}>
               <Text fw={600}>Add your first portfolio image</Text>
               <Text size="sm" c="dimmed" ta="center" maw={320}>
@@ -503,7 +503,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
               mah="70dvh"
               fit="contain"
               radius="md"
-              bg="gray.1"
+              bg="var(--iso-surface-muted)"
             />
             {viewing.description && <Text size="sm">{viewing.description}</Text>}
             {parseTags(viewing.tags).length > 0 && (

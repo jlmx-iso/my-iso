@@ -206,7 +206,7 @@ export default function MessageFeed({ threadId, initialThread }: MessageFeedProp
                 px="sm"
                 py="xs"
                 wrap="nowrap"
-                style={{ borderBottom: "1px solid var(--mantine-color-gray-3)", flexShrink: 0 }}
+                style={{ borderBottom: "1px solid var(--mantine-color-default-border)", flexShrink: 0 }}
             >
                 <ActionIcon
                     component={Link}

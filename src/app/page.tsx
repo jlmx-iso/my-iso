@@ -142,12 +142,12 @@ function HowItWorksSection() {
               <Text
                 fw={700}
                 size="xs"
-                c="orange.8"
+                c="var(--iso-accent-text)"
                 pos="absolute"
                 top={-6}
                 right={-6}
                 style={{
-                  background: "var(--mantine-color-orange-1)",
+                  background: "var(--iso-accent-surface-strong)",
                   borderRadius: "50%",
                   width: 22,
                   height: 22,
@@ -302,8 +302,8 @@ function PricingPreviewSection() {
             radius="md"
             withBorder
             style={{
-              borderColor: "var(--mantine-color-orange-3)",
-              background: "var(--mantine-color-orange-0)",
+              borderColor: "var(--iso-accent-border)",
+              background: "var(--iso-accent-surface)",
               height: "100%",
             }}
           >
@@ -350,7 +350,7 @@ function CtaSection() {
         radius="md"
         style={{
           background:
-            "linear-gradient(135deg, var(--mantine-color-orange-0) 0%, var(--mantine-color-orange-1) 100%)",
+            "linear-gradient(135deg, var(--iso-accent-surface) 0%, var(--iso-accent-surface-strong) 100%)",
         }}
       >
         <Stack align="center" gap="lg" maw={540} mx="auto">

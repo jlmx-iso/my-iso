@@ -38,7 +38,7 @@ export default function ContactPage() {
     <Container size="sm" w="100%">
       <Box py={60}>
         <Stack align="center" gap="lg" mb={40}>
-          <Text size="sm" fw={600} c="orange.7" tt="uppercase" style={{ letterSpacing: 1 }}>
+          <Text size="sm" fw={600} c="var(--iso-accent-text)" tt="uppercase" style={{ letterSpacing: 1 }}>
             Contact
           </Text>
           <Title order={1} ta="center">

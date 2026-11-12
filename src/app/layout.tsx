@@ -62,7 +62,11 @@ export const viewport: Viewport = {
   // Shrink the layout (not just the visual viewport) when the on-screen
   // keyboard opens, so the message composer stays in view.
   interactiveWidget: "resizes-content",
-  themeColor: "#ffffff",
+  // The browser bar follows the colour scheme (dark: the body colour, dark.7).
+  themeColor: [
+    { color: "#ffffff", media: "(prefers-color-scheme: light)" },
+    { color: "#231f1e", media: "(prefers-color-scheme: dark)" },
+  ],
 };
 
 export default async function RootLayout({
@@ -77,10 +81,11 @@ export default async function RootLayout({
   const nonce = await requestNonce();
 
   return (
-    // The app is light-only. The colour scheme attribute is in the server HTML
-    // (not just set by ColorSchemeScript) because Mantine's colour variables
-    // hang off it: without it, a page viewed with JavaScript off has no
-    // button or badge colours.
+    // Light or dark follows the visitor's system setting: ColorSchemeScript
+    // sets the attribute before the first paint. "light" is also in the
+    // server HTML because Mantine's colour variables hang off it: without
+    // it, a page viewed with JavaScript off has no button or badge colours
+    // (such a page is light).
     <html
       lang="en"
       className={inter.variable}
@@ -89,7 +94,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <ColorSchemeScript forceColorScheme="light" nonce={nonce} />
+        <ColorSchemeScript defaultColorScheme="auto" nonce={nonce} />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: REVEAL_SCRIPT }} />
       </head>
       <body>

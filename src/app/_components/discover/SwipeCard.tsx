@@ -113,7 +113,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
         p="lg"
         style={{
           background: "var(--mantine-color-body)",
-          border: "1px solid var(--mantine-color-gray-2)",
+          border: "1px solid var(--iso-divider)",
           borderRadius: "var(--mantine-radius-lg)",
           boxShadow: isTop ? "0 4px 20px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.08)",
           overflow: "hidden",
@@ -239,11 +239,11 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
             >
               <Group gap={4} justify="center">
                 {expanded ? (
-                  <IconChevronUp size={16} color="var(--mantine-color-orange-7)" aria-hidden />
+                  <IconChevronUp size={16} color="var(--iso-accent-text)" aria-hidden />
                 ) : (
-                  <IconChevronDown size={16} color="var(--mantine-color-orange-7)" aria-hidden />
+                  <IconChevronDown size={16} color="var(--iso-accent-text)" aria-hidden />
                 )}
-                <Text size="sm" fw={600} c="orange.7">
+                <Text size="sm" fw={600} c="var(--iso-accent-text)">
                   {expanded ? "Show less" : "View full profile"}
                 </Text>
               </Group>
@@ -281,13 +281,13 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                         h={100}
                         style={{
                           borderRadius: "var(--mantine-radius-sm)",
-                          background: "var(--mantine-color-gray-1)",
+                          background: "var(--iso-surface-muted)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <IconCamera size={24} color="var(--mantine-color-gray-6)" />
+                        <IconCamera size={24} color="var(--mantine-color-dimmed)" />
                       </Box>
                     ))}
                   </SimpleGrid>

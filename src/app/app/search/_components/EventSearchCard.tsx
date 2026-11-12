@@ -44,8 +44,8 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         p="md"
         style={{
           flex: 1,
-          border: '1px solid var(--mantine-color-gray-3)',
-          borderLeft: '3px solid var(--mantine-color-orange-3)',
+          border: '1px solid var(--mantine-color-default-border)',
+          borderLeft: '3px solid var(--iso-accent-border)',
           borderRadius: event.image
             ? '0 0 var(--mantine-radius-md) var(--mantine-radius-md)'
             : 'var(--mantine-radius-md)',

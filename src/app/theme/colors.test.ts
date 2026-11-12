@@ -82,3 +82,53 @@ describe("theme palette contrast (WCAG AA)", () => {
         expect(contrast(black, colors.orange[1])).toBeGreaterThanOrEqual(7);
     });
 });
+
+/**
+ * Mantine's dark light-variant surface: shade 9 mixed halfway to black
+ * (its `darken(color, 0.5)`).
+ */
+function darkLight(hex: string): string {
+    return `#${[1, 3, 5]
+        .map((start) => Math.round(parseInt(hex.slice(start, start + 2), 16) * 0.5).toString(16).padStart(2, "0"))
+        .join("")}`;
+}
+
+describe("dark mode contrast (WCAG AA), as Mantine maps the palette", () => {
+    const { dark } = colors;
+    const page = dark[7];
+    const card = dark[6];
+    const raised = dark[5];
+    const surfaces = [page, card, raised];
+    const textPalettes = ["orange", "teal", "red", "blue", "green", "purple", "tan"] as const;
+
+    it("body text (dark.0), secondary text (dark.1) and dimmed text (dark.2) on the page, cards and raised surfaces", () => {
+        for (const surface of surfaces) {
+            expect(contrast(dark[0], surface)).toBeGreaterThanOrEqual(7);
+            expect(contrast(dark[1], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+            expect(contrast(dark[2], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+    });
+
+    // `c="<name>"` is shade 4 in dark mode; purple is overridden to shade 3
+    // (ThemeProvider's cssVariablesResolver).
+    const textShade = (name: (typeof textPalettes)[number]) => (name === "purple" ? colors.purple[3] : colors[name][4]);
+
+    it.each(textPalettes)("%s: coloured text on the page and on cards", (name) => {
+        for (const surface of [page, card]) {
+            expect(contrast(textShade(name), surface)).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+    });
+
+    it.each(textPalettes)("%s: light variant (shade 0 on darkened shade 9)", (name) => {
+        expect(contrast(colors[name][0], darkLight(colors[name][9]))).toBeGreaterThanOrEqual(AA_TEXT);
+    });
+
+    it("filled controls keep white text on shade 6, and borders and input borders show", () => {
+        expect(contrast(WHITE, colors.orange[6])).toBeGreaterThanOrEqual(AA_TEXT);
+        // Input borders (gray.5, globals.css) and the focus ring (blue.4) on the page and cards.
+        for (const surface of [page, card]) {
+            expect(contrast(colors.gray[5], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+            expect(contrast(colors.blue[4], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+        }
+    });
+});
