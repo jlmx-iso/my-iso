@@ -44,7 +44,7 @@ export default function ProfileHeader({ photographer, coverImage, canChangePhoto
         style={{
           background: coverImage
             ? undefined
-            : "linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%)",
+            : "var(--iso-banner)",
           borderRadius: "var(--mantine-radius-lg)",
           overflow: "hidden",
         }}

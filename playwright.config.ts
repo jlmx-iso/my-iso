@@ -12,6 +12,12 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   fullyParallel: false,
   outputDir: "test-results",
+  // Every spec runs twice: the app follows the system colour scheme, and
+  // dark mode has its own colours (and so its own chances to break).
+  projects: [
+    { name: "light", use: { colorScheme: "light" } },
+    { name: "dark", use: { colorScheme: "dark" } },
+  ],
   reporter: process.env.CI ? [["list"], ["github"]] : "list",
   retries: 0,
   testDir: "e2e",

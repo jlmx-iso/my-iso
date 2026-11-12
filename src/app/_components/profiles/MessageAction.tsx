@@ -1,4 +1,4 @@
-import { Anchor, Button, Stack, Text } from "@mantine/core";
+import { Anchor, Button, type ButtonProps, Stack, Text } from "@mantine/core";
 import { IconMessage, IconMessageOff } from "@tabler/icons-react";
 import { TRPCError } from "@trpc/server";
 
@@ -8,6 +8,8 @@ import { api } from "~/trpc/server";
 type MessageActionProps = {
   /** The profile's owner. */
   userId: string;
+  /** Filled on a profile (its main action); "default" beside another action. */
+  variant?: ButtonProps["variant"];
 };
 
 /** What the signed-in viewer can do about messaging this person. */
@@ -33,12 +35,12 @@ async function messagingOptions(userId: string): Promise<{ href: string } | { hr
  * not discoverable and the two have no match, booking or earlier message),
  * says so and how to connect, instead of a button that leads to an error.
  */
-export async function MessageAction({ userId }: MessageActionProps) {
+export async function MessageAction({ userId, variant = "filled" }: MessageActionProps) {
   const { href } = await messagingOptions(userId);
 
   if (href) {
     return (
-      <Button component={NextLink} href={href} size="sm" leftSection={<IconMessage size={16} />}>
+      <Button component={NextLink} href={href} size="sm" variant={variant} leftSection={<IconMessage size={16} />}>
         Message
       </Button>
     );

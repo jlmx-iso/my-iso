@@ -74,7 +74,7 @@ export default function PlanStatus({ subscription, pricing }: PlanStatusProps) {
                 {summary.planName}
               </Badge>
               {summary.planDetail && (
-                <Text size="sm" c="gray.7" data-testid="plan-detail">
+                <Text size="sm" c="var(--iso-text-secondary)" data-testid="plan-detail">
                   {summary.planDetail}
                 </Text>
               )}

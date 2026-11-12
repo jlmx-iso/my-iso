@@ -131,6 +131,8 @@ export function AvatarStep({ photo, onChange, onCroppingChange, disabled }: Avat
           </Text>
           <Slider
             aria-labelledby={zoomLabelId}
+            // The element with role="slider" is the thumb: it needs the name.
+            thumbProps={{ "aria-labelledby": zoomLabelId }}
             value={zoom}
             onChange={setZoom}
             min={1}

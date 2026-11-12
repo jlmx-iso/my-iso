@@ -11,7 +11,7 @@ Cloudflare Workers with OpenNext behind a custom entry (`worker.ts`). Data is
 Cloudflare D1 through Prisma 7. Auth.js v5 (Google and emailed codes, JWT
 sessions). PostHog for analytics, replay, flags and error tracking. Resend
 for email, Cloudinary for images, Stripe for payments, Claude for match
-summaries and icebreakers. npm, Node 22.
+summaries and icebreakers. npm 11, Node 26.
 
 ## Commands
 

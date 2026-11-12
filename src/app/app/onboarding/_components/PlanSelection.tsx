@@ -144,7 +144,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                 )}
               </Group>
               <Group gap="xs" align="baseline">
-                <Text size="xl" fw={700} c="orange.7" data-testid="pro-price">
+                <Text size="xl" fw={700} c="var(--iso-accent-text)" data-testid="pro-price">
                   {charged}
                   <Text span size="sm" fw={400} c="dimmed">{annual ? "/year" : "/month"}</Text>
                 </Text>
@@ -162,7 +162,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                 )}
               </Group>
               {price.annualNote && (
-                <Text size="xs" c="gray.7" fw={500}>
+                <Text size="xs" c="var(--iso-text-secondary)" fw={500}>
                   {price.annualNote}
                 </Text>
               )}

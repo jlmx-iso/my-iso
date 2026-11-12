@@ -29,7 +29,7 @@ export default async function Page() {
         <Stack gap="lg">
             <PageHeader
                 title="Events"
-                description="Find and post second shooter opportunities near you"
+                description="Events near you that need a second shooter. Post one when you need help."
                 action={<Suspense><CreateEventButton /></Suspense>}
             />
             <EventsFeed currentUserId={session.user.id} locations={locations} initialUpcoming={initialUpcoming} />

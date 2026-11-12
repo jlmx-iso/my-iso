@@ -1,11 +1,11 @@
 'use client';
 
-import { AspectRatio, Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
-import { IconCalendar, IconClock, IconHeart, IconMapPin, IconMessageCircle } from '@tabler/icons-react';
+import { AspectRatio, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
+import { IconHeart, IconMessageCircle } from '@tabler/icons-react';
 import Link from 'next/link';
 
 import { fullName } from '~/_utils/names';
-import LocalDate from "~/app/_components/LocalDate";
+import EventMeta from "~/app/_components/events/EventMeta";
 import UserBadge from '~/app/_components/UserBadge';
 import type { RouterOutputs } from '~/trpc/react';
 
@@ -44,8 +44,8 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         p="md"
         style={{
           flex: 1,
-          border: '1px solid var(--mantine-color-gray-3)',
-          borderLeft: '3px solid var(--mantine-color-orange-3)',
+          border: '1px solid var(--mantine-color-default-border)',
+          borderLeft: '3px solid var(--iso-accent-border)',
           borderRadius: event.image
             ? '0 0 var(--mantine-radius-md) var(--mantine-radius-md)'
             : 'var(--mantine-radius-md)',
@@ -68,19 +68,15 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
           <Text c="dimmed" size="sm" lineClamp={2}>{event.description}</Text>
         )}
 
-        <Group gap="xs" wrap="wrap">
-          {event.location && (
-            <Badge variant="light" color="teal" leftSection={<IconMapPin size={12} aria-hidden />}>
-              <span className="sr-only">Location: </span>{event.location}
-            </Badge>
-          )}
-          <Badge variant="light" leftSection={<IconCalendar size={12} aria-hidden />}>
-            <span className="sr-only">Date: </span><LocalDate date={event.date} />
-          </Badge>
-          <Badge variant="light" color="purple" leftSection={<IconClock size={12} aria-hidden />}>
-            <span className="sr-only">Duration: </span>{event.duration} hour{event.duration === 1 ? '' : 's'}
-          </Badge>
-        </Group>
+        <EventMeta
+          date={event.date}
+          timeZone={event.timeZone}
+          duration={event.duration}
+          location={event.location}
+          payCents={event.payCents}
+          timeFormat="dateTime"
+          zone="when-different"
+        />
 
         <Group gap="md" mt="auto" pt={4}>
           <Group gap={4} wrap="nowrap">

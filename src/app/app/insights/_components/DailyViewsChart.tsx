@@ -99,8 +99,8 @@ export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
                     aria-hidden
                     style={{ display: "block", overflow: "visible" }}
                 >
-                    <line x1={0} x2={100} y1={0.5} y2={0.5} stroke="var(--mantine-color-gray-2)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-                    <line x1={0} x2={100} y1={HEIGHT - 0.5} y2={HEIGHT - 0.5} stroke="var(--mantine-color-gray-4)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+                    <line x1={0} x2={100} y1={0.5} y2={0.5} stroke="var(--iso-divider)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+                    <line x1={0} x2={100} y1={HEIGHT - 0.5} y2={HEIGHT - 0.5} stroke="var(--mantine-color-default-border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
                     {daily.map((entry, index) => {
                         const barHeight = entry.count === 0 ? 0 : Math.max(3, (entry.count / max) * (HEIGHT - 4));
                         return (
@@ -110,7 +110,8 @@ export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
                                 width={width}
                                 y={HEIGHT - barHeight}
                                 height={barHeight}
-                                fill={index === active ? "var(--mantine-color-orange-7)" : "var(--mantine-color-orange-5)"}
+                                // The active bar: orange.7 on white, orange.4 on the dark page (the accent-text token).
+                                fill={index === active ? "var(--iso-accent-text)" : "var(--mantine-color-orange-5)"}
                                 stroke="var(--mantine-color-body)"
                                 strokeWidth={GAP}
                                 vectorEffect="non-scaling-stroke"

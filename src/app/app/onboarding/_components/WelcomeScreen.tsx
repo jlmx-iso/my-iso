@@ -28,7 +28,7 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
 
         <Stack align="center" gap="xs">
           <Title order={1} ta="center">
-            Welcome to ISO{firstName ? `, ${firstName}` : ""}!
+            Welcome to ISO{firstName ? `, ${firstName}` : ""}
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={400}>
             {photographerCount >= SOCIAL_PROOF_THRESHOLD
@@ -40,13 +40,13 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
         <Box
           p="lg"
           style={{
-            background: "var(--mantine-color-orange-0)",
+            background: "var(--iso-accent-surface)",
             borderRadius: "var(--mantine-radius-md)",
             width: "100%",
           }}
         >
           <Stack align="center" gap="xs">
-            <IconStar size={20} color="var(--mantine-color-orange-7)" aria-hidden />
+            <IconStar size={20} color="var(--iso-accent-text)" aria-hidden />
             <Text size="sm" ta="center" fw={500}>
               As a founding member you can get Pro at the founding price, which
               stays the same for as long as you stay subscribed.

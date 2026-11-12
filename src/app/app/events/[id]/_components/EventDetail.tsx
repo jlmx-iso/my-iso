@@ -11,23 +11,25 @@ import ApplyAction from "~/app/_components/events/ApplyAction";
 import EventComment from "~/app/_components/events/EventComment";
 import EventCover from "~/app/_components/events/EventCover";
 import EventMeta from "~/app/_components/events/EventMeta";
-import Timemarker from "~/app/_components/Timemarker";
-import UserBadge from "~/app/_components/UserBadge";
 import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
 import { useNow } from "~/app/_hooks/useNow";
 import { type RouterOutputs, api } from "~/trpc/react";
+
+import EventOwnerCard from "./EventOwnerCard";
 
 type EventDetailProps = {
     /** The event as the server rendered it; kept fresh by the query below. */
     initialEvent: RouterOutputs["event"]["getById"];
     currentUserId: string | null;
+    /** "Message" for the poster, rendered on the server; absent for the owner. */
+    messageAction?: React.ReactNode;
 };
 
 /** The server just rendered this data: no need to ask again on mount. */
 const FRESH_FOR_MS = 30_000;
 
 /** One event: what, where and when, the way to apply, then its comments. */
-export default function EventDetail({ initialEvent, currentUserId }: EventDetailProps) {
+export default function EventDetail({ initialEvent, currentUserId, messageAction }: EventDetailProps) {
     const eventId = initialEvent.id;
     const { data: event } = api.event.getById.useQuery(
         { id: eventId },
@@ -61,17 +63,17 @@ export default function EventDetail({ initialEvent, currentUserId }: EventDetail
             </Anchor>
 
             <Stack gap="md" component="article">
-                <Group justify="space-between" align="center" wrap="nowrap">
-                    <UserBadge user={event.photographer} />
-                    <Timemarker date={event.createdAt} />
-                </Group>
-
-                <Title order={1} size="h2" style={{ overflowWrap: "anywhere" }}>{event.title}</Title>
-
-                <Group gap="xs">
-                    <EventMeta date={event.date} duration={event.duration} location={event.location} withTime />
-                    {isPast && <Badge variant="light" color="gray">Past event</Badge>}
-                </Group>
+                <Stack gap="xs">
+                    {isPast && <Badge variant="light" color="gray" w="fit-content">Past event</Badge>}
+                    <Title order={1} size="h2" style={{ overflowWrap: "anywhere" }}>{event.title}</Title>
+                    <EventMeta
+                        date={event.date}
+                        timeZone={event.timeZone}
+                        duration={event.duration}
+                        location={event.location}
+                        payCents={event.payCents}
+                    />
+                </Stack>
 
                 {/* The page's primary action: above the description and the
                     cover, so it is on screen without scrolling on a phone. */}
@@ -86,6 +88,8 @@ export default function EventDetail({ initialEvent, currentUserId }: EventDetail
                 )}
 
                 {event.image && <EventCover src={event.image} mah={420} radius="md" />}
+
+                <EventOwnerCard event={event} isOwner={isOwnEvent} messageAction={messageAction} />
             </Stack>
 
             <Divider />

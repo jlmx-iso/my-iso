@@ -135,7 +135,7 @@ export default function ConversationList({ initialThreads, initialNextCursor, cu
                                 <Group justify="space-between" wrap="nowrap" gap="xs">
                                     <Text
                                         size="xs"
-                                        c={unread > 0 ? "black" : "dimmed"}
+                                        c={unread > 0 ? "var(--mantine-color-text)" : "dimmed"}
                                         fw={unread > 0 ? 600 : undefined}
                                         lineClamp={1}
                                         style={{ flex: 1, minWidth: 0 }}

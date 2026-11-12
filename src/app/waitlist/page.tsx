@@ -123,7 +123,7 @@ export default function Page() {
           Request an invite
         </Title>
         <Group gap={6} justify="center" wrap="nowrap" align="flex-start">
-          <IconClock size={16} color="var(--mantine-color-gray-6)" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+          <IconClock size={16} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
           <Text c="dimmed" size="sm">
             We&apos;re currently invite-only. Tell us about yourself.
           </Text>

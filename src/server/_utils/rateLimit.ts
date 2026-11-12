@@ -330,6 +330,9 @@ export const RateLimits = {
   NEW_CONVERSATION_DAILY: { limit: MAX_NEW_CONVERSATIONS_PER_DAY, name: "new-conversation-daily", onError: "allow", windowSeconds: DAY },
   SWIPE: { limit: 120, name: "swipe", onError: "allow", windowSeconds: MINUTE },
   EVENT_CREATE: { limit: 20, name: "event-create", onError: "allow", windowSeconds: HOUR },
+  // Edits notify everyone booked when the time or pay changes, so they are
+  // budgeted too: generous for fixing typos, not for a stream of changes.
+  EVENT_UPDATE: { limit: 60, name: "event-update", onError: "allow", windowSeconds: HOUR },
   COMMENT_CREATE: { limit: 30, name: "comment-create", onError: "allow", windowSeconds: 5 * MINUTE },
   BOOKING_APPLY: { limit: 20, name: "booking-apply", onError: "allow", windowSeconds: HOUR },
   REVIEW_CREATE: { limit: 10, name: "review-create", onError: "allow", windowSeconds: HOUR },

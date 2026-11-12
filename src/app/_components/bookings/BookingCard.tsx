@@ -4,6 +4,7 @@ import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import {
   IconBan,
   IconCalendar,
+  IconCash,
   IconCheck,
   IconChecks,
   IconClock,
@@ -24,11 +25,13 @@ import {
   formatRate,
 } from "~/_utils/bookings";
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
+import { formatPay } from "~/_utils/eventPay";
 import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
 import { releaseDialogOnUnmount, routeFailure } from "~/app/_components/dialogFailure";
+import EventTime from "~/app/_components/events/EventTime";
 import LocalDate from "~/app/_components/LocalDate";
 import { ProBadge } from "~/app/_components/ProBadge";
 import { useLatestRef } from "~/app/_hooks/useLatestRef";
@@ -53,6 +56,10 @@ type BookingEvent = {
   duration: number;
   id: string;
   location: string;
+  /** The zone the start time is written in (null: the reader's). */
+  timeZone?: string | null;
+  /** What the event listed as pay, in cents (null: not listed). */
+  payCents?: number | null;
   title: string;
 };
 
@@ -240,6 +247,7 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
   const status = bookingStatusView(booking.status);
   const StatusIcon = STATUS_ICONS[booking.status];
   const rate = formatRate(booking.rate);
+  const listedPay = formatPay(event.payCents);
   const confirmView = confirming ? actionView(confirming, role, name, event.title).confirm : undefined;
 
   return (
@@ -253,19 +261,28 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
             </Title>
             <Group gap="sm" style={{ rowGap: 2 }}>
               <Group gap={4} wrap="nowrap">
-                <IconCalendar size={14} color="var(--mantine-color-gray-7)" aria-hidden />
-                <Text size="sm" c="gray.7">
+                <IconCalendar size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                <Text size="sm" c="dimmed">
                   <span className="sr-only">When: </span>
-                  <LocalDate date={event.date} format="dayTime" />
+                  <EventTime date={event.date} timeZone={event.timeZone} format="dayTime" />
                 </Text>
               </Group>
               <Group gap={4} wrap="nowrap">
-                <IconMapPin size={14} color="var(--mantine-color-gray-7)" aria-hidden />
-                <Text size="sm" c="gray.7">
+                <IconMapPin size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                <Text size="sm" c="dimmed">
                   <span className="sr-only">Where: </span>
                   {event.location}
                 </Text>
               </Group>
+              {listedPay && (
+                <Group gap={4} wrap="nowrap" data-testid="booking-pay">
+                  <IconCash size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                  <Text size="sm" c="dimmed">
+                    <span className="sr-only">Listed pay: </span>
+                    {listedPay} total
+                  </Text>
+                </Group>
+              )}
             </Group>
           </Stack>
           <Badge
@@ -355,8 +372,8 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
 
         {hint && (
           <Group gap={6} wrap="nowrap" align="flex-start" data-testid="booking-hint">
-            <IconClock size={14} color="var(--mantine-color-gray-7)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden />
-            <Text size="sm" c="gray.7">{hint}</Text>
+            <IconClock size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden />
+            <Text size="sm" c="dimmed">{hint}</Text>
           </Group>
         )}
 

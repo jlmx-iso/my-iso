@@ -208,7 +208,7 @@ export default function EditProfile({ photographer, handle: savedHandle }: EditP
     return (
         <form onSubmit={handleSubmit} noValidate>
             <Stack gap="md" maw={720}>
-                <Title order={1} size="h2" c="orange.7">Edit profile</Title>
+                <Title order={1} size="h2">Edit profile</Title>
 
                 {/* Always rendered so screen readers announce errors as they appear. */}
                 <div role="alert">

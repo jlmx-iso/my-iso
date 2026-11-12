@@ -126,7 +126,7 @@ export function isProductionBuild(): boolean {
 export function OwnerTodo({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
   if (isProductionBuild()) return <>{fallback}</>;
   return (
-    <Text span fw={700} c="red.8" data-owner-todo>
+    <Text span fw={700} c="var(--mantine-color-error)" data-owner-todo>
       [TODO for the owner: {children}]
     </Text>
   );

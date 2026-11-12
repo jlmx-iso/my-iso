@@ -173,10 +173,10 @@ export default function ConsentBanner({ optInRequired }: Props) {
             </Text>
             {/* Accept and Decline: the same size, side by side (classes.actions). */}
             <div className={classes.actions}>
-              <Button size="sm" variant="filled" color="dark" onClick={() => choose("analytics", "banner")}>
+              <Button size="sm" variant="filled" color="gray" autoContrast onClick={() => choose("analytics", "banner")}>
                 Accept analytics
               </Button>
-              <Button size="sm" variant="filled" color="dark" onClick={() => choose("denied", "banner")}>
+              <Button size="sm" variant="filled" color="gray" autoContrast onClick={() => choose("denied", "banner")}>
                 Decline
               </Button>
               <Button
@@ -264,7 +264,7 @@ function PreferencesForm({
       </Text>
       <Group justify="flex-end" gap="xs">
         {gpc ? (
-          <Button variant="filled" color="dark" onClick={onCancel}>
+          <Button variant="default" onClick={onCancel}>
             Close
           </Button>
         ) : (
@@ -272,7 +272,7 @@ function PreferencesForm({
             <Button variant="default" onClick={onCancel}>
               Cancel
             </Button>
-            <Button variant="filled" color="dark" onClick={() => onSave(choiceFor(preferences))}>
+            <Button onClick={() => onSave(choiceFor(preferences))}>
               Save choices
             </Button>
           </>

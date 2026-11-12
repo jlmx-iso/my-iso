@@ -4,10 +4,10 @@
   /* Comfortable to tap on a phone. */
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid var(--mantine-color-orange-3);
+  border: 1px solid var(--iso-accent-border);
   border-radius: var(--mantine-radius-lg);
-  background: var(--mantine-color-orange-0);
-  color: var(--mantine-color-black);
+  background: var(--iso-accent-surface);
+  color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-sm);
   line-height: 1.4;
   text-align: left;
@@ -16,7 +16,7 @@
 
 @media (hover: hover) {
   .suggestion:hover {
-    background: var(--mantine-color-orange-1);
+    background: var(--iso-accent-surface-strong);
   }
 }
 

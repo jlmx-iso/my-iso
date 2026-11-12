@@ -1,3 +1,4 @@
+import type * as React from "react";
 import {
   Body,
   Container,
@@ -8,8 +9,7 @@ import {
   Preview,
   Section,
   Text,
-} from "@react-email/components";
-import type * as React from "react";
+} from "react-email";
 
 type LayoutProps = {
   preview: string;
@@ -109,9 +109,10 @@ const footer: React.CSSProperties = {
   padding: "0 40px 32px",
 };
 
+// `borderTop`, not `borderColor`: Hr draws its line with its own borderTop
+// (#eaeaea), which a separate colour would not reliably replace.
 const divider: React.CSSProperties = {
-  borderColor: colors.gray100,
-  borderWidth: "1px",
+  borderTop: `1px solid ${colors.gray100}`,
   margin: "0 0 24px",
 };
 

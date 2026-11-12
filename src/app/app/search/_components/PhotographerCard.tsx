@@ -28,7 +28,7 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
       withBorder
       h="100%"
       pos="relative"
-      style={{ borderLeft: '3px solid var(--mantine-color-orange-3)' }}
+      style={{ borderLeft: '3px solid var(--iso-accent-border)' }}
       data-testid="search-photographer-card"
     >
       <Stack gap="sm">
@@ -57,7 +57,7 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
               </Group>
             )}
           </Stack>
-          <IconChevronRight size={18} color="var(--mantine-color-gray-6)" style={{ flexShrink: 0 }} aria-hidden />
+          <IconChevronRight size={18} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} aria-hidden />
         </Group>
 
         {photographer.bio && (

@@ -67,7 +67,7 @@ export function Footer() {
       mt={60}
       py="xl"
       style={{
-        borderTop: "1px solid var(--mantine-color-gray-3)",
+        borderTop: "1px solid var(--mantine-color-default-border)",
       }}
     >
       <Container size="lg">

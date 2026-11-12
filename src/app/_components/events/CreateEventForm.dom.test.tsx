@@ -87,6 +87,10 @@ describe("creating an event", () => {
         duration: 4,
         image: undefined,
         location: "Austin, TX",
+        // No pay typed: not listed.
+        payCents: null,
+        // The browser's zone, which the picker's times are in (the tests run in UTC).
+        timeZone: "UTC",
         title: "Downtown wedding",
       },
     ]);
@@ -331,5 +335,64 @@ describe("a save that ends after the form is gone", () => {
       ),
     ).toBeTruthy();
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("pay", () => {
+  const payField = (dialog: HTMLElement) => within(dialog).getByRole<HTMLInputElement>("textbox", { name: /^Pay/ });
+
+  it("is optional, says what it is for, and sends dollars as cents", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText(/For the whole event, in US dollars/)).toBeTruthy();
+    await fillRequired(dialog);
+    await userEvent.type(payField(dialog), "1250");
+    // Formatted as it is typed.
+    expect(payField(dialog).value).toBe("$1,250");
+    await submit(dialog);
+
+    await screen.findByText('"Downtown wedding" is live. Photographers nearby can now apply.');
+    expect(view.callsTo("event.create")[0]).toMatchObject({ payCents: 125_000 });
+  });
+
+  it("refuses an amount over the limit, says the limit, and focuses the field", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    await fillRequired(dialog);
+    await userEvent.type(payField(dialog), "250000");
+    await submit(dialog);
+
+    expect(await within(dialog).findByText("Enter an amount up to $100,000")).toBeTruthy();
+    expect(document.activeElement).toBe(payField(dialog));
+    expect(view.callsTo("event.create")).toEqual([]);
+  });
+
+  it("asks for the event's time zone, starting from the browser's (the tests run in UTC)", async () => {
+    renderButton();
+    const dialog = await openDialog();
+
+    const zone = within(dialog).getByLabelText<HTMLInputElement>(/^Time zone/, { selector: "input" });
+    expect(zone.value).toBe("UTC (UTC)");
+    expect(within(dialog).getByText("The time where the event happens")).toBeTruthy();
+  });
+
+  it("sends the start as the clock reads in the chosen zone", async () => {
+    const view = renderButton({ create: () => created() });
+    const dialog = await openDialog();
+
+    await fillRequired(dialog);
+    const zone = within(dialog).getByLabelText(/^Time zone/, { selector: "input" });
+    await userEvent.click(zone);
+    await userEvent.clear(zone);
+    await userEvent.type(zone, "Denver");
+    await userEvent.click(await screen.findByRole("option", { name: /America\/Denver/ }));
+    await submit(dialog);
+
+    await screen.findByText('"Downtown wedding" is live. Photographers nearby can now apply.');
+    // Tomorrow 10:00 in Denver (MST, UTC-7) is 17:00 UTC.
+    const start = dayjs(defaultEventStart()).add(7, "hour").toISOString();
+    expect(view.callsTo("event.create")[0]).toMatchObject({ date: start, timeZone: "America/Denver" });
   });
 });

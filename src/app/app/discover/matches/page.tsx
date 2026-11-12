@@ -16,7 +16,7 @@ export default function MatchesPage() {
       </Anchor>
       <PageHeader
         title="Matches"
-        description="Photographers who liked you back. Open one to start talking."
+        description="Photographers you liked who liked you back. Message one to plan a shoot."
       />
       <MatchesList />
     </Stack>

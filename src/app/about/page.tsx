@@ -227,7 +227,7 @@ export default function AboutPage() {
                   </Avatar>
                   <div>
                     <Text fw={500}>{member.name}</Text>
-                    <Text size="sm" c="orange.7">
+                    <Text size="sm" c="var(--iso-accent-text)">
                       {member.role}
                     </Text>
                   </div>
@@ -250,7 +250,7 @@ export default function AboutPage() {
             radius="md"
             style={{
               background:
-                "linear-gradient(135deg, var(--mantine-color-orange-0) 0%, var(--mantine-color-orange-1) 100%)",
+                "linear-gradient(135deg, var(--iso-accent-surface) 0%, var(--iso-accent-surface-strong) 100%)",
             }}
           >
             <Stack align="center" gap="lg" maw={540} mx="auto">

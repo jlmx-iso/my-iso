@@ -1,8 +1,8 @@
+import { render } from "@react-email/render";
 import {
   Heading,
   Text,
-} from "@react-email/components";
-import { render } from "@react-email/render";
+} from "react-email";
 
 import { Layout } from "./components/Layout";
 import {

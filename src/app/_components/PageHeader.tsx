@@ -6,12 +6,16 @@ type PageHeaderProps = {
     action?: React.ReactNode;
 };
 
-/** The page's single h1, with an optional description and primary action. */
+/**
+ * The page's single h1, with an optional description and primary action.
+ * Plain and descriptive, in the body text colour: the page's name, not a
+ * slogan (the brand colour is for actions).
+ */
 export default function PageHeader({ title, description, action }: PageHeaderProps) {
     return (
         <Group justify="space-between" align="center" gap="sm">
             <Stack gap={4} style={{ flex: "1 1 240px", minWidth: 0 }}>
-                <Title order={1} size="h2" c="orange.7">{title}</Title>
+                <Title order={1} size="h2">{title}</Title>
                 {description && (
                     <Text c="dimmed" size="sm">
                         {description}

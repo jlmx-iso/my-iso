@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Button, SimpleGrid, Stack, Tabs, Text, Title } from '@mantine/core'
-import { IconAlertCircle, IconCalendarEvent, IconHistory } from '@tabler/icons-react'
+import { Alert, Button, Group, SimpleGrid, Stack, Tabs, Text, Title } from '@mantine/core'
+import { IconAlertCircle, IconCalendarEvent, IconHistory, IconPlus } from '@tabler/icons-react'
 import Link from 'next/link'
 import { useState } from 'react'
 
@@ -114,10 +114,8 @@ function FeedList({
     if (feed.isPending) {
         return (
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" aria-busy="true" aria-label={`Loading ${label.toLowerCase()}`}>
-                {[0, 1].map((index) => (
-                    <div key={index} style={{ border: "1px solid var(--mantine-color-gray-3)", borderRadius: "var(--mantine-radius-md)", padding: "var(--mantine-spacing-md)" }}>
-                        <EventCardSkeleton />
-                    </div>
+                {[0, 1, 2, 3].map((index) => (
+                    <EventCardSkeleton key={index} />
                 ))}
             </SimpleGrid>
         );
@@ -137,19 +135,29 @@ function FeedList({
         return when === "upcoming" ? (
             <EmptyState
                 icon={IconCalendarEvent}
-                title={place ? `Nothing coming up in ${place}` : "Nothing coming up yet"}
-                description="Post an event to find a second shooter, or search for events in other cities."
+                title={place ? `No upcoming events in ${place}` : "No upcoming events"}
+                description={
+                    place
+                        ? `Events posted in ${place} appear here. Post one to find a second shooter, or search other cities.`
+                        : "Add your city to your profile to see events near you, or search events anywhere."
+                }
                 action={
-                    <Button component={Link} href="/app/search" variant="default">
-                        Search events
-                    </Button>
+                    <Group gap="sm" justify="center">
+                        {/* Opens the page header's "Create event" dialog. */}
+                        <Button component={Link} href="/app/events?create=1" scroll={false} leftSection={<IconPlus size={16} aria-hidden />}>
+                            Post an event
+                        </Button>
+                        <Button component={Link} href="/app/search" variant="default">
+                            Search events
+                        </Button>
+                    </Group>
                 }
             />
         ) : (
             <EmptyState
                 icon={IconHistory}
-                title={place ? `No past events in ${place}` : "No past events"}
-                description="Events move here once they have started."
+                title="No past events yet"
+                description="Events move here once they've started."
             />
         );
     }

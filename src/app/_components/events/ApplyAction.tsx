@@ -5,12 +5,14 @@ import { IconCheck, IconUserCheck } from "@tabler/icons-react";
 import Link from "next/link";
 
 import type { Application } from "~/_utils/bookings";
+import { formatPay } from "~/_utils/eventPay";
 
 import { applyButtonState } from "../bookings/applyButton";
 import ApplyModal from "../bookings/ApplyModal";
 
 type ApplyActionProps = {
-    event: { id: string; title: string };
+    /** `payCents`: the listed pay, if any (the detail page says it by the button). */
+    event: { id: string; payCents?: number | null; title: string };
     /** The viewer's application; undefined while it is still loading. */
     application: Application | undefined;
     isOwnEvent: boolean;
@@ -44,6 +46,7 @@ export default function ApplyAction({ event, application, isOwnEvent, prominent 
     const { status } = application;
     // Apply, apply again, or why not: the one rule shared with the server.
     const control = applyButtonState(application);
+    const pay = formatPay(event.payCents);
 
     if (control.kind === "apply") {
         const withdrawn = application.canReapply;
@@ -64,9 +67,11 @@ export default function ApplyAction({ event, application, isOwnEvent, prominent 
                         You withdrew your earlier application.
                     </Text>
                 )}
-                {/* Events have no pay field yet: say so where the decision is made. */}
-                <Text size="sm" c="gray.7" data-testid="pay-note">
-                    Pay isn&apos;t listed. Propose your rate when you apply.
+                {/* What it pays, where the decision is made. */}
+                <Text size="sm" c="dimmed" data-testid="pay-note">
+                    {pay
+                        ? `Pays ${pay} for the whole event. You can propose a different rate when you apply.`
+                        : "Pay isn't listed. Propose your rate when you apply."}
                 </Text>
             </Stack>
         );
