@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -9,6 +10,7 @@ import {
   checkTransition,
   isSlotTaken,
   REAPPLIABLE_CANCEL_ORIGIN,
+  SLOT_HOLDING_STATUSES,
   type BookingAction,
   type TransitionRefusal,
 } from "~/server/_db/bookingTransitions";
@@ -103,6 +105,9 @@ function findReceivedApplications(
 
 /** An event stops accepting applications at its start time. */
 const isInThePast = (date: Date) => date.getTime() < Date.now();
+
+/** Why an event takes no applications right now (booking.hasApplied's `applyBlockedBy`). */
+export type ApplyBlocker = "event_not_found" | "event_started" | "event_filled";
 
 const ALREADY_APPLIED = "You have already applied to this event";
 
@@ -262,9 +267,16 @@ export const bookingRouter = createTRPCRouter({
         });
       }
 
+      // The early answer for the usual case. The write below makes the same
+      // check again IN ITS OWN STATEMENT, so an application cannot slip in
+      // between this read and that write while someone else is accepted.
       if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
 
       const applicationKey = { applicantId: userId, eventId: input.eventId };
+      const slotIsOpen = {
+        bookings: { none: { isDeleted: false, status: { in: [...SLOT_HOLDING_STATUSES] } } },
+        isDeleted: false,
+      };
 
       // Someone who WITHDREW their application may apply again: the same
       // row goes back to "applied" (one conditional statement, so a double
@@ -288,40 +300,53 @@ export const bookingRouter = createTRPCRouter({
         where: {
           ...applicationKey,
           cancelOrigin: REAPPLIABLE_CANCEL_ORIGIN,
+          event: slotIsOpen,
           isDeleted: false,
           status: "canceled",
         },
       });
 
-      let booking;
-      if (reapplied.count > 0) {
-        booking = await ctx.db.booking.findUniqueOrThrow({
-          where: { eventId_applicantId: applicationKey },
-        });
-      } else {
-        booking = await ctx.db.booking
-          .create({
-            data: {
-              ...applicationKey,
-              notes: input.notes,
-              ownerId,
-              rate: input.rate,
-            },
-          })
+      if (reapplied.count === 0) {
+        // A first application: inserted only if the slot is still open, in
+        // one statement (INSERT ... SELECT ... WHERE NOT EXISTS). An
+        // application that exists already makes it insert nothing too (the
+        // unique (eventId, applicantId)); the two are told apart below.
+        const now = new Date();
+        const inserted = await ctx.db
+          .$queryRaw<Array<{ id: string }>>(
+            Prisma.sql`
+            INSERT INTO "Booking"
+              ("id", "createdAt", "updatedAt", "eventId", "applicantId", "ownerId", "status", "rate", "notes", "isDeleted")
+            SELECT ${crypto.randomUUID()}, ${now}, ${now}, ${event.id}, ${userId}, ${ownerId}, 'applied',
+              ${input.rate ?? null}, ${input.notes ?? null}, false
+            WHERE NOT EXISTS (
+              SELECT 1 FROM "Booking" held
+              WHERE held."eventId" = ${event.id} AND NOT held."isDeleted"
+                AND held."status" IN (${Prisma.join([...SLOT_HOLDING_STATUSES])})
+            )
+            ON CONFLICT ("eventId", "applicantId") DO NOTHING
+            RETURNING "id"`,
+          )
           .catch((error: unknown) => {
-            // An application already exists (or two submits raced): the
-            // unique (eventId, applicantId) rejects it, which is a conflict
-            // rather than a server fault.
-            if (isUniqueViolation(error)) {
-              throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
-            }
+            if (isUniqueViolation(error)) return [];
             logger.error("Error creating booking", { error });
             throw new TRPCError({
               code: "INTERNAL_SERVER_ERROR",
               message: "Failed to create booking",
             });
           });
+
+        if (inserted.length === 0) {
+          // Nothing was written, by this statement or the re-open above.
+          // Either the slot went to someone else in the meantime, or an
+          // application is on record that cannot be sent again.
+          if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
+          throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
+        }
       }
+      const booking = await ctx.db.booking.findUniqueOrThrow({
+        where: { eventId_applicantId: applicationKey },
+      });
 
       const applicant = await ctx.db.user.findUnique({
         select: { firstName: true, lastName: true },
@@ -429,10 +454,24 @@ export const bookingRouter = createTRPCRouter({
         },
       });
 
+      // What `applyToEvent` would say about the EVENT right now, whoever
+      // asks: it has started, or its slot is taken. An application (first
+      // or again) is only worth offering when this is null.
+      const event = await ctx.db.event.findUnique({ select: { date: true, id: true }, where: { id: input.eventId } });
+      const applyBlockedBy: ApplyBlocker | null = !event
+        ? "event_not_found"
+        : isInThePast(event.date)
+          ? "event_started"
+          : (await isSlotTaken(ctx.db, event.id))
+            ? "event_filled"
+            : null;
+
       // `hasApplied` is true for any application on record, whatever became
-      // of it. `canReapply`: it was withdrawn, so `applyToEvent` will accept
-      // a new application (show "Apply again", not a disabled "Applied").
+      // of it. `canReapply`: it was withdrawn, so the booking itself allows
+      // a new application (show "Apply again", not a disabled "Applied"),
+      // provided the event still takes applications (`applyBlockedBy`).
       return {
+        applyBlockedBy,
         canReapply: booking ? canReapply(booking) : false,
         hasApplied: !!booking,
         status: booking?.status ?? null,

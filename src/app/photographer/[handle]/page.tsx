@@ -1,6 +1,6 @@
 "use client";
 
-import { Container, Stack, Text } from "@mantine/core";
+import { Button, Container, Group, Stack, Text } from "@mantine/core";
 import { IconCamera } from "@tabler/icons-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -63,6 +63,8 @@ export default function PhotographerProfilePage() {
   const isSignedIn = useSession().status === "authenticated";
   const {
     data: reviewState,
+    isError: isReviewStateError,
+    isFetching: isFetchingReviewState,
     refetch: refetchReviewState,
   } = api.review.getMyReviewState.useQuery(
     { photographerId: photographer?.id ?? "" },
@@ -139,6 +141,22 @@ export default function PhotographerProfilePage() {
           <Text size="sm" c="dimmed">
             {reviewBlockerMessage}
           </Text>
+        )}
+        {/* Eligibility could not be loaded: say so, instead of showing neither the form nor a reason */}
+        {isSignedIn && isReviewStateError && !reviewState && (
+          <Group gap="sm">
+            <Text size="sm" c="red">
+              We could not check whether you can review this photographer.
+            </Text>
+            <Button
+              size="xs"
+              variant="light"
+              loading={isFetchingReviewState}
+              onClick={() => void refetchReviewState()}
+            >
+              Try again
+            </Button>
+          </Group>
         )}
       </Stack>
     </Container>

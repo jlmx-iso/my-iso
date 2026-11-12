@@ -133,15 +133,56 @@ describe("events feed", () => {
     }
   });
 
-  it("does not repeat the cursor event when its timestamp is stored in another spelling of the same instant", async () => {
-    for (let day = 1; day <= 3; day++) await createEvent(`+${day}`, day * DAY_MS);
-    for (let day = 1; day <= 3; day++) await createEvent(`-${day}`, -day * DAY_MS);
-    // Rows written outside Prisma (a seed file, another adapter): "+00:00"
-    // where this adapter writes "Z". Same instants, different text.
-    await testDb.raw.$executeRaw`UPDATE "Event" SET "date" = replace("date", 'Z', '+00:00') WHERE "title" IN ('+1', '+2', '-1', '-2')`;
+  describe("timestamps are text", () => {
+    const storedDates = async () =>
+      (await testDb.raw.$queryRaw<Array<{ date: string }>>`SELECT CAST("date" AS TEXT) AS "date" FROM "Event"`).map((row) => row.date);
+    /** Rewrites the events titled so as hand-written SQL would have stored them: "...Z". */
+    const spellWithZ = (titles: string[]) =>
+      testDb.raw.$executeRawUnsafe(
+        `UPDATE "Event" SET "date" = replace("date", '+00:00', 'Z') WHERE "title" IN (${titles.map((title) => `'${title}'`).join(", ")})`,
+      );
 
-    expect(await allPages({ limit: 1 })).toEqual([["+1"], ["+2"], ["+3"]]);
-    expect(await allPages({ limit: 1, when: "past" })).toEqual([["-1"], ["-2"], ["-3"]]);
+    it("Prisma stores every timestamp in ONE spelling, ending in +00:00 (the same on D1: both adapters format dates alike)", async () => {
+      await createEvent("+1", DAY_MS);
+      await testDb.db.event.update({ data: { date: new Date(Date.now() + 2 * DAY_MS) }, where: { id: (await testDb.db.event.findFirstOrThrow()).id } });
+
+      // If an adapter upgrade ever changes this, the note in docs/DATABASE.md
+      // and the seed file have to change with it.
+      for (const date of await storedDates()) expect(date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00$/);
+    });
+
+    it("does not repeat or skip the cursor event when rows at OTHER instants are spelled with Z", async () => {
+      for (let day = 1; day <= 3; day++) await createEvent(`+${day}`, day * DAY_MS);
+      for (let day = 1; day <= 3; day++) await createEvent(`-${day}`, -day * DAY_MS);
+      await spellWithZ(["+1", "+2", "-1", "-2"]);
+      expect((await storedDates()).filter((date) => date.endsWith("Z"))).toHaveLength(4);
+
+      expect(await allPages({ limit: 1 })).toEqual([["+1"], ["+2"], ["+3"]]);
+      expect(await allPages({ limit: 1, when: "past" })).toEqual([["-1"], ["-2"], ["-3"]]);
+    });
+
+    it("two events at the SAME instant in two spellings: paged one at a time, each appears exactly once after the documented normalisation", async () => {
+      const at = new Date(Date.now() + DAY_MS);
+      const [first, second] = [
+        await testDb.db.event.create({ data: { date: at, id: "evt_a", location: "Austin, TX", photographerId, title: "a" } }),
+        await testDb.db.event.create({ data: { date: at, id: "evt_b", location: "Austin, TX", photographerId, title: "b" } }),
+      ];
+      // "a", the one with the smaller id, was written by hand with Z.
+      await spellWithZ(["a"]);
+
+      // Text order puts "+00:00" before "Z" whatever the ids are, so the
+      // feed's (date, id) keyset does not hold across spellings: this is
+      // the state the normalisation exists for, not one the app supports.
+      const mixed = await testDb.raw.event.findMany({ orderBy: [{ date: "asc" }, { id: "asc" }], select: { id: true } });
+      expect(mixed.map((event) => event.id)).toEqual([second.id, first.id]);
+
+      // The one-off statement from docs/DATABASE.md.
+      await testDb.raw.$executeRaw`UPDATE "Event" SET "date" = replace("date", 'Z', '+00:00') WHERE "date" LIKE '%Z'`;
+
+      expect(await allPages({ limit: 1 })).toEqual([["a"], ["b"]]);
+      await testDb.raw.event.updateMany({ data: { date: new Date(Date.now() - DAY_MS) } });
+      expect(await allPages({ limit: 1, when: "past" })).toEqual([["b"], ["a"]]);
+    });
   });
 
   it("keeps the page boundary where it was when the cursor event is rescheduled LATER: the events in between are not skipped", async () => {

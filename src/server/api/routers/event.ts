@@ -323,10 +323,11 @@ export const eventRouter = createTRPCRouter({
       const created = await ctx.db.event.create({
         data: { ...fields, image: imageUrl, photographerId: photographer.id },
       });
-      // A new event has no bookings; said through the same derivation as
-      // everywhere else rather than by passing the column on.
-      const [event] = await withDerivedFulfilled(ctx.db, [created]);
-      return event ?? { ...created, isFulfilled: false };
+      // A new event has no bookings, so it is not filled. Said outright,
+      // not looked up: a read that failed here would report the creation
+      // as failed although the event exists, and the form would invite a
+      // retry that creates it twice.
+      return { ...created, isFulfilled: false };
     }),
 
   delete: protectedProcedure
@@ -507,12 +508,17 @@ export const eventRouter = createTRPCRouter({
           message: "This page of the feed is no longer available. Reload the feed.",
         });
       }
-      // "After the cursor" in (date, id) order. The cursor's own instant is
-      // matched as the range [date, date + 1 ms) rather than by equality:
-      // timestamps are stored as text, and a row written by another tool
-      // (the seed file writes "...Z", the D1 adapter "...+00:00") is the
-      // same instant under a different spelling. A range holds for both;
-      // equality would not, and the cursor row would come back again.
+      // "After the cursor" in (date, id) order. Timestamps are stored as
+      // TEXT. Everything Prisma writes, on D1 and on the SQLite adapter the
+      // tests use, ends in "+00:00"; only SQL written by hand can store the
+      // same instant as "...Z" (the staging seed did until it was fixed).
+      // The cursor's own instant is matched as the range [date, date + 1 ms)
+      // rather than by equality, so that such a row is still recognised as
+      // BEING at the cursor's instant ("Z" sorts after "+", inside the
+      // range). What a stray spelling does break is the ORDER within one
+      // instant, which is by text before it is by id; that is why every
+      // write path keeps to the one spelling and existing rows are
+      // normalised once (docs/DATABASE.md, "Timestamps are text").
       const tieStart = after?.date;
       const tieEnd = after ? new Date(after.date.getTime() + 1) : undefined;
       const afterCursor = after

@@ -16,12 +16,16 @@ import { useState } from "react";
 import { logger } from "~/_utils";
 import { api } from "~/trpc/react";
 
+import { applyButtonState, type ApplicationStatus } from "./applyButton";
+
 type ApplyModalProps = {
   eventId: string;
   eventTitle: string;
   hasApplied: boolean;
   /** From booking.hasApplied: the application was withdrawn and may be sent again. */
   canReapply?: boolean;
+  /** From booking.hasApplied: why the event takes no applications now, if it does not. */
+  applyBlockedBy?: ApplicationStatus["applyBlockedBy"];
   onSuccess?: () => void;
 };
 
@@ -30,8 +34,10 @@ export default function ApplyModal({
   eventTitle,
   hasApplied,
   canReapply = false,
+  applyBlockedBy = null,
   onSuccess,
 }: ApplyModalProps) {
+  const button = applyButtonState({ applyBlockedBy, canReapply, hasApplied });
   const [opened, { open, close }] = useDisclosure(false);
   const [rate, setRate] = useState("");
   const [notes, setNotes] = useState("");
@@ -46,6 +52,9 @@ export default function ApplyModal({
         message: error.message ?? "Something went wrong. Please try again.",
         title: "Application Failed",
       });
+      // A refusal means this button was out of date (the event filled or
+      // started meanwhile): show what the server says now.
+      void utils.booking.hasApplied.invalidate({ eventId });
     },
     onSuccess: () => {
       notifications.show({
@@ -71,16 +80,16 @@ export default function ApplyModal({
     });
   };
 
-  if (hasApplied && !canReapply) {
+  if (button.kind === "disabled") {
     return (
       <Button
         size="xs"
         variant="light"
-        color="teal"
-        leftSection={<IconCheck size={14} />}
+        color={button.label === "Applied" ? "teal" : "gray"}
+        leftSection={button.label === "Applied" ? <IconCheck size={14} /> : undefined}
         disabled
       >
-        Applied
+        {button.label}
       </Button>
     );
   }
@@ -129,7 +138,7 @@ export default function ApplyModal({
       </Modal>
 
       <Button size="xs" variant="light" onClick={open}>
-        {canReapply ? "Apply again" : "I'm Interested"}
+        {button.label}
       </Button>
     </>
   );

@@ -204,12 +204,149 @@ describe("booking state machine", () => {
       expect((await as(applicant).getMyApplications())[0]).toMatchObject({ id: booking.id });
     });
 
+    describe("the slot check and the write are one statement", () => {
+      /** A caller whose database lets `interfere` run just before the first write that matches. */
+      function asWithInterference(user: TestUser, isTheWrite: (model: string, args: unknown[]) => boolean, interfere: () => Promise<unknown>) {
+        let done = false;
+        const intercept = async (model: string, args: unknown[]) => {
+          if (done || !isTheWrite(model, args)) return;
+          done = true;
+          await interfere();
+        };
+        const db = new Proxy(testDb.db, {
+          get(target, property) {
+            if (property === "$queryRaw") {
+              return async (...args: unknown[]) => {
+                await intercept("$queryRaw", args);
+                return (target.$queryRaw as (...rest: unknown[]) => Promise<unknown>)(...args);
+              };
+            }
+            if (property === "booking") {
+              return new Proxy(target.booking, {
+                get(model, method) {
+                  if (method !== "updateMany") return Reflect.get(model, method) as unknown;
+                  return async (...args: unknown[]) => {
+                    await intercept("booking.updateMany", args);
+                    return (model.updateMany as (...rest: unknown[]) => Promise<unknown>)(...args);
+                  };
+                },
+              });
+            }
+            return Reflect.get(target, property) as unknown;
+          },
+        });
+        return createDbCaller(bookingRouter, db, { user });
+      }
+
+      const sqlOf = (args: unknown[]) => {
+        const [query] = args;
+        return typeof query === "object" && query !== null && "sql" in query ? String(query.sql) : "";
+      };
+
+      /** The rival is accepted: exactly what a concurrent `updateStatus` by the owner does. */
+      async function rivalIsAccepted(eventId: string) {
+        const theirs = await as(rival).applyToEvent({ eventId });
+        return () => as(owner).updateStatus({ bookingId: theirs.id, status: "accepted" });
+      }
+
+      it("a first application that loses the race to an acceptance is refused as filled, and nothing is written", async () => {
+        const event = await createEvent();
+        const accept = await rivalIsAccepted(event.id);
+        // Between applyToEvent's read ("the slot is open") and its insert.
+        const racing = asWithInterference(applicant, (model, args) => model === "$queryRaw" && sqlOf(args).includes('INSERT INTO "Booking"'), accept);
+
+        const error = await errorOf(racing.applyToEvent({ eventId: event.id }));
+
+        expect(error).toMatchObject({ code: "CONFLICT" });
+        expect(reasonOf(error)).toBe(ErrorReason.BOOKING_EVENT_FILLED);
+        expect(await testDb.raw.booking.count({ where: { applicantId: applicant.id } })).toBe(0);
+        expect((await notificationsFor(owner)).filter((note) => note.title === "New application")).toHaveLength(1);
+      });
+
+      it("a re-application that loses the race to an acceptance is refused as filled, and stays withdrawn", async () => {
+        const { booking, event } = await applied();
+        await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+        const accept = await rivalIsAccepted(event.id);
+        const racing = asWithInterference(applicant, (model) => model === "booking.updateMany", accept);
+
+        const error = await errorOf(racing.applyToEvent({ eventId: event.id, notes: "Back again" }));
+
+        expect(reasonOf(error)).toBe(ErrorReason.BOOKING_EVENT_FILLED);
+        expect(await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({
+          cancelOrigin: "withdrawn",
+          notes: booking.notes,
+          status: "canceled",
+        });
+      });
+
+      it("a second application of the same person is still a conflict, not 'filled'", async () => {
+        const { event } = await applied();
+
+        const error = await errorOf(as(applicant).applyToEvent({ eventId: event.id }));
+
+        expect(error).toMatchObject({ code: "CONFLICT" });
+        expect(reasonOf(error)).not.toBe(ErrorReason.BOOKING_EVENT_FILLED);
+      });
+
+      it("stores a first application the way Prisma would (dates readable, defaults in place)", async () => {
+        const event = await createEvent();
+        const before = Date.now();
+
+        const booking = await as(applicant).applyToEvent({ eventId: event.id, notes: "Hello", rate: "$300" });
+
+        expect(await testDb.db.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({
+          applicantId: applicant.id,
+          cancelOrigin: null,
+          eventId: event.id,
+          isDeleted: false,
+          notes: "Hello",
+          ownerId: owner.id,
+          ownerNotes: null,
+          rate: "$300",
+          status: "applied",
+        });
+        expect(booking.createdAt.getTime()).toBeGreaterThanOrEqual(before - 1);
+        expect(booking.updatedAt.getTime()).toBe(booking.createdAt.getTime());
+        // In the one spelling every other row uses, so text comparisons hold.
+        const [stored] = await testDb.raw.$queryRaw<Array<{ createdAt: string }>>`SELECT CAST("createdAt" AS TEXT) AS "createdAt" FROM "Booking" WHERE "id" = ${booking.id}`;
+        expect(stored?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00$/);
+      });
+    });
+
+    describe("hasApplied says whether the event still takes applications", () => {
+      it("is open for an upcoming event with a free slot, for a first application and after a withdrawal", async () => {
+        const { booking, event } = await applied();
+        expect(await as(rival).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: false, hasApplied: false, status: null });
+
+        await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+        expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: true, hasApplied: true, status: "canceled" });
+      });
+
+      it("says so when the slot has gone to someone else, or the event has started: 'Apply again' would be refused", async () => {
+        const { booking, event } = await applied();
+        await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
+        const theirs = await as(rival).applyToEvent({ eventId: event.id });
+        await as(owner).updateStatus({ bookingId: theirs.id, status: "accepted" });
+
+        expect(await as(applicant).hasApplied({ eventId: event.id })).toMatchObject({ applyBlockedBy: "event_filled", canReapply: true });
+        expect(reasonOf(await errorOf(as(applicant).applyToEvent({ eventId: event.id })))).toBe(ErrorReason.BOOKING_EVENT_FILLED);
+
+        const started = await createEvent();
+        const mine = await as(applicant).applyToEvent({ eventId: started.id });
+        await as(applicant).updateStatus({ bookingId: mine.id, status: "canceled" });
+        await eventHasHappened(started.id);
+
+        expect(await as(applicant).hasApplied({ eventId: started.id })).toMatchObject({ applyBlockedBy: "event_started", canReapply: true });
+        expect(reasonOf(await errorOf(as(applicant).applyToEvent({ eventId: started.id })))).toBe(ErrorReason.BOOKING_EVENT_STARTED);
+      });
+    });
+
     it("re-applying keeps what the owner wrote and clears how the booking was cancelled", async () => {
       const { booking, event } = await applied();
       await as(applicant).updateStatus({ bookingId: booking.id, status: "canceled" });
       await testDb.raw.booking.update({ data: { ownerNotes: "Kept for my records" }, where: { id: booking.id } });
       expect(await testDb.raw.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({ cancelOrigin: "withdrawn" });
-      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: true, hasApplied: true, status: "canceled" });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: true, hasApplied: true, status: "canceled" });
 
       await as(applicant).applyToEvent({ eventId: event.id, rate: "$400" });
 
@@ -219,7 +356,7 @@ describe("booking state machine", () => {
         rate: "$400",
         status: "applied",
       });
-      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: true, status: "applied" });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: false, hasApplied: true, status: "applied" });
     });
 
     it.each([
@@ -239,7 +376,7 @@ describe("booking state machine", () => {
         ownerNotes: "Plans changed, sorry",
         status: "canceled",
       });
-      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: true, status: "canceled" });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: false, hasApplied: true, status: "canceled" });
       // The owner was not told about an application that did not happen.
       expect((await notificationsFor(owner)).filter((n) => n.type === "booking_applied")).toHaveLength(1);
     });
@@ -255,7 +392,7 @@ describe("booking state machine", () => {
     it("reports no application, and nothing to re-apply to, for an event never applied to", async () => {
       const event = await createEvent();
 
-      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ canReapply: false, hasApplied: false, status: null });
+      expect(await as(applicant).hasApplied({ eventId: event.id })).toEqual({ applyBlockedBy: null, canReapply: false, hasApplied: false, status: null });
     });
 
     it("does not let a declined applicant apply again", async () => {
