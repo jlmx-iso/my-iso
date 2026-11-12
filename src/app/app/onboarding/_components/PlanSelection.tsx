@@ -13,7 +13,7 @@ import {
   ThemeIcon,
   Title,
 } from "@mantine/core";
-import { IconCheck, IconCrown } from "@tabler/icons-react";
+import { IconCheck } from "@tabler/icons-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -133,9 +133,11 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
             <Stack gap="md">
               <Group gap="sm">
                 <Title order={2} size="h4">{PRO_PLAN.name}</Title>
-                <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
-                  Recommended
-                </Badge>
+                {pricing.isFoundingPrice && (
+                  <Badge color="orange" variant="light" data-testid="founding-badge">
+                    Founding member
+                  </Badge>
+                )}
               </Group>
               <Group gap="xs" align="baseline">
                 <Text size="xl" fw={700} c="orange.7" data-testid="pro-price">
@@ -147,9 +149,6 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                     <Text size="sm" td="line-through" c="dimmed">
                       <span className="sr-only">Regular price </span>{price.regularPerMonth}
                     </Text>
-                    <Badge color="orange" variant="light" size="sm">
-                      Founding price
-                    </Badge>
                   </>
                 )}
               </Group>

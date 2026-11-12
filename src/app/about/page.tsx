@@ -22,7 +22,6 @@ import {
   FadeInOnScroll,
   StaggerContainer,
 } from "~/app/_components/animations";
-import { CountUp } from "~/app/_components/animations/CountUp";
 import { NextLink } from "~/app/_components/NextLink";
 import { pageMetadata } from "~/app/_lib/siteMetadata";
 
@@ -55,11 +54,6 @@ const values = [
   },
 ];
 
-const stats = [
-  { value: 500, suffix: "+", label: "Photographers" },
-  { value: 1200, suffix: "+", label: "Events booked" },
-  { value: 50, suffix: "+", label: "Cities" },
-];
 
 const team = [
   {
@@ -179,8 +173,8 @@ export default function AboutPage() {
                 That experience sparked a question: why isn&apos;t there a
                 dedicated place for photographers to find and book each other? Not
                 a generic freelancer marketplace. Not a social media group. A
-                purpose-built network where photographers can search by location,
-                specialty, and availability — and actually trust who they&apos;re
+                purpose-built network where photographers can find each other by
+                location and specialty, and actually trust who they&apos;re
                 booking.
               </Text>
             </FadeInOnScroll>
@@ -192,41 +186,6 @@ export default function AboutPage() {
               </Text>
             </FadeInOnScroll>
           </Stack>
-        </Box>
-
-        <Divider />
-
-        {/* Stats */}
-        <Box py={60}>
-          <StaggerContainer
-            stagger={0.15}
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
-              gap: "var(--mantine-spacing-xl)",
-            }}
-          >
-            {stats.map((stat) => (
-              <Stack key={stat.label} align="center" gap={4}>
-                <Text
-                  fw={700}
-                  style={{ fontSize: "2.5rem" }}
-                  variant="gradient"
-                  gradient={{ from: "orange.6", to: "orange.8", deg: 135 }}
-                >
-                  <CountUp
-                    target={stat.value}
-                    suffix={stat.suffix}
-                    formatted={stat.value >= 1000}
-                  />
-                </Text>
-                <Text c="dimmed" size="sm">
-                  {stat.label}
-                </Text>
-              </Stack>
-            ))}
-          </StaggerContainer>
         </Box>
 
         <Divider />

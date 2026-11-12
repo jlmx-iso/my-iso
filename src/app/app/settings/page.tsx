@@ -115,9 +115,12 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                       Current
                     </Badge>
                   ) : (
-                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
-                      Recommended
-                    </Badge>
+                    // Said only when true: the member is on the founding price.
+                    pricing.isFoundingPrice && (
+                      <Badge color="orange" variant="light" data-testid="founding-badge">
+                        Founding member
+                      </Badge>
+                    )
                   )}
                 </Group>
                 <Group gap="xs" align="baseline">
@@ -132,9 +135,6 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                       <Text size="sm" td="line-through" c="dimmed">
                         <span className="sr-only">Regular price </span>{proPrice.regularPerMonth}
                       </Text>
-                      <Badge color="orange" variant="light" size="sm">
-                        Founding price
-                      </Badge>
                     </>
                   )}
                 </Group>

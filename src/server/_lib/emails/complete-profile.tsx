@@ -54,7 +54,7 @@ export function CompleteProfileEmail({
           <br />
           Your location and the types of photography you do
           <br />
-          Your rates or availability (even a range helps)
+          In your bio, the shoots you take on and roughly what you charge
         </Text>
       </Section>
 
