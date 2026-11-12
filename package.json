@@ -32,7 +32,7 @@
     "db:seed:staging": "wrangler d1 execute DB --remote --env staging --file=prisma/seed-staging.sql"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.74.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@auth/prisma-adapter": "^2.11.3",
     "@mantine/core": "9.8.0",
     "@mantine/dates": "9.8.0",
