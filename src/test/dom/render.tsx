@@ -26,9 +26,14 @@ export type TrpcHandlers = {
 };
 
 /** An error as the server would send it, with its tRPC code. */
-export function trpcError(code: TRPC_ERROR_CODE_KEY, message: string = code) {
+export function trpcError(
+  code: TRPC_ERROR_CODE_KEY,
+  message: string = code,
+  /** More of the error's `data`, e.g. `{ reason: ErrorReason.PORTFOLIO_FULL }` or a `zodError`. */
+  data: Record<string, unknown> = {},
+) {
   return TRPCClientError.from({
-    error: { code: -32000, data: { code, httpStatus: 0 }, message },
+    error: { code: -32000, data: { code, httpStatus: 0, ...data }, message },
   });
 }
 
