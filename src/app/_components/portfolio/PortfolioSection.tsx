@@ -37,6 +37,7 @@ import { useRef, useState } from "react";
 
 import { type MoveDirection, canMoveImage, moveImage, sortPortfolio } from "~/_utils/portfolioOrder";
 import { userFacingError } from "~/_utils/userError";
+import DialogError from "~/app/_components/DialogError";
 import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
 
@@ -228,11 +229,14 @@ type EditValues = { description: string; isFeatured: boolean; tags: string[]; ti
 function EditImageForm({
   image,
   isSaving,
+  error,
   onCancel,
   onSave,
 }: {
   image: PortfolioImage;
   isSaving: boolean;
+  /** Why the last save failed, shown above the buttons. */
+  error: string | null;
   onCancel: () => void;
   onSave: (values: EditValues) => void;
 }) {
@@ -273,6 +277,7 @@ function EditImageForm({
           description="Featured images appear at the top of your portfolio"
           {...form.getInputProps("isFeatured", { type: "checkbox" })}
         />
+        <DialogError message={error} title="Couldn't save changes" />
         <Group justify="flex-end">
           <Button variant="default" onClick={onCancel} disabled={isSaving}>
             Cancel
@@ -297,6 +302,9 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
   const [viewing, setViewing] = useState<PortfolioImage | null>(null);
   const [editing, setEditing] = useState<PortfolioImage | null>(null);
   const [deleting, setDeleting] = useState<PortfolioImage | null>(null);
+  // Failures of the edit and delete dialogs, shown inside them.
+  const [editError, setEditError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -349,6 +357,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
 
   const handleSaveEdit = async (values: EditValues) => {
     if (!editing) return;
+    setEditError(null);
     try {
       await updateImage.mutateAsync({
         description: values.description.trim() || null,
@@ -359,9 +368,10 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       });
       await refresh();
       setEditing(null);
+      setEditError(null);
       notify.success({ message: "Your changes are live.", title: "Image updated" });
     } catch (error) {
-      showError("Couldn't save changes", error, "Please try again.");
+      setEditError(userFacingError(error, "Your changes weren't saved. Please try again."));
     }
   };
 
@@ -389,11 +399,13 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
   const closeDeleteDialog = () => {
     const imageId = deleting?.id;
     setDeleting(null);
+    setDeleteError(null);
     focusAfterDeleteDialog(imageId);
   };
 
   const handleConfirmDelete = async () => {
     if (!deleting) return;
+    setDeleteError(null);
     try {
       await deleteImage.mutateAsync({ id: deleting.id });
       await refresh();
@@ -404,7 +416,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
       setDeleting(null);
       focusAfterDeleteDialog();
     } catch (error) {
-      showError("Couldn't delete image", error, "Please try again.");
+      setDeleteError(userFacingError(error, "The image wasn't deleted. Please try again."));
     }
   };
 
@@ -500,7 +512,11 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
 
       <Modal
         opened={!!editing}
-        onClose={() => !updateImage.isPending && setEditing(null)}
+        onClose={() => {
+          if (updateImage.isPending) return;
+          setEditing(null);
+          setEditError(null);
+        }}
         title="Edit image details"
       >
         {editing && (
@@ -508,7 +524,11 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
             key={editing.id}
             image={editing}
             isSaving={updateImage.isPending}
-            onCancel={() => setEditing(null)}
+            error={editError}
+            onCancel={() => {
+              setEditing(null);
+              setEditError(null);
+            }}
             onSave={(values) => void handleSaveEdit(values)}
           />
         )}
@@ -526,6 +546,7 @@ export default function PortfolioSection({ photographerId, initialImages, isOwne
           <Text size="sm">
             &ldquo;{deleting?.title}&rdquo; will be removed from your portfolio. This can&apos;t be undone.
           </Text>
+          <DialogError message={deleteError} title="Couldn't delete image" />
           <Group justify="flex-end">
             <Button variant="default" onClick={closeDeleteDialog} disabled={deleteImage.isPending} data-autofocus>
               Keep image

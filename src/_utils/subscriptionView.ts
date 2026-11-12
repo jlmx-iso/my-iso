@@ -85,9 +85,7 @@ function bannerFor(issue: BillingIssue, subscription: SubscriptionState): NonNul
       return subscription.hasProAccess
         ? {
             actionLabel: "Fix payment",
-            body: subscription.accessEndsAt
-              ? "Update your card to keep Pro. Until it goes through you keep Pro, up to {date}."
-              : "Update your card to keep Pro.",
+            body: subscription.accessEndsAt ? "Update your card by {date} to keep Pro." : "Update your card to keep Pro.",
             date: subscription.accessEndsAt,
             title: "Your last payment didn't go through",
             tone: "red",

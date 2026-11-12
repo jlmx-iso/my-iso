@@ -47,3 +47,57 @@ button:focus-visible,
     min-height: 44px;
   }
 }
+
+/*
+ * Touch targets on phones: nothing a finger has to hit is smaller than 44px.
+ *
+ * Done at the theme level: Mantine sizes buttons, icon buttons and tabs from
+ * size tokens declared on each component's root, so overriding the tokens
+ * here (this file loads after Mantine's) resizes every instance below the
+ * `sm` breakpoint, whatever size the call site asked for. Larger sizes are
+ * left alone. On wider screens with a mouse, the compact sizes stay.
+ */
+@media (max-width: 47.99em) {
+  .mantine-Button-root {
+    --button-height-xs: 2.75rem;
+    --button-height-sm: 2.75rem;
+    --button-height-md: 2.75rem;
+    --button-height-compact-xs: 2.75rem;
+    --button-height-compact-sm: 2.75rem;
+    --button-height-compact-md: 2.75rem;
+    --button-height-compact-lg: 2.75rem;
+  }
+
+  .mantine-ActionIcon-root {
+    --ai-size-xs: 2.75rem;
+    --ai-size-sm: 2.75rem;
+    --ai-size-md: 2.75rem;
+    --ai-size-lg: 2.75rem;
+  }
+
+  .mantine-Tabs-tab {
+    min-height: 2.75rem;
+  }
+
+  /*
+   * Links that are targets in their own right (card and result titles,
+   * "Back to ...", a person's name): the hit area grows to 44px with padding
+   * that negative margins take back, so the text does not move.
+   */
+  h1 > a,
+  h2 > a,
+  h3 > a,
+  h4 > a,
+  h5 > a,
+  .tap-link {
+    display: inline-block;
+    /* 2px over, so rounding never lands a hair under 44px. */
+    --tap-pad: max(0px, calc((2.75rem + 2px - 1lh) / 2));
+    padding-block: var(--tap-pad);
+    margin-block: calc(var(--tap-pad) * -1);
+  }
+
+  .tap-target-block {
+    min-height: 2.75rem;
+  }
+}

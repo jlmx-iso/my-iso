@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Matches" };
 export default function MatchesPage() {
   return (
     <Stack gap="lg" maw={720} mx="auto">
-      <Anchor component={NextLink} href="/app/discover" c="dimmed" size="sm" w="fit-content">
+      <Anchor component={NextLink} href="/app/discover" c="dimmed" size="sm" w="fit-content" className="tap-link">
         <Group gap={4} wrap="nowrap"><IconArrowLeft size={14} aria-hidden /> Back to Discover</Group>
       </Anchor>
       <PageHeader

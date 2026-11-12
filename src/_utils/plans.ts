@@ -7,6 +7,11 @@
  * (`getPricingForRole` / `subscription.getPricing`) and are only formatted
  * here. Nothing in these lists is a usage limit: the server does not enforce
  * any per-plan limit today, so none is promised.
+ *
+ * Pro gates nothing yet (no procedure uses `proProcedure`). So Pro's
+ * `features` say only what is true today, and everything planned is in
+ * `comingSoon`, which every screen shows under a "Coming soon" heading and
+ * never as a current benefit.
  */
 export type PlanPricing = {
   annualPrice: number;
@@ -28,15 +33,19 @@ export const FREE_PLAN = {
 } as const;
 
 export const PRO_PLAN = {
-  features: [
-    "Everything in Free",
-    "Priority search placement",
-    "Featured profile badge",
-    "Analytics dashboard",
-    "Priority support",
-  ],
+  /** Planned, not built. Shown only under a "Coming soon" heading. */
+  comingSoon: ["Priority placement in search", "A Pro badge on your profile", "Profile analytics", "Priority support"],
+  /** True today. */
+  features: ["Everything in Free", "Support ISO while the network is being built"],
+  /** True today for a founding price only: Stripe keeps a subscription on the price it started with. */
+  foundingFeature: "Your founding price stays the same for as long as you stay subscribed",
   name: "Pro",
 } as const;
+
+/** What Pro gives today, for this member's price. */
+export function proFeaturesFor(pricing: Pick<PlanPricing, "isFoundingPrice">): string[] {
+  return pricing.isFoundingPrice ? [...PRO_PLAN.features, PRO_PLAN.foundingFeature] : [...PRO_PLAN.features];
+}
 
 /** "$10", "$8.25": whole dollars without cents. */
 export function formatPrice(amount: number): string {

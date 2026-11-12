@@ -1,9 +1,9 @@
 "use client";
 
-import { Alert, Button, FileInput, Group, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import { Button, FileInput, Group, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { useForm } from "@mantine/form";
-import { IconAlertCircle, IconUpload } from "@tabler/icons-react";
+import { IconUpload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useState } from "react";
 
@@ -19,6 +19,7 @@ import {
 import { MAX_EVENT_DURATION_HOURS } from "~/_utils/limits";
 import { logger } from "~/_utils/logger";
 import { isRateLimited, trpcErrorCode, zodErrorFields } from "~/_utils/userError";
+import DialogError from "~/app/_components/DialogError";
 import { LocationAutocomplete } from "~/app/_components/LocationAutocomplete";
 import { readFileAsBase64 } from "~/app/_lib/readFile";
 import { api } from "~/trpc/react";
@@ -167,29 +168,6 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: 
     return (
         <form onSubmit={handleSubmit} noValidate>
             <Stack gap="md">
-                {/* Always rendered so screen readers announce errors as they appear. */}
-                <div role="alert">
-                    {submitError && (
-                        <Alert color="red" icon={<IconAlertCircle size={16} />} data-testid="create-event-error">
-                            {submitError}
-                            {coverFailed && (
-                                <Group gap="xs" mt="xs">
-                                    <Button
-                                        size="xs"
-                                        className="touch-target"
-                                        variant="default"
-                                        onClick={() => void save(form.values, false)}
-                                        disabled={isSaving}
-                                        data-testid="post-without-cover"
-                                    >
-                                        Post without cover
-                                    </Button>
-                                    <Text size="xs" c="gray.7">You can add one later by editing the event.</Text>
-                                </Group>
-                            )}
-                        </Alert>
-                    )}
-                </div>
                 <TextInput
                     label="Title"
                     placeholder="Second shooter for a downtown wedding"
@@ -246,6 +224,24 @@ export default function CreateEventForm({ onCreated, onCancel, onDirtyChange }: 
                         form.setFieldError("image", file ? imageFileError(file) : null);
                     }}
                 />
+                {/* Above the buttons, where the eye is after pressing one. */}
+                <DialogError message={submitError} title="Event not posted" data-testid="create-event-error">
+                    {coverFailed && (
+                        <Group gap="xs" mt="xs">
+                            <Button
+                                size="xs"
+                                className="touch-target"
+                                variant="default"
+                                onClick={() => void save(form.values, false)}
+                                disabled={isSaving}
+                                data-testid="post-without-cover"
+                            >
+                                Post without cover
+                            </Button>
+                            <Text size="xs" c="gray.7">You can add one later by editing the event.</Text>
+                        </Group>
+                    )}
+                </DialogError>
                 <Group justify="flex-end" mt="xs">
                     <Button variant="default" onClick={onCancel} disabled={isSaving}>
                         Cancel

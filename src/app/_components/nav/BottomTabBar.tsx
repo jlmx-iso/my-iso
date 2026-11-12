@@ -29,7 +29,7 @@ export default function BottomTabBar() {
     const unread = useUnreadConversations();
 
     return (
-        <nav aria-label="Main" className={classes.bar}>
+        <nav aria-label="Tab bar" className={classes.bar}>
             {tabs.map((tab) => {
                 const isActive = pathname.startsWith(tab.href);
                 return (

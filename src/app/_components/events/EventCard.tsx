@@ -88,7 +88,8 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                         onClick={() => setIsCommentFormOpen((open) => !open)}
                         data-testid="event-card-comments"
                     >
-                        {commentCount}
+                        {/* No "0": an empty count reads like an error. */}
+                        {commentCount === 0 ? "Comment" : `${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
                     </Button>
                     <ApplyAction
                         event={event}

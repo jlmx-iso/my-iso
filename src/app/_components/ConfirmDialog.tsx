@@ -2,6 +2,8 @@
 
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 
+import DialogError from "./DialogError";
+
 type ConfirmDialogProps = {
     opened: boolean;
     /** Called for Escape, the overlay, the close button and the "keep" button. */
@@ -17,6 +19,9 @@ type ConfirmDialogProps = {
     /** Red confirm button, for something that cannot be taken back. */
     destructive?: boolean;
     loading?: boolean;
+    /** Why the last attempt failed: shown above the buttons (see DialogError). */
+    error?: string | null;
+    errorTitle?: string;
 };
 
 /**
@@ -34,6 +39,8 @@ export default function ConfirmDialog({
     cancelLabel,
     destructive = false,
     loading = false,
+    error,
+    errorTitle,
 }: ConfirmDialogProps) {
     return (
         <Modal opened={opened} onClose={onClose} title={title} size="sm" centered closeOnClickOutside={!loading}>
@@ -41,6 +48,7 @@ export default function ConfirmDialog({
                 <Text size="sm" component="div" style={{ lineHeight: 1.55 }}>
                     {children}
                 </Text>
+                <DialogError message={error} title={errorTitle} />
                 <Group justify="flex-end" gap="sm">
                     <Button variant="default" onClick={onClose} disabled={loading} data-autofocus>
                         {cancelLabel}

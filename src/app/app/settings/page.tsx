@@ -17,6 +17,7 @@ import { parseCheckoutReturn } from "~/_utils/checkoutStatus";
 import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { hasProAccess } from "~/_utils/subscriptionView";
 import PageHeader from "~/app/_components/PageHeader";
+import ProFeatures from "~/app/_components/plans/ProFeatures";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
@@ -137,16 +138,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                     </>
                   )}
                 </Group>
-                <Stack gap="xs">
-                  {PRO_PLAN.features.map((feature) => (
-                    <Group key={feature} gap="xs" wrap="nowrap">
-                      <ThemeIcon size={20} radius="xl" variant="light" color="orange">
-                        <IconCheck size={12} aria-hidden />
-                      </ThemeIcon>
-                      <Text size="sm">{feature}</Text>
-                    </Group>
-                  ))}
-                </Stack>
+                <ProFeatures pricing={pricing} />
               </Stack>
             </Paper>
           </SimpleGrid>

@@ -56,7 +56,7 @@ export default function EventDetail({ initialEvent, currentUserId }: EventDetail
 
     return (
         <Stack gap="md" maw={760} mx="auto">
-            <Anchor component={Link} href="/app/events" c="dimmed" size="sm" w="fit-content">
+            <Anchor component={Link} href="/app/events" c="dimmed" size="sm" w="fit-content" className="tap-link">
                 <Group gap={4} wrap="nowrap"><IconArrowLeft size={14} aria-hidden /> Back to events</Group>
             </Anchor>
 

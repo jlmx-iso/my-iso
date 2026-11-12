@@ -14,7 +14,7 @@ type UserBadgeProps = {
 /** Avatar and name linking to the person's in-app profile. */
 export default function UserBadge({ user: { userId, name, avatar } }: UserBadgeProps) {
     return (
-        <Link href={`/app/photographer/${userId}`} style={{ minWidth: 0 }}>
+        <Link href={`/app/photographer/${userId}`} style={{ minWidth: 0 }} className="tap-link">
             <Group gap="sm" align="center" wrap="nowrap">
                 <Avatar src={avatar} name={name} alt="" size="md" />
                 <Text fw={600} truncate>{name}</Text>

@@ -38,7 +38,7 @@ export const REASON_MESSAGES: Partial<Record<ErrorReason, string>> = {
   [ErrorReason.BOOKING_EVENT_STARTED]:
     "This event has already started, so the booking can't be changed this way anymore.",
   [ErrorReason.BOOKING_INVALID_TRANSITION]:
-    "This booking changed while you had it open. We've refreshed it so you can see where it stands.",
+    "This booking changed while you had it open, so nothing was done. Its card shows where it stands now.",
   [ErrorReason.BOOKING_NOT_ALLOWED]: "Only the other person in this booking can do that.",
   [ErrorReason.BOOKING_NOT_YET_COMPLETABLE]:
     "You can mark this booking as completed once the event is over.",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Container, Group, Skeleton, Stack, Tabs, Text } from "@mantine/core";
+import { Alert, Badge, Button, Container, Group, Skeleton, Stack, Tabs, Text, Title } from "@mantine/core";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -9,14 +9,17 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { BOOKINGS_PAGE_SIZE } from "~/_utils/pageSizes";
-import { loadedCountLabel, mergePages } from "~/_utils/pagination";
+import { mergePages } from "~/_utils/pagination";
 import { userFacingError } from "~/_utils/userError";
 import BookingCard from "~/app/_components/bookings/BookingCard";
+import { BOOKING_GROUPS, BOOKING_GROUP_TITLES, groupBookings, needsReplyLabel } from "~/app/_components/bookings/bookingGroups";
 import EmptyState from "~/app/_components/EmptyState";
 import PageHeader from "~/app/_components/PageHeader";
-import { useFocusNewItems } from "~/app/_hooks/useFocusNewItems";
+import { focusInto } from "~/app/_hooks/useFocusNewItems";
+import { useNow } from "~/app/_hooks/useNow";
 import { api } from "~/trpc/react";
 
 const pageOptions = {
@@ -33,14 +36,48 @@ function BookingsSkeleton({ label }: { label: string }) {
   );
 }
 
-/** "(12)", or "(20+)" while more can be loaded; nothing for an empty list. */
-function TabCount({ loaded, hasMore }: { loaded: number; hasMore: boolean }) {
-  if (loaded === 0) return null;
+/** How many bookings on this tab need the viewer: the number worth a badge. Nothing when none do. */
+function NeedsReplyBadge({ count, hasMore }: { count: number; hasMore: boolean }) {
+  const label = needsReplyLabel(count, hasMore);
+  if (!label) return null;
   return (
-    <Text span size="xs" c="dimmed" ml={4}>
-      ({loadedCountLabel(loaded, hasMore)})
-      {hasMore && <span className="sr-only"> loaded, more available</span>}
-    </Text>
+    <Badge component="span" size="sm" circle={label.length === 1} ml={6} data-testid="tab-needs-reply">
+      <span aria-hidden>{label}</span>
+      <span className="sr-only">, {count} {count === 1 ? "needs" : "need"} your reply</span>
+    </Badge>
+  );
+}
+
+/** One tab's bookings, in BOOKING_GROUPS sections with headings and counts. */
+function GroupedBookings<T extends { id: string; status: string; event: { date: Date; duration: number } }>({
+  bookings,
+  variant,
+  now,
+  renderCard,
+}: {
+  bookings: readonly T[];
+  variant: "sent" | "received";
+  now: Date;
+  renderCard: (booking: T) => React.ReactNode;
+}) {
+  const groups = groupBookings(bookings, variant, now);
+  return (
+    <Stack gap="xl">
+      {BOOKING_GROUPS.filter((group) => groups[group].length > 0).map((group) => {
+        const headingId = `bookings-${variant}-${group}`;
+        return (
+          <Stack key={group} gap="sm" component="section" aria-labelledby={headingId} data-testid={`group-${group}`}>
+            <Title order={2} size="h5" id={headingId}>
+              {BOOKING_GROUP_TITLES[group]}{" "}
+              <Text span c="gray.7" fw={500} inherit>
+                ({groups[group].length})
+              </Text>
+            </Title>
+            {groups[group].map(renderCard)}
+          </Stack>
+        );
+      })}
+    </Stack>
   );
 }
 
@@ -76,7 +113,22 @@ function PanelState({
   onLoadMore,
   onRetry,
 }: PanelStateProps) {
-  const { expectMore, listRef } = useFocusNewItems(loaded);
+  // After "Load more", focus the first card that was not there before: new
+  // bookings can land in any group, so it is found by id, not by position.
+  const listRef = useRef<HTMLDivElement>(null);
+  const idsBefore = useRef<Set<string> | null>(null);
+  const cardIds = () =>
+    [...(listRef.current?.querySelectorAll<HTMLElement>("[data-booking-id]") ?? [])].map((card) => card.dataset.bookingId ?? "");
+  const expectMore = () => {
+    idsBefore.current = new Set(cardIds());
+  };
+  useEffect(() => {
+    const before = idsBefore.current;
+    if (!before || loaded <= before.size) return;
+    idsBefore.current = null;
+    const firstNew = cardIds().find((id) => !before.has(id));
+    if (firstNew) focusInto(listRef.current?.querySelector(`[data-booking-id="${CSS.escape(firstNew)}"]`));
+  }, [loaded]);
   if (isPending) return <BookingsSkeleton label={loadingLabel} />;
   if (error && loaded === 0) {
     return (
@@ -94,7 +146,7 @@ function PanelState({
 
   return (
     <Stack gap="sm">
-      <Stack gap="sm" ref={listRef}>{children}</Stack>
+      <div ref={listRef}>{children}</div>
       {hasMore && (
         <Stack gap={6} align="center" mt="xs">
           <Text size="sm" c="dimmed" role="status">
@@ -136,6 +188,10 @@ export default function BookingsPage() {
 
   const myApplications = mergePages(sent.data?.pages);
   const receivedApplications = mergePages(received.data?.pages);
+  // Grouping depends on the time: a booking moves to "Past" when its event ends.
+  const now = useNow();
+  const sentNeedingReply = groupBookings(myApplications, "sent", now).needsReply.length;
+  const receivedNeedingReply = groupBookings(receivedApplications, "received", now).needsReply.length;
 
   return (
     <Container size="md" py="md" px={0}>
@@ -154,11 +210,11 @@ export default function BookingsPage() {
           <Tabs.List>
             <Tabs.Tab value="applications" leftSection={<IconSend size={16} />}>
               My applications
-              <TabCount loaded={myApplications.length} hasMore={sent.hasNextPage} />
+              <NeedsReplyBadge count={sentNeedingReply} hasMore={sent.hasNextPage} />
             </Tabs.Tab>
             <Tabs.Tab value="received" leftSection={<IconInbox size={16} />}>
               Received
-              <TabCount loaded={receivedApplications.length} hasMore={received.hasNextPage} />
+              <NeedsReplyBadge count={receivedNeedingReply} hasMore={received.hasNextPage} />
             </Tabs.Tab>
           </Tabs.List>
 
@@ -188,15 +244,14 @@ export default function BookingsPage() {
                 />
               }
             >
-              {myApplications.map((booking) => (
-                <BookingCard
-                  key={booking.id}
-                  booking={booking}
-                  event={booking.event}
-                  user={booking.owner}
-                  variant="sent"
-                />
-              ))}
+              <GroupedBookings
+                bookings={myApplications}
+                variant="sent"
+                now={now}
+                renderCard={(booking) => (
+                  <BookingCard key={booking.id} booking={booking} event={booking.event} user={booking.owner} variant="sent" />
+                )}
+              />
             </PanelState>
           </Tabs.Panel>
 
@@ -221,15 +276,14 @@ export default function BookingsPage() {
                 />
               }
             >
-              {receivedApplications.map((booking) => (
-                <BookingCard
-                  key={booking.id}
-                  booking={booking}
-                  event={booking.event}
-                  user={booking.applicant}
-                  variant="received"
-                />
-              ))}
+              <GroupedBookings
+                bookings={receivedApplications}
+                variant="received"
+                now={now}
+                renderCard={(booking) => (
+                  <BookingCard key={booking.id} booking={booking} event={booking.event} user={booking.applicant} variant="received" />
+                )}
+              />
             </PanelState>
           </Tabs.Panel>
         </Tabs>

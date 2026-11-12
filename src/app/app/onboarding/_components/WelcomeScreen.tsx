@@ -48,8 +48,8 @@ export function WelcomeScreen({ firstName, onContinue, photographerCount }: Welc
           <Stack align="center" gap="xs">
             <IconStar size={20} color="var(--mantine-color-orange-7)" aria-hidden />
             <Text size="sm" ta="center" fw={500}>
-              As a founding member, you&apos;ll get perks that won&apos;t be
-              available later — including a locked-in price that never goes up.
+              As a founding member you can get Pro at the founding price, which
+              stays the same for as long as you stay subscribed.
             </Text>
           </Stack>
         </Box>

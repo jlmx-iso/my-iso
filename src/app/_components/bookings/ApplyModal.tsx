@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Alert,
   Button,
   Modal,
   Stack,
@@ -10,11 +9,12 @@ import {
   Textarea,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconAlertCircle, IconSend } from "@tabler/icons-react";
+import { IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
 
 import { logger } from "~/_utils/logger";
 import { isClientError, userFacingError } from "~/_utils/userError";
+import DialogError from "~/app/_components/DialogError";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -90,16 +90,6 @@ export default function ApplyModal({
             event. You can include your rate and a message.
           </Text>
 
-          {/* In the dialog, next to what it is about: a toast would sit on
-              top of the dialog's title. Always rendered so it is announced. */}
-          <div role="alert">
-            {error && (
-              <Alert color="red" icon={<IconAlertCircle size={16} />} title="Application not sent" data-testid="apply-error">
-                {userFacingError(error, "Your application couldn't be sent. Please try again.")}
-              </Alert>
-            )}
-          </div>
-
           <TextInput
             label="Your rate"
             description="Optional"
@@ -119,6 +109,12 @@ export default function ApplyModal({
             autosize
             minRows={3}
             maxRows={6}
+          />
+
+          <DialogError
+            message={error ? userFacingError(error, "Your application couldn't be sent. Please try again.") : null}
+            title="Application not sent"
+            data-testid="apply-error"
           />
 
           <Button

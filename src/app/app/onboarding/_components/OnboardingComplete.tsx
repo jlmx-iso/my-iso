@@ -81,8 +81,8 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
           </Title>
           <Text size="lg" c="dimmed" ta="center" maw={440}>
             {isActive
-              ? "Welcome to Pro! Your profile is live and every Pro feature is unlocked."
-              : "Your profile is live. Upgrade to Pro anytime from Settings to unlock unlimited messaging, bookings, and more."}
+              ? "Welcome to Pro, and thank you for backing ISO this early. Your profile is live."
+              : "Your profile is live. You can upgrade to Pro any time from Settings."}
           </Text>
         </Stack>
 

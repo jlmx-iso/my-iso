@@ -361,31 +361,40 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
 
             {step === 0 && (
               <Stack gap="sm">
-                <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
-                  <TextInput
-                    label="First name"
-                    autoComplete="given-name"
-                    required={nameEditable}
-                    readOnly={!nameEditable}
-                    variant={nameEditable ? "default" : "filled"}
-                    {...form.getInputProps("firstName")}
-                  />
-                  <TextInput
-                    label="Last name"
-                    autoComplete="family-name"
-                    required={nameEditable}
-                    readOnly={!nameEditable}
-                    variant={nameEditable ? "default" : "filled"}
-                    {...form.getInputProps("lastName")}
-                  />
-                </SimpleGrid>
-                <TextInput
-                  label="Email"
-                  description="The address you signed in with"
-                  value={user.email}
-                  readOnly
-                  variant="filled"
-                />
+                {/* What can be typed is an ordinary field; what cannot is plain
+                    text, never a greyed-out field that looks broken. */}
+                {nameEditable && (
+                  <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
+                    <TextInput label="First name" autoComplete="given-name" required {...form.getInputProps("firstName")} />
+                    <TextInput label="Last name" autoComplete="family-name" required {...form.getInputProps("lastName")} />
+                  </SimpleGrid>
+                )}
+                <Box
+                  component="dl"
+                  m={0}
+                  p="sm"
+                  bg="gray.0"
+                  style={{ borderRadius: "var(--mantine-radius-md)" }}
+                  data-testid="onboarding-from-invite"
+                >
+                  {!nameEditable && (
+                    <Group gap="xs" wrap="nowrap">
+                      <Text component="dt" size="sm" c="gray.7" w={56}>Name</Text>
+                      <Text component="dd" size="sm" fw={600} m={0} style={{ overflowWrap: "anywhere" }}>
+                        {`${user.firstName} ${user.lastName}`.trim()}
+                      </Text>
+                    </Group>
+                  )}
+                  <Group gap="xs" wrap="nowrap" mt={nameEditable ? 0 : 4}>
+                    <Text component="dt" size="sm" c="gray.7" w={56}>Email</Text>
+                    <Text component="dd" size="sm" fw={600} m={0} style={{ overflowWrap: "anywhere" }}>
+                      {user.email}
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="gray.7" mt={6}>
+                    From your invite.
+                  </Text>
+                </Box>
                 <LocationAutocomplete
                   label="Location"
                   placeholder="City, State"
@@ -396,8 +405,8 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   label="Username"
                   description={
                     handle && !validateHandle(handle)
-                      ? `Your public profile: ${publicProfileUrl(env.NEXT_PUBLIC_BASE_URL, handle)}`
-                      : `Optional. ${HANDLE_MIN_LENGTH} to ${HANDLE_MAX_LENGTH} lowercase letters, numbers or underscores. It becomes your public profile link.`
+                      ? `Your link: ${publicProfileUrl(env.NEXT_PUBLIC_BASE_URL, handle).replace(/^https?:\/\//, "")}`
+                      : `Optional. ${HANDLE_MIN_LENGTH}–${HANDLE_MAX_LENGTH} lowercase letters, numbers or _`
                   }
                   placeholder="yourname"
                   leftSection={<Text size="sm" c="dimmed" aria-hidden>@</Text>}

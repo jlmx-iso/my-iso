@@ -53,7 +53,7 @@ export async function Navbar() {
     return (
         <Container size="lg" w="100%" h="100%">
             <Group h="100%" justify="space-between" wrap="nowrap">
-                <Link href={user ? "/app/events" : "/"} aria-label="ISO home">
+                <Link href={user ? "/app/events" : "/"} aria-label="ISO home" className="tap-link">
                     <Image
                         priority
                         src={logo}

@@ -145,7 +145,7 @@ export default function ComposeMessage(props: ComposeMessageProps) {
         <ActionIcon
           type="submit"
           variant="filled"
-          size={42}
+          size={44}
           radius="xl"
           loading={isPending}
           aria-label="Send message"

@@ -14,7 +14,6 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 
-import { formatDate } from "~/_lib/dayjs";
 import { logger } from "~/_utils";
 import {
   type BookingAction,
@@ -29,6 +28,7 @@ import { fullName } from "~/_utils/names";
 import { userFacingError } from "~/_utils/userError";
 import { Avatar } from "~/app/_components/Avatar";
 import ConfirmDialog from "~/app/_components/ConfirmDialog";
+import LocalDate from "~/app/_components/LocalDate";
 import { notify } from "~/app/_lib/notify";
 import { api } from "~/trpc/react";
 
@@ -167,20 +167,29 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
     void utils.booking.hasApplied.invalidate({ eventId: event.id });
   };
 
+  // A failure of an action confirmed in a dialog is shown in that dialog;
+  // one without a dialog (accept, complete) gets a toast.
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  // The booking changed under an open confirmation. Refreshing now would
+  // move the card to another group, remounting it and taking the dialog and
+  // its explanation with it: refresh once the dialog is closed instead.
+  const [refreshOnClose, setRefreshOnClose] = useState(false);
   const { mutate: updateStatus, isPending, variables } = api.booking.updateStatus.useMutation({
     onError: (error) => {
       logger.error("Error updating booking status", { error });
-      setConfirming(null);
-      notify.error({
-        message: userFacingError(error, "Nothing was changed. Please try again."),
-        title: "Booking not updated",
-      });
+      const message = userFacingError(error, "Nothing was changed. Please try again.");
+      if (confirming) setConfirmError(message);
+      else notify.error({ message, title: "Booking not updated" });
       // The booking moved on while this card was open: show where it stands.
       const reason = getErrorReason(error);
-      if (reason && STALE_REASONS.has(reason)) refresh();
+      if (reason && STALE_REASONS.has(reason)) {
+        if (confirming) setRefreshOnClose(true);
+        else refresh();
+      }
     },
     onSuccess: () => {
       setConfirming(null);
+      setConfirmError(null);
       refresh();
     },
   });
@@ -213,20 +222,20 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
   const confirmView = confirming ? actionView(confirming, role, name, event.title).confirm : undefined;
 
   return (
-    <Paper p="md" radius="md" withBorder component="article" data-testid="booking-card" data-status={booking.status}>
+    <Paper p="md" radius="md" withBorder component="article" data-testid="booking-card" data-status={booking.status} data-booking-id={booking.id}>
       <Stack gap="sm">
         {/* Header: event info and status badge */}
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
           <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-            <Title order={2} size="h5" style={{ overflowWrap: "anywhere" }}>
+            <Title order={3} size="h5" style={{ overflowWrap: "anywhere" }}>
               <Link href={`/app/events/${event.id}`}>{event.title}</Link>
             </Title>
             <Group gap="sm" style={{ rowGap: 2 }}>
               <Group gap={4} wrap="nowrap">
                 <IconCalendar size={14} color="var(--mantine-color-gray-7)" aria-hidden />
-                <Text size="sm" c="gray.7" suppressHydrationWarning>
+                <Text size="sm" c="gray.7">
                   <span className="sr-only">When: </span>
-                  {formatDate(event.date, "dayTime")}
+                  <LocalDate date={event.date} format="dayTime" />
                 </Text>
               </Group>
               <Group gap={4} wrap="nowrap">
@@ -255,7 +264,7 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
           <Avatar src={user.profilePic} name={name} alt="" size="md" />
           <Stack gap={0} style={{ minWidth: 0 }}>
             <Text size="sm" fw={600} truncate>
-              <Link href={`/app/photographer/${user.id}`}>{name}</Link>
+              <Link href={`/app/photographer/${user.id}`} className="tap-link">{name}</Link>
             </Text>
             <Text size="xs" c="dimmed">
               {variant === "sent" ? "Event owner" : "Applicant"}
@@ -299,7 +308,11 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
                   variant={view.variant}
                   color={view.color}
                   leftSection={action === "accept" || action === "complete" ? <IconCheck size={16} aria-hidden /> : undefined}
-                  onClick={() => (view.confirm ? setConfirming(action) : perform(action))}
+                  onClick={() => {
+                    setConfirmError(null);
+                    if (view.confirm) setConfirming(action);
+                    else perform(action);
+                  }}
                   loading={isPending && variables?.status === requestedStatusFor(action)}
                   disabled={isPending && variables?.status !== requestedStatusFor(action)}
                   data-testid={`booking-${action}`}
@@ -318,16 +331,25 @@ export default function BookingCard({ booking, event, user, variant }: BookingCa
           </Group>
         )}
 
-        <Text size="xs" c="dimmed" suppressHydrationWarning>
-          Applied {formatDate(booking.createdAt)}
+        <Text size="xs" c="dimmed">
+          Applied <LocalDate date={booking.createdAt} />
         </Text>
       </Stack>
 
       {confirmView && confirming && (
         <ConfirmDialog
           opened
-          onClose={() => setConfirming(null)}
+          onClose={() => {
+            setConfirming(null);
+            setConfirmError(null);
+            if (refreshOnClose) {
+              setRefreshOnClose(false);
+              refresh();
+            }
+          }}
           onConfirm={() => perform(confirming)}
+          error={confirmError}
+          errorTitle="Booking not updated"
           title={confirmView.title}
           confirmLabel={confirmView.confirmLabel}
           cancelLabel={confirmView.cancelLabel}

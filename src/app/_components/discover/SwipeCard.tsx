@@ -231,6 +231,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
             <UnstyledButton
               aria-expanded={expanded}
               py={6}
+              mih={44}
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded((o) => !o);
@@ -352,6 +353,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                 color="red"
                 leftSection={<IconX size={18} />}
                 onClick={() => onSwipe("pass")}
+                size="lg"
                 disabled={disabled}
                 aria-label={`Pass on ${displayName}`}
               >
@@ -362,6 +364,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                 color="teal"
                 leftSection={<IconHeart size={18} />}
                 onClick={() => onSwipe("like")}
+                size="lg"
                 disabled={disabled}
                 aria-label={`Like ${displayName}`}
               >

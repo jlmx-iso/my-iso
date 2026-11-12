@@ -2,16 +2,32 @@ import { describe, expect, it } from "vitest";
 
 import { getPricingForRole } from "~/server/_utils/pricing";
 
-import { FREE_PLAN, PRO_PLAN, formatPrice, proPriceView } from "./plans";
+import { FREE_PLAN, PRO_PLAN, formatPrice, proFeaturesFor, proPriceView } from "./plans";
 
 const founding = getPricingForRole("founding_member");
 const standard = getPricingForRole("standard");
 
 describe("plan descriptions", () => {
   it("promise no usage limits: the server enforces none", () => {
-    for (const feature of [...FREE_PLAN.features, ...PRO_PLAN.features]) {
+    for (const feature of [...FREE_PLAN.features, ...PRO_PLAN.features, ...PRO_PLAN.comingSoon]) {
       expect(feature, feature).not.toMatch(/\d|unlimited|per (day|month|week)|up to/i);
     }
+  });
+
+  it("never sell a planned feature as a current Pro benefit", () => {
+    // Nothing is gated on Pro yet: search order, badges, analytics and
+    // support are the same for everyone. They may only appear as "coming soon".
+    const planned = /priority|badge|featured|analytics|dashboard|support(?! ISO)/i;
+    for (const pricing of [founding, standard]) {
+      for (const feature of proFeaturesFor(pricing)) expect(feature, feature).not.toMatch(planned);
+    }
+    expect(PRO_PLAN.comingSoon.length).toBeGreaterThan(0);
+    for (const feature of PRO_PLAN.comingSoon) expect(PRO_PLAN.features as readonly string[]).not.toContain(feature);
+  });
+
+  it("mention the founding price lock only to someone on the founding price", () => {
+    expect(proFeaturesFor(founding)).toContain(PRO_PLAN.foundingFeature);
+    expect(proFeaturesFor(standard)).not.toContain(PRO_PLAN.foundingFeature);
   });
 
   it("name the two plans once", () => {

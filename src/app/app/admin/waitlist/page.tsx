@@ -22,9 +22,10 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { formatDate } from "~/_lib/dayjs";
 import { toSafeWebsiteUrl } from "~/_utils/social";
 import { userFacingError } from "~/_utils/userError";
+import DialogError from "~/app/_components/DialogError";
+import LocalDate from "~/app/_components/LocalDate";
 import PageHeader from "~/app/_components/PageHeader";
 import { notify } from "~/app/_lib/notify";
 import { type RouterOutputs, api } from "~/trpc/react";
@@ -55,6 +56,8 @@ export default function Page() {
   const [status, setStatus] = useState<Status>("pending");
   const [page, setPage] = useState(1);
   const [decision, setDecision] = useState<Decision | null>(null);
+  // Why the last decision failed, shown in its dialog.
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const utils = api.useUtils();
   const { data, error, isLoading, refetch } = api.waitlist.getAll.useQuery({ status, page, limit: 20 });
@@ -65,6 +68,7 @@ export default function Page() {
   const confirmDecision = async () => {
     if (!decision) return;
     const { action, entry } = decision;
+    setDecisionError(null);
     try {
       await (action === "approve" ? approve : reject).mutateAsync({ id: entry.id });
       await utils.waitlist.getAll.invalidate();
@@ -77,10 +81,7 @@ export default function Page() {
       });
       setDecision(null);
     } catch (mutationError) {
-      notify.error({
-        message: userFacingError(mutationError, "Nothing was changed. Please try again."),
-        title: action === "approve" ? "Couldn't approve application" : "Couldn't decline application",
-      });
+      setDecisionError(userFacingError(mutationError, "Nothing was changed. Please try again."));
     }
   };
 
@@ -183,7 +184,7 @@ export default function Page() {
                       )}
                     </Group>
                     <Text size="xs" c="dimmed">
-                      Applied {formatDate(entry.createdAt)}
+                      Applied <LocalDate date={entry.createdAt} />
                     </Text>
                   </Stack>
 
@@ -233,7 +234,11 @@ export default function Page() {
 
       <Modal
         opened={!!decision}
-        onClose={() => !isDeciding && setDecision(null)}
+        onClose={() => {
+          if (isDeciding) return;
+          setDecision(null);
+          setDecisionError(null);
+        }}
         title={decision?.action === "approve" ? "Approve this application?" : "Decline this application?"}
         centered
       >
@@ -244,8 +249,12 @@ export default function Page() {
                 ? `${decision.entry.name} (${decision.entry.email}) will be able to create an ISO account.`
                 : `${decision.entry.name} (${decision.entry.email}) will be moved to Rejected and won't be able to join with this application.`}
             </Text>
+            <DialogError
+              message={decisionError}
+              title={decision.action === "approve" ? "Couldn't approve application" : "Couldn't decline application"}
+            />
             <Group justify="flex-end">
-              <Button variant="default" onClick={() => setDecision(null)} disabled={isDeciding}>
+              <Button variant="default" onClick={() => { setDecision(null); setDecisionError(null); }} disabled={isDeciding}>
                 Cancel
               </Button>
               <Button

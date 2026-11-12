@@ -26,7 +26,7 @@ export default function NavLinks({ links }: NavLinksProps) {
     const unread = useUnreadConversations(links.some((link) => link.href === MESSAGES_HREF));
 
     return (
-        <Group component="nav" aria-label="Main" gap={4} wrap="nowrap">
+        <Group component="nav" aria-label="Primary" gap={4} wrap="nowrap">
             {links.map((link) => {
                 // "/#features" style links never match a pathname.
                 const isActive = !link.href.includes("#") && pathname.startsWith(link.href);

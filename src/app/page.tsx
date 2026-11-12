@@ -27,12 +27,13 @@ import {
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { FREE_PLAN, PRO_PLAN, proPriceView } from "~/_utils/plans";
+import { FREE_PLAN, proPriceView } from "~/_utils/plans";
 import {
   FadeInOnScroll,
   StaggerContainer,
 } from "~/app/_components/animations";
 import { NextLink } from "~/app/_components/NextLink";
+import ProFeatures from "~/app/_components/plans/ProFeatures";
 import { auth } from "~/auth";
 import { getPricingForRole } from "~/server/_utils/pricing";
 import { USER_ROLES } from "~/server/_utils/roles";
@@ -82,8 +83,7 @@ function HeroSection() {
           style={{ lineHeight: 1.6 }}
         >
           ISO connects photographers with skilled second shooters for weddings,
-          events, and sessions. Build your team, grow your network, and deliver
-          more for every client.
+          events, and sessions. Build your team and grow your network.
         </Text>
         <Group mt="md" justify="center">
           <Button component={NextLink} href="/join" size="lg" rightSection={<IconArrowRight size={18} />}>
@@ -103,19 +103,19 @@ const steps = [
     icon: IconCameraPlus,
     title: "Create your profile",
     description:
-      "Showcase your portfolio, set your rates, and list the services you offer. Let the right people find you.",
+      "Show your portfolio, where you work and the kind of shoots you do, so the right photographers find you.",
   },
   {
     icon: IconSearch,
     title: "Find your match",
     description:
-      "Search by location, specialty, and availability. Browse portfolios and reviews to find your perfect fit.",
+      "Search by name and city, or let Discover suggest photographers near you. Look at portfolios and reviews before you reach out.",
   },
   {
     icon: IconCalendarEvent,
     title: "Book & shoot",
     description:
-      "Coordinate directly, confirm the details, and show up ready. ISO handles the connection so you can focus on the craft.",
+      "Agree on the details in messages, accept the booking, and show up ready.",
   },
 ];
 
@@ -181,33 +181,33 @@ const features = [
   },
   {
     icon: IconUsers,
-    title: "Client connections",
+    title: "Get discovered",
     description:
-      "Get discovered by lead photographers and clients looking for your exact skill set and style.",
+      "Lead photographers find you in Discover and search, by name and city, and can see your work before they write.",
   },
   {
     icon: IconCalendarEvent,
     title: "Booking management",
     description:
-      "Track your availability, manage requests, and keep your schedule organized in one place.",
+      "Apply to events, accept or decline applications, and see where every booking stands in one place.",
   },
   {
     icon: IconMessageCircle,
     title: "Direct messaging",
     description:
-      "Coordinate shoot details, share mood boards, and align on expectations before the big day.",
+      "Agree on the schedule, the gear and the rate before the big day, in one conversation.",
   },
   {
     icon: IconCamera,
     title: "Event discovery",
     description:
-      "Browse open calls for second shooters near you. Filter by event type, date, and pay.",
+      "Browse open second-shooter calls near you, by date and location.",
   },
   {
     icon: IconStar,
     title: "Reviews & ratings",
     description:
-      "Build your reputation with verified reviews. Stand out with a track record clients trust.",
+      "Reviews come only from photographers you have completed a booking with: a track record other photographers trust.",
   },
 ];
 
@@ -328,14 +328,9 @@ function PricingPreviewSection() {
                 / month
               </Text>
             </Group>
-            <Stack gap="xs" mb="lg">
-              {PRO_PLAN.features.map((item) => (
-                <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
-                  <Text size="sm">{item}</Text>
-                </Group>
-              ))}
-            </Stack>
+            <Box mb="lg">
+              <ProFeatures pricing={{ isFoundingPrice: true }} compact />
+            </Box>
             <Button component={NextLink} href="/join" fullWidth>
               Get started
             </Button>

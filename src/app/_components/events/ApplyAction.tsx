@@ -55,12 +55,18 @@ export default function ApplyAction({ event, application, isOwnEvent, prominent 
                 prominent={prominent}
             />
         );
-        if (!withdrawn || !prominent) return button;
+        if (!prominent) return button;
         return (
             <Stack gap={6} w={{ base: "100%", xs: "auto" }}>
                 {button}
-                <Text size="xs" c="dimmed" data-testid="application-status">
-                    You withdrew your earlier application.
+                {withdrawn && (
+                    <Text size="xs" c="dimmed" data-testid="application-status">
+                        You withdrew your earlier application.
+                    </Text>
+                )}
+                {/* Events have no pay field yet: say so where the decision is made. */}
+                <Text size="sm" c="gray.7" data-testid="pay-note">
+                    Pay isn&apos;t listed. Propose your rate when you apply.
                 </Text>
             </Stack>
         );

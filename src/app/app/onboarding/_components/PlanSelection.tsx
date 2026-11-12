@@ -21,6 +21,7 @@ import { useState } from "react";
 import { ErrorReason, getErrorReason } from "~/_utils/errorReason";
 import { type BillingInterval, FREE_PLAN, type PlanPricing, PRO_PLAN, proPriceView } from "~/_utils/plans";
 import { trpcErrorCode, userFacingError } from "~/_utils/userError";
+import ProFeatures from "~/app/_components/plans/ProFeatures";
 import { api } from "~/trpc/react";
 
 type PlanSelectionProps = {
@@ -69,7 +70,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
         <Text c="dimmed" ta="center" maw={500}>
           Start free or unlock everything with Pro.
           {pricing.isFoundingPrice && (
-            <> As a founding member, you&apos;ll lock in a price that never goes up.</>
+            <> As a founding member you get a lower price, and it stays the same for as long as you stay subscribed.</>
           )}
         </Text>
         <SegmentedControl
@@ -157,16 +158,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
                   {price.annualNote}
                 </Text>
               )}
-              <Stack gap="xs">
-                {PRO_PLAN.features.map((feature) => (
-                  <Group key={feature} gap="xs" wrap="nowrap">
-                    <ThemeIcon size={20} radius="xl" variant="light" color="orange">
-                      <IconCheck size={12} aria-hidden />
-                    </ThemeIcon>
-                    <Text size="sm">{feature}</Text>
-                  </Group>
-                ))}
-              </Stack>
+              <ProFeatures pricing={pricing} />
             </Stack>
             <Stack gap="xs">
               <Button
@@ -179,7 +171,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
               </Button>
               {pricing.isFoundingPrice && (
                 <Text size="xs" c="dimmed" ta="center">
-                  Founding price locked forever
+                  Your founding price stays while you stay subscribed
                 </Text>
               )}
             </Stack>
