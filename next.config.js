@@ -6,7 +6,7 @@ await import("./src/env.js");
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { buildSecurityHeaders } from "./src/securityHeaders.js";
+import { buildSecurityHeaders, nonPageHeaderRules } from "./src/securityHeaders.js";
 import { TELEMETRY_FALLBACK_ROUTE, TELEMETRY_PROXY_PATH } from "./src/telemetryConfig.js";
 
 /** Commit this build was made from, for /api/health. "unknown" outside git. */
@@ -89,11 +89,13 @@ const config = {
         // Every route. Listed first: for a header set twice, the later
         // (more specific) entry below wins.
         source: "/:path*",
-        headers: buildSecurityHeaders({
-          baseUrl: process.env.NEXT_PUBLIC_BASE_URL,
-          isDevelopment: process.env.NODE_ENV === "development",
-        }),
+        // The Content-Security-Policy is not among them: it carries a
+        // per-request nonce and is set by src/middleware.ts.
+        headers: buildSecurityHeaders(),
       },
+      // Paths the middleware skips get a static policy that allows nothing
+      // (an unknown path there can still render the HTML not-found page).
+      ...nonPageHeaderRules(),
       {
         source: "/login",
         headers: [
