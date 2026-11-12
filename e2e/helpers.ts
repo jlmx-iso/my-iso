@@ -49,14 +49,18 @@ export async function signIn(context: BrowserContext) {
  * closed local port.
  */
 export async function isolate(context: BrowserContext, externalRequests: string[]) {
+  // Playwright runs the most recently registered matching route first, so
+  // the origin check is registered last: a request to any other origin
+  // (an autocomplete URL on another port included) is recorded before
+  // anything else can abort it.
+  await context.route(/\/api\/trpc\/[^?]*google\.getAutocompleteLocations/, (route) =>
+    route.abort("blockedbyclient"),
+  );
   await context.route(
     (url) => !WORKER_ORIGINS.has(url.origin),
     async (route) => {
       externalRequests.push(route.request().url());
       await route.abort("blockedbyclient");
     },
-  );
-  await context.route(/\/api\/trpc\/[^?]*google\.getAutocompleteLocations/, (route) =>
-    route.abort("blockedbyclient"),
   );
 }
