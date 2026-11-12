@@ -1,12 +1,22 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { logger } from "~/_utils";
+import { ErrorReason, logger } from "~/_utils";
+import {
+  actionFor,
+  applyTransition,
+  checkTransition,
+  isSlotTaken,
+  syncEventFulfilled,
+  type BookingAction,
+  type TransitionRefusal,
+} from "~/server/_db/bookingTransitions";
 import { isUniqueViolation } from "~/server/_db/errors";
 import { toPage } from "~/server/_db/pagination";
 import type { ExtendedPrismaClient } from "~/server/_db/softDelete";
 import { captureEvent } from "~/server/_lib/posthog";
 import { RateLimits } from "~/server/_utils/rateLimit";
+import { reasonedError } from "~/server/api/reasonedError";
 import { createTRPCRouter, protectedProcedure, rateLimit } from "~/server/api/trpc";
 
 const idInput = z.string().min(1).max(64);
@@ -93,6 +103,111 @@ const isInThePast = (date: Date) => date.getTime() < Date.now();
 
 const ALREADY_APPLIED = "You have already applied to this event";
 
+const eventFilled = () =>
+  reasonedError(
+    "CONFLICT",
+    ErrorReason.BOOKING_EVENT_FILLED,
+    "This event already has its second shooter.",
+  );
+
+const REFUSALS: Record<TransitionRefusal, () => TRPCError> = {
+  event_started: () =>
+    reasonedError(
+      "BAD_REQUEST",
+      ErrorReason.BOOKING_EVENT_STARTED,
+      "This event has already started, so the booking can no longer be changed this way.",
+    ),
+  invalid_transition: () =>
+    reasonedError(
+      "CONFLICT",
+      ErrorReason.BOOKING_INVALID_TRANSITION,
+      "This booking has changed and can no longer be updated this way. Refresh to see its current status.",
+    ),
+  not_allowed: () =>
+    reasonedError(
+      "FORBIDDEN",
+      ErrorReason.BOOKING_NOT_ALLOWED,
+      "You are not allowed to do that with this booking.",
+    ),
+  not_yet_completable: () =>
+    reasonedError(
+      "BAD_REQUEST",
+      ErrorReason.BOOKING_NOT_YET_COMPLETABLE,
+      "A booking can be marked as completed once the event has taken place.",
+    ),
+};
+
+type NotificationDb = Pick<ExtendedPrismaClient, "notification">;
+
+/**
+ * Tells the other party about a booking change, in the app. Never fails the
+ * change that caused it: a lost notification is logged.
+ */
+async function notify(
+  db: NotificationDb,
+  notification: {
+    body: string;
+    bookingId: string;
+    eventId: string;
+    linkUrl: string;
+    recipientId: string;
+    title: string;
+    type: string;
+  },
+): Promise<void> {
+  const { bookingId, eventId, ...fields } = notification;
+  try {
+    await db.notification.create({
+      data: { ...fields, data: JSON.stringify({ bookingId, eventId }) },
+    });
+  } catch (error) {
+    logger.warn("Failed to create booking notification", { bookingId, error, type: fields.type });
+  }
+}
+
+const displayName = (user: { firstName: string; lastName: string } | null) =>
+  `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || "Someone";
+
+/** The in-app notification each action sends to the other party. */
+function notificationFor(
+  action: BookingAction,
+  actorName: string,
+  eventTitle: string,
+): { body: string; title: string; type: string } {
+  switch (action) {
+    case "accept":
+      return {
+        body: `${actorName} accepted your application for "${eventTitle}".`,
+        title: "Application accepted",
+        type: "booking_accepted",
+      };
+    case "decline":
+      return {
+        body: `Your application for "${eventTitle}" was not accepted this time.`,
+        title: "Application declined",
+        type: "booking_declined",
+      };
+    case "withdraw":
+      return {
+        body: `${actorName} withdrew their application for "${eventTitle}".`,
+        title: "Application withdrawn",
+        type: "booking_canceled",
+      };
+    case "cancel":
+      return {
+        body: `${actorName} canceled the booking for "${eventTitle}".`,
+        title: "Booking canceled",
+        type: "booking_canceled",
+      };
+    case "complete":
+      return {
+        body: `${actorName} marked the booking for "${eventTitle}" as completed. You can now leave a review.`,
+        title: "Booking completed",
+        type: "booking_completed",
+      };
+  }
+}
+
 export const bookingRouter = createTRPCRouter({
   applyToEvent: protectedProcedure
     .use(rateLimit(RateLimits.BOOKING_APPLY))
@@ -127,10 +242,11 @@ export const bookingRouter = createTRPCRouter({
       }
 
       if (isInThePast(event.date)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This event has already taken place",
-        });
+        throw reasonedError(
+          "BAD_REQUEST",
+          ErrorReason.BOOKING_EVENT_STARTED,
+          "This event has already taken place",
+        );
       }
 
       const ownerId = event.photographer.userId;
@@ -143,46 +259,61 @@ export const bookingRouter = createTRPCRouter({
         });
       }
 
-      // Check for existing application (the unique constraint will also catch this,
-      // but a friendly error message is better)
-      const existingBooking = await ctx.db.booking.findUnique({
-        where: {
-          eventId_applicantId: {
-            applicantId: userId,
-            eventId: input.eventId,
-          },
-        },
+      if (await isSlotTaken(ctx.db, event.id)) throw eventFilled();
+
+      const applicationKey = { applicantId: userId, eventId: input.eventId };
+
+      // Someone who withdrew may apply again: the same row goes back to
+      // "applied" (one conditional statement, so a double submit applies
+      // once). Any other existing application stays as it is.
+      const reapplied = await ctx.db.booking.updateMany({
+        data: { notes: input.notes ?? null, ownerNotes: null, rate: input.rate ?? null, status: "applied" },
+        where: { ...applicationKey, isDeleted: false, status: "canceled" },
       });
 
-      if (existingBooking) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: ALREADY_APPLIED,
+      let booking;
+      if (reapplied.count > 0) {
+        booking = await ctx.db.booking.findUniqueOrThrow({
+          where: { eventId_applicantId: applicationKey },
         });
+      } else {
+        booking = await ctx.db.booking
+          .create({
+            data: {
+              ...applicationKey,
+              notes: input.notes,
+              ownerId,
+              rate: input.rate,
+            },
+          })
+          .catch((error: unknown) => {
+            // An application already exists (or two submits raced): the
+            // unique (eventId, applicantId) rejects it, which is a conflict
+            // rather than a server fault.
+            if (isUniqueViolation(error)) {
+              throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
+            }
+            logger.error("Error creating booking", { error });
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Failed to create booking",
+            });
+          });
       }
 
-      const booking = await ctx.db.booking
-        .create({
-          data: {
-            applicantId: userId,
-            eventId: input.eventId,
-            notes: input.notes,
-            ownerId,
-            rate: input.rate,
-          },
-        })
-        .catch((error: unknown) => {
-          // Two submits at once: the unique (eventId, applicantId) rejects
-          // the second, which is a conflict rather than a server fault.
-          if (isUniqueViolation(error)) {
-            throw new TRPCError({ code: "CONFLICT", message: ALREADY_APPLIED });
-          }
-          logger.error("Error creating booking", { error });
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create booking",
-          });
-        });
+      const applicant = await ctx.db.user.findUnique({
+        select: { firstName: true, lastName: true },
+        where: { id: userId },
+      });
+      await notify(ctx.db, {
+        body: `${displayName(applicant)} applied to "${event.title}".`,
+        bookingId: booking.id,
+        eventId: event.id,
+        linkUrl: "/app/bookings",
+        recipientId: ownerId,
+        title: "New application",
+        type: "booking_applied",
+      });
 
       void captureEvent(userId, 'booking_requested', { photographer_id: ownerId, platform: input.platform ?? 'web' });
 
@@ -279,11 +410,31 @@ export const bookingRouter = createTRPCRouter({
       return { hasApplied: !!booking, status: booking?.status ?? null };
     }),
 
+  /**
+   * Moves a booking to `status`, if the booking's state, the caller's role
+   * and the event's date allow it (see ~/server/_db/bookingTransitions):
+   *
+   * - `accepted`, `declined`: the event owner, on an application.
+   * - `canceled`: the applicant withdrawing an application, or either party
+   *   cancelling an accepted booking before the event.
+   * - `completed`: either party, on an accepted booking, after the event.
+   *
+   * `ownerNotes` may only be sent by the event owner.
+   *
+   * Errors (reason in `error.data.reason`):
+   * - NOT_FOUND: no such booking, or the caller is not part of it.
+   * - FORBIDDEN `booking_not_allowed`: wrong role for this change.
+   * - CONFLICT `booking_invalid_transition`: the booking is not (or no
+   *   longer) in a state that allows it; refetch.
+   * - CONFLICT `booking_event_filled`: another applicant was accepted.
+   * - BAD_REQUEST `booking_event_started` / `booking_not_yet_completable`.
+   */
   updateStatus: protectedProcedure
+    .use(rateLimit(RateLimits.BOOKING_UPDATE))
     .input(
       z.object({
         bookingId: idInput,
-        ownerNotes: z.string().max(500).optional(),
+        ownerNotes: z.string().trim().max(500).optional(),
         status: z.enum([
           "accepted",
           "declined",
@@ -295,62 +446,61 @@ export const bookingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const booking = await ctx.db.booking.findUnique({
-        where: { id: input.bookingId },
+      const booking = await ctx.db.booking.findFirst({
+        include: { event: { select: { date: true, id: true, title: true } } },
+        where: { id: input.bookingId, ...onLiveEvent },
       });
 
-      if (!booking) {
+      // Someone who is not part of the booking learns nothing about it.
+      if (!booking || (booking.ownerId !== userId && booking.applicantId !== userId)) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Booking not found",
         });
       }
 
-      // Authorization: Only the owner can accept/decline
-      if (
-        (input.status === "accepted" || input.status === "declined") &&
-        booking.ownerId !== userId
-      ) {
+      const role = booking.ownerId === userId ? "owner" : "applicant";
+      const action = actionFor(input.status, booking.status);
+
+      // The owner's reply is the owner's to write.
+      if (input.ownerNotes !== undefined && role !== "owner") throw REFUSALS.not_allowed();
+
+      const refusal = checkTransition(action, role, booking, booking.event.date, new Date());
+      if (refusal) throw REFUSALS[refusal]();
+
+      const applied = await applyTransition(ctx.db, booking.id, action, {
+        ownerNotes: input.ownerNotes,
+      }).catch((error: unknown) => {
+        logger.error("Error updating booking status", { error });
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only the event owner can accept or decline applications",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update booking status",
         });
+      });
+
+      if (!applied) {
+        // The booking moved between the read and the write (the other party
+        // was quicker), or, for an accept, the slot went to someone else.
+        if (action === "accept" && (await isSlotTaken(ctx.db, booking.eventId, booking.id))) {
+          throw eventFilled();
+        }
+        throw REFUSALS.invalid_transition();
       }
 
-      // Authorization: Only the applicant can cancel
-      if (input.status === "canceled" && booking.applicantId !== userId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only the applicant can cancel their application",
-        });
-      }
+      await syncEventFulfilled(ctx.db, booking.eventId);
 
-      // Authorization: Either party can mark as completed
-      if (
-        input.status === "completed" &&
-        booking.ownerId !== userId &&
-        booking.applicantId !== userId
-      ) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only the owner or applicant can mark a booking as completed",
-        });
-      }
+      const actor = await ctx.db.user.findUnique({
+        select: { firstName: true, lastName: true },
+        where: { id: userId },
+      });
+      await notify(ctx.db, {
+        ...notificationFor(action, displayName(actor), booking.event.title),
+        bookingId: booking.id,
+        eventId: booking.eventId,
+        linkUrl: "/app/bookings",
+        recipientId: role === "owner" ? booking.applicantId : booking.ownerId,
+      });
 
-      return ctx.db.booking
-        .update({
-          data: {
-            ownerNotes: input.ownerNotes,
-            status: input.status,
-          },
-          where: { id: input.bookingId },
-        })
-        .catch((error: unknown) => {
-          logger.error("Error updating booking status", { error });
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to update booking status",
-          });
-        });
+      return ctx.db.booking.findUniqueOrThrow({ where: { id: booking.id } });
     }),
 });
