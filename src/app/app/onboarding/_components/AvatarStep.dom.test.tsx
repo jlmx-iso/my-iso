@@ -133,13 +133,9 @@ describe("AvatarStep", () => {
     expect(slider.getAttribute("aria-valuenow")).toBe("1.1");
   });
 
-  // KNOWN GAP (reported, not fixed here): the zoom slider has no accessible
-  // name. AvatarStep passes aria-labelledby to Mantine's Slider, which puts
-  // it on the wrapper; the element with role="slider" is the thumb, whose
-  // aria-label comes from `thumbLabel` (empty by default), so a screen
-  // reader announces an unnamed slider. Fix: thumbLabel="Zoom" (or
-  // thumbProps={{ "aria-labelledby": zoomLabelId }}); then drop `.fails`.
-  it.fails("names the zoom slider for assistive technology", async () => {
+  // Mantine puts aria-labelledby on the wrapper; the element with
+  // role="slider" is the thumb, which needs the name itself.
+  it("names the zoom slider for assistive technology", async () => {
     renderStep();
     await pick();
 

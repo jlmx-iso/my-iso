@@ -86,8 +86,12 @@ type FormValues = {
   website: string;
 };
 
+/**
+ * Each step's fields IN SCREEN ORDER: an invalid step moves the keyboard to
+ * its first field in this list, which must be the first one on screen.
+ */
 const STEPS = [
-  { fields: ["firstName", "lastName", "phoneNumber", "handle", "location"], title: "The basics" },
+  { fields: ["firstName", "lastName", "location", "handle", "phoneNumber"], title: "The basics" },
   { fields: ["companyName", "website", "instagram"], title: "Your business" },
   { fields: [], title: "Your photo" },
 ] as const satisfies ReadonlyArray<{ fields: ReadonlyArray<keyof FormValues>; title: string }>;
