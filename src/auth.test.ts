@@ -119,7 +119,7 @@ describe("Auth.js configuration", () => {
       for (const profile of [{ email_verified: false }, { email_verified: null }, {}, undefined]) {
         await expect(
           authConfig.callbacks.signIn({ account: google, profile, user }),
-        ).resolves.toBe(false);
+        ).resolves.toBe("/login?error=email_unverified");
       }
       // Refused before any account lookup: an existing member's address
       // on an unverified Google account does not get in either.

@@ -355,7 +355,12 @@ describe("Google sign-in through the OpenID stub", () => {
     expect(response.status).toBe(302);
     expect(location(response)).toBe("/app");
     const user = await testDb.db.user.findUniqueOrThrow({ where: { email: "grace@example.com" } });
-    expect(user).toMatchObject({ firstName: "Grace", invitedByUserId: inviter.id, lastName: "Hopper" });
+    expect(user).toMatchObject({
+      emailVerified: expect.any(Date),
+      firstName: "Grace",
+      invitedByUserId: inviter.id,
+      lastName: "Hopper",
+    });
     const accounts = await testDb.db.account.findMany({ where: { userId: user.id } });
     expect(accounts).toEqual([
       expect.objectContaining({
@@ -436,7 +441,7 @@ describe("Google sign-in through the OpenID stub", () => {
 
     const response = await signInWithGoogle(jar, { email: "member@example.com", emailVerified: false, givenName: "M" });
 
-    expect(location(response)).toBe("/login?error=AccessDenied");
+    expect(location(response)).toBe("/login?error=email_unverified");
     await expect(testDb.raw.account.count()).resolves.toBe(0);
     await expect(session(jar)).resolves.toBeNull();
   });

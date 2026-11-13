@@ -6,7 +6,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 
 import { logger } from "~/_utils";
 import { FeatureFlags, getFeatureFlagVariant } from "~/app/_lib/posthog";
-import { providers, sessionConfig } from "~/auth.config";
+import { pages, providers, sessionConfig } from "~/auth.config";
 import { env } from "~/env";
 import { isInviteRedeemable } from "~/server/_db/invite";
 import { isAccountActive } from "~/server/_lib/account/session";
@@ -101,7 +101,12 @@ const adapter: Adapter = {
       db,
       {
         email: data.email.toLowerCase(),
-        emailVerified: data.emailVerified,
+        // Only Google sign-ups reach this method (email-code sign-ups call
+        // createInvitedUser directly, ~/server/_lib/signup), and only after
+        // the signIn callback below required `email_verified === true`.
+        // Auth.js itself passes `emailVerified: null` for every OAuth
+        // sign-up, so the date is set here.
+        emailVerified: new Date(),
         firstName,
         lastName: data.lastName ?? "",
       },
@@ -226,7 +231,7 @@ export const authConfig = {
       // about who owns the mailbox.
       if (account?.provider === "google" && profile?.email_verified !== true) {
         logger.warn("Google sign-in refused: email address not verified by Google");
-        return false;
+        return "/login?error=email_unverified";
       }
 
       const normalizedEmail = user.email.toLowerCase();
@@ -256,13 +261,8 @@ export const authConfig = {
       return true;
     },
   },
-  /**
-   * A refused or failed sign-in comes back to /login with Auth.js's error
-   * code (`?error=AccessDenied`, `OAuthAccountNotLinked`, `Configuration`,
-   * ...), which the login form explains. Without these, Auth.js sent people
-   * to its own unstyled /api/auth/error and /api/auth/signin pages.
-   */
-  pages: { error: "/login", signIn: "/login" },
+  // Shared with the middleware's instance (auth.config.ts).
+  pages,
   session: sessionConfig,
   debug: env.NODE_ENV === "development",
 } satisfies NextAuthConfig;
