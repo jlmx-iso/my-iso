@@ -69,7 +69,8 @@ test("the page follows the system colour scheme", async ({ context, page }, test
   await page.goto("/app/events");
 
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
-  // The page background is the scheme's: white, or the dark page colour.
+  // The page background is the scheme's: white, or the dark page colour
+  // (dark.7, #212328).
   const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(background).toBe(scheme === "dark" ? "rgb(35, 31, 30)" : "rgb(255, 255, 255)");
+  expect(background).toBe(scheme === "dark" ? "rgb(33, 35, 40)" : "rgb(255, 255, 255)");
 });
