@@ -19,6 +19,12 @@ describe("isProductionDeployment", () => {
     expect(isProductionDeployment(local)).toBe(false);
   });
 
+  it("is true for a deployment that says it is production or staging, wherever it runs", () => {
+    expect(isProductionDeployment({ ...local, appEnv: "production" })).toBe(true);
+    expect(isProductionDeployment({ ...local, appEnv: "staging" })).toBe(true);
+    expect(isProductionDeployment({ ...local, appEnv: "development" })).toBe(false);
+  });
+
   it("is true for a live key, a public origin, or a Node production server", () => {
     expect(isProductionDeployment({ ...local, secretKey: "rk_live_x" })).toBe(true);
     expect(isProductionDeployment({ ...local, baseUrl: "https://myiso.example" })).toBe(true);

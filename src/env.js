@@ -111,7 +111,7 @@ export const env = createEnv({
     // Local stand-in for Google's OpenID provider (end-to-end runs only):
     // the issuer whose discovery document, authorize, token, userinfo and
     // JWKS endpoints sign-in uses instead of accounts.google.com. Honoured
-    // only for loopback addresses and refused outright in a production
+    // only for loopback addresses; ignored (and reported) in a production
     // deployment, see src/auth.config.ts. Never set it on a deployed Worker.
     GOOGLE_OAUTH_ISSUER_URL: z.string().url().optional(),
     GOOGLE_PLACES_API_KEY: z.string(),

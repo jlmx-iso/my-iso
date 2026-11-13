@@ -22,17 +22,21 @@ export function isLoopbackUrl(value: string): boolean {
  * serves locally. So a deployment counts as production when ANY of these
  * holds:
  *
+ * - `APP_ENV` (set per deployment in wrangler.toml) is "production" or
+ *   "staging";
  * - the Stripe key is a live-mode key (`sk_live_`/`rk_live_`);
  * - the app's public origin (`NEXT_PUBLIC_BASE_URL`) is not this machine;
  * - `NODE_ENV` is "production" and the code is not running in the Worker
  *   runtime (a Node production server).
  */
 export function isProductionDeployment(config: {
+  appEnv?: string | undefined;
   baseUrl: string | undefined;
   isWorkerRuntime: boolean;
   nodeEnv: string | undefined;
   secretKey: string;
 }): boolean {
+  if (config.appEnv === "production" || config.appEnv === "staging") return true;
   if (/^(sk|rk)_live_/.test(config.secretKey)) return true;
   if (!config.baseUrl || !isLoopbackUrl(config.baseUrl)) return true;
   return config.nodeEnv === "production" && !config.isWorkerRuntime;

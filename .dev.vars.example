@@ -24,7 +24,8 @@ AUTH_URL=http://localhost:8787
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 # Test runs only: a local stand-in for Google's OpenID provider (loopback
-# addresses only; refused in a production deployment). Leave empty otherwise.
+# addresses only; ignored and reported in a production deployment). Leave
+# empty otherwise.
 GOOGLE_OAUTH_ISSUER_URL=
 
 # ---- Email (Resend) ----------------------------------------------------------

@@ -89,6 +89,7 @@ export function getStripe(): Stripe {
     env.STRIPE_SECRET_KEY,
     parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL, {
       production: isProductionDeployment({
+        appEnv: env.APP_ENV,
         baseUrl: env.NEXT_PUBLIC_BASE_URL,
         isWorkerRuntime: isCloudflareRuntime(),
         nodeEnv: env.NODE_ENV,
@@ -114,6 +115,7 @@ export function getAccessCheckStripe(): Stripe {
     env.STRIPE_SECRET_KEY,
     parseStripeApiBaseUrl(env.STRIPE_API_BASE_URL, {
       production: isProductionDeployment({
+        appEnv: env.APP_ENV,
         baseUrl: env.NEXT_PUBLIC_BASE_URL,
         isWorkerRuntime: isCloudflareRuntime(),
         nodeEnv: env.NODE_ENV,
