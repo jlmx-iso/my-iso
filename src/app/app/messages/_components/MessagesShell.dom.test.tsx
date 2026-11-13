@@ -64,9 +64,16 @@ beforeEach(() => {
   layout.segment = null;
   wideScreen = true;
   testRouter.setLocation("/app/messages");
-  const realMatchMedia = window.matchMedia.bind(window);
-  vi.spyOn(window, "matchMedia").mockImplementation((query: string) =>
-    query === WIDE_SCREEN_QUERY ? ({ ...realMatchMedia(query), matches: wideScreen }) : realMatchMedia(query),
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        addEventListener: () => undefined,
+        addListener: () => undefined,
+        matches: query === WIDE_SCREEN_QUERY && wideScreen,
+        media: query,
+        removeEventListener: () => undefined,
+        removeListener: () => undefined,
+      }) as unknown as MediaQueryList,
   );
 });
 

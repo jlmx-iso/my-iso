@@ -122,7 +122,7 @@ describe("FadeInOnScroll", () => {
     );
     const block = view.container.firstElementChild as HTMLElement;
     expect(document.documentElement.hasAttribute(REVEAL_READY_ATTRIBUTE)).toBe(true);
-    expect(block.className).toBe("reveal hero");
+    expect(block.classList.contains("hero")).toBe(true);
     expect(block.style.getPropertyValue("--reveal-x")).toBe("-30px");
     expect(block.style.getPropertyValue("--reveal-delay")).toBe("200ms");
     expect(block.hasAttribute("data-revealed")).toBe(false);

@@ -94,16 +94,19 @@ describe("LoginForm sign-in", () => {
     expect(screen.queryByText("Enter your code")).toBeNull();
   });
 
-  it("hands over to Google with the destination, and says when Google could not be reached", async () => {
+  it("hands over to Google with the destination", async () => {
     renderForm();
     await userEvent.click(screen.getByRole("button", { name: "Sign in with Google" }));
     await waitFor(() =>
       expect(testSession.signInCalls).toEqual([{ options: { callbackUrl: "/app/bookings" }, provider: "google" }]),
     );
+  });
 
+  it("says when Google could not be reached", async () => {
     testSession.onSignIn = () => Promise.reject(new TypeError("Failed to fetch"));
     renderForm();
-    await userEvent.click(screen.getAllByRole("button", { name: "Sign in with Google" })[1]!);
+    await userEvent.click(screen.getByRole("button", { name: "Sign in with Google" }));
     await waitFor(() => expect(screen.getByTestId("login-error").textContent).toBe(NETWORK_ERROR_MESSAGE));
+    expect(screen.getByRole("button", { name: "Sign in with Google" }).hasAttribute("data-loading")).toBe(false);
   });
 });
