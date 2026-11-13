@@ -47,13 +47,15 @@ const NOTIFICATION_TYPE_ICONS: Record<string, typeof IconBell> = {
     review_received: IconStar,
 };
 
+// Roles: teal for status and information, lavender for people, sand for
+// reviews (ratings), red for a refusal.
 const NOTIFICATION_TYPE_COLORS: Record<string, string> = {
-    booking_accepted: "green",
-    booking_applied: "orange",
+    booking_accepted: "teal",
+    booking_applied: "purple",
     booking_completed: "teal",
     booking_declined: "red",
-    event_updated: "blue",
-    new_message: "blue",
+    event_updated: "teal",
+    new_message: "teal",
     profile_view: "purple",
     review_received: "tan",
 };

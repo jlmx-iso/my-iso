@@ -67,7 +67,7 @@ export const viewport: Viewport = {
   // The browser bar follows the colour scheme (dark: the body colour, dark.7).
   themeColor: [
     { color: "#ffffff", media: "(prefers-color-scheme: light)" },
-    { color: "#212328", media: "(prefers-color-scheme: dark)" },
+    { color: "#111a2b", media: "(prefers-color-scheme: dark)" },
   ],
 };
 

@@ -32,18 +32,19 @@ export default function DateTile({ date, timeZone, isPast = false }: DateTilePro
             py={6}
             ta="center"
             aria-hidden
-            style={{ flexShrink: 0 }}
-            bg={isPast ? "var(--mantine-color-default)" : "var(--mantine-primary-color-light)"}
+            // Upcoming: the date-tile tokens (globals.css), the coral tint on
+            // white and a raised navy panel with a salmon month in dark mode.
+            style={{ flexShrink: 0, borderColor: isPast ? undefined : "var(--iso-tile-border)" }}
+            bg={isPast ? "var(--mantine-color-default)" : "var(--iso-tile-bg)"}
             data-testid="date-tile"
         >
-            <Text size="xs" fw={700} tt="uppercase" lh={1.2} c={isPast ? "dimmed" : "var(--mantine-primary-color-light-color)"}>
+            <Text size="xs" fw={700} tt="uppercase" lh={1.2} c={isPast ? "dimmed" : "var(--iso-tile-month)"}>
                 {day?.month ?? " "}
             </Text>
-            {/* On the brand surface (the pastel in dark mode) every line takes its text colour. */}
-            <Text fz={22} fw={700} lh={1.1} c={isPast ? undefined : "var(--mantine-primary-color-light-color)"}>
+            <Text fz={22} fw={700} lh={1.1} c={isPast ? undefined : "var(--iso-tile-day)"}>
                 {day?.day ?? " "}
             </Text>
-            <Text size="xs" c={isPast ? "dimmed" : "var(--mantine-primary-color-light-color)"} lh={1.2}>
+            <Text size="xs" c="dimmed" lh={1.2}>
                 {day?.weekday ?? " "}
             </Text>
         </Paper>

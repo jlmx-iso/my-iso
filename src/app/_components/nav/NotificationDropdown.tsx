@@ -141,7 +141,7 @@ export function NotificationDropdown({
                                                     aria-hidden
                                                     w={8}
                                                     h={8}
-                                                    bg="orange.6"
+                                                    bg="var(--iso-unread-bg)"
                                                     style={{ borderRadius: "50%" }}
                                                 />
                                             )}

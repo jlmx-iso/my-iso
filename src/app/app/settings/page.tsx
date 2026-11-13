@@ -117,13 +117,13 @@ export default async function SettingsPage({ searchParams }: PageProps) {
                 <Group gap="sm">
                   <Title order={3} size="h5">{PRO_PLAN.name}</Title>
                   {isProUser ? (
-                    <Badge color="orange" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
+                    <Badge color="tan" variant="filled" leftSection={<IconCrown size={12} aria-hidden />}>
                       Current
                     </Badge>
                   ) : (
                     // Said only when true: the member is on the founding price.
                     pricing.isFoundingPrice && (
-                      <Badge color="orange" variant="light" data-testid="founding-badge">
+                      <Badge color="tan" variant="light" data-testid="founding-badge">
                         Founding member
                       </Badge>
                     )

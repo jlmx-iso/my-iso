@@ -34,7 +34,7 @@ const FIRST_ACTIONS = [
     title: "Upload portfolio photos",
   },
   {
-    color: "blue",
+    color: "purple",
     description: "Swipe through photographers near you",
     href: "/app/discover",
     icon: IconSearch,
@@ -89,7 +89,7 @@ export function OnboardingComplete({ cameFromCheckout, isSubscriptionActive }: O
         {/* Always rendered so screen readers announce the payment status. */}
         <Box w="100%" role="status" data-testid="checkout-status" data-state={checkout}>
           {checkout === "confirming" && (
-            <Alert color="blue" icon={<Loader size={18} color="blue" />} title="Confirming your payment…">
+            <Alert color="teal" icon={<Loader size={18} color="teal" />} title="Confirming your payment…">
               Thanks! We&apos;re activating Pro on your account. This usually takes a few seconds, and
               you can start exploring in the meantime.
             </Alert>

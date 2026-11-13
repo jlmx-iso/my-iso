@@ -76,7 +76,7 @@ function unreadLabel(count: number) {
 function UnreadBadge({ count }: { count: number }) {
     if (count === 0) return null;
     return (
-        <Badge size="sm" circle={count < 10} aria-label={`${count} unread`}>
+        <Badge size="sm" color="teal" circle={count < 10} aria-label={`${count} unread`}>
             {unreadLabel(count)}
         </Badge>
     );
@@ -126,7 +126,7 @@ export function AccountDropdown({ user, unreadCount }: AccountMenuProps) {
                     {/* Named by hidden text rather than aria-label: the avatar's
                         initials are decorative and must not be the name. */}
                     <span className="sr-only">Account menu</span>
-                    <Avatar src={user.profilePic} name={user.name} alt="" size="md" />
+                    <Avatar src={user.profilePic} name={user.name} alt="" size="md" self />
                 </UnstyledButton>
             </Popover.Target>
             <Popover.Dropdown p="xs" aria-label="Account">
@@ -197,7 +197,7 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                     offset={4}
                     aria-hidden
                 >
-                    <Avatar src={user.profilePic} name={user.name} alt="" size="md" />
+                    <Avatar src={user.profilePic} name={user.name} alt="" size="md" self />
                 </Indicator>
             </UnstyledButton>
 
@@ -217,7 +217,7 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
             >
                 <Stack gap="md">
                     <Group gap="sm" wrap="nowrap">
-                        <Avatar src={user.profilePic} name={user.name} alt="" size="lg" />
+                        <Avatar src={user.profilePic} name={user.name} alt="" size="lg" self />
                         <Box style={{ minWidth: 0 }}>
                             <Text fw={600} truncate>
                                 {user.name}

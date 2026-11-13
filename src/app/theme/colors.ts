@@ -10,7 +10,7 @@ import { type MantineColorsTuple } from "@mantine/core";
  * `colors.test.ts`.
  */
 const colors = {
-    // Info notices and the focus ring.
+    // The keyboard focus ring only: information is teal.
     blue: [
         "#eef5fd",
         "#dbe9fa",
@@ -50,7 +50,8 @@ const colors = {
         "#14572b",
         "#104422",
     ],
-    // Primary: the original coral. Shade 3 (#e98f7b) is the brand salmon.
+    // Primary: the original coral. Shade 3 (#e98f7b) is the brand salmon:
+    // the brand and the main action only.
     orange: [
         "#ffede9",
         "#fcdcd3",
@@ -63,7 +64,7 @@ const colors = {
         "#af351a",
         "#9a2a13",
     ],
-    // Lavender.
+    // Lavender: Discover and people (other members, matches, icebreakers).
     purple: [
         "#f2f1f8",
         "#e0dfeb",
@@ -89,7 +90,7 @@ const colors = {
         "#941c2a",
         "#761722",
     ],
-    // Sand: ratings, Pro, and notices that ask for attention.
+    // Sand: Pro and premium, ratings, and notices that ask for attention.
     tan: [
         "#fff5e4",
         "#f1dbb9",
@@ -104,24 +105,23 @@ const colors = {
         // text; one step darker, the same colour to the eye.
         "#956008",
     ],
-    // Dark mode surfaces and text: a near-neutral charcoal with a very slight
-    // cool tint, so the coral stands out rather than reading as brown. 0
-    // text, 1 secondary text, 2 dimmed, 3 input borders, 4 borders, 5 raised
-    // surfaces and hover, 6 cards, 7 the page. Shade 5 is a touch darker
-    // than an even step so dimmed text keeps 4.5:1 on it (colors.test.ts).
+    // Dark mode: deep navy, which sits with the salmon instead of against it
+    // (a near-black made the salmon look harsh). 0 text, 1 secondary text,
+    // 2 dimmed, 3 faint text and input borders, 4 borders, 5 raised surfaces
+    // and hover, 6 cards, 7 the page, 8 and 9 deeper still.
     dark: [
-        "#e9ecef",
-        "#c9ccd1",
-        "#a3a8b0",
-        "#7a8089",
-        "#4b5058",
-        "#373a41",
-        "#2c2f35",
-        "#212328",
-        "#18191d",
-        "#111214",
+        "#ecf0f6",
+        "#cdd5e2",
+        "#aeb8c9",
+        "#8390a6",
+        "#283851",
+        "#1f2d45",
+        "#172338",
+        "#111a2b",
+        "#0c1322",
+        "#070c17",
     ],
-    // Success and confirmations.
+    // Teal: information, status, secondary actions and success.
     teal: [
         "#e6fcf9",
         "#d9f1ef",

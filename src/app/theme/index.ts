@@ -1,9 +1,9 @@
-import { Alert, Button, DEFAULT_THEME, Drawer, FileInput, Modal, Notification, Rating, Tabs, createTheme } from "@mantine/core";
+import { Alert, Button, DEFAULT_THEME, Drawer, FileInput, Indicator, Modal, Notification, Rating, Tabs, createTheme } from "@mantine/core";
 
 import colors, { black } from "./colors";
 import notificationClasses from "./Notification.module.css";
 import { headings } from "./typography";
-import { BRAND_SHADE, noticeVars, notificationColor, variantColorResolver } from "./variants";
+import { BRAND_SHADE, noticeVars, notificationColor, outlineButtonVars, variantColorResolver } from "./variants";
 
 // The original ISO pastels are the brand colours in both schemes: filled
 // controls use shade 3 with dark text (autoContrast), and coloured text uses
@@ -19,12 +19,18 @@ const theme = createTheme({
     black,
     colors,
     components: {
-        // Notices: a tinted panel on white, a raised panel with a coloured edge in dark mode.
+        // Notices: a tinted panel on white, a raised navy panel with a coloured edge in dark mode.
         Alert: Alert.extend({ vars: (theme, props) => noticeVars(props.color, props.variant, theme.primaryColor) }),
-        Button: Button.extend({ defaultProps: { fw: 600 } }),
+        // Secondary (outline) buttons: the colour's text with a softer pastel edge.
+        Button: Button.extend({
+            defaultProps: { fw: 600 },
+            vars: (theme, props) => outlineButtonVars(props.color, props.variant, theme.primaryColor),
+        }),
         // Icon-only close/clear buttons need an accessible name.
         Drawer: Drawer.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
         FileInput: FileInput.extend({ defaultProps: { clearButtonProps: { "aria-label": "Remove file" } } }),
+        // Unread counts: teal (information), not the brand salmon.
+        Indicator: Indicator.extend({ defaultProps: { color: "teal" } }),
         Modal: Modal.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
         // Toasts: one look for every kind, see Notification.module.css.
         Notification: Notification.extend({

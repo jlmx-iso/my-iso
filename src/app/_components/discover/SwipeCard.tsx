@@ -172,7 +172,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
               {company && <Text size="sm" fw={500} lineClamp={1}>{company}</Text>}
               {location && (
                 <Group gap={4} wrap="nowrap">
-                  <IconMapPin size={14} color="var(--mantine-color-dimmed)" />
+                  <IconMapPin size={14} color="var(--iso-info)" />
                   <Text size="sm" c="dimmed" lineClamp={1}>{location}</Text>
                 </Group>
               )}
@@ -191,7 +191,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
               )}
               {photo.eventCount > 0 && (
                 <Group gap={4}>
-                  <IconCalendarEvent size={14} color="var(--mantine-color-dimmed)" />
+                  <IconCalendarEvent size={14} color="var(--iso-info)" />
                   <Text size="xs" c="dimmed">
                     {photo.eventCount} event{photo.eventCount !== 1 ? "s" : ""} posted
                   </Text>
@@ -199,7 +199,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
               )}
               {hasPortfolio && (
                 <Group gap={4}>
-                  <IconCamera size={14} color="var(--mantine-color-dimmed)" />
+                  <IconCamera size={14} color="var(--iso-info)" />
                   <Text size="xs" c="dimmed">
                     {photo.portfolioImages!.length} photo{photo.portfolioImages!.length !== 1 ? "s" : ""}
                   </Text>
@@ -219,7 +219,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
           {photo?.specializations && photo.specializations.length > 0 && (
             <Group gap="xs">
               {photo.specializations.map((tag) => (
-                <Badge key={tag} variant="light" color="orange" size="sm">
+                <Badge key={tag} variant="light" color="purple" size="sm">
                   {tag}
                 </Badge>
               ))}

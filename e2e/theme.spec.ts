@@ -73,8 +73,8 @@ test("signed out: Dark from the footer applies at once, survives a reload and is
   expect(await response?.text()).toContain('data-mantine-color-scheme="light"');
   await expect(scheme(page)).toHaveAttribute("data-mantine-color-scheme", "dark");
   const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  // dark.7, the page colour (#212328).
-  expect(background).toBe("rgb(33, 35, 40)");
+  // dark.7, the page colour (#111a2b).
+  expect(background).toBe("rgb(17, 26, 43)");
 });
 
 test("System follows the device's colour scheme, and Light overrides it", async ({ page }) => {

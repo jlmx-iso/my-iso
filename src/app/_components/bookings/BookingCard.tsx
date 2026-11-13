@@ -261,14 +261,14 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
             </Title>
             <Group gap="sm" style={{ rowGap: 2 }}>
               <Group gap={4} wrap="nowrap">
-                <IconCalendar size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                <IconCalendar size={14} color="var(--iso-info)" aria-hidden />
                 <Text size="sm" c="dimmed">
                   <span className="sr-only">When: </span>
                   <EventTime date={event.date} timeZone={event.timeZone} format="dayTime" />
                 </Text>
               </Group>
               <Group gap={4} wrap="nowrap">
-                <IconMapPin size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                <IconMapPin size={14} color="var(--iso-info)" aria-hidden />
                 <Text size="sm" c="dimmed">
                   <span className="sr-only">Where: </span>
                   {event.location}
@@ -276,7 +276,7 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
               </Group>
               {listedPay && (
                 <Group gap={4} wrap="nowrap" data-testid="booking-pay">
-                  <IconCash size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+                  <IconCash size={14} color="var(--iso-info)" aria-hidden />
                   <Text size="sm" c="dimmed">
                     <span className="sr-only">Listed pay: </span>
                     {listedPay} total
@@ -372,7 +372,7 @@ export default function BookingCard({ booking, event, user, variant, onDialogOpe
 
         {hint && (
           <Group gap={6} wrap="nowrap" align="flex-start" data-testid="booking-hint">
-            <IconClock size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden />
+            <IconClock size={14} color="var(--iso-info)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden />
             <Text size="sm" c="dimmed">{hint}</Text>
           </Group>
         )}

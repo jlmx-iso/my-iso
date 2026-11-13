@@ -28,7 +28,8 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
       withBorder
       h="100%"
       pos="relative"
-      style={{ borderLeft: '3px solid var(--iso-accent-border)' }}
+      // People are lavender.
+      style={{ borderLeft: '3px solid var(--mantine-color-purple-filled)' }}
       data-testid="search-photographer-card"
     >
       <Stack gap="sm">
@@ -52,7 +53,7 @@ export default function PhotographerCard({ photographer }: PhotographerCardProps
             )}
             {photographer.location && (
               <Group gap={4} wrap="nowrap">
-                <IconMapPin size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} aria-hidden />
+                <IconMapPin size={14} color="var(--iso-info)" style={{ flexShrink: 0 }} aria-hidden />
                 <Text size="sm" c="dimmed">{photographer.location}</Text>
               </Group>
             )}

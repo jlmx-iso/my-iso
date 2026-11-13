@@ -312,7 +312,7 @@ function PricingPreviewSection() {
               <Title order={3} size="h4">
                 Pro
               </Title>
-              <Badge size="sm" variant="light" color="orange">
+              <Badge size="sm" variant="light" color="tan">
                 Founding Price
               </Badge>
             </Group>

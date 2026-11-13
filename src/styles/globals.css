@@ -93,12 +93,22 @@ p {
   --iso-hero-to: var(--mantine-color-orange-8);
   /* The profile banner when there is no cover photo. */
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%);
+  /* Information: event details' icons, comment counts and actions (teal). */
+  --iso-info: var(--mantine-color-teal-text);
+  /* Unread counts and the notification dot: the teal pastel, dark text. */
+  --iso-unread-bg: var(--mantine-color-teal-filled);
+  --iso-unread-text: var(--mantine-color-black);
+  /* An event's date tile: the coral tint with its ink on white. */
+  --iso-tile-bg: var(--mantine-color-orange-1);
+  --iso-tile-border: transparent;
+  --iso-tile-month: var(--mantine-color-orange-light-color);
+  --iso-tile-day: var(--mantine-color-black);
 }
 
 /*
- * Dark mode: the brand pastels themselves on the charcoal (they are 5:1 or
- * more against it), never a faint tint. Surfaces that carry ordinary text
- * are raised charcoal panels; the brand shows in their edge and accents.
+ * Dark mode: deep navy. Salmon is kept for the brand and the main action
+ * (filled, with dark text); chips are the pastel at a low alpha with the
+ * pastel as text; surfaces that carry ordinary text are raised navy panels.
  */
 :root[data-mantine-color-scheme="dark"] {
   --iso-text-secondary: var(--mantine-color-dark-1);
@@ -119,6 +129,11 @@ p {
   --iso-hero-from: var(--mantine-color-orange-3);
   --iso-hero-to: var(--mantine-color-orange-2);
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-9) 0%, var(--mantine-color-teal-9) 55%, var(--mantine-color-purple-9) 100%);
+  /* The date tile: a raised panel with an edge, the month in salmon. */
+  --iso-tile-bg: var(--mantine-color-dark-5);
+  --iso-tile-border: var(--mantine-color-dark-4);
+  --iso-tile-month: var(--mantine-color-orange-3);
+  --iso-tile-day: var(--mantine-color-dark-0);
   /* Keyboard focus: the lighter blue reads on the dark surfaces. */
   --focus-ring-color: var(--mantine-color-blue-4);
 }

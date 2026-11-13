@@ -1,13 +1,14 @@
-/* A suggested opening line: reads as a quote to pick up, not as a button row. */
+/* A suggested opening line: reads as a quote to pick up, not as a button row.
+   Lavender, the colour of people and Discover: its tint with its ink. */
 .suggestion {
   display: block;
   /* Comfortable to tap on a phone. */
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid var(--iso-accent-border);
+  border: 1px solid var(--iso-purple-outline-border);
   border-radius: var(--mantine-radius-lg);
-  background: var(--iso-accent-surface);
-  color: var(--mantine-color-text);
+  background: var(--mantine-color-purple-light);
+  color: var(--mantine-color-purple-light-color);
   font-size: var(--mantine-font-size-sm);
   line-height: 1.4;
   text-align: left;
@@ -16,7 +17,7 @@
 
 @media (hover: hover) {
   .suggestion:hover {
-    background: var(--iso-accent-surface-strong);
+    background: var(--mantine-color-purple-light-hover);
   }
 }
 
