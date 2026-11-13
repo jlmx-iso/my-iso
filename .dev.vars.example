@@ -23,6 +23,10 @@ AUTH_SECRET=CHANGE_ME_RUN_openssl_rand_base64_32
 AUTH_URL=http://localhost:8787
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+# Test runs only: a local stand-in for Google's OpenID provider (loopback
+# addresses only; ignored and reported in a production deployment). Leave
+# empty otherwise.
+GOOGLE_OAUTH_ISSUER_URL=
 
 # ---- Email (Resend) ----------------------------------------------------------
 EMAIL_FROM=noreply@example.com

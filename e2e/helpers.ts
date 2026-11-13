@@ -46,9 +46,26 @@ export async function signIn(context: BrowserContext) {
  * back to the typed text, as it does when Places is down. Everything else
  * the Worker could call is off by configuration (e2e/serve.mjs): no Resend,
  * Anthropic or Stripe calls are made by these pages, and PostHog points at a
- * closed local port.
+ * closed local port. Google sign-in is pointed at the local OpenID
+ * provider serve.mjs starts; a spec that drives it passes that origin in
+ * `alsoAllow`.
  */
-export async function isolate(context: BrowserContext, externalRequests: string[]) {
+export async function isolate(
+  context: BrowserContext,
+  externalRequests: string[],
+  options: { alsoAllow?: readonly string[] } = {},
+) {
+  // A spec may also let the browser reach a stand-in served by the test
+  // harness on this machine (the OpenID provider, e2e/serve.mjs), and
+  // nothing else.
+  const allowed = new Set(WORKER_ORIGINS);
+  for (const origin of options.alsoAllow ?? []) {
+    const { hostname, origin: normalized } = new URL(origin);
+    if (hostname !== "127.0.0.1" && hostname !== "localhost") {
+      throw new Error(`isolate() allows loopback stand-ins only, not ${origin}`);
+    }
+    allowed.add(normalized);
+  }
   // Playwright runs the most recently registered matching route first, so
   // the origin check is registered last: a request to any other origin
   // (an autocomplete URL on another port included) is recorded before
@@ -57,7 +74,7 @@ export async function isolate(context: BrowserContext, externalRequests: string[
     route.abort("blockedbyclient"),
   );
   await context.route(
-    (url) => !WORKER_ORIGINS.has(url.origin),
+    (url) => !allowed.has(url.origin),
     async (route) => {
       externalRequests.push(route.request().url());
       await route.abort("blockedbyclient");

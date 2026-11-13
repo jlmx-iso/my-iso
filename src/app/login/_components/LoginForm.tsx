@@ -43,6 +43,8 @@ function describeAuthError(code: string): string {
       return "That account doesn't have access to ISO yet. Join with an invite code first.";
     case "deletion_pending":
       return DELETION_PENDING_MESSAGE;
+    case "email_unverified":
+      return "Your Google account's email address isn't verified. Verify it with Google, or sign in with an emailed code.";
     case "OAuthAccountNotLinked":
       return "That email is already registered with a different sign-in method. Use the method you signed up with.";
     default:

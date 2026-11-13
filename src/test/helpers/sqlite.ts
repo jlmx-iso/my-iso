@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { type Prisma, PrismaClient } from "@prisma/client";
+import type { SqlDriverAdapterFactory } from "@prisma/client/runtime/client";
 import Database from "better-sqlite3";
 
 import {
@@ -45,7 +46,15 @@ export type TestDb = {
  * directory. Call `close()` when done.
  */
 export async function createTestDb(
-  options: Pick<Prisma.PrismaClientOptions, "errorFormat"> = {},
+  options: Pick<Prisma.PrismaClientOptions, "errorFormat"> & {
+    /**
+     * Behave like Cloudflare D1 where Prisma can tell (the connection
+     * reports D1's bind-value limit and no relation joins, so Prisma builds
+     * the statements it would build for D1), and report every statement
+     * with its number of bound parameters.
+     */
+    d1?: { onStatement: (statement: { params: number; sql: string }) => void };
+  } = {},
 ): Promise<TestDb> {
   const dir = mkdtempSync(path.join(tmpdir(), "my-iso-test-"));
   const file = path.join(dir, "test.sqlite");
@@ -54,9 +63,11 @@ export async function createTestDb(
   bootstrap.exec(getSchemaSql());
   bootstrap.close();
 
+  const { d1, ...clientOptions } = options;
+  const sqlite = new PrismaBetterSqlite3({ url: `file:${file}` });
   const raw = new PrismaClient({
-    adapter: new PrismaBetterSqlite3({ url: `file:${file}` }),
-    ...options,
+    adapter: d1 ? asD1(sqlite, d1.onStatement) : sqlite,
+    ...clientOptions,
   });
 
   return {
@@ -66,6 +77,47 @@ export async function createTestDb(
     },
     db: extendWithSoftDelete(raw),
     raw,
+  };
+}
+
+/** What @prisma/adapter-d1 reports about a D1 connection. */
+export const D1_CONNECTION_INFO = { maxBindValues: 98, supportsRelationJoins: false } as const;
+
+type SqlQuery = Parameters<Awaited<ReturnType<SqlDriverAdapterFactory["connect"]>>["queryRaw"]>[0];
+
+/** Wraps a driver adapter (or one of its transactions) so every statement is reported. */
+function recordStatements<T extends object>(
+  queryable: T,
+  onStatement: (statement: { params: number; sql: string }) => void,
+): T {
+  return new Proxy(queryable, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop, target);
+      if (prop === "getConnectionInfo") return () => D1_CONNECTION_INFO;
+      if (typeof value !== "function") return value;
+      if (prop === "queryRaw" || prop === "executeRaw") {
+        return (query: SqlQuery) => {
+          onStatement({ params: query.args.length, sql: query.sql });
+          return Reflect.apply(value, target, [query]) as unknown;
+        };
+      }
+      if (prop === "startTransaction") {
+        return async (...args: unknown[]) =>
+          recordStatements((await Reflect.apply(value, target, args)) as object, onStatement);
+      }
+      return (...args: unknown[]) => Reflect.apply(value, target, args) as unknown;
+    },
+  });
+}
+
+function asD1(
+  factory: SqlDriverAdapterFactory,
+  onStatement: (statement: { params: number; sql: string }) => void,
+): SqlDriverAdapterFactory {
+  return {
+    adapterName: factory.adapterName,
+    connect: async () => recordStatements(await factory.connect(), onStatement),
+    provider: factory.provider,
   };
 }
 

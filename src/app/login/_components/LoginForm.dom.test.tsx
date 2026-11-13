@@ -19,6 +19,13 @@ describe("LoginForm", () => {
     );
   });
 
+  it("explains a refused Google account whose address Google has not verified", () => {
+    renderWithProviders(<LoginForm callbackUrl="/app" signInRequired={false} authError="email_unverified" />);
+    expect(screen.getByTestId("login-error").textContent).toBe(
+      "Your Google account's email address isn't verified. Verify it with Google, or sign in with an emailed code.",
+    );
+  });
+
   it("says that continuing accepts the Terms and acknowledges the Privacy Policy", () => {
     renderWithProviders(<LoginForm callbackUrl="/app" signInRequired={false} />);
     const note = screen.getByTestId("legal-consent-note");
