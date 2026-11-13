@@ -129,6 +129,15 @@ Never set on a deployment:
 
 - `DATABASE_URL`: the Worker uses the D1 binding.
 - `ANTHROPIC_BASE_URL`: points the Anthropic SDK at a local stub.
+- `GOOGLE_OAUTH_ISSUER_URL`: points Google sign-in at a local OpenID
+  provider (the stub in `src/test/helpers/oidcStub.ts`, which the
+  end-to-end run starts) instead of `accounts.google.com`: discovery,
+  authorize, token, userinfo and keys all come from it. It must be unset in
+  staging and production. The app accepts only a loopback address and, in a
+  production deployment (a live-mode Stripe key, or a `NEXT_PUBLIC_BASE_URL`
+  that is not this machine), throws while it is set
+  (`src/auth.config.ts`), so the Worker fails on every request instead of
+  trusting another sign-in provider.
 - `STRIPE_API_BASE_URL`: sends every Stripe API call to a local stand-in
   (the stub in `src/test/helpers/stripeStub.ts`, or `stripe-mock`) instead
   of Stripe, for tests and for trying billing locally

@@ -1,7 +1,11 @@
 import Stripe from "stripe";
 
+import { isProductionDeployment, parseLoopbackOverride } from "~/_lib/loopbackOverride";
 import { env } from "~/env";
 import { isCloudflareRuntime } from "~/server/_utils/clientIp";
+
+// Shared with the other test-only overrides (~/_lib/loopbackOverride).
+export { isProductionDeployment };
 
 /**
  * The Stripe API version every request from this app is made with, and the
@@ -21,41 +25,7 @@ import { isCloudflareRuntime } from "~/server/_utils/clientIp";
  */
 export const STRIPE_API_VERSION = "2026-10-28.endive" satisfies Stripe.LatestApiVersion;
 
-/** Hosts a `STRIPE_API_BASE_URL` override may point at: this machine only. */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
 type HostOverride = { host: string; port: string; protocol: "http" | "https" };
-
-const isLoopbackUrl = (value: string): boolean => {
-  try {
-    return LOOPBACK_HOSTS.has(new URL(value).hostname);
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Whether this is a production deployment, as far as the Stripe override is
- * concerned. `NODE_ENV` cannot answer that on its own for the Worker: every
- * OpenNext build is a production build, including the one `wrangler dev`
- * serves locally. So a deployment counts as production when ANY of these
- * holds:
- *
- * - the Stripe key is a live-mode key (`sk_live_`/`rk_live_`);
- * - the app's public origin (`NEXT_PUBLIC_BASE_URL`) is not this machine;
- * - `NODE_ENV` is "production" and the code is not running in the Worker
- *   runtime (a Node production server).
- */
-export function isProductionDeployment(config: {
-  baseUrl: string | undefined;
-  isWorkerRuntime: boolean;
-  nodeEnv: string | undefined;
-  secretKey: string;
-}): boolean {
-  if (/^(sk|rk)_live_/.test(config.secretKey)) return true;
-  if (!config.baseUrl || !isLoopbackUrl(config.baseUrl)) return true;
-  return config.nodeEnv === "production" && !config.isWorkerRuntime;
-}
 
 /**
  * `STRIPE_API_BASE_URL` sends API calls to a local stand-in for Stripe
@@ -73,19 +43,8 @@ export function parseStripeApiBaseUrl(
   value: string | undefined,
   options: { production: boolean } = { production: false },
 ): HostOverride | null {
-  if (!value) return null;
-  if (options.production) {
-    throw new Error("STRIPE_API_BASE_URL must not be set in production");
-  }
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("STRIPE_API_BASE_URL is not a valid URL");
-  }
-  if (!LOOPBACK_HOSTS.has(url.hostname)) {
-    throw new Error("STRIPE_API_BASE_URL may only point at localhost");
-  }
+  const url = parseLoopbackOverride("STRIPE_API_BASE_URL", value, options);
+  if (!url) return null;
   const protocol = url.protocol === "https:" ? "https" : "http";
   return {
     host: url.hostname,

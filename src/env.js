@@ -53,6 +53,7 @@ export const env = createEnv({
     EMAIL_FROM: process.env.EMAIL_FROM,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_OAUTH_ISSUER_URL: process.env.GOOGLE_OAUTH_ISSUER_URL,
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
     NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
@@ -107,6 +108,12 @@ export const env = createEnv({
     EMAIL_FROM: z.string().email(),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
+    // Local stand-in for Google's OpenID provider (end-to-end runs only):
+    // the issuer whose discovery document, authorize, token, userinfo and
+    // JWKS endpoints sign-in uses instead of accounts.google.com. Honoured
+    // only for loopback addresses and refused outright in a production
+    // deployment, see src/auth.config.ts. Never set it on a deployed Worker.
+    GOOGLE_OAUTH_ISSUER_URL: z.string().url().optional(),
     GOOGLE_PLACES_API_KEY: z.string(),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     // PostHog ingestion and assets origins. Default to US Cloud.
