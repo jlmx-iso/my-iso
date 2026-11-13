@@ -141,4 +141,8 @@ const stop = () => {
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
-server.on("exit", (code) => process.exit(code ?? 0));
+// When wrangler stops on its own, the stub must not outlive it.
+server.on("exit", (code) => {
+  oidc.kill("SIGTERM");
+  process.exit(code ?? 0);
+});
