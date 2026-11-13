@@ -73,6 +73,12 @@ p {
   --iso-accent-border: var(--mantine-color-orange-3);
   /* Hairlines inside a card or list. */
   --iso-divider: var(--mantine-color-gray-2);
+  /* Text field borders (non-text UI, at least 3:1 against the page). */
+  --iso-input-border: var(--mantine-color-gray-5);
+  /* Error text outside a form field (a failed action's message). */
+  --iso-danger-text: var(--mantine-color-red-8);
+  /* Good news in text (a name is free, views went up). */
+  --iso-success-text: var(--mantine-color-teal-8);
   /* The landing page's highlighted word (large text, at least 3:1). */
   --iso-hero-from: var(--mantine-color-orange-6);
   --iso-hero-to: var(--mantine-color-orange-8);
@@ -89,6 +95,9 @@ p {
   --iso-accent-surface-strong: var(--mantine-color-orange-light-hover);
   --iso-accent-border: var(--mantine-color-orange-8);
   --iso-divider: var(--mantine-color-dark-4);
+  --iso-input-border: var(--mantine-color-dark-3);
+  --iso-danger-text: var(--mantine-color-red-4);
+  --iso-success-text: var(--mantine-color-teal-4);
   --iso-hero-from: var(--mantine-color-orange-4);
   --iso-hero-to: var(--mantine-color-orange-5);
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-light) 0%, var(--mantine-color-teal-light) 55%, var(--mantine-color-purple-light) 100%);
@@ -106,9 +115,10 @@ html {
   scroll-padding-top: calc(var(--header-height) + 12px);
 }
 
-/* Input borders one shade darker than Mantine's default: 3:1 against white. */
+/* Input borders one shade darker than Mantine's default: 3:1 against the
+   page and cards (gray.5 on white, dark.3 in dark mode). */
 .mantine-Input-input[data-variant="default"]:not([data-error]):not(:focus):not(:focus-within) {
-  --input-bd: var(--mantine-color-gray-5);
+  --input-bd: var(--iso-input-border);
 }
 
 /* Skip link: first focusable element on every page. */

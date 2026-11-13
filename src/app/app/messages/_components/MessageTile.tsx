@@ -32,7 +32,9 @@ const MessageTile = ({ isAuthor, isLastInGroup = false, message }: MessageTilePr
         <Box
           px="md"
           py="xs"
-          bg={isAuthor ? "orange.1" : "gray.1"}
+          // Scheme-aware tints (globals.css): fixed light shades put the dark
+          // theme's light text on a pale bubble.
+          bg={isAuthor ? "var(--iso-accent-surface-strong)" : "var(--iso-surface-muted)"}
           style={{
             borderRadius: isAuthor
               ? "18px 18px 4px 18px"

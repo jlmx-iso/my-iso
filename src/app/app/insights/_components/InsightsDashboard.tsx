@@ -52,7 +52,7 @@ export function changeLabel(compared: Compared, days: number): string {
 }
 
 function Stat({ label, caption, compared, days, testId }: { label: string; caption: string; compared: Compared; days: number; testId: string }) {
-    const tone = compared.changePercent === null || compared.changePercent === 0 ? "dimmed" : compared.changePercent > 0 ? "teal.8" : "dimmed";
+    const tone = compared.changePercent === null || compared.changePercent === 0 ? "dimmed" : compared.changePercent > 0 ? "var(--iso-success-text)" : "dimmed";
     return (
         <Paper withBorder radius="md" p={{ base: "sm", xs: "md" }} data-testid={testId}>
             <Text size="xs" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: 0.4 }}>

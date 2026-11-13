@@ -431,7 +431,7 @@ export function OnboardingForm({ initialStage, photographerCount, pricing, user 
                   onBlur={() => form.validateField("handle")}
                 />
                 {/* Always rendered so the result of the check is announced. */}
-                <Text size="sm" role="status" mt={-6} c={availability === "available" ? "teal.8" : "gray.7"} data-testid="handle-availability" data-state={availability}>
+                <Text size="sm" role="status" mt={-6} c={availability === "available" ? "var(--iso-success-text)" : "var(--iso-text-secondary)"} data-testid="handle-availability" data-state={availability}>
                   {availability === "checking" && "Checking if that username is free…"}
                   {availability === "available" && `@${handle} is available.`}
                 </Text>

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import colors, { black } from "./colors";
-import { DARK_LIGHT_ALPHA, DARK_LIGHT_HOVER_ALPHA, DARK_TINTED, darkLightVariables, withAlpha } from "./darkVariants";
+import {
+    DARK_LIGHT_ALPHA,
+    DARK_LIGHT_HOVER_ALPHA,
+    DARK_TINTED,
+    darkGrayVariables,
+    darkLightVariables,
+    darkTintSource,
+    withAlpha,
+} from "./darkVariants";
 
 /** WCAG 2.x relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -121,13 +129,19 @@ describe("dark mode contrast (WCAG AA), as Mantine maps the palette", () => {
         }
     });
 
-    it.each(DARK_TINTED)("%s: light variant (shade 0 on translucent shade 6) reads, and shows on the page and on cards", (name) => {
-        expect(darkLightVariables[`--mantine-color-${name}-light`]).toBe(withAlpha(colors[name][6], DARK_LIGHT_ALPHA));
+    it.each(DARK_TINTED)("%s: light variant (shade 0 on a translucent tint) reads, and shows on the page and on cards", (name) => {
+        // Shade 6, except gray, which is tinted with the neutral dark.3 and
+        // carries dark.0 text (darkGrayVariables).
+        const source = name === "gray" ? dark[3] : colors[name][6];
+        const text = name === "gray" ? dark[0] : colors[name][0];
+        expect(darkTintSource(name)).toBe(source);
+        expect(darkLightVariables[`--mantine-color-${name}-light`]).toBe(withAlpha(source, DARK_LIGHT_ALPHA));
+        expect(darkLightVariables[`--mantine-color-${name}-light-hover`]).toBe(withAlpha(source, DARK_LIGHT_HOVER_ALPHA));
         for (const surface of [page, card]) {
             for (const alpha of [DARK_LIGHT_ALPHA, DARK_LIGHT_HOVER_ALPHA]) {
-                const tint = over(colors[name][6], alpha, surface);
+                const tint = over(source, alpha, surface);
                 // The text on it.
-                expect(contrast(colors[name][0], tint)).toBeGreaterThanOrEqual(AA_TEXT);
+                expect(contrast(text, tint)).toBeGreaterThanOrEqual(AA_TEXT);
                 // The badge itself stands out from what it sits on (Mantine's
                 // default, half-darkened shade 9, is about 1.0:1: invisible).
                 expect(contrast(tint, surface)).toBeGreaterThanOrEqual(1.1);
@@ -137,10 +151,58 @@ describe("dark mode contrast (WCAG AA), as Mantine maps the palette", () => {
 
     it("filled controls keep white text on shade 6, and borders and input borders show", () => {
         expect(contrast(WHITE, colors.orange[6])).toBeGreaterThanOrEqual(AA_TEXT);
-        // Input borders (gray.5, globals.css) and the focus ring (blue.4) on the page and cards.
+        // Input borders (--iso-input-border: dark.3, globals.css) and the
+        // focus ring (blue.4) on the page and cards.
         for (const surface of [page, card]) {
-            expect(contrast(colors.gray[5], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+            expect(contrast(dark[3], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
             expect(contrast(colors.blue[4], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
+    });
+
+    it("gray controls use the neutral dark scale: white on filled and its hover, text and outline on the page and cards", () => {
+        expect(darkGrayVariables).toMatchObject({
+            "--mantine-color-gray-filled": "var(--mantine-color-dark-4)",
+            "--mantine-color-gray-filled-hover": "var(--mantine-color-dark-5)",
+            "--mantine-color-gray-light-color": "var(--mantine-color-dark-0)",
+            "--mantine-color-gray-outline": "var(--mantine-color-dark-1)",
+            "--mantine-color-gray-outline-hover": withAlpha(dark[1], 0.05),
+            "--mantine-color-gray-text": "var(--mantine-color-dark-2)",
+        });
+        expect(contrast(WHITE, dark[4])).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(contrast(WHITE, dark[5])).toBeGreaterThanOrEqual(AA_TEXT);
+        for (const surface of [page, card]) {
+            expect(contrast(dark[2], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+            expect(contrast(dark[1], surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+        }
+    });
+
+    it("scheme-aware text tokens (globals.css): danger red.4 and success teal.4 on the page and cards", () => {
+        for (const surface of [page, card]) {
+            expect(contrast(colors.red[4], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+            expect(contrast(colors.teal[4], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+    });
+
+    it("message bubbles: body text on the coral tint (--iso-accent-surface-strong) and on dark.5 (--iso-surface-muted)", () => {
+        expect(contrast(dark[0], over(colors.orange[6], DARK_LIGHT_HOVER_ALPHA, page))).toBeGreaterThanOrEqual(7);
+        expect(contrast(dark[0], dark[5])).toBeGreaterThanOrEqual(7);
+    });
+
+    it("the scale is neutral with at most a slight cool tint, never warm (a warm scale reads as brown next to the coral)", () => {
+        for (const shade of dark) {
+            const [r, g, b] = [1, 3, 5].map((start) => parseInt(shade.slice(start, start + 2), 16)) as [number, number, number];
+            // Blue at least red and green: not warm.
+            expect(b, shade).toBeGreaterThanOrEqual(r);
+            expect(b, shade).toBeGreaterThanOrEqual(g);
+            // And only slightly: a hint, not a blue-gray.
+            expect(b - r, shade).toBeLessThanOrEqual(16);
+        }
+    });
+});
+
+describe("light mode is unchanged by the dark-mode tokens", () => {
+    it("danger text (red.8) and secondary text (gray.7) on white", () => {
+        expect(contrast(colors.red[8], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(contrast(colors.gray[7], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
     });
 });

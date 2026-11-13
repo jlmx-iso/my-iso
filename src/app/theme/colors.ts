@@ -103,19 +103,23 @@ const colors = {
         "#784e08",
         "#5c3c06",
     ],
-    // Dark mode surfaces and text: Mantine's dark scale, warmed to match the
-    // warm gray. 0 text, 2 dimmed, 4 borders, 6 cards, 7 the page.
+    // Dark mode surfaces and text: a near-neutral charcoal with a very slight
+    // cool tint, so the coral primary stands out rather than reading as
+    // brown (the warm gray is for light mode only). 0 text, 1 secondary
+    // text, 2 dimmed, 3 input borders and neutral tints, 4 borders, 5 raised
+    // surfaces and hover, 6 cards, 7 the page. Shade 5 is a touch darker
+    // than an even step so dimmed text keeps 4.5:1 on it (colors.test.ts).
     dark: [
-        "#ece6e5",
-        "#cdc5c4",
-        "#ada5a4",
-        "#7a7271",
-        "#4a4443",
-        "#3b3534",
-        "#2e2928",
-        "#231f1e",
-        "#1b1817",
-        "#131110",
+        "#e9ecef",
+        "#c9ccd1",
+        "#a3a8b0",
+        "#7a8089",
+        "#4b5058",
+        "#373a41",
+        "#2c2f35",
+        "#212328",
+        "#18191d",
+        "#111214",
     ],
     // Accent.
     teal: [

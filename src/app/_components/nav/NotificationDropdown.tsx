@@ -113,7 +113,7 @@ export function NotificationDropdown({
                                     py="sm"
                                     w="100%"
                                     display="block"
-                                    bg={notification.isRead ? undefined : "orange.0"}
+                                    bg={notification.isRead ? undefined : "var(--iso-accent-surface)"}
                                     style={{ outlineOffset: -2 }}
                                 >
                                     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">

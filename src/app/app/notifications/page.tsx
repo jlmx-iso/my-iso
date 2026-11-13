@@ -107,7 +107,7 @@ function NotificationRow({
     );
 
     const paperProps = {
-        bg: notification.isRead ? undefined : "orange.0",
+        bg: notification.isRead ? undefined : "var(--iso-accent-surface)",
         p: "md",
         radius: "md",
         w: "100%",
