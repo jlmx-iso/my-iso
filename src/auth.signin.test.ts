@@ -417,6 +417,19 @@ describe("Google sign-in through the OpenID stub", () => {
     await expect(testDb.raw.account.count()).resolves.toBe(0);
   });
 
+  it("refuses an account being deleted through its own linked Google account", async () => {
+    const member = await deletingAccount("linked@example.com");
+    await testDb.db.account.create({
+      data: { provider: "google", providerAccountId: stubSubject("linked@example.com"), type: "oidc", userId: member.id },
+    });
+    const jar = new CookieJar();
+
+    const response = await signInWithGoogle(jar, { email: "linked@example.com", givenName: "Linked" });
+
+    expect(location(response)).toBe("/login?error=deletion_pending");
+    await expect(session(jar)).resolves.toBeNull();
+  });
+
   it("refuses an address Google has not verified, even a member's", async () => {
     await createTestUser(testDb.db, { email: "member@example.com" });
     const jar = new CookieJar();

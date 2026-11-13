@@ -3,14 +3,16 @@
 // pointed at it with GOOGLE_OAUTH_ISSUER_URL (src/auth.config.ts), which is
 // honoured for loopback addresses only.
 //
-// Used by the Vitest sign-in tests (src/auth.google.test.ts) and by the
-// end-to-end server (e2e/serve.mjs), which loads this file with Node's own
-// type stripping: keep it to erasable TypeScript (no enums, namespaces or
-// parameter properties) and to `node:` modules and `jose`.
+// Used by the Vitest sign-in tests (src/auth.signin.test.ts), and run by the
+// end-to-end server (e2e/serve.mjs) as
+//   node src/test/helpers/oidcStub.ts --port 8789 --client-id ID --client-secret SECRET
+// with Node's own type stripping: keep it to erasable TypeScript (no enums,
+// namespaces or parameter properties) and to `node:` modules and `jose`.
 
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { parseArgs } from "node:util";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
@@ -255,4 +257,24 @@ export async function startOidcStub(options: OidcStubOptions): Promise<OidcStub>
     issuer,
     requests,
   };
+}
+
+// Run as a program: listen until stopped, and print the issuer once ready.
+if (import.meta.main) {
+  const { values } = parseArgs({
+    options: {
+      "client-id": { type: "string" },
+      "client-secret": { type: "string" },
+      port: { type: "string" },
+    },
+  });
+  const stub = await startOidcStub({
+    clientId: values["client-id"] ?? "",
+    clientSecret: values["client-secret"] ?? "",
+    port: Number(values.port ?? 0),
+  });
+  process.stdout.write(`${stub.issuer}\n`);
+  const stop = () => void stub.close().then(() => process.exit(0));
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
 }

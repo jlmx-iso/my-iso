@@ -381,15 +381,31 @@ the sign-in page, the redirect of an anonymous visitor, and a signed-in
 member (the seeded Sarah Chen) loading the events feed and creating an
 event. The session is the encrypted JWT Auth.js would set after a sign-in,
 minted in the test with the server's placeholder `AUTH_SECRET` and set as a
-cookie. About 25 seconds after the build.
+cookie.
+
+`e2e/signin.spec.ts` drives a real Google sign-in instead: `serve.mjs` also
+starts a local OpenID provider on port 8789 (`src/test/helpers/oidcStub.ts`:
+discovery, a consent page, token with PKCE, a signed ID token, userinfo,
+JWKS) and points the Worker at it with `GOOGLE_OAUTH_ISSUER_URL`, a
+test-only variable accepted for loopback addresses only and refused in a
+production deployment (`src/auth.config.ts`). The spec clicks "Sign in with
+Google" on `/login`, completes the consent and checks where it lands: an
+invitee signed in on `/app` with its `User` and token-free `Account` rows
+(read from the local D1 file), an address without an invite on `/join`,
+and an account being deleted (a fixture `serve.mjs` writes) back on `/login`
+with the deletion message. The same provider runs in Vitest
+(`src/auth.signin.test.ts`), where the Auth.js handler runs with the app's
+configuration against SQLite. About 30 seconds after the build.
 
 Chromium: Playwright's own (`npx playwright install chromium`), or one
 already on the machine at `/opt/pw-browsers/chromium` or `E2E_CHROMIUM_PATH`.
 Traces are off. CI runs this as the "End-to-end smoke" job, in parallel with
 the others.
 
-No real outbound calls. The browser may only reach the Worker under test:
-any other host is refused, and a test that tried one fails, naming it. The
+No real outbound calls. The browser may only reach the Worker under test
+(and, in the sign-in spec, the local OpenID provider, which `isolate()`
+accepts only on a loopback address): any other host is refused, and a test
+that tried one fails, naming it. The
 one Worker call a test could trigger, Google Places autocomplete (typing a
 location), is refused in the browser before it reaches the Worker, so the
 form's fallback (it keeps the typed text) is what runs. The rest is off by
