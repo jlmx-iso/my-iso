@@ -1,9 +1,6 @@
 import type { GoogleProfile } from "next-auth/providers/google";
 import { describe, expect, it, vi } from "vitest";
 
-const captureServerException = vi.hoisted(() => vi.fn());
-vi.mock("~/server/_lib/posthog", () => ({ captureServerException }));
-
 import authConfig, { googleIssuerOverride, googleProfileToUser, pages } from "./auth.config";
 
 describe("GOOGLE_OAUTH_ISSUER_URL", () => {
@@ -54,7 +51,6 @@ describe("GOOGLE_OAUTH_ISSUER_URL", () => {
     });
 
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    captureServerException.mockClear();
     vi.stubEnv("APP_ENV", "production");
     vi.resetModules();
     const deployed = await import("./auth.config");
@@ -62,11 +58,16 @@ describe("GOOGLE_OAUTH_ISSUER_URL", () => {
     expect(deployedGoogle && "options" in deployedGoogle ? deployedGoogle.options : undefined).not.toHaveProperty(
       "issuer",
     );
-    expect(captureServerException).toHaveBeenCalledExactlyOnceWith(
-      new Error("GOOGLE_OAUTH_ISSUER_URL ignored in production"),
-      { source: "auth.config" },
-    );
-    expect(String(errors.mock.calls[0]?.[0])).toContain("GOOGLE_OAUTH_ISSUER_URL ignored in production");
+    expect(errors).toHaveBeenCalledTimes(1);
+    const logged = errors.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    expect(logged).toContain("GOOGLE_OAUTH_ISSUER_URL ignored in production");
+    // Never the value itself.
+    expect(logged).not.toContain("127.0.0.1");
+
+    // Asked again in the same instance: still one report.
+    expect(deployed.googleIssuerOverride()).toBeUndefined();
+    deployed.reportIgnoredIssuerOverride();
+    expect(errors).toHaveBeenCalledTimes(1);
     errors.mockRestore();
     vi.unstubAllEnvs();
   });

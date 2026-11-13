@@ -137,9 +137,10 @@ Never set on a deployment:
   loopback address and throws for anything else. In a production deployment
   (`APP_ENV` "production" or "staging", a live-mode Stripe key, or a
   `NEXT_PUBLIC_BASE_URL` that is not this machine) it is ignored, so sign-in
-  keeps using Google, and reported once per Worker instance to the logs and
-  error tracking ("GOOGLE_OAUTH_ISSUER_URL ignored in production",
-  `src/auth.config.ts`). It is not thrown there: the middleware loads the
+  keeps using Google, and logged once per Worker instance as an error
+  ("GOOGLE_OAUTH_ISSUER_URL ignored in production" in `wrangler tail`,
+  `src/auth.config.ts`; not sent to error tracking, to keep the PostHog
+  client out of the middleware). It is not thrown there: the middleware loads the
   same module, so a throw would fail every page.
 - `STRIPE_API_BASE_URL`: sends every Stripe API call to a local stand-in
   (the stub in `src/test/helpers/stripeStub.ts`, or `stripe-mock`) instead

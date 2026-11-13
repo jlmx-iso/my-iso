@@ -4,7 +4,6 @@ import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
 import { isProductionDeployment, parseLoopbackOverride } from "~/_lib/loopbackOverride";
 import { logger } from "~/_utils";
 import { env } from "~/env";
-import { captureServerException } from "~/server/_lib/posthog";
 import { isCloudflareRuntime } from "~/server/_utils/clientIp";
 
 /**
@@ -25,11 +24,18 @@ export const sessionConfig = {
  */
 export const pages = { error: "/login", signIn: "/login" };
 
-/** Reports, once, a GOOGLE_OAUTH_ISSUER_URL found set in production. */
-function reportIgnoredIssuerOverride(): void {
-  const error = new Error("GOOGLE_OAUTH_ISSUER_URL ignored in production");
-  logger.error(error.message);
-  captureServerException(error, { source: "auth.config" });
+let ignoredOverrideReported = false;
+
+/**
+ * Reports a GOOGLE_OAUTH_ISSUER_URL found set in production, at most once
+ * per module instance. A log line only: the middleware loads this module,
+ * and the PostHog client would more than double what it pulls in. Nothing
+ * else goes with it, not even the value.
+ */
+export function reportIgnoredIssuerOverride(): void {
+  if (ignoredOverrideReported) return;
+  ignoredOverrideReported = true;
+  logger.error("GOOGLE_OAUTH_ISSUER_URL ignored in production");
 }
 
 /**
