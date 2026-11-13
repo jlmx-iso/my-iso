@@ -584,3 +584,80 @@ describe("invite redemption against SQLite", () => {
     });
   });
 });
+
+describe("createInvitedUser when redeeming the invite fails", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  afterAll(async () => {
+    await testDb.close();
+  });
+
+  /** The test database, with `inviteRedemption.create` (and optionally `user.delete`) failing. */
+  function failing(options: { cleanupFails?: boolean } = {}) {
+    const override = (model: string, method: string) =>
+      (model === "inviteRedemption" && method === "create") ||
+      (options.cleanupFails === true && model === "user" && method === "delete");
+    return new Proxy(testDb.db, {
+      get(target, model) {
+        const delegate: unknown = Reflect.get(target, model);
+        if ((model !== "inviteRedemption" && model !== "user") || typeof delegate !== "object" || delegate === null) {
+          return delegate;
+        }
+        // A stand-in object: Prisma's delegates have read-only properties a
+        // proxy of them could not change.
+        return new Proxy(
+          {},
+          {
+            get(_stand, method) {
+              if (typeof method === "string" && override(model, method)) {
+                return () => Promise.reject(new Error(`${model}.${method} failed`));
+              }
+              const value: unknown = Reflect.get(delegate, method);
+              return typeof value === "function" ? (...args: unknown[]) => Reflect.apply(value, delegate, args) as unknown : value;
+            },
+          },
+        );
+      },
+    });
+  }
+
+  async function invite(email: string) {
+    const inviter = await createTestUser(testDb.db, { firstName: "Inviter" });
+    const code = await ensureInviteCode(testDb.db, inviter.id, "Inviter");
+    await testDb.db.pendingInviteValidation.create({
+      data: { code: code.code, email, expiresAt: new Date(Date.now() + 60_000) },
+    });
+    return code;
+  }
+
+  it("removes the new account and gives the slot back, so the next sign-in is checked again", async () => {
+    const code = await invite("half@example.com");
+    const profile = { email: "half@example.com", emailVerified: null, firstName: "Half", lastName: "" };
+
+    await expect(createInvitedUser(failing(), profile, inviteOnly)).rejects.toThrow("inviteRedemption.create failed");
+
+    await expect(testDb.raw.user.count({ where: { email: "half@example.com" } })).resolves.toBe(0);
+    await expect(testDb.db.inviteCode.findUniqueOrThrow({ where: { id: code.id } })).resolves.toMatchObject({
+      currentRedemptions: 0,
+    });
+  });
+
+  it("still fails with the redemption's error when the account cannot be removed, and says so", async () => {
+    await invite("stuck@example.com");
+    const profile = { email: "stuck@example.com", emailVerified: null, firstName: "Stuck", lastName: "" };
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(createInvitedUser(failing({ cleanupFails: true }), profile, inviteOnly)).rejects.toThrow(
+      "inviteRedemption.create failed",
+    );
+
+    expect(errors.mock.calls.map((call) => String(call[0])).join("\n")).toContain(
+      "Failed to remove user after invite redemption error",
+    );
+    errors.mockRestore();
+  });
+});

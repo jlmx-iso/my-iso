@@ -1,25 +1,25 @@
 {
-  "branches": 83,
-  "functions": 88,
-  "lines": 89,
-  "statements": 88,
+  "branches": 86,
+  "functions": 90,
+  "lines": 92,
+  "statements": 91,
   "src/server/_billing/**": {
     "branches": 91,
     "functions": 95,
     "lines": 96,
-    "statements": 93
+    "statements": 94
   },
   "src/server/_db/**": {
     "branches": 91,
     "functions": 100,
-    "lines": 95,
-    "statements": 94
+    "lines": 96,
+    "statements": 95
   },
   "src/server/api/routers/**": {
-    "branches": 78,
-    "functions": 91,
-    "lines": 87,
-    "statements": 87
+    "branches": 82,
+    "functions": 95,
+    "lines": 90,
+    "statements": 90
   },
   "src/server/_jobs/**": {
     "branches": 96,
@@ -28,10 +28,10 @@
     "statements": 98
   },
   "src/_lib/**": {
-    "branches": 89,
-    "functions": 92,
-    "lines": 82,
-    "statements": 84
+    "branches": 95,
+    "functions": 98,
+    "lines": 99,
+    "statements": 99
   },
   "src/app/_components/**": {
     "branches": 78,
@@ -43,6 +43,18 @@
     "branches": 83,
     "functions": 87,
     "lines": 89,
-    "statements": 87
+    "statements": 88
+  },
+  "src/app/api/**": {
+    "branches": 96,
+    "functions": 100,
+    "lines": 100,
+    "statements": 99
+  },
+  "src/auth.ts": {
+    "branches": 93,
+    "functions": 100,
+    "lines": 100,
+    "statements": 100
   }
 }
