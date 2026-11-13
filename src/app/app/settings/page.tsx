@@ -109,7 +109,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               p="lg"
               radius="md"
               style={{
-                borderColor: "var(--mantine-color-orange-4)",
+                borderColor: "var(--iso-pro-border)",
                 borderWidth: 2,
               }}
             >

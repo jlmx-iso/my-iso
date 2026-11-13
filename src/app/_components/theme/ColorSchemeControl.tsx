@@ -49,6 +49,8 @@ export function ColorSchemeControl({ size = "sm", fullWidth = false }: ColorSche
         // nothing checked, rather than falling back to its first option.
         <SegmentedControl<MantineColorScheme | "">
             aria-label="Appearance"
+            // 44px touch targets on phones (overrides.css).
+            className="color-scheme-control"
             size={size}
             fullWidth={fullWidth}
             value={hydrated ? colorScheme : ""}

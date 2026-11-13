@@ -82,7 +82,7 @@ p {
   /* Error text outside a form field (a failed action's message). */
   --iso-danger-text: var(--mantine-color-red-7);
   /* Good news in text (a name is free, views went up). */
-  --iso-success-text: var(--mantine-color-teal-9);
+  --iso-success-text: var(--mantine-color-teal-text);
   /* Success icons (ticks; non-text, at least 3:1). */
   --iso-success-icon: var(--mantine-color-teal-8);
   /* Rating stars (non-text, at least 3:1). */
@@ -95,6 +95,10 @@ p {
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%);
   /* Information: event details' icons, comment counts and actions (teal). */
   --iso-info: var(--mantine-color-teal-text);
+  /* Chart bars (insights; non-text, at least 3:1): teal, information. */
+  --iso-chart-bar: var(--mantine-color-teal-7);
+  /* Pro (sand): the edge of the Pro plan card. */
+  --iso-pro-border: var(--mantine-color-tan-filled);
   /* Unread counts and the notification dot: the teal pastel, dark text. */
   --iso-unread-bg: var(--mantine-color-teal-filled);
   --iso-unread-text: var(--mantine-color-black);
@@ -123,17 +127,19 @@ p {
   --iso-divider: var(--mantine-color-dark-4);
   --iso-input-border: var(--mantine-color-dark-3);
   --iso-danger-text: var(--mantine-color-red-3);
-  --iso-success-text: var(--mantine-color-teal-3);
   --iso-success-icon: var(--mantine-color-teal-3);
   --iso-rating: var(--mantine-color-tan-3);
   --iso-hero-from: var(--mantine-color-orange-3);
   --iso-hero-to: var(--mantine-color-orange-2);
-  --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-9) 0%, var(--mantine-color-teal-9) 55%, var(--mantine-color-purple-9) 100%);
+  /* The pastels at a low alpha over a card: coral, teal and lavender, not
+     their dark shades (which read brick to olive). */
+  --iso-banner: linear-gradient(135deg, rgba(233, 143, 123, 0.22) 0%, rgba(149, 207, 201, 0.18) 55%, rgba(155, 152, 197, 0.24) 100%), var(--mantine-color-dark-6);
   /* The date tile: a raised panel with an edge, the month in salmon. */
   --iso-tile-bg: var(--mantine-color-dark-5);
   --iso-tile-border: var(--mantine-color-dark-4);
   --iso-tile-month: var(--mantine-color-orange-3);
   --iso-tile-day: var(--mantine-color-dark-0);
+  --iso-chart-bar: var(--mantine-color-teal-4);
   /* Keyboard focus: the lighter blue reads on the dark surfaces. */
   --focus-ring-color: var(--mantine-color-blue-4);
 }

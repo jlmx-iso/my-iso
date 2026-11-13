@@ -4,6 +4,7 @@ import { type CSSVariablesResolver, MantineProvider } from "@mantine/core";
 import { MotionConfig } from "motion/react";
 
 import theme from "./index";
+import { ThemeColorSync } from "./ThemeColorSync";
 import { schemeVariables } from "./variants";
 
 /**
@@ -30,6 +31,7 @@ const cssVariablesResolver: CSSVariablesResolver = () => ({
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return (
         <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
+            <ThemeColorSync />
             <MotionConfig reducedMotion="user">{children}</MotionConfig>
         </MantineProvider>
     );

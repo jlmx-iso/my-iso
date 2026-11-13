@@ -106,3 +106,48 @@ test("signed in: the choice made in Settings carries over to the rest of the app
   await page.goto("/app/events");
   await expect(scheme(page)).toHaveAttribute("data-mantine-color-scheme", "dark");
 });
+
+/** The outline drawn around the label of the focused radio (the segmented control draws it there). */
+async function focusedLabelOutline(page: Page) {
+  return page.evaluate(() => {
+    const label = document.activeElement?.nextElementSibling;
+    if (!label) return null;
+    const style = getComputedStyle(label);
+    return { color: style.outlineColor, style: style.outlineStyle, width: style.outlineWidth };
+  });
+}
+
+test("the keyboard focus ring on the appearance control is the blue ring, not the brand pastel", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  const group = page.locator("footer").getByRole("radiogroup", { name: "Appearance" });
+  await group.getByRole("radio", { name: "System" }).focus();
+
+  // From the keyboard: Light, then Dark.
+  await page.keyboard.press("ArrowRight");
+  await expect(group.getByRole("radio", { name: "Light" })).toBeFocused();
+  // blue.7 (#19579d) on light surfaces.
+  expect(await focusedLabelOutline(page)).toEqual({ color: "rgb(25, 87, 157)", style: "solid", width: "2px" });
+
+  await page.keyboard.press("ArrowRight");
+  await expect(scheme(page)).toHaveAttribute("data-mantine-color-scheme", "dark");
+  // blue.4 (#6a9fe0) on the navy.
+  expect(await focusedLabelOutline(page)).toEqual({ color: "rgb(106, 159, 224)", style: "solid", width: "2px" });
+});
+
+test("the browser bar follows a chosen scheme", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  const themeColors = () =>
+    page.locator('meta[name="theme-color"]').evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content")));
+  expect(await themeColors()).toEqual(["#ffffff", "#111a2b"]);
+
+  await choose(page, "Dark");
+  await expect.poll(themeColors).toEqual(["#111a2b", "#111a2b"]);
+  // Applied again on the next page load.
+  await page.reload();
+  await expect.poll(themeColors).toEqual(["#111a2b", "#111a2b"]);
+
+  await choose(page, "System");
+  await expect.poll(themeColors).toEqual(["#ffffff", "#111a2b"]);
+});

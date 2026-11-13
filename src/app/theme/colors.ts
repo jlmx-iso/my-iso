@@ -5,8 +5,8 @@ import { type MantineColorsTuple } from "@mantine/core";
  * the brand pastel (coral #e98f7b, sand #e9bd7b, teal #95cfc9, lavender
  * #9b98c5) and is the filled shade in both schemes. Contrast comes from
  * dark text on the pastel (`INK`, variants.ts), not from darker colours;
- * coloured text on white uses a darker shade of the same scale
- * (`TEXT_SHADE`, variants.ts). Every pairing is asserted in
+ * coloured text on white uses a darker colour of the same hue
+ * (`LIGHT_TEXT`, variants.ts). Every pairing is asserted in
  * `colors.test.ts`.
  */
 const colors = {
@@ -113,7 +113,8 @@ const colors = {
         "#ecf0f6",
         "#cdd5e2",
         "#aeb8c9",
-        "#8390a6",
+        // Faint text, lifted from the mock's #8390a6 so it reads at 4.5:1 on raised panels too.
+        "#8d9ab0",
         "#283851",
         "#1f2d45",
         "#172338",

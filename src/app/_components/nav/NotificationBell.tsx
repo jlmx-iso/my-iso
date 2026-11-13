@@ -17,6 +17,7 @@ export function NotificationBell({ unreadCount }: { unreadCount: number }) {
             size={16}
             disabled={unreadCount === 0}
             offset={4}
+            withBorder
         >
             <NotificationDropdown
                 opened={opened}

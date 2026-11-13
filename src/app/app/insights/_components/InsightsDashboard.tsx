@@ -86,7 +86,7 @@ function Sources({ sources, total }: { sources: Insights["profileViews"]["source
                             </Text>
                         </Group>
                         <Box h={8} mt={4} bg="var(--iso-surface-muted)" style={{ borderRadius: 4, overflow: "hidden" }} aria-hidden>
-                            <Box h="100%" w={`${Math.max(2, share)}%`} bg="orange.5" style={{ borderRadius: 4 }} />
+                            <Box h="100%" w={`${Math.max(2, share)}%`} bg="var(--iso-chart-bar)" style={{ borderRadius: 4 }} />
                         </Box>
                     </Box>
                 );
