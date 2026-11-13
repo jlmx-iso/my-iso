@@ -9,7 +9,7 @@ enforced by CI, and it only moves up.
 | Check | Rule | Where | Blocks a merge |
 | --- | --- | --- | --- |
 | Coverage, global | lines 89%, branches 83%, functions 88%, statements 88% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
-| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 91 / 95 / 93, `src/server/_db` 95 / 91 / 100 / 94, `src/server/api/routers` 87 / 78 / 91 / 87, `src/server/_jobs` 100 / 96 / 100 / 98, `src/_lib` 82 / 89 / 92 / 84; the UI: `src/app/_components` 88 / 78 / 82 / 86, `src/app/app` 89 / 83 / 87 / 88 | `coverage-thresholds.json` | yes |
+| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 91 / 95 / 93, `src/server/_db` 95 / 91 / 100 / 94, `src/server/api/routers` 87 / 78 / 91 / 87, `src/server/_jobs` 100 / 96 / 100 / 98, `src/_lib` 82 / 89 / 92 / 84; the UI: `src/app/_components` 88 / 78 / 82 / 86, `src/app/app` 89 / 83 / 87 / 87 | `coverage-thresholds.json` | yes |
 | Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
 | Coverage guard | no threshold lowered or removed, no file measured before left unmeasured, against the base branch, unless the pull request has the **`coverage-exception`** label | `scripts/coverage-guard.mjs` | yes |
 | Test bar guard | a pull request that changes a test-bar file (thresholds, coverage scope, the checks, workflows) needs the **`coverage-exception`** label; raising thresholds does not | `.github/workflows/test-bar-guard.yml` | yes, once required |
