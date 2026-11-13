@@ -40,6 +40,8 @@ yarn-error.log*
 # do not commit any .env files to git, except for the .env.example file. https://create.t3.gg/en/usage/env-variables#using-environment-variables
 .env
 .env*.local
+# Local development values (npm run dev, dev:wrangler, Prisma): docs/DEPLOYMENT.md.
+.env.dev
 # Build-time configuration per deployment (scripts/deploy.mjs).
 .env.deploy.*
 !.env.deploy.example
