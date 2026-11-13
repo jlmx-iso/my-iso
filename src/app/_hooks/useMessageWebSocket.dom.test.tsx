@@ -255,14 +255,24 @@ describe("useMessageWebSocket", () => {
     expect(sockets()).toHaveLength(2);
   });
 
-  it.each([
-    ["the account was deleted", CLOSE_ACCOUNT_DELETED],
-    ["the session ran out", CLOSE_SESSION_EXPIRED],
-  ])("stops once the server closed the socket because %s and refuses to let it back in", async (_reason, code) => {
+  it("stops at once when the server closes the socket because the account was deleted", async () => {
     const view = renderSocket();
     await server(() => latest().serverOpen());
 
-    await server(() => latest().serverClose(code));
+    await server(() => latest().serverClose(CLOSE_ACCOUNT_DELETED));
+    expect(view.result.current).toBe("denied");
+
+    await advance(5 * RECONNECT_MAX_DELAY_MS);
+    expect(sockets()).toHaveLength(1);
+    expect(probe).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retries once the session ran out, and stops when the gateway refuses the next attempt", async () => {
+    const view = renderSocket();
+    await server(() => latest().serverOpen());
+
+    await server(() => latest().serverClose(CLOSE_SESSION_EXPIRED));
     expect(view.result.current).toBe("reconnecting");
 
     // The gateway finds no session for the next attempt.
@@ -275,6 +285,27 @@ describe("useMessageWebSocket", () => {
     await advance(5 * RECONNECT_MAX_DELAY_MS);
     expect(sockets()).toHaveLength(2);
     expect(view.onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconnects once the session ran out if it has been renewed meanwhile", async () => {
+    const view = renderSocket();
+    await server(() => latest().serverOpen());
+
+    await server(() => latest().serverClose(CLOSE_SESSION_EXPIRED));
+    await advance(1000);
+    expect(sockets()).toHaveLength(2);
+
+    // The first retry is dropped; the probe finds a valid session (200) again.
+    probeStatus = 200;
+    await server(() => latest().serverClose());
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(view.result.current).toBe("reconnecting");
+    await advance(2000);
+    expect(sockets()).toHaveLength(3);
+
+    await server(() => latest().serverOpen());
+    expect(view.result.current).toBe("open");
+    expect(view.onOpen).toHaveBeenCalledTimes(2);
   });
 
   it("closes the socket and leaves no timer, probe or update behind when unmounted", async () => {
