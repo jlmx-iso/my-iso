@@ -1,8 +1,8 @@
 {
-  "branches": 72,
-  "functions": 75,
-  "lines": 77,
-  "statements": 77,
+  "branches": 83,
+  "functions": 88,
+  "lines": 89,
+  "statements": 88,
   "src/server/_billing/**": {
     "branches": 91,
     "functions": 95,
@@ -32,5 +32,17 @@
     "functions": 92,
     "lines": 82,
     "statements": 84
+  },
+  "src/app/_components/**": {
+    "branches": 78,
+    "functions": 82,
+    "lines": 88,
+    "statements": 86
+  },
+  "src/app/app/**": {
+    "branches": 83,
+    "functions": 87,
+    "lines": 89,
+    "statements": 87
   }
 }
