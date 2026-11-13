@@ -233,7 +233,7 @@ export default function ReviewsSection({
           <Skeleton height={88} radius="md" />
           <Skeleton height={88} radius="md" />
         </Stack>
-      ) : reviews.isError ? (
+      ) : reviews.isError && loaded.length === 0 ? (
         <Alert color="red" icon={<IconAlertCircle size={16} />}>
           We couldn&apos;t load reviews.{" "}
           <Anchor component="button" type="button" onClick={() => void reviews.refetch()} inherit>

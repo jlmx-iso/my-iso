@@ -133,6 +133,30 @@ describe("EventDetail", () => {
     expect(screen.getByRole("heading", { name: "Comments (1)" })).toBeTruthy();
   });
 
+  it("keeps the comments on screen when earlier ones fail to load, and says so under the button", async () => {
+    let failEarlier = true;
+    const view = renderDetail(event({ commentCount: 2 }), "ann", {
+      getCommentsPage: (input) => {
+        if (!input.cursor) return { items: [comment("c2", "Second")], nextCursor: "c2" };
+        if (failEarlier) throw trpcError("INTERNAL_SERVER_ERROR", "Internal error");
+        return { items: [comment("c1", "First!")], nextCursor: null };
+      },
+    });
+    await screen.findByText("Second");
+
+    await userEvent.click(screen.getByRole("button", { name: "Load earlier comments" }));
+
+    expect(await screen.findByText("We couldn't load earlier comments. Please try again.")).toBeTruthy();
+    expect(screen.getByText("Second")).toBeTruthy();
+    expect(screen.queryByText("We couldn't load comments")).toBeNull();
+
+    failEarlier = false;
+    await userEvent.click(screen.getByRole("button", { name: "Load earlier comments" }));
+    expect(await screen.findByText("First!")).toBeTruthy();
+    expect(screen.queryByText("We couldn't load earlier comments. Please try again.")).toBeNull();
+    expect(view.callsTo("event.getCommentsPage").filter((input) => !(input as { cursor?: string }).cursor)).toHaveLength(1);
+  });
+
   it("offers a retry when the comments cannot be loaded", async () => {
     let calls = 0;
     renderDetail(event(), "ann", {

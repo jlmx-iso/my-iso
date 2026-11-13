@@ -104,7 +104,7 @@ export default function EventDetail({ initialEvent, currentUserId, messageAction
                         <Skeleton height={56} radius="md" />
                         <Skeleton height={56} radius="md" />
                     </Stack>
-                ) : comments.isError ? (
+                ) : comments.isError && loaded.length === 0 ? (
                     <Alert color="red" icon={<IconAlertCircle size={16} />} title="We couldn't load comments">
                         <Button variant="default" size="xs" mt="xs" onClick={() => void comments.refetch()}>
                             Try again
