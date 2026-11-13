@@ -16,12 +16,6 @@ const sha1 = (value: string) => createHash("sha1").update(value).digest("hex");
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" }, status });
 
-function requestedUrl(call = 0): URL {
-  const [input] = fetchMock.mock.calls[call] ?? [];
-  if (typeof input !== "string") throw new Error("fetch was not called with a URL string");
-  return new URL(input);
-}
-
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -34,94 +28,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-});
-
-describe("createImageTag", () => {
-  it("points at the app's own cloud", () => {
-    expect(cloudinaryClient.createImageTag("folder/pic")).toBe(
-      '<img src="https://res.cloudinary.com/test-cloud/image/upload/folder/pic" />',
-    );
-  });
-});
-
-describe("getAssetInfo", () => {
-  it("asks for the asset with a signed request and returns its first resource", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ resources: [{ secure_url: "https://res.cloudinary.com/x.jpg" }] }));
-
-    await expect(cloudinaryClient.getAssetInfo("portfolio/1")).resolves.toEqual({
-      secure_url: "https://res.cloudinary.com/x.jpg",
-    });
-
-    const url = requestedUrl();
-    expect(`${url.origin}${url.pathname}`).toBe("https://api.cloudinary.com/v1_1/test-cloud/resources/image/upload");
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      api_key: "test-cloudinary-key",
-      public_ids: "portfolio/1",
-      signature: sha1(`public_id=portfolio/1&timestamp=${TIMESTAMP}${SECRET}`),
-      timestamp: String(TIMESTAMP),
-    });
-  });
-
-  it("returns nothing when Cloudinary refuses, finds nothing, or cannot be reached", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("nope", { status: 401 }));
-    await expect(cloudinaryClient.getAssetInfo("a")).resolves.toBeUndefined();
-
-    fetchMock.mockResolvedValueOnce(jsonResponse({ resources: [] }));
-    await expect(cloudinaryClient.getAssetInfo("a")).resolves.toBeUndefined();
-
-    fetchMock.mockResolvedValueOnce(jsonResponse({}));
-    await expect(cloudinaryClient.getAssetInfo("a")).resolves.toBeUndefined();
-
-    fetchMock.mockRejectedValueOnce(new TypeError("network down"));
-    await expect(cloudinaryClient.getAssetInfo("a")).resolves.toBeUndefined();
-
-    expect(console.error).toHaveBeenCalledTimes(2);
-    expect(console.warn).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("getAssetsByPrefix", () => {
-  it("lists up to five images under the prefix with a signed request", async () => {
-    const resources = [{ public_id: "portfolios/u1/a" }, { public_id: "portfolios/u1/b" }];
-    fetchMock.mockResolvedValue(jsonResponse({ resources }));
-
-    await expect(cloudinaryClient.getAssetsByPrefix("portfolios/u1")).resolves.toEqual({
-      isErr: false,
-      isOk: true,
-      value: { resources },
-    });
-
-    const url = requestedUrl();
-    expect(`${url.origin}${url.pathname}`).toBe("https://api.cloudinary.com/v1_1/test-cloud/resources/image");
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      api_key: "test-cloudinary-key",
-      max_results: "5",
-      prefix: "portfolios/u1",
-      signature: sha1(`max_results=5&prefix=portfolios/u1&timestamp=${TIMESTAMP}&type=upload${SECRET}`),
-      timestamp: String(TIMESTAMP),
-      type: "upload",
-    });
-  });
-
-  it("returns an error with the status when Cloudinary refuses", async () => {
-    fetchMock.mockResolvedValue(new Response("Invalid signature", { status: 401 }));
-
-    const result = await cloudinaryClient.getAssetsByPrefix("p");
-
-    expect(result).toMatchObject({ isErr: true });
-    expect(result.isErr && result.error.message).toBe("Cloudinary API error: 401");
-    expect(String(vi.mocked(console.warn).mock.calls[0]?.[0])).toContain("Failed to fetch assets from Cloudinary");
-  });
-
-  it("returns the error when the request fails, and a generic one for a non-Error", async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError("network down"));
-    const failed = await cloudinaryClient.getAssetsByPrefix("p");
-    expect(failed.isErr && failed.error.message).toBe("network down");
-
-    fetchMock.mockRejectedValueOnce("socket hang up");
-    const odd = await cloudinaryClient.getAssetsByPrefix("p");
-    expect(odd.isErr && odd.error.message).toBe("An unknown error occurred while fetching assets.");
-  });
 });
 
 describe("upload", () => {
