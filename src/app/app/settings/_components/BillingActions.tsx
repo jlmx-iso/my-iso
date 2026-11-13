@@ -85,7 +85,7 @@ export default function BillingActions({ mode: initialMode, paidUntil, portalLab
     // Always rendered so the message is announced when it appears.
     <div role={notice?.tone === "info" ? "status" : "alert"} data-testid="billing-notice">
       {notice && (
-        <Text size="sm" c={notice.tone === "error" ? "red.8" : "gray.7"} maw={320}>
+        <Text size="sm" c={notice.tone === "error" ? "var(--iso-danger-text)" : "var(--iso-text-secondary)"} maw={320}>
           {notice.text}
         </Text>
       )}

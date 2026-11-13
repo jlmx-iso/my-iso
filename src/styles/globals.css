@@ -62,36 +62,78 @@ p {
 :root {
   /* Secondary text, a step stronger than dimmed (labels, notes). */
   --iso-text-secondary: var(--mantine-color-gray-7);
-  /* Brand-coloured text and icons (eyebrows, links that are not anchors). */
-  --iso-accent-text: var(--mantine-color-orange-7);
-  /* Quiet tinted surfaces: neutral, and the brand tint. */
+  /* Brand-coloured text and icons (eyebrows, prices, links that are not
+     anchors): the coral at a shade that reads on white and the tints. */
+  --iso-accent-text: var(--mantine-color-orange-8);
+  /* Quiet surfaces: neutral, and the brand tint. */
   --iso-surface-subtle: var(--mantine-color-gray-0);
   --iso-surface-muted: var(--mantine-color-gray-1);
   --iso-accent-surface: var(--mantine-color-orange-0);
   --iso-accent-surface-strong: var(--mantine-color-orange-1);
-  /* Decorative brand edge (never text). */
+  /* Brand edge (decorative, never text): the coral pastel. */
   --iso-accent-border: var(--mantine-color-orange-3);
+  /* Your own message bubble and its text. */
+  --iso-bubble-own: var(--mantine-color-orange-1);
+  --iso-bubble-own-text: var(--mantine-color-black);
   /* Hairlines inside a card or list. */
   --iso-divider: var(--mantine-color-gray-2);
-  /* The landing page's highlighted word (large text, at least 3:1). */
-  --iso-hero-from: var(--mantine-color-orange-6);
+  /* Text field borders (non-text UI, at least 3:1 against the page). */
+  --iso-input-border: var(--mantine-color-gray-5);
+  /* Error text outside a form field (a failed action's message). */
+  --iso-danger-text: var(--mantine-color-red-7);
+  /* Good news in text (a name is free, views went up). */
+  --iso-success-text: var(--mantine-color-teal-9);
+  /* Success icons (ticks; non-text, at least 3:1). */
+  --iso-success-icon: var(--mantine-color-teal-8);
+  /* Rating stars (non-text, at least 3:1). */
+  --iso-rating: var(--mantine-color-tan-7);
+  /* The landing page's highlighted word (large text, at least 3:1): the
+     original coral gradient. */
+  --iso-hero-from: var(--mantine-color-orange-5);
   --iso-hero-to: var(--mantine-color-orange-8);
   /* The profile banner when there is no cover photo. */
   --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-1) 0%, var(--mantine-color-teal-1) 55%, var(--mantine-color-purple-1) 100%);
+  /* Information: event details' icons, comment counts and actions (teal). */
+  --iso-info: var(--mantine-color-teal-text);
+  /* Unread counts and the notification dot: the teal pastel, dark text. */
+  --iso-unread-bg: var(--mantine-color-teal-filled);
+  --iso-unread-text: var(--mantine-color-black);
+  /* An event's date tile: the coral tint with its ink on white. */
+  --iso-tile-bg: var(--mantine-color-orange-1);
+  --iso-tile-border: transparent;
+  --iso-tile-month: var(--mantine-color-orange-light-color);
+  --iso-tile-day: var(--mantine-color-black);
 }
 
+/*
+ * Dark mode: deep navy. Salmon is kept for the brand and the main action
+ * (filled, with dark text); chips are the pastel at a low alpha with the
+ * pastel as text; surfaces that carry ordinary text are raised navy panels.
+ */
 :root[data-mantine-color-scheme="dark"] {
   --iso-text-secondary: var(--mantine-color-dark-1);
-  --iso-accent-text: var(--mantine-color-orange-4);
+  --iso-accent-text: var(--mantine-color-orange-3);
   --iso-surface-subtle: var(--mantine-color-dark-6);
   --iso-surface-muted: var(--mantine-color-dark-5);
-  --iso-accent-surface: var(--mantine-color-orange-light);
-  --iso-accent-surface-strong: var(--mantine-color-orange-light-hover);
-  --iso-accent-border: var(--mantine-color-orange-8);
+  --iso-accent-surface: var(--mantine-color-dark-5);
+  --iso-accent-surface-strong: var(--mantine-color-dark-5);
+  --iso-accent-border: var(--mantine-color-orange-3);
+  --iso-bubble-own: var(--mantine-color-orange-3);
+  --iso-bubble-own-text: var(--mantine-color-black);
   --iso-divider: var(--mantine-color-dark-4);
-  --iso-hero-from: var(--mantine-color-orange-4);
-  --iso-hero-to: var(--mantine-color-orange-5);
-  --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-light) 0%, var(--mantine-color-teal-light) 55%, var(--mantine-color-purple-light) 100%);
+  --iso-input-border: var(--mantine-color-dark-3);
+  --iso-danger-text: var(--mantine-color-red-3);
+  --iso-success-text: var(--mantine-color-teal-3);
+  --iso-success-icon: var(--mantine-color-teal-3);
+  --iso-rating: var(--mantine-color-tan-3);
+  --iso-hero-from: var(--mantine-color-orange-3);
+  --iso-hero-to: var(--mantine-color-orange-2);
+  --iso-banner: linear-gradient(135deg, var(--mantine-color-orange-9) 0%, var(--mantine-color-teal-9) 55%, var(--mantine-color-purple-9) 100%);
+  /* The date tile: a raised panel with an edge, the month in salmon. */
+  --iso-tile-bg: var(--mantine-color-dark-5);
+  --iso-tile-border: var(--mantine-color-dark-4);
+  --iso-tile-month: var(--mantine-color-orange-3);
+  --iso-tile-day: var(--mantine-color-dark-0);
   /* Keyboard focus: the lighter blue reads on the dark surfaces. */
   --focus-ring-color: var(--mantine-color-blue-4);
 }
@@ -106,9 +148,10 @@ html {
   scroll-padding-top: calc(var(--header-height) + 12px);
 }
 
-/* Input borders one shade darker than Mantine's default: 3:1 against white. */
+/* Input borders one shade darker than Mantine's default: 3:1 against the
+   page and cards (gray.5 on white, dark.3 in dark mode). */
 .mantine-Input-input[data-variant="default"]:not([data-error]):not(:focus):not(:focus-within) {
-  --input-bd: var(--mantine-color-gray-5);
+  --input-bd: var(--iso-input-border);
 }
 
 /* Skip link: first focusable element on every page. */

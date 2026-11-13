@@ -32,14 +32,21 @@ const MessageTile = ({ isAuthor, isLastInGroup = false, message }: MessageTilePr
         <Box
           px="md"
           py="xs"
-          bg={isAuthor ? "orange.1" : "gray.1"}
+          // Scheme-aware (globals.css): your own bubble is the coral (the
+          // pastel with dark text in dark mode), theirs a neutral surface.
+          bg={isAuthor ? "var(--iso-bubble-own)" : "var(--iso-surface-muted)"}
           style={{
             borderRadius: isAuthor
               ? "18px 18px 4px 18px"
               : "18px 18px 18px 4px",
           }}
         >
-          <Text size="sm" style={{ lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }} data-replay-block>
+          <Text
+            size="sm"
+            c={isAuthor ? "var(--iso-bubble-own-text)" : undefined}
+            style={{ lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}
+            data-replay-block
+          >
             <span className="sr-only">{isAuthor ? "You: " : `${message.sender.firstName}: `}</span>
             {message.content}
           </Text>

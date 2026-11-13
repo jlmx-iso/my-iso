@@ -76,7 +76,7 @@ type StatusView = { color: string; label: string; variant: "light" | "filled" | 
 
 const STATUS_VIEWS: Record<BookingStatus, StatusView> = {
   accepted: { color: "teal", label: "Accepted", variant: "light" },
-  applied: { color: "blue", label: "Awaiting reply", variant: "light" },
+  applied: { color: "gray", label: "Awaiting reply", variant: "light" },
   canceled: { color: "gray", label: "Canceled", variant: "outline" },
   // Solid, so a finished booking never reads like a refused one.
   completed: { color: "teal", label: "Completed", variant: "filled" },

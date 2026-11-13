@@ -138,7 +138,7 @@ export function PlanSelection({ pricing }: PlanSelectionProps) {
               <Group gap="sm">
                 <Title order={2} size="h4">{PRO_PLAN.name}</Title>
                 {pricing.isFoundingPrice && (
-                  <Badge color="orange" variant="light" data-testid="founding-badge">
+                  <Badge color="tan" variant="light" data-testid="founding-badge">
                     Founding member
                   </Badge>
                 )}

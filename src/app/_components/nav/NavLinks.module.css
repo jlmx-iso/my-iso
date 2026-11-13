@@ -22,13 +22,14 @@
   outline-offset: 2px;
 }
 
+/* The current section: the salmon pill with dark text, in both schemes. */
 .link[aria-current="page"] {
-  background-color: var(--mantine-primary-color-light);
-  color: var(--mantine-primary-color-light-color);
+  background-color: var(--mantine-primary-color-filled);
+  color: var(--mantine-primary-color-contrast);
   font-weight: 600;
 }
 
-/* Unread count next to "Messages". White on orange 7 is 5.1:1. */
+/* Unread count next to "Messages": the teal pastel with dark text (9.8:1). */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -37,8 +38,8 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--mantine-color-orange-7);
-  color: var(--mantine-color-white);
+  background: var(--iso-unread-bg);
+  color: var(--iso-unread-text);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
