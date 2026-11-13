@@ -41,7 +41,7 @@ function renderPreferences(discover: DiscoverHandlers) {
   return renderWithProviders(<DiscoverPreferences />, { trpc: { discover } });
 }
 
-const visibility = () => screen.getByRole("switch", { name: /Show my profile in Discover/ }) as HTMLInputElement;
+const visibility = () => screen.getByRole<HTMLInputElement>("switch", { name: /Show my profile in Discover/ });
 
 async function openPreferences() {
   const toggle = await screen.findByRole("button", { name: "Matching preferences" });
@@ -55,7 +55,7 @@ describe("DiscoverPreferences", () => {
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
 
-    expect((await screen.findByRole("switch", { name: /Show my profile in Discover/ }) as HTMLInputElement).checked).toBe(false);
+    expect((await screen.findByRole<HTMLInputElement>("switch", { name: /Show my profile in Discover/ })).checked).toBe(false);
     expect(screen.getByText(HIDDEN_NOTE)).toBeTruthy();
   });
 
@@ -103,7 +103,7 @@ describe("DiscoverPreferences", () => {
     await openPreferences();
     const save = screen.getByRole("button", { name: "Save preferences" });
     expect(save.hasAttribute("disabled")).toBe(true);
-    expect((screen.getByRole("checkbox", { name: "portrait" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "portrait" }).checked).toBe(true);
 
     await userEvent.click(screen.getByRole("checkbox", { name: "wedding" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Max budget" }), "800");

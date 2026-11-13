@@ -48,7 +48,7 @@ describe("PlanSelection", () => {
   });
 
   it("opens checkout for the chosen interval", async () => {
-    const view = renderPlans(() => ({ url: "https://checkout.stripe.com/c/pay/cs_test_1" }) as never);
+    const view = renderPlans(() => ({ url: "https://checkout.stripe.com/c/pay/cs_test_1" }));
     await userEvent.click(screen.getByRole("radio", { name: /Annual/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Upgrade to Pro — $99/year" }));

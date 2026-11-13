@@ -114,7 +114,7 @@ describe("EventDetail", () => {
 
     expect(await screen.findByText("First!")).toBeTruthy();
     const list = within(screen.getByRole("list", { name: "Comments" }));
-    expect(list.getAllByRole("listitem").map((item) => item.textContent?.match(/First!|Second|Third/)?.[0])).toEqual([
+    expect(list.getAllByRole("listitem").map((item) => (/First!|Second|Third/.exec(item.textContent))?.[0])).toEqual([
       "First!",
       "Second",
       "Third",

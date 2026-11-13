@@ -50,7 +50,7 @@ function renderShell(threads: ConversationSummary[] = [OLDER, NEWER]) {
         message: {
           getLatestThreadMessage: () => null,
           getRecipientById: () => null,
-          getThreadByParticipants: () => null as never,
+          getThreadByParticipants: () => null,
           getThreadsPage: () => ({ items: threads.map(({ lastMessage: _drop, ...t }) => t), nextCursor: null }),
         },
       },
@@ -66,7 +66,7 @@ beforeEach(() => {
   testRouter.setLocation("/app/messages");
   const realMatchMedia = window.matchMedia.bind(window);
   vi.spyOn(window, "matchMedia").mockImplementation((query: string) =>
-    query === WIDE_SCREEN_QUERY ? ({ ...realMatchMedia(query), matches: wideScreen } as MediaQueryList) : realMatchMedia(query),
+    query === WIDE_SCREEN_QUERY ? ({ ...realMatchMedia(query), matches: wideScreen }) : realMatchMedia(query),
   );
 });
 

@@ -117,7 +117,7 @@ describe("admin waitlist review", () => {
 
   it("pages through the applications", async () => {
     const view = renderPage({
-      getAll: ({ page: number }) => ({ ...page([number === 2 ? BEN : ANN], 25, 2), page: number }),
+      getAll: ({ page: number = 1 }) => ({ ...page([number === 2 ? BEN : ANN], 25, 2), page: number }),
     });
     await screen.findByText("Ann Lee");
 

@@ -13,9 +13,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CLOSE_ACCOUNT_DELETED, CLOSE_SESSION_EXPIRED } from "~/do/chatRoomPolicy";
 import { REALTIME_PATH, RECONNECT_MAX_DELAY_MS } from "~/_utils/realtimeConnection";
 import type { ThreadMessage } from "~/_utils/threadMessages";
+import { CLOSE_ACCOUNT_DELETED, CLOSE_SESSION_EXPIRED } from "~/do/chatRoomPolicy";
 
 import { useMessageWebSocket } from "./useMessageWebSocket";
 
@@ -113,7 +113,9 @@ beforeEach(() => {
     if (probeStatus === "network-error") return Promise.reject(new TypeError("Failed to fetch"));
     return Promise.resolve(new Response(null, { status: probeStatus }));
   });
-  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => probe(String(input), init ?? {}));
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+    probe(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, init ?? {}),
+  );
 });
 
 afterEach(() => {

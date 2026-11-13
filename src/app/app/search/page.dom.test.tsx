@@ -64,7 +64,7 @@ function renderSearch(searchAll: SearchAll, query?: string) {
   });
 }
 
-const box = () => screen.getByRole("searchbox", { name: "Search photographers and events" }) as HTMLInputElement;
+const box = () => screen.getByRole<HTMLInputElement>("searchbox", { name: "Search photographers and events" });
 const status = () => screen.getAllByRole("status").find((element) => element.getAttribute("aria-atomic") === "true")!;
 
 describe("search page", () => {

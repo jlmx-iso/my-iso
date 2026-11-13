@@ -25,7 +25,7 @@ function renderForm(addCommentToEvent: AddComment = () => ({}) as never) {
   return { ...view, onPosted };
 }
 
-const field = () => screen.getByRole("textbox", { name: "Comment on Garden wedding" }) as HTMLTextAreaElement;
+const field = () => screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Comment on Garden wedding" });
 const post = () => screen.getByRole("button", { name: "Post comment" });
 
 describe("AddCommentForm", () => {
