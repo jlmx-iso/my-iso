@@ -189,3 +189,63 @@ describe("where the control appears", () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("dark");
   });
 });
+
+describe("when the browser refuses storage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("still renders with System chosen, and still switches the scheme for this page", async () => {
+    // Private windows and blocked site data make localStorage throw.
+    vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    });
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    });
+    // Mantine reports the failed save as a warning, not an error.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    renderControl();
+
+    expect(radio("System").checked).toBe(true);
+    await user.click(screen.getByText("Dark"));
+    expect(radio("Dark").checked).toBe(true);
+    expect(htmlScheme()).toBe("dark");
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("the browser bar (theme-color)", () => {
+  const metas: HTMLMetaElement[] = [];
+
+  beforeEach(() => {
+    for (const media of ["(prefers-color-scheme: light)", "(prefers-color-scheme: dark)"]) {
+      const meta = document.createElement("meta");
+      meta.name = "theme-color";
+      meta.media = media;
+      meta.content = media.includes("dark") ? "#111a2b" : "#ffffff";
+      document.head.append(meta);
+      metas.push(meta);
+    }
+  });
+
+  afterEach(() => {
+    for (const meta of metas.splice(0)) meta.remove();
+  });
+
+  it("follows a chosen scheme on both tags, and goes back to one per system scheme on System", async () => {
+    const user = userEvent.setup();
+    renderControl();
+    expect(metas.map((meta) => meta.content)).toEqual(["#ffffff", "#111a2b"]);
+
+    await user.click(screen.getByText("Dark"));
+    expect(metas.map((meta) => meta.content)).toEqual(["#111a2b", "#111a2b"]);
+
+    await user.click(screen.getByText("Light"));
+    expect(metas.map((meta) => meta.content)).toEqual(["#ffffff", "#ffffff"]);
+
+    await user.click(screen.getByText("System"));
+    expect(metas.map((meta) => meta.content)).toEqual(["#ffffff", "#111a2b"]);
+  });
+});

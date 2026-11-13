@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { createTheme, DEFAULT_THEME, isLightColor, mergeMantineTheme } from "@mantine/core";
 import { describe, expect, it } from "vitest";
 
@@ -5,18 +8,19 @@ import colors, { black } from "./colors";
 import theme from "./index";
 import {
     BRAND_SHADE,
+    DARK_PANEL_LIGHT,
     DARK_OUTLINE_BORDER_ALPHA,
     DARK_TEXT_SHADE,
     DARK_TINT_ALPHA,
     DARK_TINT_HOVER_ALPHA,
     HOVER_TINT_ALPHA,
     INK,
+    LIGHT_TEXT,
     noticeVars,
     notificationColor,
     outlineButtonVars,
     PALETTES,
     schemeVariables,
-    TEXT_SHADE,
     TINT_INK,
     variantColorResolver,
     withAlpha,
@@ -114,7 +118,7 @@ describe("the brand is the original ISO palette", () => {
 
 describe("dark mode is deep navy", () => {
     it("keeps the approved surfaces in their roles: 0 text, 2 dimmed, 3 faint, 4 borders, 5 raised, 6 cards, 7 the page", () => {
-        expect(dark.slice(2, 8)).toEqual(["#aeb8c9", "#8390a6", "#283851", "#1f2d45", "#172338", "#111a2b"]);
+        expect(dark.slice(2, 8)).toEqual(["#aeb8c9", "#8d9ab0", "#283851", "#1f2d45", "#172338", "#111a2b"]);
         expect(dark[0]).toBe("#ecf0f6");
         // 8 and 9 deeper than the page.
         expect(luminance(dark[8])).toBeLessThan(luminance(page));
@@ -136,14 +140,13 @@ describe("dark mode is deep navy", () => {
         }
     });
 
-    it("body text (dark.0), secondary (dark.1) and dimmed (dark.2) on the page, cards and raised surfaces; faint (dark.3) on the page and cards", () => {
+    it("body text (dark.0), secondary (dark.1), dimmed (dark.2) and faint (dark.3) on the page, cards and raised surfaces", () => {
         for (const surface of [page, card, raised]) {
             expect(contrast(dark[0], surface)).toBeGreaterThanOrEqual(7);
             expect(contrast(dark[1], surface)).toBeGreaterThanOrEqual(AA_TEXT);
             expect(contrast(dark[2], surface)).toBeGreaterThanOrEqual(AA_TEXT);
-        }
-        for (const surface of [page, card]) {
-            expect(contrast(dark[3], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+            // Faint was lifted from the mock's #8390a6 (4.3:1 on raised).
+            expect(contrast(dark[3], surface), surface).toBeGreaterThanOrEqual(AA_TEXT);
         }
     });
 
@@ -184,6 +187,14 @@ describe.each([
         expect(vars[`--mantine-color-${name}-outline-hover`]).toBe(withAlpha(mantine(vars, name, "text"), HOVER_TINT_ALPHA));
     });
 
+    it.each(PALETTES)("%s: subtle and outline controls on hover: the text on its own tint, composited over the page and cards", (name) => {
+        const text = mantine(vars, name, "text");
+        for (const surface of surfaces) {
+            const hover = resolve(vars[`--mantine-color-${name}-outline-hover`], surface);
+            expect(contrast(text, hover), surface).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+    });
+
     it.each(PALETTES)("%s: notices (Alert) — title and icon on the panel, and the message text", (name) => {
         const bg = iso(vars, name, "notice-bg");
         expect(contrast(iso(vars, name, "notice-color"), bg)).toBeGreaterThanOrEqual(AA_TEXT);
@@ -206,18 +217,32 @@ describe.each([
 describe("variant rules", () => {
     it("light mode: the tints carry the mock's inks", () => {
         expect(TINT_INK).toMatchObject({ orange: "#8f3016", purple: "#433e80", tan: "#7a4e05", teal: "#17625d" });
+        // Teal and sand text use their ink: shade 9 is under 4.5:1 on its own hover tint.
+        expect(LIGHT_TEXT.teal).toBe(TINT_INK.teal);
+        expect(LIGHT_TEXT.tan).toBe(TINT_INK.tan);
         for (const name of PALETTES) {
             expect(LIGHT[`--mantine-color-${name}-light`]).toBe(`var(--mantine-color-${name}-1)`);
             expect(LIGHT[`--mantine-color-${name}-light-color`]).toBe(TINT_INK[name]);
-            expect(LIGHT[`--mantine-color-${name}-text`]).toBe(`var(--mantine-color-${name}-${TEXT_SHADE[name]})`);
+            expect(LIGHT[`--mantine-color-${name}-text`]).toBe(LIGHT_TEXT[name]);
         }
     });
 
     it("dark mode: chips are the pastel at a low alpha with the pastel as text; gray is the navy", () => {
-        for (const name of PALETTES.filter((palette) => palette !== "gray")) {
+        const tinted = PALETTES.filter(
+            (palette): palette is Exclude<(typeof PALETTES)[number], "gray"> =>
+                palette !== "gray" && !(DARK_PANEL_LIGHT as readonly string[]).includes(palette),
+        );
+        for (const name of tinted) {
             expect(DARK[`--mantine-color-${name}-light`]).toBe(withAlpha(colors[name][BRAND_SHADE], DARK_TINT_ALPHA));
             expect(DARK[`--mantine-color-${name}-light-hover`]).toBe(withAlpha(colors[name][BRAND_SHADE], DARK_TINT_HOVER_ALPHA));
             expect(DARK[`--mantine-color-${name}-text`]).toBe(`var(--mantine-color-${name}-${DARK_TEXT_SHADE[name]})`);
+        }
+        // Coral and red: a raised navy panel with the colour as text (a low-alpha coral over navy reads brown).
+        expect(DARK_PANEL_LIGHT).toEqual(["orange", "red"]);
+        for (const name of DARK_PANEL_LIGHT) {
+            expect(DARK[`--mantine-color-${name}-light`]).toBe("var(--mantine-color-dark-5)");
+            expect(DARK[`--mantine-color-${name}-light-hover`]).toBe("var(--mantine-color-dark-4)");
+            expect(DARK[`--mantine-color-${name}-light-color`]).toBe(`var(--mantine-color-${name}-3)`);
         }
         expect(DARK["--mantine-color-gray-light"]).toBe("var(--mantine-color-dark-4)");
         expect(DARK["--mantine-color-gray-filled"]).toBe("var(--mantine-color-dark-2)");
@@ -235,79 +260,126 @@ describe("variant rules", () => {
     });
 });
 
-describe("role tokens (globals.css)", () => {
-    it("salmon is the brand and the main action: the active nav pill and primary buttons carry dark text, links read", () => {
-        expect(contrast(INK, colors.orange[3])).toBeGreaterThanOrEqual(7);
-        expect(contrast(colors.orange[8], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
-        expect(contrast(colors.orange[3], card)).toBeGreaterThanOrEqual(AA_TEXT);
-    });
+/**
+ * The `--iso-*` role tokens and the focus ring, read from globals.css:
+ * the plain `:root` blocks for light mode, with the dark block on top.
+ */
+const GLOBALS = readFileSync(path.resolve(import.meta.dirname, "../../styles/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
-    it("teal is information: event icons and comment actions, unread counts and your own avatar", () => {
-        // --iso-info is teal's text colour: teal.9 on white, the pastel on the navy.
-        expect(contrast(colors.teal[9], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
-        for (const surface of [page, card, raised]) {
-            expect(contrast(colors.teal[3], surface)).toBeGreaterThanOrEqual(AA_TEXT);
+function declarations(body: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [, name, value] of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+        if (name && value) result[name] = value.trim();
+    }
+    return result;
+}
+
+const LIGHT_TOKENS = Object.assign({}, ...[...GLOBALS.matchAll(/(?:^|\n)\s*:root\s*\{([^}]*)\}/g)].map(([, body]) => declarations(body!))) as Record<string, string>;
+const DARK_BLOCK = /:root\[data-mantine-color-scheme="dark"\]\s*\{([^}]*)\}/.exec(GLOBALS)?.[1] ?? "";
+const DARK_TOKENS = { ...LIGHT_TOKENS, ...declarations(DARK_BLOCK) };
+
+const TOKENS = { dark: DARK_TOKENS, light: LIGHT_TOKENS } as const;
+const SCHEME_VARS = { dark: DARK, light: LIGHT } as const;
+
+/** A token (or any value) as the opaque colour it paints in `scheme`, over `under` where it is translucent. */
+function token(scheme: "light" | "dark", value: string, under?: string): string {
+    const name = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
+    if (name && name in TOKENS[scheme]) return token(scheme, TOKENS[scheme][name]!, under);
+    if (name && name in SCHEME_VARS[scheme]) return token(scheme, SCHEME_VARS[scheme][name]!, under);
+    return resolve(value, under);
+}
+
+const SURFACES = {
+    dark: [page, card, raised],
+    light: [WHITE, colors.gray[0], colors.gray[1]],
+} as const;
+
+describe.each(["light", "dark"] as const)("role tokens (globals.css), %s scheme", (scheme) => {
+    const t = (name: string, under?: string) => token(scheme, `var(${name})`, under);
+
+    it("every token the tests rely on is defined in the stylesheet", () => {
+        for (const name of ["--iso-info", "--iso-danger-text", "--iso-banner", "--iso-tile-bg", "--iso-chart-bar", "--iso-pro-border", "--focus-ring-color"]) {
+            expect(TOKENS[scheme], name).toHaveProperty(name);
         }
-        // --iso-unread-bg and an avatar's initials: dark text on the pastel.
-        expect(contrast(INK, colors.teal[3])).toBeGreaterThanOrEqual(AA_TEXT);
     });
 
-    it("lavender is people: other members' avatars carry dark text; icebreakers are its chip", () => {
-        expect(contrast(INK, colors.purple[3])).toBeGreaterThanOrEqual(AA_TEXT);
-    });
-
-    it("date tiles: the coral tint with its ink on white, a raised navy panel with a salmon month in dark mode", () => {
-        // Light: month, day, weekday on orange.1.
-        expect(contrast(TINT_INK.orange, colors.orange[1])).toBeGreaterThanOrEqual(AA_TEXT);
-        expect(contrast(INK, colors.orange[1])).toBeGreaterThanOrEqual(7);
-        expect(contrast(colors.gray[6], colors.orange[1])).toBeGreaterThanOrEqual(AA_TEXT);
-        // Dark: on dark.5, edged with dark.4.
-        expect(contrast(colors.orange[3], raised)).toBeGreaterThanOrEqual(AA_TEXT);
-        expect(contrast(dark[0], raised)).toBeGreaterThanOrEqual(7);
-        expect(contrast(dark[2], raised)).toBeGreaterThanOrEqual(AA_TEXT);
-    });
-
-    it("message bubbles: yours is coral with dark text, theirs a neutral surface", () => {
-        expect(contrast(INK, colors.orange[1])).toBeGreaterThanOrEqual(7);
-        expect(contrast(INK, colors.orange[3])).toBeGreaterThanOrEqual(AA_TEXT);
-        expect(contrast(dark[0], raised)).toBeGreaterThanOrEqual(7);
-    });
-
-    it("light mode surfaces: body and dimmed text on white and on every tint", () => {
-        const tints = [colors.gray[0], colors.gray[1], ...PALETTES.flatMap((name) => [colors[name][0], colors[name][1]])];
-        for (const surface of [WHITE, ...tints]) {
-            expect(contrast(black, surface)).toBeGreaterThanOrEqual(7);
-            expect(contrast(colors.gray[6], surface), surface).toBeGreaterThanOrEqual(AA_TEXT);
-        }
-        expect(LIGHT["--mantine-color-placeholder"]).toBe("var(--mantine-color-gray-6)");
-        for (const surface of [WHITE, colors.gray[0], colors.orange[0], colors.orange[1]]) {
-            expect(contrast(colors.orange[8], surface)).toBeGreaterThanOrEqual(AA_TEXT);
-        }
-        expect(contrast(colors.gray[7], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
-        expect(contrast(colors.red[7], WHITE)).toBeGreaterThanOrEqual(AA_TEXT);
-    });
-
-    it("non-text UI at 3:1: input borders, focus ring, stars, ticks, the brand edge, the hero word", () => {
-        for (const colour of [colors.gray[5], colors.blue[7], colors.tan[7], colors.teal[8], colors.orange[5]]) {
-            expect(contrast(colour, WHITE), colour).toBeGreaterThanOrEqual(AA_NON_TEXT);
-        }
-        for (const surface of [page, card]) {
-            for (const colour of [dark[3], colors.blue[4], colors.tan[3], colors.teal[3], colors.orange[3], colors.orange[2]]) {
-                expect(contrast(colour, surface), colour).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    it("text tokens read at 4.5:1 on the page and cards: secondary, accent (links), danger, success, information", () => {
+        for (const name of ["--iso-text-secondary", "--iso-accent-text", "--iso-danger-text", "--iso-success-text", "--iso-info"]) {
+            for (const surface of SURFACES[scheme]) {
+                expect(contrast(t(name), surface), `${name} on ${surface}`).toBeGreaterThanOrEqual(AA_TEXT);
             }
+        }
+    });
+
+    it("non-text tokens at 3:1 on the page and cards: input borders, success ticks, stars, chart bars, the hero word", () => {
+        const surfaces = scheme === "light" ? [WHITE] : [page, card];
+        for (const name of ["--iso-input-border", "--iso-success-icon", "--iso-rating", "--iso-chart-bar", "--iso-hero-from", "--iso-hero-to"]) {
+            for (const surface of surfaces) {
+                expect(contrast(t(name), surface), `${name} on ${surface}`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+            }
+        }
+    });
+
+    it("the keyboard focus ring is 3:1 on every surface it can sit on", () => {
+        const surfaces =
+            scheme === "light"
+                ? [WHITE, colors.gray[0], colors.gray[1], ...PALETTES.map((name) => colors[name][1])]
+                : [page, card, raised, dark[4]];
+        for (const surface of surfaces) {
+            expect(contrast(t("--focus-ring-color"), surface), surface).toBeGreaterThanOrEqual(AA_NON_TEXT);
+        }
+    });
+
+    it("pairs: the date tile, your own bubble, unread counts, accent surfaces", () => {
+        const pairs: [string, string][] = [
+            ["--iso-tile-month", "--iso-tile-bg"],
+            ["--iso-tile-day", "--iso-tile-bg"],
+            ["--iso-bubble-own-text", "--iso-bubble-own"],
+            ["--iso-unread-text", "--iso-unread-bg"],
+            ["--iso-accent-text", "--iso-accent-surface"],
+            ["--iso-accent-text", "--iso-accent-surface-strong"],
+        ];
+        for (const [text, surface] of pairs) {
+            expect(contrast(t(text), t(surface)), `${text} on ${surface}`).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+        const dimmed = scheme === "light" ? colors.gray[6] : dark[2];
+        expect(contrast(dimmed, t("--iso-tile-bg"))).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(contrast(dimmed, t("--iso-accent-surface-strong"))).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(contrast(dimmed, t("--iso-surface-muted"))).toBeGreaterThanOrEqual(AA_TEXT);
+    });
+
+    it("the profile banner: the brand pastels, with body text readable over every stop", () => {
+        const banner = TOKENS[scheme]["--iso-banner"]!;
+        const base = scheme === "light" ? WHITE : dark[6];
+        const text = scheme === "light" ? black : dark[0];
+        const stops = [...banner.matchAll(/(var\(--mantine-color-[a-z]+-\d\)|rgba\([^)]*\))/g)].map(([stop]) => stop);
+        expect(stops.length).toBeGreaterThanOrEqual(3);
+        for (const stop of stops) {
+            expect(contrast(text, token(scheme, stop, base)), stop).toBeGreaterThanOrEqual(7);
+        }
+        if (scheme === "dark") {
+            // The pastels themselves at a low alpha, over a card (not brick and olive).
+            expect(banner).toContain(withAlpha(colors.orange[3], 0.22));
+            expect(banner).toContain("var(--mantine-color-dark-6)");
+        }
+    });
+
+    it("the roles: salmon fills carry dark text, other members' and your own avatars carry dark text", () => {
+        for (const pastel of [colors.orange[3], colors.teal[3], colors.purple[3], colors.tan[3]]) {
+            expect(contrast(INK, pastel)).toBeGreaterThanOrEqual(AA_TEXT);
         }
     });
 });
 
 describe("toasts", () => {
     it.each(PALETTES)("%s: a white icon on the toast colour is 4.5:1", (name) => {
-        expect(notificationColor(name)).toBe(colors[name][TEXT_SHADE[name]]);
+        expect(notificationColor(name)).toBe(LIGHT_TEXT[name]);
         expect(contrast(WHITE, notificationColor(name))).toBeGreaterThanOrEqual(AA_TEXT);
     });
 
     it("falls back to the coral", () => {
-        expect(notificationColor(undefined)).toBe(colors.orange[TEXT_SHADE.orange]);
-        expect(notificationColor("grape")).toBe(colors.orange[TEXT_SHADE.orange]);
+        expect(notificationColor(undefined)).toBe(LIGHT_TEXT.orange);
+        expect(notificationColor("grape")).toBe(LIGHT_TEXT.orange);
     });
 });
 

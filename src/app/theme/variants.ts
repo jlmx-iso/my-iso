@@ -10,14 +10,20 @@ import colors, { black } from "./colors";
  *   (theme `autoContrast`); hover is the lighter shade 2.
  * - light (chips, badges, tinted icons): shade 1 with the colour's deep ink
  *   (`TINT_INK`) on white. In dark mode the pastel at `DARK_TINT_ALPHA`
- *   over the navy, with the pastel itself as the text.
- * - text, subtle, transparent: the colour as text, at `TEXT_SHADE` on
- *   white or `DARK_TEXT_SHADE` on the navy.
+ *   over the navy, with the pastel itself as the text; coral and red
+ *   instead sit on a raised navy panel (a low-alpha coral or red over navy
+ *   reads brown or mauve).
+ * - text, subtle, transparent: the colour as text (`LIGHT_TEXT` on white,
+ *   `DARK_TEXT_SHADE` on the navy), reading at 4.5:1 on its own hover tint.
  * - outline (secondary buttons): that text colour, with a softer pastel
  *   edge (`--iso-<name>-outline-border`).
  * - notices (Alert): the tint with its ink on white; in dark mode a raised
  *   navy panel with a coloured title, icon and edge.
  * - gray is neutral: light gray in light mode, the navy in dark mode.
+ *
+ * Not contrast-safe with the pastels: `variant="white"` (coloured text on
+ * white, at the pastel shade) and `variant="gradient"` (white text on a
+ * gradient of pastels). The app uses neither for controls; keep it so.
  *
  * Every pairing is asserted in colors.test.ts.
  */
@@ -31,18 +37,6 @@ export const BRAND_SHADE = 3;
 export const PALETTES = ["orange", "tan", "teal", "purple", "red", "blue", "green", "gray"] as const;
 export type Palette = (typeof PALETTES)[number];
 type Brand = Exclude<Palette, "gray">;
-
-/** Coloured text on white and on the neutral tints. */
-export const TEXT_SHADE: Record<Palette, 7 | 8 | 9> = {
-    blue: 7,
-    gray: 7,
-    green: 7,
-    orange: 8,
-    purple: 7,
-    red: 7,
-    tan: 9,
-    teal: 9,
-};
 
 /**
  * Text on a colour's own light tint (shade 1 and its hover, shade 2) in
@@ -59,6 +53,22 @@ export const TINT_INK: Record<Palette, string> = {
     red: colors.red[8],
     tan: "#7a4e05",
     teal: "#17625d",
+};
+
+/**
+ * Coloured text on white and the neutral tints (links, subtle and outline
+ * controls, `c="<name>"`). It must also read at 4.5:1 on its own 12% hover
+ * tint over gray.1, which teal.9 and sand.9 do not: those two use their ink.
+ */
+export const LIGHT_TEXT: Record<Palette, string> = {
+    blue: colors.blue[7],
+    gray: colors.gray[7],
+    green: colors.green[7],
+    orange: colors.orange[8],
+    purple: colors.purple[7],
+    red: colors.red[7],
+    tan: TINT_INK.tan,
+    teal: TINT_INK.teal,
 };
 
 /** Coloured text on the navy page, cards and raised panels. */
@@ -83,6 +93,9 @@ export const DARK_TINT_TEXT_SHADE: Record<Brand, 2 | 3> = {
     tan: 3,
     teal: 3,
 };
+
+/** Colours whose dark-mode light variant is a raised navy panel, not a tint (a coral or red tint over navy reads brown or mauve). */
+export const DARK_PANEL_LIGHT: readonly Brand[] = ["orange", "red"];
 
 /** Dark-mode tints: the pastel over the navy, at rest and on hover. */
 export const DARK_TINT_ALPHA = 0.16;
@@ -115,7 +128,6 @@ type Roles = {
 };
 
 function lightRoles(name: Palette): Roles {
-    const text = TEXT_SHADE[name];
     return {
         filled: shade(name, BRAND_SHADE),
         filledHover: shade(name, 2),
@@ -127,8 +139,8 @@ function lightRoles(name: Palette): Roles {
         noticeColor: TINT_INK[name],
         // Gray's pastel is near white: its edge is the input border shade.
         outlineBorder: name === "gray" ? shade("gray", 5) : shade(name, BRAND_SHADE),
-        text: shade(name, text),
-        textHex: colors[name][text],
+        text: LIGHT_TEXT[name],
+        textHex: LIGHT_TEXT[name],
     };
 }
 
@@ -150,12 +162,13 @@ function darkRoles(name: Palette): Roles {
     }
     const text = DARK_TEXT_SHADE[name];
     const pastel = colors[name][BRAND_SHADE];
+    const panel = DARK_PANEL_LIGHT.includes(name);
     return {
         filled: shade(name, BRAND_SHADE),
         filledHover: shade(name, 2),
-        light: withAlpha(pastel, DARK_TINT_ALPHA),
-        lightColor: shade(name, DARK_TINT_TEXT_SHADE[name]),
-        lightHover: withAlpha(pastel, DARK_TINT_HOVER_ALPHA),
+        light: panel ? shade("dark", 5) : withAlpha(pastel, DARK_TINT_ALPHA),
+        lightColor: panel ? shade(name, text) : shade(name, DARK_TINT_TEXT_SHADE[name]),
+        lightHover: panel ? shade("dark", 4) : withAlpha(pastel, DARK_TINT_HOVER_ALPHA),
         noticeBg: shade("dark", 5),
         noticeBorder: shade(name, text),
         noticeColor: shade(name, text),
@@ -190,11 +203,11 @@ export function schemeVariables(scheme: "light" | "dark"): Record<string, string
     const shared: Record<string, string> =
         scheme === "light"
             ? {
-                  "--mantine-color-anchor": shade("orange", TEXT_SHADE.orange),
-                  "--mantine-color-error": shade("red", TEXT_SHADE.red),
+                  "--mantine-color-anchor": LIGHT_TEXT.orange,
+                  "--mantine-color-error": LIGHT_TEXT.red,
                   // One shade darker than Mantine's default: 4.5:1 against white.
                   "--mantine-color-placeholder": shade("gray", 6),
-                  "--mantine-color-success": shade("teal", TEXT_SHADE.teal),
+                  "--mantine-color-success": LIGHT_TEXT.teal,
               }
             : {
                   "--mantine-color-anchor": shade("orange", DARK_TEXT_SHADE.orange),
@@ -210,7 +223,7 @@ function paletteOf(color: string): Palette | null {
 
 /**
  * Mantine's resolver, except that subtle and transparent controls use the
- * colour's text shade (Mantine uses the light variant's text colour, which
+ * colour's text colour (Mantine uses the light variant's text colour, which
  * is tuned for the tint behind it), and a subtle control's hover is a tint
  * of that text colour.
  */
@@ -226,10 +239,10 @@ export const variantColorResolver: VariantColorsResolver = (input) => {
     };
 };
 
-/** A toast's icon and edge: the colour's text shade, so a white icon on it is at least 4.5:1. */
+/** A toast's icon and edge: the colour's light-mode text colour, so a white icon on it is at least 4.5:1. */
 export function notificationColor(color: string | undefined): string {
     const name = paletteOf(color ?? "orange") ?? "orange";
-    return colors[name][TEXT_SHADE[name]];
+    return LIGHT_TEXT[name];
 }
 
 /** Alert's light (default) variant as a notice panel; other variants as Mantine draws them. */

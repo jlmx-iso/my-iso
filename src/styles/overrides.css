@@ -19,6 +19,22 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
+/*
+ * Controls whose own focus ring Mantine draws in the primary colour (the
+ * salmon pastel, 2.4:1 on white): the same blue ring instead. The
+ * segmented control's label, a switch's track, a rating star, a chip's
+ * label and a pill. The ratios are checked in colors.test.ts and the
+ * segmented control's ring in e2e/theme.spec.ts.
+ */
+.mantine-SegmentedControl-input:focus-visible + .mantine-SegmentedControl-label,
+.mantine-Switch-input:focus-visible + .mantine-Switch-track,
+.mantine-Rating-input:focus-visible + label,
+.mantine-Chip-input:focus-visible + .mantine-Chip-label,
+.mantine-Pill-root:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
 .mantine-Input-input:focus,
 .mantine-Input-input:focus-within,
 .mantine-PinInput-input:focus {
@@ -76,6 +92,14 @@ button:focus-visible,
   }
 
   .mantine-Tabs-tab {
+    min-height: 2.75rem;
+  }
+
+  /* The appearance control (footer, account sheet, Settings). */
+  .color-scheme-control .mantine-SegmentedControl-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     min-height: 2.75rem;
   }
 

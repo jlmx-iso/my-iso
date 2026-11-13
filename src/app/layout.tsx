@@ -25,6 +25,7 @@ import Toasts from "./_components/Toasts";
 import { requestRequiresOptIn } from "./_lib/consentRegion";
 import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
+import { THEME_COLOR } from "./theme/themeColor";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 
@@ -64,10 +65,11 @@ export const viewport: Viewport = {
   // Shrink the layout (not just the visual viewport) when the on-screen
   // keyboard opens, so the message composer stays in view.
   interactiveWidget: "resizes-content",
-  // The browser bar follows the colour scheme (dark: the body colour, dark.7).
+  // The browser bar follows the colour scheme (dark: the body colour, dark.7);
+  // a member's own choice is applied by ThemeColorSync.
   themeColor: [
-    { color: "#ffffff", media: "(prefers-color-scheme: light)" },
-    { color: "#111a2b", media: "(prefers-color-scheme: dark)" },
+    { color: THEME_COLOR.light, media: "(prefers-color-scheme: light)" },
+    { color: THEME_COLOR.dark, media: "(prefers-color-scheme: dark)" },
   ],
 };
 

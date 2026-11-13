@@ -195,6 +195,8 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                     label={unreadLabel(unreadCount)}
                     size={16}
                     offset={4}
+                    // A ring of the page colour keeps the teal count apart from the teal avatar.
+                    withBorder
                     aria-hidden
                 >
                     <Avatar src={user.profilePic} name={user.name} alt="" size="md" self />
@@ -236,6 +238,8 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                                 href={link.href}
                                 label={link.label}
                                 active={pathname === link.href}
+                                // The current page: the salmon pill, as in the desktop nav.
+                                variant="filled"
                                 aria-current={pathname === link.href ? "page" : undefined}
                                 onClick={close}
                                 leftSection={<link.icon size={20} stroke={1.75} />}
