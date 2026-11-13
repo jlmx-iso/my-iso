@@ -8,6 +8,7 @@ import {
   reconnectDelay,
 } from "~/_utils/realtimeConnection";
 import { parseThreadMessageEvent, type ThreadMessage } from "~/_utils/threadMessages";
+import { CLOSE_ACCOUNT_DELETED } from "~/do/chatRoomPolicy";
 
 import { useLatestRef } from "./useLatestRef";
 
@@ -15,7 +16,8 @@ import { useLatestRef } from "./useLatestRef";
  * - `connecting`: first attempt in progress.
  * - `open`: receiving messages.
  * - `reconnecting`: the connection failed or dropped; retrying with backoff.
- * - `denied`: the server refused (signed out or not a participant); stopped.
+ * - `denied`: the server refused (signed out, not a participant, or the
+ *   account was deleted); stopped.
  * - `unavailable`: this deployment has no realtime endpoint; stopped.
  */
 export type RealtimeStatus =
@@ -124,10 +126,19 @@ export function useMessageWebSocket({
       };
 
       // A failed attempt fires `error` and then `close`; `close` handles both.
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         clearTimeout(handshakeTimer);
         if (disposed) return;
         socket = null;
+
+        // The account was deleted: no session will let it back in, so stop
+        // here instead of reconnecting to be refused. (An expired session,
+        // CLOSE_SESSION_EXPIRED, is retried: the session may have been
+        // renewed meanwhile, and the probe tells.)
+        if (event.code === CLOSE_ACCOUNT_DELETED) {
+          setStatus("denied");
+          return;
+        }
 
         if (opened) {
           scheduleReconnect();

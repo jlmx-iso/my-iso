@@ -8,8 +8,8 @@ enforced by CI, and it only moves up.
 
 | Check | Rule | Where | Blocks a merge |
 | --- | --- | --- | --- |
-| Coverage, global | lines 80%, branches 74%, functions 76%, statements 80% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
-| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 91 / 95 / 94, `src/server/_db` 96 / 91 / 100 / 95, `src/server/api/routers` 90 / 82 / 95 / 90, `src/server/_jobs` 100 / 96 / 100 / 98, `src/_lib` 99 / 95 / 98 / 99, `src/app/api` 100 / 96 / 100 / 99, `src/auth.ts` 100 / 93 / 100 / 100 | `coverage-thresholds.json` | yes |
+| Coverage, global | lines 92%, branches 86%, functions 90%, statements 91% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
+| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 91 / 95 / 94, `src/server/_db` 96 / 91 / 100 / 95, `src/server/api/routers` 90 / 82 / 95 / 90, `src/server/_jobs` 100 / 96 / 100 / 98, `src/_lib` 99 / 95 / 98 / 99, `src/app/api` 100 / 96 / 100 / 99, `src/auth.ts` 100 / 93 / 100 / 100; the UI: `src/app/_components` 88 / 78 / 82 / 86, `src/app/app` 89 / 83 / 87 / 88 | `coverage-thresholds.json` | yes |
 | Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
 | Coverage guard | no threshold lowered or removed, no file measured before left unmeasured, against the base branch, unless the pull request has the **`coverage-exception`** label | `scripts/coverage-guard.mjs` | yes |
 | Test bar guard | a pull request that changes a test-bar file (thresholds, coverage scope, the checks, workflows) needs the **`coverage-exception`** label; raising thresholds does not | `.github/workflows/test-bar-guard.yml` | yes, once required |
@@ -17,9 +17,10 @@ enforced by CI, and it only moves up.
 | Authorization matrix | **every tRPC procedure has a row** saying who may call it, and behaves as its row says | `src/server/api/authz.matrix.test.ts` | yes |
 | Mutation score | reported weekly, for a few critical modules | `stryker.config.mjs` | no |
 
-The global numbers were measured with the UI rework (PR #36), client
-route files in scope, and rendered tests for the top client components;
-the JSON file is the source of truth.
+The global numbers were last raised with DOM tests for the client pages
+and the messaging UI (sign-up, waitlist, bookings, notifications, search,
+the conversation list and the realtime socket hook); the JSON file is the
+source of truth.
 
 ### Rules for every change (agents included)
 
