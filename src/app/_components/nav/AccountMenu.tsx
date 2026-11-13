@@ -33,6 +33,7 @@ import { signOut } from "next-auth/react";
 import { useState } from "react";
 
 import { Avatar } from "~/app/_components/Avatar";
+import { ColorSchemeControl } from "~/app/_components/theme/ColorSchemeControl";
 
 import classes from "./AccountMenu.module.css";
 
@@ -78,6 +79,19 @@ function UnreadBadge({ count }: { count: number }) {
         <Badge size="sm" circle={count < 10} aria-label={`${count} unread`}>
             {unreadLabel(count)}
         </Badge>
+    );
+}
+
+/** System / Light / Dark, under a visible "Appearance" caption. */
+function AppearanceSection({ size }: { size: "xs" | "sm" }) {
+    return (
+        <Box px={size === "xs" ? "sm" : 0} py={size === "xs" ? 4 : 0}>
+            {/* The radio group carries the same name; the caption is for sighted users. */}
+            <Text size="xs" c="dimmed" mb={6} aria-hidden>
+                Appearance
+            </Text>
+            <ColorSchemeControl size={size} fullWidth />
+        </Box>
     );
 }
 
@@ -139,6 +153,8 @@ export function AccountDropdown({ user, unreadCount }: AccountMenuProps) {
                         />
                     ))}
                 </Box>
+                <Divider my={6} />
+                <AppearanceSection size="xs" />
                 <Divider my={6} />
                 <NavLink
                     component="button"
@@ -233,6 +249,8 @@ export function AccountDrawer({ user, unreadCount }: AccountMenuProps) {
                             />
                         ))}
                     </Box>
+                    <Divider />
+                    <AppearanceSection size="sm" />
                     <Divider />
                     <Button
                         variant="default"

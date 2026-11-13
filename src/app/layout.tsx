@@ -67,7 +67,7 @@ export const viewport: Viewport = {
   // The browser bar follows the colour scheme (dark: the body colour, dark.7).
   themeColor: [
     { color: "#ffffff", media: "(prefers-color-scheme: light)" },
-    { color: "#231f1e", media: "(prefers-color-scheme: dark)" },
+    { color: "#212328", media: "(prefers-color-scheme: dark)" },
   ],
 };
 
@@ -85,8 +85,10 @@ export default async function RootLayout({
   const optInRequired = await requestRequiresOptIn();
 
   return (
-    // Light or dark follows the visitor's system setting: ColorSchemeScript
-    // sets the attribute before the first paint. "light" is also in the
+    // Light or dark follows the visitor's choice (System, Light or Dark;
+    // ColorSchemeControl), kept in localStorage: ColorSchemeScript reads it
+    // and sets the attribute before the first paint, so <html> keeps
+    // suppressHydrationWarning for that attribute. "light" is also in the
     // server HTML because Mantine's colour variables hang off it: without
     // it, a page viewed with JavaScript off has no button or badge colours
     // (such a page is light).

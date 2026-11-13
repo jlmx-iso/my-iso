@@ -74,6 +74,7 @@ describe("the privacy policy", () => {
       "Delete account",
       "Deleted member",
       "iso_consent",
+      "mantine-color-scheme-value",
       "authjs.session-token",
       "iso_analytics_user",
       "Sign-in sessions end after 24 hours without use.",

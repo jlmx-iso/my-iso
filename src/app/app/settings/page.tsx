@@ -27,6 +27,7 @@ import { getPricingForRole } from "~/server/_utils/pricing";
 import { api } from "~/trpc/server";
 
 import AccountDataSettings from "./_components/AccountDataSettings";
+import AppearanceSettings from "./_components/AppearanceSettings";
 import CheckoutBanner from "./_components/CheckoutBanner";
 import PlanStatus from "./_components/PlanStatus";
 
@@ -161,6 +162,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           </SimpleGrid>
         </Stack>
 
+        <AppearanceSettings />
         <SupportCard isPro={isProUser} replyTo={user.email} />
         <AccountDataSettings
           confirmation={
