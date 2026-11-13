@@ -43,7 +43,7 @@ export type OidcStub = {
 
 type PendingCode = {
   claims: Record<string, unknown>;
-  codeChallenge: string | null;
+  codeChallenge: string;
   nonce: string | null;
   redirectUri: string;
   used: boolean;
@@ -102,7 +102,8 @@ ${hidden}
 
 /**
  * Starts the provider. Codes are single use and bound to the redirect URI
- * and PKCE challenge of their request; the client must authenticate with
+ * and PKCE (S256) challenge of their request, which every authorization
+ * request must carry; the client must authenticate with
  * its id and secret (HTTP Basic, as Auth.js does).
  */
 export async function startOidcStub(options: OidcStubOptions): Promise<OidcStub> {
@@ -121,8 +122,9 @@ export async function startOidcStub(options: OidcStubOptions): Promise<OidcStub>
     if (params.get("response_type") !== "code") return { error: "unsupported_response_type" };
     const redirectUri = params.get("redirect_uri");
     if (!redirectUri) return { error: "invalid_request" };
+    // PKCE is required, S256 only: Auth.js always sends it for Google.
     const challenge = params.get("code_challenge");
-    if (challenge && params.get("code_challenge_method") !== "S256") return { error: "invalid_request" };
+    if (!challenge || params.get("code_challenge_method") !== "S256") return { error: "invalid_request" };
 
     const email = consent.email.trim().toLowerCase();
     const code = randomBytes(16).toString("hex");
@@ -164,7 +166,7 @@ export async function startOidcStub(options: OidcStubOptions): Promise<OidcStub>
     if (!pending || pending.used || pending.redirectUri !== form.get("redirect_uri")) {
       return json(res, 400, { error: "invalid_grant" });
     }
-    if (pending.codeChallenge && s256(form.get("code_verifier") ?? "") !== pending.codeChallenge) {
+    if (s256(form.get("code_verifier") ?? "") !== pending.codeChallenge) {
       return json(res, 400, { error: "invalid_grant" });
     }
     pending.used = true;

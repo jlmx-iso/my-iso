@@ -385,8 +385,9 @@ cookie.
 
 `e2e/signin.spec.ts` drives a real Google sign-in instead: `serve.mjs` also
 starts a local OpenID provider on port 8789 (`src/test/helpers/oidcStub.ts`:
-discovery, a consent page, token with PKCE, a signed ID token, userinfo,
-JWKS) and points the Worker at it with `GOOGLE_OAUTH_ISSUER_URL`, a
+discovery, a consent page, a token endpoint that requires PKCE (S256) and
+client authentication, an RS256 ID token, userinfo, JWKS; Auth.js checks
+the ID token's claims, not its signature, on this token-endpoint path) and points the Worker at it with `GOOGLE_OAUTH_ISSUER_URL`, a
 test-only variable accepted for loopback addresses only and refused in a
 production deployment (`src/auth.config.ts`). The spec clicks "Sign in with
 Google" on `/login`, completes the consent and checks where it lands: an

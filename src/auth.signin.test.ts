@@ -6,6 +6,8 @@
 // discovery, authorize, token exchange, ID token checks, the callbacks, the
 // adapter, the session cookie.
 
+import { createHash } from "node:crypto";
+
 import { Auth } from "@auth/core";
 import type { AdapterUser } from "next-auth/adapters";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -622,5 +624,55 @@ describe("the signIn callback and the adapter", () => {
     await expect(
       createUser({ email: "anon@example.com", emailVerified: null, id: "x" }),
     ).resolves.toMatchObject({ firstName: "" });
+  });
+});
+
+describe("the OpenID stub itself", () => {
+  const basic = `Basic ${btoa(`${CLIENT.clientId}:${CLIENT.clientSecret}`)}`;
+
+  function consent(params: Record<string, string>) {
+    return fetch(new URL("/authorize", oidc.issuer), {
+      body: new URLSearchParams({
+        client_id: CLIENT.clientId,
+        email: "pkce@example.com",
+        given_name: "P",
+        redirect_uri: `${ORIGIN}/api/auth/callback/google`,
+        response_type: "code",
+        ...params,
+      }),
+      method: "POST",
+      redirect: "manual",
+    });
+  }
+
+  it("requires a PKCE challenge, S256 only", async () => {
+    const missing = await consent({});
+    expect(missing.status).toBe(400);
+    await expect(missing.json()).resolves.toEqual({ error: "invalid_request" });
+
+    const plain = await consent({ code_challenge: "abc", code_challenge_method: "plain" });
+    expect(plain.status).toBe(400);
+  });
+
+  it("refuses a code redeemed with the wrong verifier, or twice", async () => {
+    const verifier = "a-verifier-that-is-long-enough-for-pkce-0123456789";
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const redirect = await consent({ code_challenge: challenge, code_challenge_method: "S256" });
+    const code = new URL(redirect.headers.get("location") ?? "").searchParams.get("code") ?? "";
+    const redeem = (codeVerifier: string) =>
+      fetch(new URL("/token", oidc.issuer), {
+        body: new URLSearchParams({
+          code,
+          code_verifier: codeVerifier,
+          grant_type: "authorization_code",
+          redirect_uri: `${ORIGIN}/api/auth/callback/google`,
+        }),
+        headers: { authorization: basic },
+        method: "POST",
+      });
+
+    await expect((await redeem("wrong")).json()).resolves.toEqual({ error: "invalid_grant" });
+    expect((await redeem(verifier)).status).toBe(200);
+    await expect((await redeem(verifier)).json()).resolves.toEqual({ error: "invalid_grant" });
   });
 });
