@@ -7,7 +7,7 @@
 // (debounced). Loading, nothing found, errors and "Load more" are each said,
 // also to screen readers.
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,9 @@ import SearchPage from "./page";
 
 type Results = RouterOutputs["search"]["searchAll"];
 type SearchAll = NonNullable<NonNullable<TrpcHandlers["search"]>["searchAll"]>;
+
+/** The page waits this long after the last keystroke in the location field. */
+const LOCATION_DEBOUNCE_MS = 450;
 
 const USER = { firstName: "Bea", id: "bea", lastName: "Cole", profilePic: null };
 
@@ -192,17 +195,45 @@ describe("search page", () => {
     expect(filters.getAttribute("aria-expanded")).toBe("false");
     await userEvent.click(filters);
     expect(filters.getAttribute("aria-expanded")).toBe("true");
+    const location = screen.getByLabelText(/^Location/, { selector: "input" });
 
-    await userEvent.type(screen.getByLabelText(/^Location/, { selector: "input" }), "Austin");
-    expect(screen.getByRole("button", { name: "Filters (active)" })).toBeTruthy();
+    // The debounce runs on a fake clock: no waiting on real time. Keystrokes
+    // are change events (user-event's async wrapper waits on a real
+    // setTimeout, which a fake clock never fires).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const typed of ["A", "Au", "Aus", "Aust", "Austi", "Austin"]) {
+        fireEvent.change(location, { target: { value: typed } });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+      }
+      expect(screen.getByRole("button", { name: "Filters (active)" })).toBeTruthy();
+      expect(view.callsTo("search.searchAll")).toHaveLength(1);
 
-    await waitFor(
-      () => expect(view.callsTo("search.searchAll")).toContainEqual(expect.objectContaining({ location: "Austin", offset: 0 })),
-      { timeout: 2000 },
-    );
-    expect(await screen.findByText("Try a different spelling, or remove the location and date filters.")).toBeTruthy();
-    // One search for the whole word, not one per keystroke.
-    expect(view.callsTo("search.searchAll")).toHaveLength(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LOCATION_DEBOUNCE_MS - 101);
+      });
+      expect(view.callsTo("search.searchAll")).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      // Let the search answer and render.
+      for (let i = 0; i < 5; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+      }
+
+      // One search for the whole word, not one per keystroke.
+      const searches = view.callsTo("search.searchAll");
+      expect(searches).toHaveLength(2);
+      expect(searches[1]).toEqual(expect.objectContaining({ location: "Austin", offset: 0 }));
+      expect(screen.getByText("Try a different spelling, or remove the location and date filters.")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("asks for the end date before filtering by a date range", async () => {
