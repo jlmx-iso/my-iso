@@ -256,6 +256,13 @@ export const authConfig = {
       return true;
     },
   },
+  /**
+   * A refused or failed sign-in comes back to /login with Auth.js's error
+   * code (`?error=AccessDenied`, `OAuthAccountNotLinked`, `Configuration`,
+   * ...), which the login form explains. Without these, Auth.js sent people
+   * to its own unstyled /api/auth/error and /api/auth/signin pages.
+   */
+  pages: { error: "/login", signIn: "/login" },
   session: sessionConfig,
   debug: env.NODE_ENV === "development",
 } satisfies NextAuthConfig;

@@ -22,6 +22,8 @@ import type * as AuthModule from "./auth";
 
 const state = vi.hoisted(() => ({
   db: undefined as ExtendedPrismaClient | undefined,
+  /** A model whose every query fails, as when the database is unreachable. */
+  failing: undefined as string | undefined,
   inviteOnly: vi.fn<() => Promise<boolean | undefined>>(),
 }));
 
@@ -33,6 +35,9 @@ vi.mock("~/server/db", () => ({
       get(_target, prop) {
         if (prop === "then") return undefined;
         if (!state.db) throw new Error("test database not ready");
+        if (prop === state.failing) {
+          return new Proxy({}, { get: () => () => Promise.reject(new Error("database unavailable")) });
+        }
         return Reflect.get(state.db, prop) as unknown;
       },
     },
@@ -131,6 +136,7 @@ beforeEach(async () => {
   await raw.account.deleteMany();
   await raw.inviteCode.deleteMany();
   await raw.user.deleteMany();
+  state.failing = undefined;
   state.inviteOnly.mockReset();
   state.inviteOnly.mockResolvedValue(true);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -409,6 +415,39 @@ describe("Google sign-in through the OpenID stub", () => {
 
     expect(location(response)).toBe("/login?error=deletion_pending");
     await expect(testDb.raw.account.count()).resolves.toBe(0);
+  });
+
+  it("refuses an address Google has not verified, even a member's", async () => {
+    await createTestUser(testDb.db, { email: "member@example.com" });
+    const jar = new CookieJar();
+
+    const response = await signInWithGoogle(jar, { email: "member@example.com", emailVerified: false, givenName: "M" });
+
+    expect(location(response)).toBe("/login?error=AccessDenied");
+    await expect(testDb.raw.account.count()).resolves.toBe(0);
+    await expect(session(jar)).resolves.toBeNull();
+  });
+
+  it("does not attach Google to a member who signed up with an email code", async () => {
+    await createTestUser(testDb.db, { email: "coder@example.com" });
+
+    const response = await signInWithGoogle(new CookieJar(), { email: "coder@example.com", givenName: "Coder" });
+
+    expect(location(response)).toBe("/login?error=OAuthAccountNotLinked");
+    await expect(testDb.raw.account.count()).resolves.toBe(0);
+  });
+
+
+  it("sends a server-side failure to the sign-in page, not Auth.js's own error page", async () => {
+    await inviteAddress("unlucky@example.com");
+    state.failing = "account";
+    const jar = new CookieJar();
+
+    const response = await signInWithGoogle(jar, { email: "unlucky@example.com", givenName: "Unlucky" });
+
+    // The login form shows its generic "couldn't sign you in" for this code.
+    expect(location(response)).toBe("/login?error=Configuration");
+    await expect(session(jar)).resolves.toBeNull();
   });
 
   it("lets anyone sign up while the invite-only flag is off", async () => {
