@@ -395,7 +395,12 @@ invitee signed in on `/app` with its `User` and token-free `Account` rows
 and an account being deleted (a fixture `serve.mjs` writes) back on `/login`
 with the deletion message. The same provider runs in Vitest
 (`src/auth.signin.test.ts`), where the Auth.js handler runs with the app's
-configuration against SQLite. About 30 seconds after the build.
+configuration against SQLite. That handler is `Auth` from `@auth/core`, the
+one `next-auth` wraps (next-auth itself needs the Next.js runtime).
+`@auth/core` is a dev dependency pinned to the exact version `next-auth`
+pins, so the tests run the same copy as production and the lockfile keeps
+one: when `next-auth` is upgraded, set `@auth/core` to the version its
+`package.json` names, in the same change. About 30 seconds after the build.
 
 Chromium: Playwright's own (`npx playwright install chromium`), or one
 already on the machine at `/opt/pw-browsers/chromium` or `E2E_CHROMIUM_PATH`.
