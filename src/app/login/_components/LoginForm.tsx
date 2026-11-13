@@ -124,7 +124,7 @@ export default function LoginForm({ callbackUrl, signInRequired, authError }: Lo
       </Stack>
 
       {signInRequired && (
-        <Alert icon={<IconLock size={16} />} color="blue" mb="md" title="Sign in to continue">
+        <Alert icon={<IconLock size={16} />} color="teal" mb="md" title="Sign in to continue">
           You need to be signed in to see that page. We&apos;ll take you straight
           there afterwards.
         </Alert>

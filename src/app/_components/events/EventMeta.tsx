@@ -39,7 +39,7 @@ function Item({ icon: Icon, label, children, strong = false }: {
 }) {
     return (
         <Group component="li" gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-            <Icon size={16} aria-hidden style={{ flexShrink: 0, color: "var(--mantine-color-dimmed)" }} />
+            <Icon size={16} aria-hidden style={{ flexShrink: 0, color: "var(--iso-info)" }} />
             <Text size="sm" fw={strong ? 600 : 400} style={{ overflowWrap: "anywhere" }}>
                 <span className="sr-only">{label}: </span>
                 {children}

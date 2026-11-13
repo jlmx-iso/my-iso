@@ -106,7 +106,7 @@ export default function EventCard({ event, application, currentUserId, now }: Ev
                 >
                     <Button
                         variant="subtle"
-                        color="gray"
+                        color="teal"
                         size="compact-sm"
                         className="touch-target"
                         leftSection={<IconMessageCircle size={16} aria-hidden />}

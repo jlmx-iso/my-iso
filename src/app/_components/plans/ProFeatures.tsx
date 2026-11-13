@@ -28,7 +28,8 @@ export default function ProFeatures({ pricing }: ProFeaturesProps) {
                 // Wrapped lines keep normal spacing; the icon sits by the first line.
                 styles={LIST_STYLES}
                 icon={
-                    <ThemeIcon size={20} radius="xl" variant="light" color="orange">
+                    // Teal ticks, as the original plan cards had.
+                    <ThemeIcon size={20} radius="xl" variant="light" color="teal">
                         <IconCheck size={12} aria-hidden />
                     </ThemeIcon>
                 }

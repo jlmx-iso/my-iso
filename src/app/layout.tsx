@@ -25,6 +25,7 @@ import Toasts from "./_components/Toasts";
 import { requestRequiresOptIn } from "./_lib/consentRegion";
 import { SITE_DESCRIPTION, SITE_NAME, defaultOpenGraph } from "./_lib/siteMetadata";
 import { CSPostHogProvider } from './providers';
+import { THEME_COLOR } from "./theme/themeColor";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 
@@ -64,10 +65,11 @@ export const viewport: Viewport = {
   // Shrink the layout (not just the visual viewport) when the on-screen
   // keyboard opens, so the message composer stays in view.
   interactiveWidget: "resizes-content",
-  // The browser bar follows the colour scheme (dark: the body colour, dark.7).
+  // The browser bar follows the colour scheme (dark: the body colour, dark.7);
+  // a member's own choice is applied by ThemeColorSync.
   themeColor: [
-    { color: "#ffffff", media: "(prefers-color-scheme: light)" },
-    { color: "#231f1e", media: "(prefers-color-scheme: dark)" },
+    { color: THEME_COLOR.light, media: "(prefers-color-scheme: light)" },
+    { color: THEME_COLOR.dark, media: "(prefers-color-scheme: dark)" },
   ],
 };
 
@@ -85,8 +87,10 @@ export default async function RootLayout({
   const optInRequired = await requestRequiresOptIn();
 
   return (
-    // Light or dark follows the visitor's system setting: ColorSchemeScript
-    // sets the attribute before the first paint. "light" is also in the
+    // Light or dark follows the visitor's choice (System, Light or Dark;
+    // ColorSchemeControl), kept in localStorage: ColorSchemeScript reads it
+    // and sets the attribute before the first paint, so <html> keeps
+    // suppressHydrationWarning for that attribute. "light" is also in the
     // server HTML because Mantine's colour variables hang off it: without
     // it, a page viewed with JavaScript off has no button or badge colours
     // (such a page is light).

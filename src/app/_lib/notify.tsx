@@ -22,7 +22,7 @@ type Toast = {
 // information wait their turn ("status").
 const KINDS = {
   error: { autoClose: 9000, color: "red", icon: <IconExclamationMark size={18} aria-hidden />, role: "alert" },
-  info: { autoClose: 6000, color: "blue", icon: <IconInfoCircle size={18} aria-hidden />, role: "status" },
+  info: { autoClose: 6000, color: "teal", icon: <IconInfoCircle size={18} aria-hidden />, role: "status" },
   success: { autoClose: 4500, color: "teal", icon: <IconCheck size={18} aria-hidden />, role: "status" },
   // Something went through, but not all of it; or "slow down".
   warning: { autoClose: 8000, color: "tan", icon: <IconAlertTriangle size={18} aria-hidden />, role: "alert" },

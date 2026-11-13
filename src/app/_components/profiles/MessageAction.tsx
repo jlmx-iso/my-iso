@@ -8,7 +8,7 @@ import { api } from "~/trpc/server";
 type MessageActionProps = {
   /** The profile's owner. */
   userId: string;
-  /** Filled on a profile (its main action); "default" beside another action. */
+  /** A secondary action: the teal outline button (the salmon is for the main action). */
   variant?: ButtonProps["variant"];
 };
 
@@ -35,12 +35,12 @@ async function messagingOptions(userId: string): Promise<{ href: string } | { hr
  * not discoverable and the two have no match, booking or earlier message),
  * says so and how to connect, instead of a button that leads to an error.
  */
-export async function MessageAction({ userId, variant = "filled" }: MessageActionProps) {
+export async function MessageAction({ userId, variant = "outline" }: MessageActionProps) {
   const { href } = await messagingOptions(userId);
 
   if (href) {
     return (
-      <Button component={NextLink} href={href} size="sm" variant={variant} leftSection={<IconMessage size={16} />}>
+      <Button component={NextLink} href={href} size="sm" variant={variant} color="teal" leftSection={<IconMessage size={16} />}>
         Message
       </Button>
     );

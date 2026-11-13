@@ -110,8 +110,8 @@ export default function DailyViewsChart({ daily }: DailyViewsChartProps) {
                                 width={width}
                                 y={HEIGHT - barHeight}
                                 height={barHeight}
-                                // The active bar: orange.7 on white, orange.4 on the dark page (the accent-text token).
-                                fill={index === active ? "var(--iso-accent-text)" : "var(--mantine-color-orange-5)"}
+                                // Teal (information): the active bar in the info text colour, the others --iso-chart-bar.
+                                fill={index === active ? "var(--iso-info)" : "var(--iso-chart-bar)"}
                                 stroke="var(--mantine-color-body)"
                                 strokeWidth={GAP}
                                 vectorEffect="non-scaling-stroke"

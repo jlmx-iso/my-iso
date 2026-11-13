@@ -1,8 +1,8 @@
 /*
  * Toasts (see src/app/_lib/notify.tsx). A card lifted clearly off the page
  * (white in light mode, dark.6 in dark), with the kind carried by a filled
- * icon and a matching edge. Light: title 16.9:1, body text 7.6:1. Dark:
- * title 12.6:1, body text 8.5:1 (dark.0 and dark.1 on dark.6).
+ * icon and a matching edge. Light: title 17.0:1, body text 7.8:1. Dark:
+ * title 13.8:1, body text 10.7:1 (dark.0 and dark.1 on dark.6).
  */
 .root {
   align-items: flex-start;
@@ -12,8 +12,8 @@
   border-radius: var(--mantine-radius-md);
   background: var(--mantine-color-body);
   box-shadow:
-    0 14px 36px rgba(32, 28, 27, 0.2),
-    0 2px 8px rgba(32, 28, 27, 0.1);
+    0 14px 36px rgba(27, 28, 31, 0.2),
+    0 2px 8px rgba(27, 28, 31, 0.1);
 }
 
 :global(:root[data-mantine-color-scheme="dark"]) .root {

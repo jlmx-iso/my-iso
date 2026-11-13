@@ -65,7 +65,7 @@ export default function PlanStatus({ subscription, pricing }: PlanStatusProps) {
             <Group gap="sm">
               <Title order={2} size="h4">Current plan</Title>
               <Badge
-                color={isPro ? "orange" : "gray"}
+                color={isPro ? "tan" : "gray"}
                 variant={isPro ? "filled" : "light"}
                 size="lg"
                 leftSection={isPro ? <IconCrown size={14} aria-hidden /> : undefined}

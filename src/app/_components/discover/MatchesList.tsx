@@ -93,12 +93,12 @@ export default function MatchesList() {
                   <Group gap="xs" style={{ rowGap: 2 }}>
                     <Text fw={600} lineClamp={1}>{displayName}</Text>
                     {match.status === "matched" && timeLeft && (
-                      <Badge size="sm" variant="light" color={timeLeft === "Expired" ? "red" : "orange"}>
+                      <Badge size="sm" variant="light" color={timeLeft === "Expired" ? "red" : "purple"}>
                         {timeLeft}
                       </Badge>
                     )}
                     {match.status === "messaged" && (
-                      <Badge size="sm" variant="light" color="green">
+                      <Badge size="sm" variant="light" color="teal">
                         Messaged
                       </Badge>
                     )}

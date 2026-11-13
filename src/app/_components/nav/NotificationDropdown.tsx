@@ -113,7 +113,7 @@ export function NotificationDropdown({
                                     py="sm"
                                     w="100%"
                                     display="block"
-                                    bg={notification.isRead ? undefined : "orange.0"}
+                                    bg={notification.isRead ? undefined : "var(--iso-accent-surface)"}
                                     style={{ outlineOffset: -2 }}
                                 >
                                     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
@@ -141,7 +141,7 @@ export function NotificationDropdown({
                                                     aria-hidden
                                                     w={8}
                                                     h={8}
-                                                    bg="orange.6"
+                                                    bg="var(--iso-unread-bg)"
                                                     style={{ borderRadius: "50%" }}
                                                 />
                                             )}

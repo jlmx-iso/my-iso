@@ -1,45 +1,59 @@
-import { Button, DEFAULT_THEME, Drawer, FileInput, Modal, Notification, Rating, createTheme } from "@mantine/core";
+import { Alert, Button, DEFAULT_THEME, Drawer, FileInput, Indicator, Modal, Notification, Rating, Tabs, createTheme } from "@mantine/core";
 
 import colors, { black } from "./colors";
 import notificationClasses from "./Notification.module.css";
 import { headings } from "./typography";
+import { BRAND_SHADE, noticeVars, notificationColor, outlineButtonVars, variantColorResolver } from "./variants";
 
-// The theme follows the Mantine 9 colour model: filled controls use shade 6,
-// light variants are solid (shade 9 text on a shade 1 surface) and the default
-// radius is `md`. The palette in `colors.ts` is built around that model so
-// every variant meets WCAG AA.
+// The original ISO pastels are the brand colours in both schemes: filled
+// controls use shade 3 with dark text (autoContrast), and coloured text uses
+// a darker shade of the same scale. The variant rules are in variants.ts,
+// the palette in colors.ts, and every pairing is asserted in colors.test.ts.
 
 // `--font-inter` is the next/font variable set on <html> in the root layout.
 const fontFamily = `var(--font-inter), ${DEFAULT_THEME.fontFamily}`;
 
 const theme = createTheme({
+    // Dark text on every fill light enough to need it: all the pastels.
+    autoContrast: true,
     black,
     colors,
     components: {
-        Button: Button.extend({ defaultProps: { fw: 600 } }),
+        // Notices: a tinted panel on white, a raised navy panel with a coloured edge in dark mode.
+        Alert: Alert.extend({ vars: (theme, props) => noticeVars(props.color, props.variant, theme.primaryColor) }),
+        // Secondary (outline) buttons: the colour's text with a softer pastel edge.
+        Button: Button.extend({
+            defaultProps: { fw: 600 },
+            vars: (theme, props) => outlineButtonVars(props.color, props.variant, theme.primaryColor),
+        }),
         // Icon-only close/clear buttons need an accessible name.
         Drawer: Drawer.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
         FileInput: FileInput.extend({ defaultProps: { clearButtonProps: { "aria-label": "Remove file" } } }),
+        // Unread counts: teal (information), not the brand salmon.
+        Indicator: Indicator.extend({ defaultProps: { color: "teal" } }),
         Modal: Modal.extend({ defaultProps: { closeButtonProps: { "aria-label": "Close" } } }),
         // Toasts: one look for every kind, see Notification.module.css.
         Notification: Notification.extend({
             classNames: notificationClasses,
             defaultProps: { closeButtonProps: { "aria-label": "Dismiss notification" } },
-            // Shade 7: white icons on it are at least 4.5:1 for every colour.
-            vars: (theme, props) => ({
-                root: { "--notification-color": theme.colors[props.color ?? "orange"]?.[7] ?? theme.colors.orange[7] },
-            }),
+            // The colour's text shade: white icons on it are at least 4.5:1.
+            vars: (_theme, props) => ({ root: { "--notification-color": notificationColor(props.color) } }),
         }),
-        // Mantine's yellow stars are 1.6:1 against white.
-        Rating: Rating.extend({ defaultProps: { color: "tan" } }),
+        // Stars at 3:1 on white and on the dark page (--iso-rating, globals.css).
+        Rating: Rating.extend({ defaultProps: { color: "var(--iso-rating)" } }),
+        // The active tab's line in the accent text colour (the pastel is 2.4:1 on white).
+        Tabs: Tabs.extend({ defaultProps: { color: "var(--iso-accent-text)" } }),
     },
     fontFamily,
     // Labels and other "medium" text stay at 500; buttons are semi-bold.
     fontWeights: { medium: "500" },
+    // Every brand pastel is above it, so it carries dark text.
+    luminanceThreshold: 0.3,
     headings: { ...headings, fontFamily },
     primaryColor: "orange",
-    primaryShade: 6,
+    primaryShade: { dark: BRAND_SHADE, light: BRAND_SHADE },
     respectReducedMotion: true,
+    variantColorResolver,
 });
 
 export default theme;

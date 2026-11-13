@@ -45,7 +45,8 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
         style={{
           flex: 1,
           border: '1px solid var(--mantine-color-default-border)',
-          borderLeft: '3px solid var(--iso-accent-border)',
+          // Events are information: a teal edge (salmon is for the brand and the main action).
+          borderLeft: '3px solid var(--mantine-color-teal-filled)',
           borderRadius: event.image
             ? '0 0 var(--mantine-radius-md) var(--mantine-radius-md)'
             : 'var(--mantine-radius-md)',
@@ -80,7 +81,7 @@ export default function EventSearchCard({ event }: EventSearchCardProps) {
 
         <Group gap="md" mt="auto" pt={4}>
           <Group gap={4} wrap="nowrap">
-            <IconMessageCircle size={14} color="var(--mantine-color-dimmed)" aria-hidden />
+            <IconMessageCircle size={14} color="var(--iso-info)" aria-hidden />
             <Text size="xs" c="dimmed">
               {event._count.comments}<span className="sr-only"> comments</span>
             </Text>
