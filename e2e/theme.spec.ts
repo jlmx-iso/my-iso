@@ -30,7 +30,10 @@ test.beforeEach(async ({ context, page }) => {
     });
   });
   page.on("console", (message) => {
-    if (/hydrat|did not match|didn't match/i.test(message.text())) hydrationMessages.push(message.text());
+    // Production React reports a mismatch as a minified error (#418, #423, #425).
+    if (/hydrat|did not match|didn't match|react\.dev\/errors\/4(18|19|22|23|25)/i.test(message.text())) {
+      hydrationMessages.push(message.text());
+    }
   });
 });
 
