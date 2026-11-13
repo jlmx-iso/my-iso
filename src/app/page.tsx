@@ -303,7 +303,7 @@ function PricingPreviewSection() {
             radius="md"
             withBorder
             style={{
-              borderColor: "var(--iso-accent-border)",
+              borderColor: "var(--iso-pro-border)",
               background: "var(--iso-accent-surface)",
               height: "100%",
             }}
