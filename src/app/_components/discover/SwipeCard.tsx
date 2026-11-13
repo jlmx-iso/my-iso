@@ -133,8 +133,8 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                 zIndex: 10,
                 padding: "8px 16px",
                 borderRadius: 8,
-                border: "3px solid var(--mantine-color-teal-6)",
-                color: "var(--mantine-color-teal-6)",
+                border: "3px solid var(--iso-success-icon)",
+                color: "var(--iso-success-icon)",
                 fontWeight: 700,
                 fontSize: 24,
                 transform: "rotate(-15deg)",
@@ -184,7 +184,7 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
             <Group gap="lg">
               {photo.avgRating != null && (
                 <Group gap={4}>
-                  <IconStar size={14} color="var(--mantine-color-tan-6)" fill="var(--mantine-color-tan-6)" />
+                  <IconStar size={14} color="var(--iso-rating)" fill="var(--iso-rating)" />
                   <Text size="sm" fw={500}>{photo.avgRating.toFixed(1)}</Text>
                   <Text size="xs" c="dimmed">({photo.reviewCount})</Text>
                 </Group>
@@ -302,8 +302,8 @@ export default function SwipeCard({ user, onSwipe, isTop, disabled = false }: Sw
                       <IconStar
                         key={star}
                         size={16}
-                        color="var(--mantine-color-tan-6)"
-                        fill={star <= Math.round(photo.avgRating!) ? "var(--mantine-color-tan-6)" : "none"}
+                        color="var(--iso-rating)"
+                        fill={star <= Math.round(photo.avgRating!) ? "var(--iso-rating)" : "none"}
                       />
                     ))}
                   </Group>

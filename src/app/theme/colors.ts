@@ -1,14 +1,16 @@
 import { type MantineColorsTuple } from "@mantine/core";
 
 /**
- * Brand palette. Shade 6 of every colour is the "filled" shade and gives at
- * least 4.5:1 against white, so white-on-filled buttons, anchors, outline
- * buttons and coloured text all meet WCAG AA. Light variants pair shade 9
- * text with a shade 1 background (the Mantine 9 defaults). The ratios are
- * asserted in `colors.test.ts`.
+ * Brand palette: the original ISO colours. Shade 3 of each brand colour is
+ * the brand pastel (coral #e98f7b, sand #e9bd7b, teal #95cfc9, lavender
+ * #9b98c5) and is the filled shade in both schemes. Contrast comes from
+ * dark text on the pastel (`INK`, variants.ts), not from darker colours;
+ * coloured text on white uses a darker shade of the same scale
+ * (`TEXT_SHADE`, variants.ts). Every pairing is asserted in
+ * `colors.test.ts`.
  */
 const colors = {
-    // Replaces Mantine's blue, whose filled shade is 3.6:1 against white.
+    // Info notices and the focus ring.
     blue: [
         "#eef5fd",
         "#dbe9fa",
@@ -21,21 +23,21 @@ const colors = {
         "#144780",
         "#103965",
     ],
-    // Warm neutral. `dimmed` text is gray.6 and stays readable on white and on
-    // the tinted surfaces (gray.0/1, orange.0/1, teal.0).
+    // Neutral gray (light mode). Shade 6 is `dimmed` text and stays at
+    // 4.5:1 on white and on the tinted surfaces (gray.0/1, orange.0/1,
+    // teal.0, purple.0).
     gray: [
-        "#faf7f6",
-        "#f2edec",
-        "#e5dfde",
-        "#d1cac9",
-        "#b5adac",
-        "#8d8584",
-        "#6b6362",
-        "#57504f",
-        "#423c3b",
-        "#2c2827",
+        "#f8f9fa",
+        "#eef0f2",
+        "#e1e3e6",
+        "#ccced2",
+        "#adb0b5",
+        "#878a90",
+        "#5f6268",
+        "#4f5257",
+        "#3d3f43",
+        "#2a2b2e",
     ],
-    // Replaces Mantine's green, whose filled shade is 2.3:1 against white.
     green: [
         "#ebf9ef",
         "#d5f1dd",
@@ -48,20 +50,20 @@ const colors = {
         "#14572b",
         "#104422",
     ],
-    // Primary: warm coral. Shade 3 is the original brand pastel and is only
-    // for decoration (stripes, illustrations), never for text or controls.
+    // Primary: the original coral. Shade 3 (#e98f7b) is the brand salmon.
     orange: [
-        "#fff1ed",
-        "#ffe1d9",
-        "#fdc3b5",
-        "#f6a08b",
-        "#ee7f65",
-        "#e26345",
-        "#c9401d",
-        "#ad3516",
-        "#8f2c14",
-        "#742512",
+        "#ffede9",
+        "#fcdcd3",
+        "#f2b7a9",
+        "#e98f7b",
+        "#e16e53",
+        "#dd583a",
+        "#dc4d2c",
+        "#c43d1f",
+        "#af351a",
+        "#9a2a13",
     ],
+    // Lavender.
     purple: [
         "#f2f1f8",
         "#e0dfeb",
@@ -69,13 +71,12 @@ const colors = {
         "#9b98c5",
         "#7d78b4",
         "#6a64ab",
-        "#5a539f",
-        "#4c468b",
-        "#413c78",
-        "#353163",
+        "#615aa8",
+        "#514b93",
+        "#474384",
+        "#3c3975",
     ],
-    // Errors and destructive actions: a cooler crimson so it does not read as
-    // the brand coral.
+    // Errors and destructive actions: a crimson distinct from the coral.
     red: [
         "#fff0f1",
         "#ffdfe1",
@@ -88,25 +89,24 @@ const colors = {
         "#941c2a",
         "#761722",
     ],
-    // Ratings and tinted notices only (stars, `light` alerts and badges): shade
-    // 6 gives 3:1 against white for non-text UI. Not for filled controls: white
-    // text on it is below 4.5:1.
+    // Sand: ratings, Pro, and notices that ask for attention.
     tan: [
-        "#fff6e5",
-        "#fbe8c4",
-        "#f5d596",
-        "#eebf66",
-        "#e5a93d",
-        "#d49220",
-        "#b3740d",
-        "#946009",
-        "#784e08",
-        "#5c3c06",
+        "#fff5e4",
+        "#f1dbb9",
+        "#f2d4a9",
+        "#e9bd7b",
+        "#e2a953",
+        "#de9c3b",
+        "#dc962c",
+        "#c3821e",
+        "#ae7317",
+        // The original #986209 is 4.499:1 on gray.1, a hair under AA as
+        // text; one step darker, the same colour to the eye.
+        "#956008",
     ],
     // Dark mode surfaces and text: a near-neutral charcoal with a very slight
-    // cool tint, so the coral primary stands out rather than reading as
-    // brown (the warm gray is for light mode only). 0 text, 1 secondary
-    // text, 2 dimmed, 3 input borders and neutral tints, 4 borders, 5 raised
+    // cool tint, so the coral stands out rather than reading as brown. 0
+    // text, 1 secondary text, 2 dimmed, 3 input borders, 4 borders, 5 raised
     // surfaces and hover, 6 cards, 7 the page. Shade 5 is a touch darker
     // than an even step so dimmed text keeps 4.5:1 on it (colors.test.ts).
     dark: [
@@ -121,22 +121,22 @@ const colors = {
         "#18191d",
         "#111214",
     ],
-    // Accent.
+    // Success and confirmations.
     teal: [
-        "#e7faf7",
-        "#cff1ed",
-        "#a6dfd9",
-        "#7dccc4",
-        "#55b3aa",
-        "#369b92",
-        "#1d7a72",
-        "#17665f",
-        "#12534e",
-        "#0d403c",
+        "#e6fcf9",
+        "#d9f1ef",
+        "#b9e0dc",
+        "#95cfc9",
+        "#77c0b8",
+        "#62b7ae",
+        "#56b2a9",
+        "#449c93",
+        "#368b83",
+        "#1f7972",
     ],
 } satisfies Record<string, MantineColorsTuple>;
 
-/** Body text: a warm near-black. */
-export const black = "#201c1b";
+/** Body text, and the text on every pastel fill: a neutral near-black. */
+export const black = "#1b1c1f";
 
 export default colors;

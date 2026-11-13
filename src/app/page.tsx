@@ -70,7 +70,7 @@ function HeroSection() {
             span
             inherit
             variant="gradient"
-            // Tokens: orange.6 to .8 on white, orange.4 to .5 on the dark page (both at least 3:1, large text).
+            // The original coral gradient: orange.5 to .8 on white, the salmon orange.3 to .2 on the dark page (both at least 3:1, large text).
             gradient={{ from: "var(--iso-hero-from)", to: "var(--iso-hero-to)", deg: 135 }}
           >
             again
@@ -287,7 +287,7 @@ function PricingPreviewSection() {
             <Stack gap="xs" mb="lg">
               {FREE_PLAN.features.map((item) => (
                 <Group key={item} gap="xs" wrap="nowrap">
-                  <IconCheck size={16} color="var(--mantine-color-teal-6)" aria-hidden />
+                  <IconCheck size={16} color="var(--iso-success-icon)" aria-hidden />
                   <Text size="sm">{item}</Text>
                 </Group>
               ))}

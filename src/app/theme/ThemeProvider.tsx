@@ -3,28 +3,17 @@
 import { type CSSVariablesResolver, MantineProvider } from "@mantine/core";
 import { MotionConfig } from "motion/react";
 
-import { darkGrayVariables, darkLightVariables } from "./darkVariants";
 import theme from "./index";
+import { schemeVariables } from "./variants";
 
 /**
- * Overrides on top of Mantine's default variables: placeholder text and
- * input borders one shade darker than the defaults so they stay legible
- * (4.5:1 and 3:1 against white respectively). Dark mode uses Mantine's
- * defaults on the neutral `dark` palette (colors.ts), with `gray` moved onto
- * that palette too, checked in colors.test.ts.
+ * The palette's variant variables for each scheme (variants.ts): pastel
+ * fills with dark text, coloured text at shades that reach 4.5:1, notices,
+ * and the anchor, error and success colours. Checked in colors.test.ts.
  */
 const cssVariablesResolver: CSSVariablesResolver = () => ({
-    dark: {
-        // Light-variant surfaces that show on the dark page (darkVariants.ts).
-        ...darkLightVariables,
-        // `color="gray"` on the neutral dark scale, not the warm light gray.
-        ...darkGrayVariables,
-        // Purple's shade 4 is 4.1:1 on the dark page; shade 3 reads.
-        "--mantine-color-purple-text": "var(--mantine-color-purple-3)",
-    },
-    light: {
-        "--mantine-color-placeholder": "var(--mantine-color-gray-6)",
-    },
+    dark: schemeVariables("dark"),
+    light: schemeVariables("light"),
     variables: {},
 });
 

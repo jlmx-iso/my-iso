@@ -11,15 +11,15 @@ type ProBadgeProps = {
  * from client state.
  *
  * Read as "Pro member" (the visible "Pro" alone is ambiguous next to a
- * name); the crown is decorative. Light orange like the rest of the plan UI,
- * and small: a signal, not a headline.
+ * name); the crown is decorative. Sand, the brand's colour for Pro (a gold
+ * crown), and small: a signal, not a headline.
  */
 export function ProBadge({ size = "xs" }: ProBadgeProps) {
     return (
         <Badge
             size={size}
             variant="light"
-            color="orange"
+            color="tan"
             radius="sm"
             tt="none"
             leftSection={<IconCrown size={size === "xs" ? 10 : 12} aria-hidden />}

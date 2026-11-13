@@ -39,10 +39,11 @@ export default function DateTile({ date, timeZone, isPast = false }: DateTilePro
             <Text size="xs" fw={700} tt="uppercase" lh={1.2} c={isPast ? "dimmed" : "var(--mantine-primary-color-light-color)"}>
                 {day?.month ?? " "}
             </Text>
-            <Text fz={22} fw={700} lh={1.1}>
+            {/* On the brand surface (the pastel in dark mode) every line takes its text colour. */}
+            <Text fz={22} fw={700} lh={1.1} c={isPast ? undefined : "var(--mantine-primary-color-light-color)"}>
                 {day?.day ?? " "}
             </Text>
-            <Text size="xs" c="dimmed" lh={1.2}>
+            <Text size="xs" c={isPast ? "dimmed" : "var(--mantine-primary-color-light-color)"} lh={1.2}>
                 {day?.weekday ?? " "}
             </Text>
         </Paper>

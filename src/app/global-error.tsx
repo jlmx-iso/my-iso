@@ -29,8 +29,8 @@ export default function GlobalError({
       <body
         style={{
           alignItems: "center",
-          background: "#faf7f6",
-          color: "#201c1b",
+          background: "#f8f9fa",
+          color: "#1b1c1f",
           display: "flex",
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -43,7 +43,7 @@ export default function GlobalError({
         <main style={{ maxWidth: 440, textAlign: "center" }}>
           <p
             style={{
-              color: "#ad3516",
+              color: "#af351a",
               fontSize: 28,
               fontWeight: 800,
               letterSpacing: 2,
@@ -55,12 +55,12 @@ export default function GlobalError({
           <h1 style={{ fontSize: 26, lineHeight: 1.25, margin: "0 0 12px" }}>
             Something went wrong
           </h1>
-          <p style={{ color: "#6b6362", lineHeight: 1.6, margin: "0 0 24px" }}>
+          <p style={{ color: "#5f6268", lineHeight: 1.6, margin: "0 0 24px" }}>
             ISO hit an unexpected problem. It has been reported, and trying
             again usually fixes it.
           </p>
           {error.digest && (
-            <p style={{ color: "#6b6362", fontSize: 12, margin: "0 0 24px" }}>
+            <p style={{ color: "#5f6268", fontSize: 12, margin: "0 0 24px" }}>
               Reference: {error.digest}
             </p>
           )}
@@ -69,10 +69,10 @@ export default function GlobalError({
               type="button"
               onClick={reset}
               style={{
-                background: "#c9401d",
+                background: "#e98f7b",
                 border: 0,
                 borderRadius: 8,
-                color: "#ffffff",
+                color: "#1b1c1f",
                 cursor: "pointer",
                 fontSize: 16,
                 fontWeight: 600,
@@ -85,9 +85,9 @@ export default function GlobalError({
               href="/"
               prefetch={false}
               style={{
-                border: "1px solid #8d8584",
+                border: "1px solid #878a90",
                 borderRadius: 8,
-                color: "#201c1b",
+                color: "#1b1c1f",
                 fontSize: 16,
                 fontWeight: 600,
                 padding: "9px 20px",

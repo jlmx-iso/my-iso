@@ -136,7 +136,7 @@ function ReviewForm({
               onChange={(rating) => form.setFieldValue("rating", rating)}
               getSymbolLabel={(value) => `${value} star${value === 1 ? "" : "s"}`}
               emptySymbol={<IconStar size={32} color="var(--mantine-color-dimmed)" />}
-              fullSymbol={<IconStarFilled size={32} color="var(--mantine-color-tan-6)" />}
+              fullSymbol={<IconStarFilled size={32} color="var(--iso-rating)" />}
             />
           </Input.Wrapper>
 
