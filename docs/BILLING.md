@@ -311,7 +311,7 @@ A plan whose variable is empty cannot be bought: checkout answers "billing
 unavailable" and creates nothing at Stripe.
 
 Set them with `wrangler secret put <NAME>` (or as vars) for staging and
-production, in `.dev.vars` for `wrangler dev`, and in `.env.dev` for `next dev`;
+production, in `.dev.vars` for `wrangler dev`, and in `.env.dev` for `npm run dev`;
 `.env.example` and `.dev.vars.example` list them.
 
 ### Webhook endpoint
