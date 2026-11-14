@@ -14,6 +14,7 @@ import {
   ctaButton,
   smallText,
   ctaSection,
+  linkStyle,
 } from "./components/styles";
 
 type VerifyEmailProps = {
@@ -47,7 +48,7 @@ export function VerifyEmail({
         If the button doesn&apos;t work, copy and paste this link into your browser:
       </Text>
       <Text style={smallText}>
-        <Link href={verificationUrl} style={{ color: "#F97316", wordBreak: "break-all" }}>
+        <Link href={verificationUrl} style={{ ...linkStyle, wordBreak: "break-all" }}>
           {verificationUrl}
         </Link>
       </Text>

@@ -15,7 +15,7 @@ import {
   secondaryButton,
   signature,
   ctaSection,
-  colors,
+  divider,
 } from "./components/styles";
 
 type FirstEventEmailProps = {
@@ -43,7 +43,7 @@ export function FirstEventEmail({
         or want to organize a shoot, this is where it happens.
       </Text>
 
-      <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "24px 0" }} />
+      <Hr style={divider} />
 
       {/* Path A: Create an event */}
       <Text style={{ ...paragraph, fontWeight: "600", fontSize: "18px" }}>
@@ -60,7 +60,7 @@ export function FirstEventEmail({
         </Button>
       </Section>
 
-      <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "24px 0" }} />
+      <Hr style={divider} />
 
       {/* Path B: Browse events */}
       <Text style={{ ...paragraph, fontWeight: "600", fontSize: "18px" }}>

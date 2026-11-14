@@ -11,21 +11,12 @@ import {
   Text,
 } from "react-email";
 
+import { layout } from "./styles";
+
 type LayoutProps = {
   preview: string;
   children: React.ReactNode;
   unsubscribeUrl?: string;
-};
-
-const colors = {
-  orange: "#F97316",
-  orangeLight: "#FFF7ED",
-  gray100: "#F3F4F6",
-  gray400: "#9CA3AF",
-  gray500: "#6B7280",
-  gray700: "#374151",
-  gray900: "#111827",
-  white: "#FFFFFF",
 };
 
 export function Layout({ preview, children, unsubscribeUrl }: LayoutProps) {
@@ -33,30 +24,30 @@ export function Layout({ preview, children, unsubscribeUrl }: LayoutProps) {
     <Html>
       <Head />
       <Preview>{preview}</Preview>
-      <Body style={body}>
-        <Container style={container}>
+      <Body style={layout.body}>
+        <Container style={layout.container}>
           {/* Header */}
-          <Section style={header}>
-            <Text style={logo}>ISO</Text>
+          <Section style={layout.header}>
+            <Text style={layout.logo}>ISO</Text>
           </Section>
 
           {/* Content */}
-          <Section style={content}>{children}</Section>
+          <Section style={layout.content}>{children}</Section>
 
           {/* Footer */}
-          <Section style={footer}>
-            <Hr style={divider} />
-            <Text style={footerBrand}>ISO — The Photographer Network</Text>
-            <Text style={footerText}>
+          <Section style={layout.footer}>
+            <Hr style={layout.footerDivider} />
+            <Text style={layout.footerBrand}>ISO — The Photographer Network</Text>
+            <Text style={layout.footerText}>
               Built with care by Penny & Jordan Lamoreaux
             </Text>
             {unsubscribeUrl && (
-              <Text style={footerText}>
-                <Link href={unsubscribeUrl} style={unsubscribeLink}>
+              <Text style={layout.footerText}>
+                <Link href={unsubscribeUrl} style={layout.unsubscribeLink}>
                   Unsubscribe
                 </Link>{" "}
                 or{" "}
-                <Link href={unsubscribeUrl} style={unsubscribeLink}>
+                <Link href={unsubscribeUrl} style={layout.unsubscribeLink}>
                   manage email preferences
                 </Link>
               </Text>
@@ -67,72 +58,3 @@ export function Layout({ preview, children, unsubscribeUrl }: LayoutProps) {
     </Html>
   );
 }
-
-const body: React.CSSProperties = {
-  backgroundColor: colors.gray100,
-  fontFamily:
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-  margin: "0",
-  padding: "0",
-};
-
-const container: React.CSSProperties = {
-  maxWidth: "600px",
-  margin: "0 auto",
-  padding: "20px 0",
-};
-
-const header: React.CSSProperties = {
-  backgroundColor: colors.white,
-  borderRadius: "8px 8px 0 0",
-  padding: "32px 40px 24px",
-  textAlign: "center" as const,
-};
-
-const logo: React.CSSProperties = {
-  fontSize: "36px",
-  fontWeight: "800",
-  color: colors.orange,
-  letterSpacing: "-1px",
-  margin: "0",
-  padding: "0",
-};
-
-const content: React.CSSProperties = {
-  backgroundColor: colors.white,
-  padding: "0 40px 32px",
-};
-
-const footer: React.CSSProperties = {
-  backgroundColor: colors.white,
-  borderRadius: "0 0 8px 8px",
-  padding: "0 40px 32px",
-};
-
-// `borderTop`, not `borderColor`: Hr draws its line with its own borderTop
-// (#eaeaea), which a separate colour would not reliably replace.
-const divider: React.CSSProperties = {
-  borderTop: `1px solid ${colors.gray100}`,
-  margin: "0 0 24px",
-};
-
-const footerBrand: React.CSSProperties = {
-  fontSize: "14px",
-  fontWeight: "600",
-  color: colors.gray500,
-  textAlign: "center" as const,
-  margin: "0 0 4px",
-};
-
-const footerText: React.CSSProperties = {
-  fontSize: "12px",
-  color: colors.gray400,
-  textAlign: "center" as const,
-  margin: "0 0 4px",
-  lineHeight: "20px",
-};
-
-const unsubscribeLink: React.CSSProperties = {
-  color: colors.gray400,
-  textDecoration: "underline",
-};

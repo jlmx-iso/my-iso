@@ -35,12 +35,13 @@ function StarRating({ rating }: { rating: number }) {
         style={{
           display: "inline",
           fontSize: "24px",
-          color: i <= rating ? colors.yellow400 : colors.gray200,
+          // Filled or outlined, so the rating does not rest on colour alone.
+          color: i <= rating ? colors.proInk : colors.muted,
           margin: "0 2px",
           lineHeight: "1",
         }}
       >
-        &#9733;
+        {i <= rating ? "\u2605" : "\u2606"}
       </Text>
     );
   }

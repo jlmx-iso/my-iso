@@ -2,7 +2,7 @@ import { render } from "@react-email/render";
 import { Heading, Section, Text } from "react-email";
 
 import { Layout } from "./components/Layout";
-import { calloutBox, heading, paragraph, smallText } from "./components/styles";
+import { calloutBox, colors, heading, paragraph, smallText } from "./components/styles";
 
 type MobileOtpEmailProps = {
   code: string;
@@ -25,7 +25,7 @@ export function MobileOtpEmail({ code }: MobileOtpEmailProps) {
             letterSpacing: "12px",
             textAlign: "center",
             margin: "0",
-            color: "#F97316",
+            color: colors.brandInk,
           }}
         >
           {code}
