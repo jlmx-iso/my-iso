@@ -10,7 +10,7 @@ import { cspModeSchema } from "./cspModeSchema.js";
 //
 // `NEXT_PUBLIC_*` values are inlined into the JavaScript at build time, so
 // staging and production are separate builds. Everything else is read at
-// runtime (wrangler.toml `[vars]`, `wrangler secret put`, or `.env` locally).
+// runtime (wrangler.toml `[vars]`, `wrangler secret put`, or `.env.dev` locally).
 
 const appEnvironment = z.enum(["production", "staging", "development"]);
 

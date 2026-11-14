@@ -31,9 +31,9 @@ type ExtendedClient = ExtendedPrismaClient;
 let cachedClient: ExtendedClient | null = globalForPrisma.prisma ?? null;
 
 // Detect Cloudflare Workers: OpenNext defines this Symbol property on globalThis
-// at startup (before any module code). The .env file's DATABASE_URL gets baked
-// into next-env.mjs during build, so we can't rely on DATABASE_URL being absent
-// in Cloudflare — we must explicitly detect the runtime.
+// at startup (before any module code). A DATABASE_URL can still reach the
+// Worker (a `[vars]` entry, or an env file OpenNext bakes into next-env.mjs),
+// so we can't rely on it being absent in Cloudflare: detect the runtime.
 const isCloudflareWorker =
   Symbol.for("__cloudflare-context__") in
   (globalThis as Record<symbol, unknown>);
