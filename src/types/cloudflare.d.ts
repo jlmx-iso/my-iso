@@ -1,3 +1,5 @@
+import type { SendEmail } from "@cloudflare/workers-types";
+
 import type { ChatRoomNamespace } from "./chatRoom";
 
 declare global {
@@ -9,5 +11,7 @@ declare global {
    */
   interface CloudflareEnv {
     CHAT_ROOM?: ChatRoomNamespace;
+    /** Cloudflare Email Service (wrangler.toml `send_email`), src/server/_lib/email.ts. */
+    EMAIL?: SendEmail;
   }
 }

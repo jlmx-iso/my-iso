@@ -49,7 +49,7 @@ describe("src/env.js", () => {
   });
 
   it("no longer knows the variables that were removed", () => {
-    for (const gone of ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "NEXT_PUBLIC_POSTHOG_HOST", "POSTHOG_API_KEY"]) {
+    for (const gone of ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "NEXT_PUBLIC_POSTHOG_HOST", "POSTHOG_API_KEY", "RESEND_API_KEY"]) {
       expect(all).not.toContain(gone);
     }
   });

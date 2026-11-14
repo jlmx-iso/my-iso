@@ -18,9 +18,7 @@ vi.mock("~/app/_lib/posthog", () => ({
 }));
 
 describe("Auth.js configuration", () => {
-  it("offers exactly Google and the email-code provider, even with a mail API key", async () => {
-    // The removed magic-link provider used to appear whenever this was set.
-    vi.stubEnv("RESEND_API_KEY", "re_test_placeholder");
+  it("offers exactly Google and the email-code provider", async () => {
     vi.resetModules();
     const { authConfig } = await import("./auth");
 

@@ -67,7 +67,6 @@ export const env = createEnv({
     POSTHOG_HOST: process.env.POSTHOG_HOST,
     POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY,
     POSTHOG_PROJECT_ID: process.env.POSTHOG_PROJECT_ID,
-    RESEND_API_KEY: process.env.RESEND_API_KEY,
     STRIPE_API_BASE_URL: process.env.STRIPE_API_BASE_URL,
     STRIPE_FOUNDING_ANNUAL_PRICE_ID: process.env.STRIPE_FOUNDING_ANNUAL_PRICE_ID,
     STRIPE_FOUNDING_MONTHLY_PRICE_ID: process.env.STRIPE_FOUNDING_MONTHLY_PRICE_ID,
@@ -104,7 +103,8 @@ export const env = createEnv({
     CSP_MODE: cspModeSchema,
     // Local SQLite file for `next dev`. Unused on Cloudflare (D1 binding).
     DATABASE_URL: z.string().url().optional(),
-    // Sender of every transactional email.
+    // Sender of every transactional email (Cloudflare Email Service, through
+    // the EMAIL binding): an address on the domain onboarded to Email Sending.
     EMAIL_FROM: z.string().email(),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
@@ -125,8 +125,6 @@ export const env = createEnv({
     // Without them that deletion step is skipped and reported.
     POSTHOG_PERSONAL_API_KEY: z.string().optional(),
     POSTHOG_PROJECT_ID: z.string().regex(/^\d+$/).optional(),
-    // Optional: without a key no email is sent.
-    RESEND_API_KEY: z.string().optional(),
     // Local stand-in for the Stripe API (end-to-end runs only). Honoured only
     // for loopback addresses and refused outright in a production deployment,
     // see src/server/_billing/stripe.ts. Never set it on a deployed Worker.

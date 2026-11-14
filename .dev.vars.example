@@ -28,9 +28,10 @@ GOOGLE_CLIENT_SECRET=
 # empty otherwise.
 GOOGLE_OAUTH_ISSUER_URL=
 
-# ---- Email (Resend) ----------------------------------------------------------
+# ---- Email (Cloudflare Email Service) ----------------------------------------
+# `wrangler dev` simulates the EMAIL binding: nothing is delivered, and each
+# message is saved to a local file named in wrangler's output.
 EMAIL_FROM=noreply@example.com
-RESEND_API_KEY=
 # Where Pro support requests go; defaults to NEXT_PUBLIC_SUPPORT_EMAIL.
 SUPPORT_INBOX_EMAIL=
 

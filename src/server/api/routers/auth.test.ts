@@ -20,7 +20,11 @@ const mockSendEmail = vi.hoisted(() => vi.fn());
 
 vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
-vi.mock("~/server/_lib/email", () => ({ sendEmail: mockSendEmail }));
+vi.mock("~/server/_lib/email", () => ({
+  // As in email.ts (tested there): the service's code for a suppressed address.
+  isRecipientSuppressed: (error: unknown) => (error as { code?: string }).code === "E_RECIPIENT_SUPPRESSED",
+  sendEmail: mockSendEmail,
+}));
 vi.mock("~/server/_lib/emails", () => ({
   renderMobileOtpEmail: vi.fn(async ({ code }: { code: string }) => `<p>${code}</p>`),
 }));
@@ -126,6 +130,22 @@ describe("authRouter against SQLite", () => {
       // logged, not reported to the (unauthenticated) caller.
       expect(result).toEqual({ devCode: undefined, sent: true });
       expect(errorLog).toHaveBeenCalled();
+    });
+
+    it("does not report a suppressed recipient as an error", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      mockSendEmail.mockResolvedValue({
+        error: Object.assign(new Error("suppressed"), { code: "E_RECIPIENT_SUPPRESSED" }),
+        isErr: true,
+        isOk: false,
+      });
+
+      const result = await caller().requestMobileOtp({ email: EMAIL });
+      await flushBackgroundTasks();
+
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ devCode: undefined, sent: true });
+      expect(errorLog).not.toHaveBeenCalled();
     });
 
     it("never logs the email address or the code", async () => {

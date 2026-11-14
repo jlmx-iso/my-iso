@@ -84,7 +84,7 @@ describe("support.contact (priority support)", () => {
 
   it("says so, and where to write instead, when the email cannot be sent", async () => {
     await makePro(testDb.db, member.id);
-    sendEmail.mockResolvedValueOnce(Result.err(new Error("RESEND_API_KEY is not configured")) as never);
+    sendEmail.mockResolvedValueOnce(Result.err(new Error("Email is not configured")) as never);
 
     const error = await as(member).contact(request).catch((caught: unknown) => caught);
 

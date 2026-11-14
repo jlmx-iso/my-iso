@@ -1,4 +1,4 @@
-import type { D1Database, DurableObjectNamespace, Fetcher, RateLimit } from "@cloudflare/workers-types";
+import type { D1Database, DurableObjectNamespace, Fetcher, RateLimit, SendEmail } from "@cloudflare/workers-types";
 
 import type { ChatRoom } from "./src/do/ChatRoom";
 
@@ -6,6 +6,8 @@ export interface CloudflareEnv {
   ASSETS: Fetcher;
   CHAT_ROOM: DurableObjectNamespace<ChatRoom>;
   DB: D1Database;
+  /** Cloudflare Email Service (wrangler.toml `send_email`); simulated by `wrangler dev`. */
+  EMAIL: SendEmail;
   /** Admit counted page views (wrangler.toml `ratelimits`); absent off Cloudflare. */
   VIEW_ANON_LIMIT?: RateLimit;
   VIEW_COUNT_LIMIT?: RateLimit;

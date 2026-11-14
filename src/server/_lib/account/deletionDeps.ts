@@ -1,11 +1,11 @@
 // The real outside world for account deletion: Stripe, Cloudinary, the chat
-// rooms, PostHog and Resend. Tests pass their own DeletionDeps; these are
+// rooms, PostHog and Cloudflare Email Service. Tests pass their own DeletionDeps; these are
 // what the app and the job use.
 
 import { env } from "~/env";
 import { endBillingForClosedAccount } from "~/server/_billing/accountClosure";
 import { getStripe } from "~/server/_billing/stripe";
-import { sendEmail } from "~/server/_lib/email";
+import { emailBinding, sendEmail } from "~/server/_lib/email";
 import { renderAccountDeletedEmail } from "~/server/_lib/emails/account-deleted";
 
 import { deleteCloudinaryImages } from "./cloudinaryDelete";
@@ -13,9 +13,9 @@ import type { DeletionDeps } from "./deletion";
 import { erasePostHogPerson } from "./posthogErasure";
 import { revokeRealtimeAccess } from "./realtime";
 
-/** Whether the confirmation email can be sent at all (Resend configured). */
+/** Whether the confirmation email can be sent at all (the EMAIL binding exists). */
 export function canSendDeletionEmail(): boolean {
-  return Boolean(env.RESEND_API_KEY);
+  return emailBinding() !== null;
 }
 
 export const accountDeletionDeps: DeletionDeps = {

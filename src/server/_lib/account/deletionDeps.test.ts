@@ -8,8 +8,8 @@ vi.mock("~/server/_billing/stripe", async (importOriginal) => ({
   ...(await importOriginal<typeof StripeModule>()),
   getStripe: () => stripeRef.stub?.client,
 }));
-const email = vi.hoisted(() => ({ sendEmail: vi.fn() }));
-vi.mock("~/server/_lib/email", () => ({ sendEmail: email.sendEmail }));
+const email = vi.hoisted(() => ({ emailBinding: vi.fn((): unknown => null), sendEmail: vi.fn() }));
+vi.mock("~/server/_lib/email", () => email);
 vi.mock("~/server/_lib/emails/account-deleted", () => ({
   renderAccountDeletedEmail: vi.fn(async (props: { firstName: string; supportEmail: string }) =>
     `<p>${props.firstName} ${props.supportEmail}</p>`,
@@ -21,7 +21,6 @@ const envRef = vi.hoisted(() => ({
     CLOUDINARY_API_KEY: "key",
     CLOUDINARY_API_SECRET: "secret",
     CLOUDINARY_CLOUD_NAME: "test-cloud",
-    RESEND_API_KEY: undefined as string | undefined,
   },
 }));
 vi.mock("~/env", () => envRef);
@@ -88,10 +87,10 @@ describe("accountDeletionDeps", () => {
 });
 
 describe("canSendDeletionEmail", () => {
-  it("follows whether Resend is configured", () => {
-    envRef.env.RESEND_API_KEY = undefined;
+  it("follows whether the EMAIL binding exists", () => {
+    email.emailBinding.mockReturnValueOnce(null);
     expect(canSendDeletionEmail()).toBe(false);
-    envRef.env.RESEND_API_KEY = "re_test";
+    email.emailBinding.mockReturnValueOnce({ send: vi.fn() });
     expect(canSendDeletionEmail()).toBe(true);
   });
 });

@@ -23,7 +23,7 @@ export function supportSubject(subject: string): string {
 export const supportRouter = createTRPCRouter({
   /**
    * Priority support: a Pro member's message to the support inbox, by email
-   * (Resend), with "[Pro]" at the start of the subject. The email carries
+   * (Cloudflare Email Service), with "[Pro]" at the start of the subject. The email carries
    * the member's id, not their name or address; the team looks them up to
    * reply. Pro only (members without Pro use the public contact route), and
    * rate limited per member.
