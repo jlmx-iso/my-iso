@@ -7,8 +7,8 @@ import { config } from "dotenv";
 
 import { generateInviteCode } from "../src/server/_utils/invite";
 
-// Load .env file
-config();
+// Local development values (docs/DEPLOYMENT.md, "Local values").
+config({ path: ".env.dev", quiet: true });
 
 const rawUrl = process.env.DATABASE_URL ?? "file:./dev.db";
 

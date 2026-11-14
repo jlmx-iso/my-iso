@@ -79,10 +79,16 @@ Workers Builds the same values are set as Build variables instead.
 | `NEXT_PUBLIC_SUPPORT_EMAIL` | Optional. Address shown to people who need help (the contact page, the legal pages, the support page for members without Pro). | Your choice; defaults to `support@myiso.app` |
 | `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID`, `POSTHOG_CLI_HOST` | Optional. Source map upload, see below. Not part of the app. | PostHog > Personal API keys; Project settings |
 
-OpenNext copies the contents of `.env`, `.env.local` and `.env.production`
-into the Worker bundle as fallback values. The deploy script does not use
-those files and warns if they exist: keep secrets out of them on a machine
-that deploys.
+#### Local values
+
+OpenNext copies the contents of every env file Next.js loads (`.env`,
+`.env.local`, `.env.<mode>` and `.env.<mode>.local` for production,
+development and test) into the Worker bundle as fallback values, readable by
+anyone who can read the Worker's code. So none of those files is used: local
+development values live in `.env.dev` (from `.env.example`), which
+`npm run dev`, `npm run dev:wrangler` (`scripts/with-dev-env.mjs`) and
+Prisma load explicitly, and the
+deploy script stops if any of the bundled files exists.
 
 ### 2. Runtime variables: `wrangler.toml` `[vars]`
 
