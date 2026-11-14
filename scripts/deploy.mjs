@@ -14,9 +14,9 @@
 // each environment is its own build. Its build-time values come from
 // `.env.deploy.<environment>` (gitignored; docs/DEPLOYMENT.md), loaded here.
 // The name is deliberately not one Next.js loads by itself: OpenNext copies
-// the contents of `.env`, `.env.production` and `.env.local` into the Worker
-// bundle, and a deploy must not pick up one environment's values (or a
-// developer's secrets) through them.
+// the contents of every `.env*` file Next.js loads into the Worker bundle, and
+// a deploy must not pick up one environment's values (or a developer's
+// secrets) through them. The deploy stops if any of those files exists.
 //
 // Runtime configuration and secrets are not needed to build: they are read
 // when the Worker runs (wrangler.toml `[vars]`, `wrangler secret put`), and
@@ -92,13 +92,20 @@ if (!baseUrl.startsWith("https://")) {
   console.error(`NEXT_PUBLIC_BASE_URL must be the https origin of ${name}; got "${baseUrl}".`);
   process.exit(1);
 }
-for (const leftover of [".env", ".env.local", ".env.production", ".env.production.local"]) {
-  if (existsSync(path.join(repoRoot, leftover))) {
-    console.warn(
-      `Warning: ${leftover} exists. OpenNext copies its contents into the Worker bundle as ` +
-        "fallback values; make sure it holds nothing that must not ship.",
-    );
-  }
+// OpenNext copies every env file Next.js loads into the Worker bundle as
+// fallback values, for every mode (extract-project-env-vars.js in
+// @opennextjs/cloudflare). A developer's keys would ship with the deploy, so
+// refuse instead of warning. Local values belong in `.env.dev`.
+const BUNDLED_ENV_FILES = [".env", ".env.local"].concat(
+  ...["production", "development", "test"].map((mode) => [`.env.${mode}`, `.env.${mode}.local`]),
+);
+const bundled = BUNDLED_ENV_FILES.filter((file) => existsSync(path.join(repoRoot, file)));
+if (bundled.length > 0) {
+  console.error(
+    `Deploy to ${name} stopped: ${bundled.join(", ")} would be copied into the Worker bundle. ` +
+      "Move local values to .env.dev (docs/DEPLOYMENT.md, \"Local values\"). Nothing was changed.",
+  );
+  process.exit(1);
 }
 // Source maps are uploaded here and only here: for exactly the files this
 // run deploys (scripts/sourcemaps.mjs).

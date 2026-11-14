@@ -27,15 +27,18 @@ lists it (`npm install-scripts ls` shows any it skipped).
 
 ```sh
 npm ci
-cp .env.example .env        # fill in what you need; see docs/DEPLOYMENT.md
+cp .env.example .env.dev    # fill in what you need; see docs/DEPLOYMENT.md
 npm run db:push             # creates the SQLite file `next dev` uses
 npm run db:seed             # optional demo data
 npm run dev                 # http://localhost:3000
 ```
 
-`npm run dev` is plain `next dev` on Node with a SQLite file. To run the real
+`npm run dev` is plain `next dev` on Node with a SQLite file. Local values go
+in `.env.dev`, not `.env`: OpenNext copies `.env` into the Worker bundle, and
+a deploy refuses to run while one exists. To run the real
 thing, the built Worker on workerd with a local D1 (set
-`NEXT_PUBLIC_BASE_URL` and `AUTH_URL` to `http://localhost:8787` for this):
+`NEXT_PUBLIC_BASE_URL` in `.env.dev` and `AUTH_URL` in `.dev.vars` to
+`http://localhost:8787` for this):
 
 ```sh
 cp .dev.vars.example .dev.vars
