@@ -103,7 +103,7 @@ export function ImagePicker({ file, onChange, label, disabled, error, previewRad
           <Group justify="center" gap="md" mih={140} wrap="nowrap" style={{ pointerEvents: "none" }}>
             <Box c="dimmed" style={{ flexShrink: 0 }}>
               <Dropzone.Accept>
-                <IconUpload size={40} stroke={1.5} color="var(--mantine-color-teal-6)" aria-hidden />
+                <IconUpload size={40} stroke={1.5} color="var(--iso-success-icon)" aria-hidden />
               </Dropzone.Accept>
               <Dropzone.Reject>
                 <IconX size={40} stroke={1.5} color="var(--mantine-color-red-6)" aria-hidden />

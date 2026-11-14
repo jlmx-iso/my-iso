@@ -107,6 +107,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
         ["authjs.csrf-token, authjs.callback-url", "Protect and complete sign-in", "Always (needed)", "Until the browser closes"],
         ["authjs.state, authjs.pkce.code_verifier", "Complete sign-in with Google", "Only during a Google sign-in", "15 minutes"],
         ["iso_consent", "Remembers your privacy choice", "Once you choose", "6 months"],
+        ["mantine-color-scheme-value (localStorage)", "Remembers your appearance setting (System, Light or Dark); needed for the setting to work, so no consent is asked", "Once you choose an appearance", "Until you choose again or clear your browser's storage"],
         ["iso_views", "Counts your view of a profile or event once a day (Pro insights); holds no identity", "When you view one, unless you refused analytics (or have not yet accepted, where acceptance is needed)", "Until the end of the day (UTC)"],
         ["ph_<project>_posthog (cookie and localStorage)", "Analytics state", "Only after you accept analytics", "Up to 1 year, or until you withdraw consent"],
         ["iso_analytics_user (localStorage)", "Ends the analytics identity when you sign out", "Only after you accept analytics", "Until sign-out or withdrawal"],

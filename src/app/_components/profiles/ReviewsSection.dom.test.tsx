@@ -107,3 +107,49 @@ describe("review eligibility", () => {
     expect(screen.queryByRole("button", { name: "Post review" })).toBeNull();
   });
 });
+
+describe("reviews list", () => {
+  type ReviewPage = ReturnType<NonNullable<NonNullable<TrpcHandlers["review"]>["getPageByPhotographerId"]>>;
+
+  function review(id: string, title: string) {
+    return {
+      createdAt: new Date("2030-01-02T00:00:00Z"),
+      description: null,
+      id,
+      rating: 5,
+      title,
+      user: { firstName: "Bea", id: "bea", lastName: "Cole", profilePic: null },
+    };
+  }
+
+  it("keeps the reviews on screen when more fail to load, and says so under the button", async () => {
+    let failMore = true;
+    renderWithProviders(
+      <ReviewsSection photographerId="ph-1" photographerName="Ann Lee" viewer="owner" signInHref="/login?next=x" />,
+      {
+        trpc: {
+          review: {
+            getAverageRating: () => ({ average: 5, count: 2 }),
+            getPageByPhotographerId: (input) => {
+              if (!input.cursor) return { items: [review("rv-2", "Newest")], nextCursor: "rv-2" } as unknown as ReviewPage;
+              if (failMore) throw trpcError("INTERNAL_SERVER_ERROR", "Internal error");
+              return { items: [review("rv-1", "Oldest")], nextCursor: null } as unknown as ReviewPage;
+            },
+          },
+        },
+      },
+    );
+    await screen.findByText("Newest");
+
+    await userEvent.click(screen.getByRole("button", { name: "Load more reviews" }));
+
+    expect(await screen.findByText("We couldn't load more reviews. Please try again.")).toBeTruthy();
+    expect(screen.getByText("Newest")).toBeTruthy();
+    expect(screen.queryByText(/couldn't load reviews/)).toBeNull();
+
+    failMore = false;
+    await userEvent.click(screen.getByRole("button", { name: "Load more reviews" }));
+    expect(await screen.findByText("Oldest")).toBeTruthy();
+    expect(screen.getByText("Newest")).toBeTruthy();
+  });
+});

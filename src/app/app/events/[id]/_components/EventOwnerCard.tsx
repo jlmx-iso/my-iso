@@ -39,7 +39,7 @@ export default function EventOwnerCard({ event, isOwner, messageAction }: EventO
         >
             <Group justify="space-between" align="center" gap="md" wrap="wrap">
                 <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-                    <Avatar src={photographer.avatar} name={photographer.name} alt="" size="lg" />
+                    <Avatar src={photographer.avatar} name={photographer.name} alt="" size="lg" self={isOwner} />
                     <Stack gap={2} style={{ minWidth: 0 }}>
                         <Text size="xs" c="dimmed" id="event-owner-heading">
                             {isOwner ? "Your event" : "Lead photographer"}

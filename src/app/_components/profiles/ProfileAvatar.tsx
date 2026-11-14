@@ -119,7 +119,7 @@ function ChangePhotoButton() {
 export default function ProfileAvatar({ isSelf, avatar, name, size }: ProfileAvatarProps) {
     return (
         <Box pos="relative" w={size} h={size}>
-            <Avatar src={avatar} name={name} alt={`${name}'s profile photo`} size={size} />
+            <Avatar src={avatar} name={name} alt={`${name}'s profile photo`} size={size} self={isSelf} />
             {isSelf && <ChangePhotoButton />}
         </Box>
     );

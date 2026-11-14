@@ -12,6 +12,7 @@ import Image from "next/image";
 
 import PrivacyChoicesLink from "~/app/_components/consent/PrivacyChoicesLink";
 import { NextLink } from "~/app/_components/NextLink";
+import { ColorSchemeControl } from "~/app/_components/theme/ColorSchemeControl";
 
 import logo from "../../../public/img/logo.webp";
 
@@ -92,10 +93,17 @@ export function Footer() {
 
         <Divider mb="md" />
 
-        <Group justify="center">
+        <Group justify="space-between" gap="md">
           <Text size="xs" c="dimmed">
             &copy; {new Date().getFullYear()} ISO. All rights reserved.
           </Text>
+          <Group gap="xs" wrap="nowrap">
+            {/* The radio group carries the same name; the caption is for sighted users. */}
+            <Text size="xs" c="dimmed" aria-hidden>
+              Appearance
+            </Text>
+            <ColorSchemeControl size="xs" />
+          </Group>
         </Group>
       </Container>
     </Box>

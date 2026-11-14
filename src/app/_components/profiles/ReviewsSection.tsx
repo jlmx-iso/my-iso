@@ -136,7 +136,7 @@ function ReviewForm({
               onChange={(rating) => form.setFieldValue("rating", rating)}
               getSymbolLabel={(value) => `${value} star${value === 1 ? "" : "s"}`}
               emptySymbol={<IconStar size={32} color="var(--mantine-color-dimmed)" />}
-              fullSymbol={<IconStarFilled size={32} color="var(--mantine-color-tan-6)" />}
+              fullSymbol={<IconStarFilled size={32} color="var(--iso-rating)" />}
             />
           </Input.Wrapper>
 
@@ -233,7 +233,7 @@ export default function ReviewsSection({
           <Skeleton height={88} radius="md" />
           <Skeleton height={88} radius="md" />
         </Stack>
-      ) : reviews.isError ? (
+      ) : reviews.isError && loaded.length === 0 ? (
         <Alert color="red" icon={<IconAlertCircle size={16} />}>
           We couldn&apos;t load reviews.{" "}
           <Anchor component="button" type="button" onClick={() => void reviews.refetch()} inherit>

@@ -67,8 +67,8 @@ describe("ProfileHeader", () => {
     const role = screen.getByText("Photographer").closest(".mantine-Badge-root");
     expect(role).not.toBeNull();
     expect(role).not.toBe(badge);
-    // The crown badge is orange; the role chip is gray.
-    expect(badge.getAttribute("style") ?? "").toContain("orange");
+    // The crown badge is sand (the colour for Pro); the role chip is gray.
+    expect(badge.getAttribute("style") ?? "").toContain("tan");
     expect(role?.getAttribute("style") ?? "").toContain("gray");
   });
 

@@ -8,8 +8,8 @@ enforced by CI, and it only moves up.
 
 | Check | Rule | Where | Blocks a merge |
 | --- | --- | --- | --- |
-| Coverage, global | lines 72%, branches 66%, functions 69%, statements 72% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
-| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 90 / 95 / 93, `src/server/_db` 93 / 88 / 100 / 92, `src/server/api/routers` 86 / 76 / 90 / 85, `src/server/_jobs` 100 / 95 / 100 / 98, `src/_lib` 75 / 85 / 89 / 77 | `coverage-thresholds.json` | yes |
+| Coverage, global | lines 92%, branches 86%, functions 90%, statements 91% of everything under `src/` (see scope below) | `coverage-thresholds.json` | yes |
+| Coverage, critical code | higher per-directory floors (lines / branches / functions / statements): `src/server/_billing` 96 / 91 / 95 / 94, `src/server/_db` 96 / 91 / 100 / 95, `src/server/api/routers` 90 / 82 / 95 / 90, `src/server/_jobs` 100 / 96 / 100 / 98, `src/_lib` 99 / 95 / 98 / 99, `src/app/api` 100 / 96 / 100 / 99, `src/auth.ts` 100 / 93 / 100 / 100; the UI: `src/app/_components` 88 / 78 / 82 / 86, `src/app/app` 89 / 83 / 87 / 88 | `coverage-thresholds.json` | yes |
 | Diff coverage | at least **90%** of the executable lines a pull request adds or edits under `src/` (tests excluded) are run by the suite | `scripts/diff-coverage.mjs` | yes |
 | Coverage guard | no threshold lowered or removed, no file measured before left unmeasured, against the base branch, unless the pull request has the **`coverage-exception`** label | `scripts/coverage-guard.mjs` | yes |
 | Test bar guard | a pull request that changes a test-bar file (thresholds, coverage scope, the checks, workflows) needs the **`coverage-exception`** label; raising thresholds does not | `.github/workflows/test-bar-guard.yml` | yes, once required |
@@ -17,9 +17,10 @@ enforced by CI, and it only moves up.
 | Authorization matrix | **every tRPC procedure has a row** saying who may call it, and behaves as its row says | `src/server/api/authz.matrix.test.ts` | yes |
 | Mutation score | reported weekly, for a few critical modules | `stryker.config.mjs` | no |
 
-The global numbers were measured with the UI rework (PR #36), client
-route files in scope, and rendered tests for the top client components;
-the JSON file is the source of truth.
+The global numbers were last raised with DOM tests for the client pages
+and the messaging UI (sign-up, waitlist, bookings, notifications, search,
+the conversation list and the realtime socket hook); the JSON file is the
+source of truth.
 
 ### Rules for every change (agents included)
 
@@ -381,15 +382,37 @@ the sign-in page, the redirect of an anonymous visitor, and a signed-in
 member (the seeded Sarah Chen) loading the events feed and creating an
 event. The session is the encrypted JWT Auth.js would set after a sign-in,
 minted in the test with the server's placeholder `AUTH_SECRET` and set as a
-cookie. About 25 seconds after the build.
+cookie.
+
+`e2e/signin.spec.ts` drives a real Google sign-in instead: `serve.mjs` also
+starts a local OpenID provider on port 8789 (`src/test/helpers/oidcStub.ts`:
+discovery, a consent page, a token endpoint that requires PKCE (S256) and
+client authentication, an RS256 ID token, userinfo, JWKS; Auth.js checks
+the ID token's claims, not its signature, on this token-endpoint path) and points the Worker at it with `GOOGLE_OAUTH_ISSUER_URL`, a
+test-only variable accepted for loopback addresses only and refused in a
+production deployment (`src/auth.config.ts`). The spec clicks "Sign in with
+Google" on `/login`, completes the consent and checks where it lands: an
+invitee signed in on `/app` with its `User` and token-free `Account` rows
+(read from the local D1 file), an address without an invite on `/join`,
+and an account being deleted (a fixture `serve.mjs` writes) back on `/login`
+with the deletion message. The same provider runs in Vitest
+(`src/auth.signin.test.ts`), where the Auth.js handler runs with the app's
+configuration against SQLite. That handler is `Auth` from `@auth/core`, the
+one `next-auth` wraps (next-auth itself needs the Next.js runtime).
+`@auth/core` is a dev dependency pinned to the exact version `next-auth`
+pins, so the tests run the same copy as production and the lockfile keeps
+one: when `next-auth` is upgraded, set `@auth/core` to the version its
+`package.json` names, in the same change. About 30 seconds after the build.
 
 Chromium: Playwright's own (`npx playwright install chromium`), or one
 already on the machine at `/opt/pw-browsers/chromium` or `E2E_CHROMIUM_PATH`.
 Traces are off. CI runs this as the "End-to-end smoke" job, in parallel with
 the others.
 
-No real outbound calls. The browser may only reach the Worker under test:
-any other host is refused, and a test that tried one fails, naming it. The
+No real outbound calls. The browser may only reach the Worker under test
+(and, in the sign-in spec, the local OpenID provider, which `isolate()`
+accepts only on a loopback address): any other host is refused, and a test
+that tried one fails, naming it. The
 one Worker call a test could trigger, Google Places autocomplete (typing a
 location), is refused in the browser before it reaches the Worker, so the
 form's fallback (it keeps the typed text) is what runs. The rest is off by

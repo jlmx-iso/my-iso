@@ -48,7 +48,7 @@ export default function CheckoutBanner({ checkout, isSubscriptionActive }: Check
         </Alert>
       )}
       {state === "confirming" && (
-        <Alert mb="md" color="blue" icon={<Loader size={18} color="blue" />} title="Confirming your payment…">
+        <Alert mb="md" color="teal" icon={<Loader size={18} color="teal" />} title="Confirming your payment…">
           Thanks! We&apos;re activating Pro on your account. This usually takes a few seconds.
         </Alert>
       )}

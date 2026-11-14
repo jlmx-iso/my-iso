@@ -71,4 +71,24 @@ describe("POST /api/csp-report", () => {
       expect.objectContaining({ blocked: "https://evil.example/x.js", documentPath: "/app/events" }),
     );
   });
+
+  it("refuses an oversized or malformed report before any write", async () => {
+    const huge = new Request("https://myiso.app/api/csp-report", { body: "x".repeat(64 * 1024), method: "POST" });
+    await expect(POST(huge)).resolves.toHaveProperty("status", 413);
+
+    const garbled = new Request("https://myiso.app/api/csp-report", { body: "{not json", method: "POST" });
+    await expect(POST(garbled)).resolves.toHaveProperty("status", 400);
+
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.captureEvent).not.toHaveBeenCalled();
+  });
+
+  it("drops violations over the per-client limit without recording them", async () => {
+    mocks.checkRateLimit.mockResolvedValue({ allowed: false, remaining: 0, retryAfter: 60 });
+
+    const response = await POST(report({ ...probe, "blocked-uri": "https://evil.example/x.js" }));
+
+    expect(response.status).toBe(429);
+    expect(mocks.captureEvent).not.toHaveBeenCalled();
+  });
 });

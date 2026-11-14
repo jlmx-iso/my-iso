@@ -51,8 +51,8 @@
   border: 2px solid var(--mantine-color-body);
   border-radius: 10px;
   box-sizing: content-box;
-  background: var(--mantine-color-orange-7);
-  color: var(--mantine-color-white);
+  background: var(--iso-unread-bg);
+  color: var(--iso-unread-text);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;

@@ -21,6 +21,8 @@ export default function DiscoverPage() {
             component={NextLink}
             href="/app/discover/matches"
             variant="light"
+            // Lavender: Discover and people.
+            color="purple"
             size="sm"
             leftSection={<IconHeartHandshake size={18} />}
           >

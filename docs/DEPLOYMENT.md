@@ -135,13 +135,27 @@ Never set on a deployment:
 
 - `DATABASE_URL`: the Worker uses the D1 binding.
 - `ANTHROPIC_BASE_URL`: points the Anthropic SDK at a local stub.
+- `GOOGLE_OAUTH_ISSUER_URL`: points Google sign-in at a local OpenID
+  provider (the stub in `src/test/helpers/oidcStub.ts`, which the
+  end-to-end run starts) instead of `accounts.google.com`: discovery,
+  authorize, token, userinfo and keys all come from it. It must be unset in
+  staging and production. Outside production the app accepts only a
+  loopback address and throws for anything else. In a production deployment
+  (`APP_ENV` "production" or "staging", a live-mode Stripe key, or a
+  `NEXT_PUBLIC_BASE_URL` that is not this machine) it is ignored, so sign-in
+  keeps using Google, and logged once per Worker instance as an error
+  ("GOOGLE_OAUTH_ISSUER_URL ignored in production" in `wrangler tail`,
+  `src/auth.config.ts`; not sent to error tracking, to keep the PostHog
+  client out of the middleware). It is not thrown there: the middleware loads the
+  same module, so a throw would fail every page.
 - `STRIPE_API_BASE_URL`: sends every Stripe API call to a local stand-in
   (the stub in `src/test/helpers/stripeStub.ts`, or `stripe-mock`) instead
   of Stripe, for tests and for trying billing locally
   ([BILLING.md](BILLING.md), "Testing locally with the stub"). It must be
   unset in staging and production. The app accepts only a loopback address
-  and, in a production deployment (a live-mode key, or a
-  `NEXT_PUBLIC_BASE_URL` that is not this machine), refuses to build a
+  and, in a production deployment (`APP_ENV` "production" or "staging", a
+  live-mode key, or a `NEXT_PUBLIC_BASE_URL` that is not this machine),
+  refuses to build a
   Stripe client at all while it is set (`src/server/_billing/stripe.ts`):
   it cannot redirect real payments, but leaving it set breaks billing.
 

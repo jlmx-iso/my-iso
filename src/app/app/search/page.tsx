@@ -154,7 +154,8 @@ function Search() {
               <Group gap={4} wrap="nowrap" mr={4}>
                 <ActionIcon
                   variant={hasActiveFilters ? 'filled' : 'subtle'}
-                  color={hasActiveFilters ? undefined : 'gray'}
+                  // Selected filters are teal (status); the salmon is for Search.
+                  color={hasActiveFilters ? 'teal' : 'gray'}
                   onClick={toggleFilters}
                   size="lg"
                   className="touch-target"
@@ -219,6 +220,7 @@ function Search() {
             { label: `Events (${loadedCountLabel(eventCount, hasMore && events.hasMore)})`, value: 'events' },
           ]}
           size="sm"
+          color="teal"
           w={{ base: '100%', sm: 'fit-content' }}
         />
       )}

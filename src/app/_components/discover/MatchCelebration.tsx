@@ -41,8 +41,8 @@ export default function MatchCelebration({
     >
       <Stack align="center" gap="lg" pb="sm">
         <Group gap="lg" justify="center" wrap="nowrap" aria-hidden>
-          <Avatar src={currentUserAvatar} name="You" alt="" size={80} />
-          <IconHeartFilled size={36} color="var(--mantine-color-red-6)" />
+          <Avatar src={currentUserAvatar} name="You" alt="" size={80} self />
+          <IconHeartFilled size={36} color="var(--mantine-color-purple-text)" />
           <Avatar src={otherUserAvatar} name={otherUserName} alt="" size={80} />
         </Group>
 

@@ -49,7 +49,7 @@ export default async function Page({ params }: PageProps) {
             <EventDetail
                 initialEvent={event}
                 currentUserId={session?.user?.id ?? null}
-                messageAction={!isOwner && session?.user ? <MessageAction userId={event.photographer.userId} variant="default" /> : undefined}
+                messageAction={!isOwner && session?.user ? <MessageAction userId={event.photographer.userId} /> : undefined}
             />
         </>
     );

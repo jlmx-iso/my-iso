@@ -3,31 +3,27 @@
 import { type CSSVariablesResolver, MantineProvider } from "@mantine/core";
 import { MotionConfig } from "motion/react";
 
-import { darkLightVariables } from "./darkVariants";
 import theme from "./index";
+import { ThemeColorSync } from "./ThemeColorSync";
+import { schemeVariables } from "./variants";
 
 /**
- * Overrides on top of Mantine's default variables: placeholder text and
- * input borders one shade darker than the defaults so they stay legible
- * (4.5:1 and 3:1 against white respectively). Dark mode uses Mantine's
- * defaults on the warm `dark` palette (colors.ts), checked in colors.test.ts.
+ * The palette's variant variables for each scheme (variants.ts): pastel
+ * fills with dark text, coloured text at shades that reach 4.5:1, notices,
+ * and the anchor, error and success colours. Checked in colors.test.ts.
  */
 const cssVariablesResolver: CSSVariablesResolver = () => ({
-    dark: {
-        // Light-variant surfaces that show on the dark page (darkVariants.ts).
-        ...darkLightVariables,
-        // Purple's shade 4 is 4.1:1 on the dark page; shade 3 reads.
-        "--mantine-color-purple-text": "var(--mantine-color-purple-3)",
-    },
-    light: {
-        "--mantine-color-placeholder": "var(--mantine-color-gray-6)",
-    },
+    dark: schemeVariables("dark"),
+    light: schemeVariables("light"),
     variables: {},
 });
 
 /**
  * Client-side wrapper around MantineProvider. The colour scheme follows the
- * visitor's system setting (`auto`). The CSS variables resolver is a
+ * visitor's system setting (`auto`) until they choose Light or Dark
+ * (ColorSchemeControl). Mantine's default manager keeps the choice in
+ * localStorage under `mantine-color-scheme-value`, where the root layout's
+ * ColorSchemeScript reads it before the first paint. The CSS variables resolver is a
  * function, so it cannot be passed as a prop from the (server) root layout.
  * `MotionConfig` makes every `motion` animation honour the visitor's
  * reduced-motion preference.
@@ -35,6 +31,7 @@ const cssVariablesResolver: CSSVariablesResolver = () => ({
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return (
         <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
+            <ThemeColorSync />
             <MotionConfig reducedMotion="user">{children}</MotionConfig>
         </MantineProvider>
     );
