@@ -14,7 +14,7 @@ The app's domain is `myiso.app`; it is operated by MyISO, LLC
 | Realtime | A Durable Object per message thread (`src/do/ChatRoom.ts`) |
 | Auth | Auth.js v5: Google sign-in and emailed one-time codes; sign-up needs an invite |
 | Analytics, replay, flags, errors | PostHog, through a first-party proxy on the app's own origin |
-| Email | Resend |
+| Email | Cloudflare Email Service (the Worker's `send_email` binding) |
 | Images | Cloudinary |
 | Payments | Stripe |
 | AI | Claude (match summaries and icebreakers), optional |
@@ -48,8 +48,8 @@ npm run dev:wrangler        # builds, then `wrangler dev` on http://localhost:87
 ```
 
 Variables without a value switch their feature off where that is possible:
-no `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` means no analytics, no `RESEND_API_KEY`
-means no email is sent, no `ANTHROPIC_API_KEY` means no AI text.
+no `NEXT_PUBLIC_POSTHOG_PUBLIC_KEY` means no analytics, no `EMAIL` binding
+(plain `next dev`) means no email is sent, no `ANTHROPIC_API_KEY` means no AI text.
 
 ## Check your work
 

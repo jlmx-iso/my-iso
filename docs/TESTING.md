@@ -416,8 +416,9 @@ that tried one fails, naming it. The
 one Worker call a test could trigger, Google Places autocomplete (typing a
 location), is refused in the browser before it reaches the Worker, so the
 form's fallback (it keeps the typed text) is what runs. The rest is off by
-configuration in `e2e/serve.mjs`: no Resend or Anthropic key, Stripe never
-called by these pages, PostHog pointed at a closed local port, and
+configuration in `e2e/serve.mjs`: no Anthropic key, email only to
+`wrangler dev`'s local simulation of the `EMAIL` binding (nothing is
+delivered), Stripe never called by these pages, PostHog pointed at a closed local port, and
 `WRANGLER_SEND_METRICS=false`. `wrangler dev` has no option to block the
 Worker's own outbound requests, so a new test that makes the Worker call
 out must keep it from doing so the same way. A server already started with

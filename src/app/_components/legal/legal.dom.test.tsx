@@ -116,7 +116,14 @@ describe("the service providers list", () => {
     expect(container.textContent).toContain("Workers Logs");
     expect(container.textContent).toContain("independent controllers");
     expect(SUBPROCESSORS.map((processor) => processor.name)).toEqual(
-      expect.arrayContaining(["Cloudflare, Inc.", "PostHog, Inc.", "Stripe, Inc.", "Resend", "Cloudinary Ltd.", "Anthropic, PBC", "Google LLC", "Support mailbox"]),
+      expect.arrayContaining(["Cloudflare, Inc.", "PostHog, Inc.", "Stripe, Inc.", "Cloudinary Ltd.", "Anthropic, PBC", "Google LLC", "Support mailbox"]),
     );
+  });
+
+  it("names Cloudflare, not a separate provider, for the email ISO sends", () => {
+    const cloudflare = SUBPROCESSORS.find((processor) => processor.name === "Cloudflare, Inc.");
+    expect(cloudflare?.purpose).toContain("sending email (Email Service)");
+    expect(cloudflare?.data).toContain("content of each email");
+    expect(SUBPROCESSORS.map((processor) => processor.name)).not.toContain("Resend");
   });
 });
