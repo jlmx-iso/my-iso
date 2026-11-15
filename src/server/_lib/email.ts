@@ -107,10 +107,9 @@ export const sendEmail = async (
 ): Promise<Result<{ success: boolean }, SendEmailError>> => {
     if (!binding) {
         if (isLocalDevelopment()) {
-            // Development only: the subject can hold a sign-in code.
+            // Not the subject: it can hold a sign-in code or what a member typed.
             logger.info("Email not sent: no EMAIL binding in local development", {
                 recipient: await hashEmail(email),
-                subject,
             });
         }
         return Result.err(emailError(

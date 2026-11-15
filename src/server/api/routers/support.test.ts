@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SUPPORT_EMAIL } from "~/_lib/site";
+import { logger } from "~/_utils";
 import { Result } from "~/_utils/result";
+import { EMAIL_RECIPIENT_SUPPRESSED } from "~/server/_lib/email";
+import type * as EmailModule from "~/server/_lib/email";
 import { createDbCaller } from "~/test/helpers/dbCaller";
 import { makePro } from "~/test/helpers/pro";
 import { freezeRateLimitClock } from "~/test/helpers/rateLimitClock";
@@ -14,7 +17,10 @@ const { sendEmail } = vi.hoisted(() => ({
 vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
 vi.mock("~/_lib", () => ({ cloudinaryClient: null }));
-vi.mock("~/server/_lib/email", () => ({ sendEmail }));
+vi.mock("~/server/_lib/email", async (importOriginal) => ({
+  ...(await importOriginal<typeof EmailModule>()),
+  sendEmail,
+}));
 
 import { supportInbox, supportRouter, supportSubject } from "./support";
 
@@ -90,6 +96,20 @@ describe("support.contact (priority support)", () => {
 
     expect(error).toMatchObject({ code: "SERVICE_UNAVAILABLE" });
     expect((error as Error).message).toContain(SUPPORT_EMAIL);
+  });
+
+  it("logs a refused send as an error, but not a suppressed inbox", async () => {
+    await makePro(testDb.db, member.id);
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const suppressed = Object.assign(new Error("suppressed"), { code: EMAIL_RECIPIENT_SUPPRESSED });
+    sendEmail.mockResolvedValueOnce(Result.err(suppressed) as never);
+    sendEmail.mockResolvedValueOnce(Result.err(Object.assign(new Error("refused"), { code: "E_UNKNOWN" })) as never);
+
+    await expect(as(member).contact(request)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(errorLog).not.toHaveBeenCalled();
+    await expect(as(member).contact(request)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    errorLog.mockRestore();
   });
 });
 

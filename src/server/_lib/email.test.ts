@@ -199,13 +199,13 @@ describe("sendEmail", () => {
     expect(logged()).not.toContain("123456");
   });
 
-  it("in local development, logs the subject and a hash of the recipient", async () => {
+  it("in local development, logs only a hash of the recipient, never the subject", async () => {
     envRef.env.NODE_ENV = "development";
     const result = await sendEmail({ email: RECIPIENT, html: "<p>x</p>", subject: "123456 is your code" });
 
     expect(result.isErr && result.error.code).toBe(EMAIL_NOT_CONFIGURED);
     expect(logs.info).toHaveBeenCalledTimes(1);
-    expect(logged()).toContain("123456 is your code");
+    expect(logged()).not.toContain("123456");
     expect(String(logs.info.mock.calls[0]?.[0])).toMatch(/"recipient": "[0-9a-f]{32}"/);
     expect(logged()).not.toContain(RECIPIENT);
   });
