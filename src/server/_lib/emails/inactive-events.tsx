@@ -58,7 +58,7 @@ export function InactiveEventsEmail({
           <Button
             href={event.url}
             style={{
-              color: colors.orange,
+              color: colors.brandInk,
               fontSize: "14px",
               fontWeight: "600",
               textDecoration: "none",
@@ -67,7 +67,7 @@ export function InactiveEventsEmail({
             View Details &rarr;
           </Button>
           {index < events.length - 1 && (
-            <Hr style={{ borderTop: `1px solid ${colors.gray200}`, marginTop: "16px" }} />
+            <Hr style={{ borderTop: `1px solid ${colors.border}`, marginTop: "16px" }} />
           )}
         </Section>
       ))}
@@ -94,12 +94,12 @@ const eventCard: React.CSSProperties = {
 const eventTitle: React.CSSProperties = {
   fontSize: "16px",
   fontWeight: "600",
-  color: colors.gray900,
+  color: colors.ink,
   margin: "0 0 4px",
 };
 
 const eventDetail: React.CSSProperties = {
   fontSize: "14px",
-  color: colors.gray500,
+  color: colors.muted,
   margin: "0 0 8px",
 };

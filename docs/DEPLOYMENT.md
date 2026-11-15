@@ -106,8 +106,8 @@ secret, but they are yours to choose):
 | Variable | What it is for | Where to get it |
 | --- | --- | --- |
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
-| `EMAIL_FROM` | Sender of every transactional email. | An address on the domain verified in Resend |
-| `SUPPORT_INBOX_EMAIL` | Optional. Where Pro members' in-app support requests are sent (Settings > Support, or Help & support in the account menu), through Resend, with `[Pro]` at the start of the subject so the inbox can filter and prioritise them. The email carries the member's id, not their address: look them up by id to reply. Defaults to `NEXT_PUBLIC_SUPPORT_EMAIL`, then `support@myiso.app`. Needs `RESEND_API_KEY`. | An inbox the team reads |
+| `EMAIL_FROM` | Sender of every transactional email (see "4. Email" below). | An address on the domain onboarded to Cloudflare Email Sending |
+| `SUPPORT_INBOX_EMAIL` | Optional. Where Pro members' in-app support requests are sent (Settings > Support, or Help & support in the account menu), through the app's email (see "4. Email" below), with `[Pro]` at the start of the subject so the inbox can filter and prioritise them. The email carries the member's id, not their address: look them up by id to reply. Defaults to `NEXT_PUBLIC_SUPPORT_EMAIL`, then `support@myiso.app`. | An inbox the team reads |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
 | `CSP_MODE` | Optional. The Content-Security-Policy kill switch: `enforce` (the default) blocks what the policy does not allow; `report-only` blocks nothing and only reports. Violations are reported in both modes (`csp_violation` events). See "Content-Security-Policy" below. | Leave unset; `report-only` only to stop the policy breaking pages |
 | `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
@@ -124,7 +124,6 @@ wrangler secret put AUTH_SECRET --env=""        # production
 | `AUTH_SECRET` | Signs session tokens; also keys the hashes used for rate limiting and the internal job endpoint. Different per environment; at least 32 characters. Changing it signs everyone out. | `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in. | Google Cloud > Credentials > OAuth client |
 | `GOOGLE_PLACES_API_KEY` | Server-side Places lookups. | Google Cloud > Credentials |
-| `RESEND_API_KEY` | Sending email. Without it no email is sent, including sign-in codes. | Resend > API keys |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image uploads. | Cloudinary > Settings > API keys |
 | `STRIPE_SECRET_KEY` | Stripe API. | Stripe > Developers > API keys |
 | `STRIPE_WEBHOOK_SECRET` | Verifies Stripe webhooks. | Stripe > Webhooks > the endpoint's signing secret |
@@ -163,6 +162,47 @@ The app validates all of this when the Worker starts (`src/env.js`). With a
 required value missing, requests fail and `wrangler tail` shows
 `Invalid environment variables` with the names; `/api/health` is the quick
 check.
+
+### 4. Email: Cloudflare Email Service
+
+Every email (sign-in codes, waitlist and invite emails, the account-deleted
+confirmation, Pro support requests) is sent through Cloudflare Email
+Service's Email Sending, from the Worker's `send_email` binding `EMAIL`
+(`wrangler.toml`, both environments; `src/server/_lib/email.ts`). There is
+no API key. Email Sending is in beta and needs the Workers Paid plan.
+
+1. **Onboard the domain.** Cloudflare dashboard > Compute > Email Service >
+   Email Sending > Onboard Domain, and pick the sending domain. It must use
+   Cloudflare DNS; onboarding adds the SPF, DKIM and DMARC records (and
+   bounce MX records on a `cf-bounce` subdomain) itself.
+2. **`EMAIL_FROM`** in each `[vars]` block: an address on that domain.
+   Optionally restrict the binding to it with `allowed_sender_addresses`
+   (see the comment on `[[send_email]]` in `wrangler.toml`); the two must
+   then stay equal, or every send is refused.
+3. **Quota.** New accounts start with a conservative daily sending quota.
+   Before launch, ask Cloudflare for a higher limit (the Limit Increase
+   Request Form linked from the Email Service limits page).
+
+Until the domain is onboarded, sends fail with
+`E_SENDER_DOMAIN_NOT_AVAILABLE`: sign-in codes and account-deletion
+confirmations do not arrive. The one exception: if `EMAIL_FROM` is on a
+domain that already uses Email Routing, the binding can send from it to the
+account's verified destination addresses, which is enough to try staging
+with the team's own inboxes.
+
+Once the domain is onboarded, staging can email any real address too. To
+keep it to the team's inboxes, add `allowed_destination_addresses = [...]`
+to `[[env.staging.send_email]]` in `wrangler.toml` (addresses are not kept
+in the repository, so this is a choice for the deployment, not a default).
+
+When a send fails, the code Email Service returned (`E_...`) is logged with
+a keyed hash of the recipient, never the address. `E_RECIPIENT_SUPPRESSED`
+(the address bounced or complained before) is logged as a warning: nothing
+is broken, and that member gets no email until the address is removed from
+the suppression list in the dashboard. Locally, `wrangler dev` simulates the
+binding and delivers nothing (each message is saved to a file named in its
+output); under plain `next dev` there is no binding, nothing is sent, and the
+subject and a recipient hash are logged.
 
 ## Source maps
 
@@ -321,8 +361,9 @@ Do staging completely, then production.
 4. **Google OAuth.** In the OAuth client, add the redirect URI
    `https://<domain>/api/auth/callback/google` and the JavaScript origin
    `https://<domain>` for each environment.
-5. **Resend.** Verify the sending domain (DNS records), then use an address
-   on it for `EMAIL_FROM`.
+5. **Email.** Onboard the sending domain to Cloudflare Email Sending and
+   set `EMAIL_FROM` to an address on it (see "4. Email: Cloudflare Email
+   Service" under "Configuration" above).
 6. **Stripe.** Follow "Stripe dashboard setup" in [BILLING.md](BILLING.md):
    the product and its four prices, the webhook endpoint
    `https://<domain>/webhooks/stripe` with its pinned API version and the

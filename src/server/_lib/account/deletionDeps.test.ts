@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as StripeModule from "~/server/_billing/stripe";
+import type * as EmailModule from "~/server/_lib/email";
 import { buildSubscription, startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
 
 const stripeRef = vi.hoisted((): { stub: { client: unknown } | null } => ({ stub: null }));
@@ -8,8 +9,11 @@ vi.mock("~/server/_billing/stripe", async (importOriginal) => ({
   ...(await importOriginal<typeof StripeModule>()),
   getStripe: () => stripeRef.stub?.client,
 }));
-const email = vi.hoisted(() => ({ sendEmail: vi.fn() }));
-vi.mock("~/server/_lib/email", () => ({ sendEmail: email.sendEmail }));
+const email = vi.hoisted(() => ({ emailBinding: vi.fn((): unknown => null), sendEmail: vi.fn() }));
+vi.mock("~/server/_lib/email", async () => ({
+  ...email,
+  isRecipientSuppressed: (await vi.importActual<typeof EmailModule>("~/server/_lib/email")).isRecipientSuppressed,
+}));
 vi.mock("~/server/_lib/emails/account-deleted", () => ({
   renderAccountDeletedEmail: vi.fn(async (props: { firstName: string; supportEmail: string }) =>
     `<p>${props.firstName} ${props.supportEmail}</p>`,
@@ -21,7 +25,6 @@ const envRef = vi.hoisted(() => ({
     CLOUDINARY_API_KEY: "key",
     CLOUDINARY_API_SECRET: "secret",
     CLOUDINARY_CLOUD_NAME: "test-cloud",
-    RESEND_API_KEY: undefined as string | undefined,
   },
 }));
 vi.mock("~/env", () => envRef);
@@ -85,13 +88,24 @@ describe("accountDeletionDeps", () => {
       accountDeletionDeps.sendConfirmation({ email: "ann@example.com", firstName: "Ann" }),
     ).rejects.toThrow("no key");
   });
+
+  it("does not throw for a suppressed address: nothing is wrong on this side", async () => {
+    const suppressed = Object.assign(new Error("Email Service refused the message (E_RECIPIENT_SUPPRESSED)"), {
+      code: "E_RECIPIENT_SUPPRESSED",
+    });
+    email.sendEmail.mockResolvedValue({ error: suppressed, isErr: true, isOk: false });
+    await expect(
+      accountDeletionDeps.sendConfirmation({ email: "ann@example.com", firstName: "Ann" }),
+    ).resolves.toBeUndefined();
+    expect(email.sendEmail).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("canSendDeletionEmail", () => {
-  it("follows whether Resend is configured", () => {
-    envRef.env.RESEND_API_KEY = undefined;
+  it("follows whether the EMAIL binding exists", () => {
+    email.emailBinding.mockReturnValueOnce(null);
     expect(canSendDeletionEmail()).toBe(false);
-    envRef.env.RESEND_API_KEY = "re_test";
+    email.emailBinding.mockReturnValueOnce({ send: vi.fn() });
     expect(canSendDeletionEmail()).toBe(true);
   });
 });

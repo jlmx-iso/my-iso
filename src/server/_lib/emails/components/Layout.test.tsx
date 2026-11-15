@@ -21,7 +21,7 @@ describe("email layout", () => {
   it("draws the footer divider in the layout's colour, not Hr's default", async () => {
     const html = await render(<Layout preview="p"><p>Body</p></Layout>);
     const [footer] = dividers(html);
-    expect(footer).toContain("border-top:1px solid #F3F4F6");
+    expect(footer).toContain("border-top:1px solid #e1e3e6");
     expect(footer).not.toContain("#eaeaea");
   });
 });
@@ -36,7 +36,7 @@ describe("an email with dividers", () => {
     const lines = dividers(html);
     // Two in the body, one in the footer.
     expect(lines).toHaveLength(3);
-    for (const style of lines.slice(0, 2)) expect(style).toContain("border-top:1px solid #E5E7EB");
+    for (const style of lines.slice(0, 2)) expect(style).toContain("border-top:1px solid #e1e3e6");
     expect(html).toMatchSnapshot();
   });
 });

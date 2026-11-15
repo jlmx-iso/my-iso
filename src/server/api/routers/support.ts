@@ -5,7 +5,7 @@ import { SUPPORT_EMAIL } from "~/_lib/site";
 import { logger } from "~/_utils";
 import { SUPPORT_MESSAGE_MAX, SUPPORT_MESSAGE_MIN, SUPPORT_SUBJECT_MAX } from "~/_utils/limits";
 import { env } from "~/env";
-import { sendEmail } from "~/server/_lib/email";
+import { isRecipientSuppressed, sendEmail } from "~/server/_lib/email";
 import { renderSupportRequestEmail } from "~/server/_lib/emails";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createTRPCRouter, proProcedure, rateLimit } from "~/server/api/trpc";
@@ -23,7 +23,7 @@ export function supportSubject(subject: string): string {
 export const supportRouter = createTRPCRouter({
   /**
    * Priority support: a Pro member's message to the support inbox, by email
-   * (Resend), with "[Pro]" at the start of the subject. The email carries
+   * (Cloudflare Email Service), with "[Pro]" at the start of the subject. The email carries
    * the member's id, not their name or address; the team looks them up to
    * reply. Pro only (members without Pro use the public contact route), and
    * rate limited per member.
@@ -44,7 +44,10 @@ export const supportRouter = createTRPCRouter({
       const html = await renderSupportRequestEmail({ memberId, message: input.message, subject });
       const sent = await sendEmail({ email: supportInbox(), html, subject: supportSubject(subject) });
       if (sent.isErr) {
-        logger.error("Could not send a Pro support request", { error: sent.error, userId: memberId });
+        // A suppressed inbox is already logged as a warning by sendEmail.
+        if (!isRecipientSuppressed(sent.error)) {
+          logger.error("Could not send a Pro support request", { error: sent.error, userId: memberId });
+        }
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",
           message: `Your message could not be sent. Please email ${SUPPORT_EMAIL} instead.`,

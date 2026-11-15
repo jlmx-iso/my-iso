@@ -9,6 +9,7 @@ import {
   heading,
   paragraph,
   signature,
+  smallText,
 } from "./components/styles";
 
 type CheckInEmailProps = {
@@ -51,7 +52,7 @@ export function CheckInEmail({
       </Text>
 
       <Text style={signature}>— Penny & Jordan</Text>
-      <Text style={{ ...paragraph, fontSize: "13px", color: "#9CA3AF", marginTop: "4px" }}>
+      <Text style={{ ...smallText, marginTop: "4px" }}>
         P.S. — Yes, we really do read every reply. Try us.
       </Text>
     </Layout>

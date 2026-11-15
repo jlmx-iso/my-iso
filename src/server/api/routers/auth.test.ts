@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 import { issueOtp, OTP_MAX_ATTEMPTS } from "~/server/_db/verificationToken";
+import type * as EmailModule from "~/server/_lib/email";
+import type * as EmailTemplates from "~/server/_lib/emails";
 import { verifyMobileToken } from "~/server/_utils/auth/mobileToken";
 import { RateLimits } from "~/server/_utils/rateLimit";
 import { createDbCaller } from "~/test/helpers/dbCaller";
@@ -20,8 +22,12 @@ const mockSendEmail = vi.hoisted(() => vi.fn());
 
 vi.mock("~/server/db", () => ({ db: {} }));
 vi.mock("~/auth", () => ({ auth: vi.fn(async () => null) }));
-vi.mock("~/server/_lib/email", () => ({ sendEmail: mockSendEmail }));
-vi.mock("~/server/_lib/emails", () => ({
+vi.mock("~/server/_lib/email", async () => ({
+  isRecipientSuppressed: (await vi.importActual<typeof EmailModule>("~/server/_lib/email")).isRecipientSuppressed,
+  sendEmail: mockSendEmail,
+}));
+vi.mock("~/server/_lib/emails", async (importOriginal) => ({
+  ...(await importOriginal<typeof EmailTemplates>()),
   renderMobileOtpEmail: vi.fn(async ({ code }: { code: string }) => `<p>${code}</p>`),
 }));
 
@@ -48,6 +54,9 @@ describe("authRouter against SQLite", () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
+    // The OTP task imports the email modules lazily; load them here so that
+    // the first import does not outlast flushBackgroundTasks.
+    await import("~/server/_lib/email");
   });
 
   afterAll(async () => {
@@ -126,6 +135,22 @@ describe("authRouter against SQLite", () => {
       // logged, not reported to the (unauthenticated) caller.
       expect(result).toEqual({ devCode: undefined, sent: true });
       expect(errorLog).toHaveBeenCalled();
+    });
+
+    it("does not report a suppressed recipient as an error", async () => {
+      await createTestUser(testDb.db, { email: EMAIL });
+      mockSendEmail.mockResolvedValue({
+        error: Object.assign(new Error("suppressed"), { code: "E_RECIPIENT_SUPPRESSED" }),
+        isErr: true,
+        isOk: false,
+      });
+
+      const result = await caller().requestMobileOtp({ email: EMAIL });
+      await flushBackgroundTasks();
+
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ devCode: undefined, sent: true });
+      expect(errorLog).not.toHaveBeenCalled();
     });
 
     it("never logs the email address or the code", async () => {

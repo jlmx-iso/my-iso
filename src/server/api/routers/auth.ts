@@ -151,11 +151,13 @@ export const authRouter = createTRPCRouter({
       // Sent after the response, and a failure is only logged: a slower or
       // failing reply for addresses that exist would reveal which ones do.
       runAfterResponse("send-otp-email", async () => {
-        const { sendEmail } = await import("../../_lib/email");
+        const { isRecipientSuppressed, sendEmail } = await import("../../_lib/email");
         const { renderMobileOtpEmail } = await import("../../_lib/emails");
         const html = await renderMobileOtpEmail({ code });
         const emailResult = await sendEmail({ email, html, subject: `${code} is your ISO sign-in code` });
-        if (emailResult.isErr) {
+        // A suppressed address is the recipient's mailbox, not a fault here;
+        // sendEmail has logged it as a warning.
+        if (emailResult.isErr && !isRecipientSuppressed(emailResult.error)) {
           logger.error("Error sending OTP email", { error: emailResult.error });
         }
       });

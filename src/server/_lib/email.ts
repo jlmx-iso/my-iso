@@ -1,7 +1,22 @@
-import { Resend } from "resend";
+// Transactional email, sent through Cloudflare Email Service: the Worker's
+// `send_email` binding named EMAIL (wrangler.toml, docs/DEPLOYMENT.md,
+// "4. Email"). The binding is looked up per call, never held in the module.
+//
+// Without a binding (plain `next dev`, `next start`, unit tests) nothing is
+// sent and the caller gets an "email not configured" error, as before. In
+// local development only, the subject and a hash of the recipient are logged
+// so a developer can see what would have gone out. Under `wrangler dev` the
+// binding exists and is simulated by wrangler: nothing is delivered, and the
+// message is written to a local file it names in its output.
+
+import type { ExecutionContext, IncomingRequestCfProperties, SendEmail as EmailBinding } from "@cloudflare/workers-types";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { toPlainText } from "@react-email/render";
 
 import { Result, logger } from "~/_utils";
 import { env } from "~/env";
+import { isCloudflareRuntime } from "~/server/_utils/clientIp";
+import { hashEmail } from "~/server/_utils/hash";
 
 import {
     renderWelcomeEmail,
@@ -32,61 +47,98 @@ type SendEmail = {
     html: string;
 }
 
-type SendEmailError = Error & { errorCode?: number };
+/**
+ * Why a send failed. `code` is Email Service's error code (`E_...`, see
+ * https://developers.cloudflare.com/email-service/api/send-emails/workers-api/),
+ * or `E_NOT_CONFIGURED` when there is no binding. The message never contains
+ * the recipient's address.
+ */
+type SendEmailError = Error & { code?: string };
+
+export const EMAIL_NOT_CONFIGURED = "E_NOT_CONFIGURED";
 
 /**
- * Resend client - edge compatible email service
- *
- * SETUP REQUIRED:
- * 1. Sign up at https://resend.com
- * 2. Get your API key from dashboard
- * 3. Set RESEND_API_KEY environment variable
- * 4. Verify your sending domain (required for production)
- *
- * IMPACT IF NOT CONFIGURED:
- * - User registration will fail (can't send verification emails)
- * - Password reset won't work
- * - No transactional emails will be sent
- *
- * ALTERNATIVES:
- * - Implement admin-approval flow instead of email verification
- * - Use a different edge-compatible email service
- * - Disable email features temporarily for development
+ * The recipient is on the account's suppression list (an earlier hard bounce
+ * or complaint). Nothing about the app is broken and retrying will not help,
+ * so it is logged as a warning, not as a fault.
  */
-const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
+export const EMAIL_RECIPIENT_SUPPRESSED = "E_RECIPIENT_SUPPRESSED";
 
-/**
- * Send email using Resend (edge-compatible)
- * Migrated from Postmark for Cloudflare Workers compatibility
- *
- * @returns Result.ok if sent successfully, Result.err if RESEND_API_KEY not set or send fails
- */
-export const sendEmail = async ({ email, subject, html }: SendEmail): Promise<Result<{ success: boolean }, SendEmailError>> => {
+/** True when `error` says the recipient is suppressed (see above). */
+export function isRecipientSuppressed(error: unknown): boolean {
+    return error instanceof Error && (error as SendEmailError).code === EMAIL_RECIPIENT_SUPPRESSED;
+}
+
+/** The EMAIL binding, or null where there is none (`next dev`, tests). */
+export function emailBinding(): EmailBinding | null {
     try {
-        if (!resend) {
-            const error = new Error(
-                "RESEND_API_KEY is not configured. " +
-                "Email functionality is disabled. " +
-                "See src/server/_lib/email.ts for setup instructions."
-            ) as SendEmailError;
-            return Result.err(error);
+        return getCloudflareContext<IncomingRequestCfProperties, ExecutionContext>().env.EMAIL ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function emailError(message: string, code: string): SendEmailError {
+    return Object.assign(new Error(message), { code });
+}
+
+/** Email Service's code on a thrown error, if it has one. */
+function errorCode(error: unknown): string | undefined {
+    if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+    const { code } = error;
+    return typeof code === "string" && /^E_[A-Z_]+$/.test(code) ? code : undefined;
+}
+
+function isLocalDevelopment(): boolean {
+    return env.NODE_ENV === "development" && !isCloudflareRuntime();
+}
+
+/**
+ * Sends one email, HTML with a plain-text part derived from it.
+ *
+ * @returns Result.ok when Email Service accepted the message; Result.err
+ * when there is no binding, or with the service's error code when it refused
+ * the message. Throws only if the HTML cannot be turned into text, which
+ * is a bug here, not a refusal by the service.
+ */
+export const sendEmail = async (
+    { email, subject, html }: SendEmail,
+    binding: EmailBinding | null = emailBinding(),
+): Promise<Result<{ success: boolean }, SendEmailError>> => {
+    if (!binding) {
+        if (isLocalDevelopment()) {
+            // Not the subject: it can hold a sign-in code or what a member typed.
+            logger.info("Email not sent: no EMAIL binding in local development", {
+                recipient: await hashEmail(email),
+            });
         }
+        return Result.err(emailError(
+            "Email is not configured: there is no EMAIL send_email binding (docs/DEPLOYMENT.md).",
+            EMAIL_NOT_CONFIGURED,
+        ));
+    }
 
-        const response = await resend.emails.send({
-            from: env.EMAIL_FROM,
-            to: email,
-            subject: subject,
-            html: html,
-        });
-
-        if (response.error) {
-            const error = new Error(response.error.message) as SendEmailError;
-            return Result.err(error);
-        }
-
+    // Outside the try below: a failure here is not Email Service's, and
+    // reaches the caller as itself (sendTemplateEmail returns it).
+    const text = toPlainText(html);
+    try {
+        await binding.send({ from: env.EMAIL_FROM, html, subject, text, to: email });
         return Result.ok({ success: true });
     } catch (error: unknown) {
-        return Result.err(error as Error);
+        // The service's own message can name the address: keep only its code
+        // (and, without one, the error's name, never its message).
+        const code = errorCode(error) ?? "E_UNKNOWN";
+        const metadata = {
+            code,
+            recipient: await hashEmail(email),
+            ...(code === "E_UNKNOWN" && { errorName: error instanceof Error ? error.name : typeof error }),
+        };
+        if (code === EMAIL_RECIPIENT_SUPPRESSED) {
+            logger.warn("Email not sent: the recipient is suppressed", metadata);
+        } else {
+            logger.error("Email Service refused a message", metadata);
+        }
+        return Result.err(emailError(`Email Service refused the message (${code})`, code));
     }
 }
 
@@ -94,8 +146,7 @@ export const sendEmail = async ({ email, subject, html }: SendEmail): Promise<Re
 // Template registry — maps template names to their render functions
 // ---------------------------------------------------------------------------
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const templateRenderers: Record<string, (props: any) => Promise<string>> = {
+const templateRenderers = {
     welcome: renderWelcomeEmail,
     "verify-email": renderVerifyEmail,
     "complete-profile": renderCompleteProfileEmail,
@@ -116,53 +167,59 @@ const templateRenderers: Record<string, (props: any) => Promise<string>> = {
     "invite-friends": renderInviteFriendsEmail,
     "waitlist-approved": renderWaitlistApprovedEmail,
     "waitlist-confirmation": renderWaitlistConfirmationEmail,
-};
-/* eslint-enable @typescript-eslint/no-explicit-any */
+} satisfies Record<string, (props: never) => Promise<string>>;
 
 export type TemplateName = keyof typeof templateRenderers;
 
-type SendTemplateEmail = {
+/** The props the template `T` renders with. */
+export type TemplateProps<T extends TemplateName> = Parameters<(typeof templateRenderers)[T]>[0];
+
+function isTemplateName(name: string): name is TemplateName {
+    return Object.hasOwn(templateRenderers, name);
+}
+
+type SendTemplateEmail<T extends TemplateName> = {
     email: string;
     subject: string;
-    template: string;
-    props: Record<string, unknown>;
+    template: T;
+    props: TemplateProps<T>;
 };
 
 /**
  * Send a template-based email using React Email templates.
  *
- * Renders the specified template with the given props, then sends
- * via the existing Resend transport.
+ * Renders the specified template with the given props, then sends it with
+ * `sendEmail`.
  *
  * @param email     - Recipient email address
  * @param subject   - Email subject line
  * @param template  - Template name (e.g. "welcome", "booking-applied")
- * @param props     - Props to pass to the React Email template component
+ * @param props     - Props of that template
  *
  * @returns Result.ok if sent, Result.err on render or send failure
  */
-export const sendTemplateEmail = async ({
+export const sendTemplateEmail = async <T extends TemplateName>({
     email,
     subject,
     template,
     props,
-}: SendTemplateEmail): Promise<Result<{ success: boolean }, SendEmailError>> => {
+}: SendTemplateEmail<T>): Promise<Result<{ success: boolean }, SendEmailError>> => {
+    // Checked at run time too: a name can come from untyped data (drip steps).
+    const name: string = template;
+    if (!isTemplateName(name)) {
+        return Result.err(new Error(
+            `Unknown email template: "${name}". ` +
+            `Available templates: ${Object.keys(templateRenderers).join(", ")}`
+        ));
+    }
     try {
-        const renderer = templateRenderers[template];
-        if (!renderer) {
-            const error = new Error(
-                `Unknown email template: "${template}". ` +
-                `Available templates: ${Object.keys(templateRenderers).join(", ")}`
-            ) as SendEmailError;
-            return Result.err(error);
-        }
-
+        // TypeScript cannot relate the lookup to T; `props` is typed by it.
+        const renderer = templateRenderers[template] as (props: TemplateProps<T>) => Promise<string>;
         logger.debug("Rendering email template", { template });
         const html = await renderer(props);
-
-        return sendEmail({ email, subject, html });
+        return await sendEmail({ email, subject, html });
     } catch (error: unknown) {
         logger.error("Failed to render email template", { error, template });
-        return Result.err(error as Error);
+        return Result.err(error instanceof Error ? error : new Error(String(error)));
     }
 };

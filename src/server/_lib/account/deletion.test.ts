@@ -301,7 +301,7 @@ describe("runAccountDeletion, interrupted and resumed", () => {
     const { member } = await seedAccount(testDb.db);
     await requestAccountDeletion(testDb.db, member.id);
     const deps = fakeDeps();
-    deps.sendConfirmation.mockRejectedValueOnce(new Error("Resend is down"));
+    deps.sendConfirmation.mockRejectedValueOnce(new Error("email service unavailable"));
     await expect(runAccountDeletion(testDb.db, member.id, deps)).resolves.toBe("finished");
     const row = await testDb.raw.user.findUniqueOrThrow({ where: { id: member.id } });
     expect(row.deletedAt).not.toBeNull();

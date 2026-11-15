@@ -26,7 +26,7 @@ const confirmLater = "as set out in the provider's terms";
  */
 export const SUBPROCESSORS: Subprocessor[] = [
   {
-    data: "Everything ISO stores (the database, uploaded files in transit), every request including IP addresses, server logs (Workers Logs) and rate-limiting counters at the edge.",
+    data: "Everything ISO stores (the database, uploaded files in transit), every request including IP addresses, server logs (Workers Logs), rate-limiting counters at the edge, and the email address, name and content of each email ISO sends (sign-in codes, notifications, account emails).",
     location: (
       <>
         Global edge network; database:{" "}
@@ -34,7 +34,7 @@ export const SUBPROCESSORS: Subprocessor[] = [
       </>
     ),
     name: "Cloudflare, Inc.",
-    purpose: "Hosting: the app (Workers), its database (D1), live chat (Durable Objects), logs (Workers Logs), Rate Limiting and network security.",
+    purpose: "Hosting: the app (Workers), its database (D1), live chat (Durable Objects), logs (Workers Logs), Rate Limiting and network security; sending email (Email Service).",
   },
   {
     data: "Product analytics events, error reports and, only with consent, session recordings with all text and photos hidden. Linked to an account id; never a name, email or IP address.",
@@ -47,12 +47,6 @@ export const SUBPROCESSORS: Subprocessor[] = [
     location: <OwnerTodo fallback={confirmLater}>Stripe processing locations</OwnerTodo>,
     name: "Stripe, Inc.",
     purpose: "Payments and subscription billing.",
-  },
-  {
-    data: "Email address, name and the content of each email (sign-in codes, notifications, account emails).",
-    location: <OwnerTodo fallback={confirmLater}>Resend processing locations</OwnerTodo>,
-    name: "Resend",
-    purpose: "Sending email.",
   },
   {
     data: "Photos members upload (profile, portfolio, event covers). Photos are delivered from Cloudinary, so it also receives the IP address and browser details of anyone who views them.",

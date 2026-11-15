@@ -16,11 +16,12 @@ import {
   heading,
   paragraph,
   ctaButton,
-  calloutBox,
   calloutText,
   signature,
   colors,
   ctaSection,
+  divider,
+  proCalloutBox,
 } from "./components/styles";
 
 type UpgradePitchEmailProps = {
@@ -61,12 +62,12 @@ export function UpgradePitchEmail({
           <Text style={statNumber}>{profileViews}</Text>
           <Text style={statLabel}>Profile Views</Text>
         </Section>
-        <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "8px 0" }} />
+        <Hr style={{ ...divider, margin: "8px 0" }} />
         <Section style={statRow}>
           <Text style={statNumber}>{bookingCount}</Text>
           <Text style={statLabel}>Bookings</Text>
         </Section>
-        <Hr style={{ borderTop: `1px solid ${colors.gray200}`, margin: "8px 0" }} />
+        <Hr style={{ ...divider, margin: "8px 0" }} />
         <Section style={statRow}>
           <Text style={statNumber}>{messageCount}</Text>
           <Text style={statLabel}>Messages</Text>
@@ -80,7 +81,7 @@ export function UpgradePitchEmail({
 
       {/* The same list as the site (PRO_PLAN): what Pro gives today, and what
           is planned under its own heading, never as a current benefit. */}
-      <Section style={calloutBox}>
+      <Section style={proCalloutBox}>
         <Text style={{ ...calloutText, fontWeight: "600", marginBottom: "8px" }}>
           With ISO Pro today:
         </Text>
@@ -138,14 +139,14 @@ const statRow: React.CSSProperties = {
 const statNumber: React.CSSProperties = {
   fontSize: "28px",
   fontWeight: "700",
-  color: colors.orange,
+  color: colors.proInk,
   margin: "0",
   lineHeight: "1.2",
 };
 
 const statLabel: React.CSSProperties = {
   fontSize: "13px",
-  color: colors.gray500,
+  color: colors.muted,
   margin: "0",
   textTransform: "uppercase" as const,
   letterSpacing: "1px",

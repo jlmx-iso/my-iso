@@ -14,7 +14,6 @@ import {
 } from "./components/styles";
 
 type WaitlistConfirmationEmailProps = {
-  email: string;
   name?: string;
 };
 

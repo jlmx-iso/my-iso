@@ -44,9 +44,10 @@ export async function signIn(context: BrowserContext) {
  * autocomplete (typing a location), so the browser's request for
  * suggestions is refused before it reaches the Worker, and the form falls
  * back to the typed text, as it does when Places is down. Everything else
- * the Worker could call is off by configuration (e2e/serve.mjs): no Resend,
- * Anthropic or Stripe calls are made by these pages, and PostHog points at a
- * closed local port. Google sign-in is pointed at the local OpenID
+ * the Worker could call is off by configuration (e2e/serve.mjs): no
+ * Anthropic or Stripe calls are made by these pages, email goes to wrangler's
+ * local simulation of the EMAIL binding (nothing is delivered), and PostHog
+ * points at a closed local port. Google sign-in is pointed at the local OpenID
  * provider serve.mjs starts; a spec that drives it passes that origin in
  * `alsoAllow`.
  */
