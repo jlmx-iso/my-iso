@@ -106,8 +106,8 @@ secret, but they are yours to choose):
 | Variable | What it is for | Where to get it |
 | --- | --- | --- |
 | `AUTH_URL` | Auth.js's idea of the app's origin; must equal `NEXT_PUBLIC_BASE_URL`. | Your domain |
-| `EMAIL_FROM` | Sender of every transactional email (see "Email" below). | An address on the domain onboarded to Cloudflare Email Sending |
-| `SUPPORT_INBOX_EMAIL` | Optional. Where Pro members' in-app support requests are sent (Settings > Support, or Help & support in the account menu), through the app's email (see "Email" below), with `[Pro]` at the start of the subject so the inbox can filter and prioritise them. The email carries the member's id, not their address: look them up by id to reply. Defaults to `NEXT_PUBLIC_SUPPORT_EMAIL`, then `support@myiso.app`. | An inbox the team reads |
+| `EMAIL_FROM` | Sender of every transactional email (see "4. Email" below). | An address on the domain onboarded to Cloudflare Email Sending |
+| `SUPPORT_INBOX_EMAIL` | Optional. Where Pro members' in-app support requests are sent (Settings > Support, or Help & support in the account menu), through the app's email (see "4. Email" below), with `[Pro]` at the start of the subject so the inbox can filter and prioritise them. The email carries the member's id, not their address: look them up by id to reply. Defaults to `NEXT_PUBLIC_SUPPORT_EMAIL`, then `support@myiso.app`. | An inbox the team reads |
 | `STRIPE_STANDARD_MONTHLY_PRICE_ID`, `STRIPE_STANDARD_ANNUAL_PRICE_ID`, `STRIPE_FOUNDING_MONTHLY_PRICE_ID`, `STRIPE_FOUNDING_ANNUAL_PRICE_ID` | The prices checkout offers. | Stripe > Products (ids start with `price_`) |
 | `CSP_MODE` | Optional. The Content-Security-Policy kill switch: `enforce` (the default) blocks what the policy does not allow; `report-only` blocks nothing and only reports. Violations are reported in both modes (`csp_violation` events). See "Content-Security-Policy" below. | Leave unset; `report-only` only to stop the policy breaking pages |
 | `ANTHROPIC_MODEL` | Optional. Overrides the Claude model (`claude-haiku-5-5`). Only the models listed in `src/aiModels.js` are accepted: the requests turn thinking off, which Claude Sonnet 5.5, Claude Opus 5.5 and the Fable models refuse. | `src/aiModels.js` |
@@ -183,9 +183,17 @@ no API key. Email Sending is in beta and needs the Workers Paid plan.
    Before launch, ask Cloudflare for a higher limit (the Limit Increase
    Request Form linked from the Email Service limits page).
 
-Before a domain is onboarded, the binding can still send to the account's
-verified destination addresses (Email Routing), which is enough to try
-staging with the team's own inboxes.
+Until the domain is onboarded, sends fail with
+`E_SENDER_DOMAIN_NOT_AVAILABLE`: sign-in codes and account-deletion
+confirmations do not arrive. The one exception: if `EMAIL_FROM` is on a
+domain that already uses Email Routing, the binding can send from it to the
+account's verified destination addresses, which is enough to try staging
+with the team's own inboxes.
+
+Once the domain is onboarded, staging can email any real address too. To
+keep it to the team's inboxes, add `allowed_destination_addresses = [...]`
+to `[[env.staging.send_email]]` in `wrangler.toml` (addresses are not kept
+in the repository, so this is a choice for the deployment, not a default).
 
 When a send fails, the code Email Service returned (`E_...`) is logged with
 a keyed hash of the recipient, never the address. `E_RECIPIENT_SUPPRESSED`
@@ -354,7 +362,8 @@ Do staging completely, then production.
    `https://<domain>/api/auth/callback/google` and the JavaScript origin
    `https://<domain>` for each environment.
 5. **Email.** Onboard the sending domain to Cloudflare Email Sending and
-   set `EMAIL_FROM` to an address on it (see "Email" below).
+   set `EMAIL_FROM` to an address on it (see "4. Email: Cloudflare Email
+   Service" under "Configuration" above).
 6. **Stripe.** Follow "Stripe dashboard setup" in [BILLING.md](BILLING.md):
    the product and its four prices, the webhook endpoint
    `https://<domain>/webhooks/stripe` with its pinned API version and the

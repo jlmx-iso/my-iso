@@ -44,7 +44,7 @@ database_id = "aad00920-a190-4144-b414-c17ff5388755"
 migrations_dir = "migrations"
 
 # Transactional email through Cloudflare Email Service (src/server/_lib/email.ts;
-# docs/DEPLOYMENT.md, "Email"). It sends from EMAIL_FROM, which must be on a
+# docs/DEPLOYMENT.md, "4. Email"). It sends from EMAIL_FROM, which must be on a
 # domain onboarded to Email Sending. `wrangler dev` simulates the binding:
 # nothing is delivered. To refuse any other sender, add
 # `allowed_sender_addresses = ["<the EMAIL_FROM address>"]` once EMAIL_FROM is
