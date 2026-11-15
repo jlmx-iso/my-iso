@@ -1,6 +1,6 @@
 // Transactional email, sent through Cloudflare Email Service: the Worker's
 // `send_email` binding named EMAIL (wrangler.toml, docs/DEPLOYMENT.md,
-// "Email"). The binding is looked up per call, never held in the module.
+// "4. Email"). The binding is looked up per call, never held in the module.
 //
 // Without a binding (plain `next dev`, `next start`, unit tests) nothing is
 // sent and the caller gets an "email not configured" error, as before. In
@@ -98,7 +98,8 @@ function isLocalDevelopment(): boolean {
  *
  * @returns Result.ok when Email Service accepted the message; Result.err
  * when there is no binding, or with the service's error code when it refused
- * the message. Never throws.
+ * the message. Throws only if the HTML cannot be turned into text, which
+ * is a bug here, not a refusal by the service.
  */
 export const sendEmail = async (
     { email, subject, html }: SendEmail,
@@ -118,13 +119,21 @@ export const sendEmail = async (
         ));
     }
 
+    // Outside the try below: a failure here is not Email Service's, and
+    // reaches the caller as itself (sendTemplateEmail returns it).
+    const text = toPlainText(html);
     try {
-        await binding.send({ from: env.EMAIL_FROM, html, subject, text: toPlainText(html), to: email });
+        await binding.send({ from: env.EMAIL_FROM, html, subject, text, to: email });
         return Result.ok({ success: true });
     } catch (error: unknown) {
-        // The service's own message can name the address: keep only its code.
+        // The service's own message can name the address: keep only its code
+        // (and, without one, the error's name, never its message).
         const code = errorCode(error) ?? "E_UNKNOWN";
-        const metadata = { code, recipient: await hashEmail(email) };
+        const metadata = {
+            code,
+            recipient: await hashEmail(email),
+            ...(code === "E_UNKNOWN" && { errorName: error instanceof Error ? error.name : typeof error }),
+        };
         if (code === EMAIL_RECIPIENT_SUPPRESSED) {
             logger.warn("Email not sent: the recipient is suppressed", metadata);
         } else {

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import type { SendEmail as EmailBinding } from "@cloudflare/workers-types";
+import type * as ReactEmailRender from "@react-email/render";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 import {
@@ -27,6 +28,18 @@ vi.mock("~/env", () => envRef);
 
 const cloudflare = vi.hoisted(() => ({ getCloudflareContext: vi.fn((): unknown => { throw new Error("not on Cloudflare"); }) }));
 vi.mock("@opennextjs/cloudflare", () => cloudflare);
+
+const plainText = vi.hoisted(() => ({ fail: false }));
+vi.mock("@react-email/render", async (importOriginal) => {
+  const actual = await importOriginal<typeof ReactEmailRender>();
+  return {
+    ...actual,
+    toPlainText: (html: string) => {
+      if (plainText.fail) throw new TypeError("cannot convert");
+      return actual.toPlainText(html);
+    },
+  };
+});
 
 const renderWelcome = vi.hoisted(() => vi.fn(async () => "<p>Welcome</p>"));
 vi.mock("./emails", async (importOriginal) => ({
@@ -60,6 +73,7 @@ const logged = () => JSON.stringify([...logs.error.mock.calls, ...logs.info.mock
 
 beforeEach(() => {
   envRef.env.NODE_ENV = "test";
+  plainText.fail = false;
   cloudflare.getCloudflareContext.mockImplementation(() => {
     throw new Error("not on Cloudflare");
   });
@@ -153,6 +167,27 @@ describe("sendEmail", () => {
       expect(result.isErr && result.error.code).toBe("E_UNKNOWN");
     }
     expect(logged()).not.toContain(RECIPIENT);
+    // The error's name, never its message.
+    const errors = logs.error.mock.calls.map(([line]) => String(line));
+    expect(errors[0]).toContain('"errorName": "Error"');
+    expect(errors[2]).toContain('"errorName": "string"');
+    expect(errors.join("\n")).not.toContain("no route to");
+  });
+
+  it("does not log an error name next to a service code", async () => {
+    const { binding } = fakeBinding(serviceError("E_DAILY_LIMIT_EXCEEDED"));
+    await sendEmail({ email: RECIPIENT, html: "<p>x</p>", subject: "s" }, binding);
+    expect(logged()).not.toContain("errorName");
+  });
+
+  it("lets a failure to make the text part surface as itself, without sending", async () => {
+    plainText.fail = true;
+    const { binding, send } = fakeBinding();
+    await expect(sendEmail({ email: RECIPIENT, html: "<p>x</p>", subject: "s" }, binding)).rejects.toThrow(
+      new TypeError("cannot convert"),
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(logged()).not.toContain("Email Service refused");
   });
 
   it("without a binding, sends nothing and says email is not configured", async () => {
@@ -213,6 +248,20 @@ describe("sendTemplateEmail", () => {
       template: "no-such-template" as TemplateName,
     });
     expect(result.isErr && result.error.message).toContain('Unknown email template: "no-such-template"');
+  });
+
+  it("returns a failure to make the text part as itself", async () => {
+    const { binding } = fakeBinding();
+    cloudflare.getCloudflareContext.mockReturnValue({ env: { EMAIL: binding } });
+    plainText.fail = true;
+    const result = await sendTemplateEmail({
+      email: RECIPIENT,
+      props: { name: "Ada" },
+      subject: "s",
+      template: "waitlist-confirmation",
+    });
+    expect(result.isErr && result.error).toBeInstanceOf(TypeError);
+    expect(result.isErr && result.error.message).toBe("cannot convert");
   });
 
   it("returns a render failure instead of throwing", async () => {

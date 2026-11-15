@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as StripeModule from "~/server/_billing/stripe";
+import type * as EmailModule from "~/server/_lib/email";
 import { buildSubscription, startStripeStub, type StripeStub } from "~/test/helpers/stripeStub";
 
 const stripeRef = vi.hoisted((): { stub: { client: unknown } | null } => ({ stub: null }));
@@ -9,7 +10,10 @@ vi.mock("~/server/_billing/stripe", async (importOriginal) => ({
   getStripe: () => stripeRef.stub?.client,
 }));
 const email = vi.hoisted(() => ({ emailBinding: vi.fn((): unknown => null), sendEmail: vi.fn() }));
-vi.mock("~/server/_lib/email", () => email);
+vi.mock("~/server/_lib/email", async () => ({
+  ...email,
+  isRecipientSuppressed: (await vi.importActual<typeof EmailModule>("~/server/_lib/email")).isRecipientSuppressed,
+}));
 vi.mock("~/server/_lib/emails/account-deleted", () => ({
   renderAccountDeletedEmail: vi.fn(async (props: { firstName: string; supportEmail: string }) =>
     `<p>${props.firstName} ${props.supportEmail}</p>`,
@@ -83,6 +87,17 @@ describe("accountDeletionDeps", () => {
     await expect(
       accountDeletionDeps.sendConfirmation({ email: "ann@example.com", firstName: "Ann" }),
     ).rejects.toThrow("no key");
+  });
+
+  it("does not throw for a suppressed address: nothing is wrong on this side", async () => {
+    const suppressed = Object.assign(new Error("Email Service refused the message (E_RECIPIENT_SUPPRESSED)"), {
+      code: "E_RECIPIENT_SUPPRESSED",
+    });
+    email.sendEmail.mockResolvedValue({ error: suppressed, isErr: true, isOk: false });
+    await expect(
+      accountDeletionDeps.sendConfirmation({ email: "ann@example.com", firstName: "Ann" }),
+    ).resolves.toBeUndefined();
+    expect(email.sendEmail).toHaveBeenCalledTimes(1);
   });
 });
 

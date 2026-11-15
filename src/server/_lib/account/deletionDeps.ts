@@ -5,7 +5,7 @@
 import { env } from "~/env";
 import { endBillingForClosedAccount } from "~/server/_billing/accountClosure";
 import { getStripe } from "~/server/_billing/stripe";
-import { emailBinding, sendEmail } from "~/server/_lib/email";
+import { emailBinding, isRecipientSuppressed, sendEmail } from "~/server/_lib/email";
 import { renderAccountDeletedEmail } from "~/server/_lib/emails/account-deleted";
 
 import { deleteCloudinaryImages } from "./cloudinaryDelete";
@@ -37,6 +37,8 @@ export const accountDeletionDeps: DeletionDeps = {
     const { SUPPORT_EMAIL } = await import("~/_lib/site");
     const html = await renderAccountDeletedEmail({ firstName, supportEmail: SUPPORT_EMAIL });
     const result = await sendEmail({ email, html, subject: "Your ISO account has been deleted" });
-    if (result.isErr) throw result.error;
+    // A suppressed address is the recipient's mailbox, not a fault here;
+    // sendEmail has logged it as a warning.
+    if (result.isErr && !isRecipientSuppressed(result.error)) throw result.error;
   },
 };
