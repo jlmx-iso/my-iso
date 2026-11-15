@@ -405,7 +405,7 @@ beforeAll(async () => {
   stripeRef.stub = stub;
   testDb = await createTestDb();
 
-  // Nothing here may reach the internet: Google and PostHog calls
+  // Nothing here may reach the internet: Google, Resend and PostHog calls
   // fail fast. The Stripe stub listens on loopback.
   const realFetch = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
